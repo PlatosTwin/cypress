@@ -196,6 +196,12 @@ final class DeepLinkSweepTests: XCTestCase, DeepLinkHarness {
     /// pushed one, so until the tab root leaves the tree the enumeration can be reading the screen
     /// the app is navigating *away* from — which is what run 31347748098 recorded. See the comment
     /// at the call site for what that log shows and for what the wait still leaves open.
+    ///
+    /// **Which labels repeat is read from one snapshot of the tree; only those are walked live.**
+    /// The live walk below, with its accessibility-element binding and its settled frames, now runs
+    /// over the static texts whose label the snapshot saw at least twice, not over every static
+    /// text in the app. A label seen once cannot be heard twice, so nothing the comparison asks is
+    /// dropped. See the comment at the call site.
     func testNothingIsAnnouncedTwice() {
         continueAfterFailure = true
         defer { continueAfterFailure = false }
@@ -243,29 +249,49 @@ final class DeepLinkSweepTests: XCTestCase, DeepLinkHarness {
                 continue
             }
 
-            // `isHittableWithoutRaising`, not the raw property (`UIWait.swift`). This filters every
-            // static text in the app, and CI run 31300530216's `ui (3)` died right here: "Failed to
-            // determine hittability of StaticText at {{inf, inf}, {0.0, 0.0}}". A frame with no
-            // interior is not an unreachable element being reported, it is `isHittable` raising.
+            // **Every static text's label is read from one snapshot of the tree, and only a label
+            // that appears more than once is looked at live.** A label the screen says once cannot
+            // be heard twice, so neither its hittability nor its frame decided anything. The
+            // version this replaces asked `exists` and `isHittable` of every static text in the
+            // app, then waited for each one's frame to settle: about 96 s of round trips per run,
+            // nearly all of them on labels that had no twin.
+            guard let tree = treeSnapshot(app, screen: screen) else {
+                app.terminate()
+                continue
+            }
+            let texts = Self.snapshotElements(tree, ofTypes: [.staticText])
+            var rawLabels: [String: Set<String>] = [:]
+            var occurrences: [String: Int] = [:]
+            for text in texts {
+                let label = text.label.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !label.isEmpty else { continue }
+                occurrences[label, default: 0] += 1
+                rawLabels[label, default: []].insert(text.label)
+            }
+            let repeated = occurrences.filter { $0.value > 1 }.keys.sorted()
+
+            // `isHittableWithoutRaising`, not the raw property (`UIWait.swift`). This is a filter,
+            // and CI run 31300530216's `ui (3)` died in this one: "Failed to determine hittability
+            // of StaticText at {{inf, inf}, {0.0, 0.0}}". A frame with no interior is not an
+            // unreachable element being reported, it is `isHittable` raising.
             //
             // **The app's rectangle is hoisted out of the closure**, and `appFrame` rather than
-            // `screen` because `screen` is already this loop's screen *name*, which every failure
-            // message below interpolates. `app.frame` is a query: reading it once per element put a
-            // `Find the Target Application` round trip between every pair of element queries, and on
-            // PR #66's first CI run this loop died on "No matches found for Element at index 25" —
-            // the index having stopped resolving while the enumeration walked it. The hoist narrowed
-            // that window and did not close it (index 3, then index 17); binding by accessibility
-            // element rather than by index is what removed the ordinal there was to lose.
+            // `screen` because `screen` is already this loop's screen *name*. `app.frame` is a
+            // query: reading it once per element put a `Find the Target Application` round trip
+            // between every pair of element queries (PR #66's first CI run). Binding by
+            // accessibility element rather than by index is what removed the ordinal there was to
+            // lose mid-walk.
             let appFrame = app.frame
-            let texts = app.staticTexts.allElementsBoundByAccessibilityElement
-                .filter { $0.exists && $0.isHittableWithoutRaising(onScreen: appFrame) }
+            let twins = repeated.flatMap { label in
+                app.staticTexts
+                    .matching(NSPredicate(format: "label IN %@", Array(rawLabels[label] ?? [])))
+                    .allElementsBoundByAccessibilityElement
+                    .filter { $0.exists && $0.isHittableWithoutRaising(onScreen: appFrame) }
+            }
 
-            // **Each element's label and settled frame read once, into plain values.** Everything
-            // below is arithmetic over `String` and `CGRect` and touches no proxy at all. The
-            // version this replaces read `.label` once per element in the outer loop and again for
-            // every pair in the inner one — O(n²) re-resolutions of a query against a tree that is
-            // still settling, for a screen with twenty to thirty reachable static texts on it.
-            let announced: [(label: String, frame: CGRect)] = texts.enumerated()
+            // **Each twin's label and settled frame read once, into plain values.** Everything
+            // below is arithmetic over `String` and `CGRect` and touches no proxy at all.
+            let announced: [(label: String, frame: CGRect)] = twins.enumerated()
                 .map { index, element in
                     let label = element.label.trimmingCharacters(in: .whitespacesAndNewlines)
                     return (
@@ -279,8 +305,15 @@ final class DeepLinkSweepTests: XCTestCase, DeepLinkHarness {
             // A screen this method read nothing from is not a screen it checked. Without this an
             // enumeration that returned an empty array — a query spelling that stopped matching,
             // a screen that had not finished arriving — is indistinguishable from a clean screen.
+            // **What it counts now:** the reachable twins above, or, when there are none (the
+            // usual, clean case), one reachable static text of any label, which
+            // `firstReachableElement` looks for from the end of the tree and stops at.
+            var reachable = announced.count
+            if reachable == 0, firstReachableElement(app, among: texts, onScreen: appFrame) != nil {
+                reachable = 1
+            }
             XCTAssertGreaterThan(
-                announced.count, 0,
+                reachable, 0,
                 "\(screen): not one static text was reachable, so no pair was compared and this "
                     + "screen was not actually examined"
             )

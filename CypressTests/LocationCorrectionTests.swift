@@ -156,6 +156,99 @@ struct LocationCorrectionTests {
         #expect(correction.attribution.userID == nil)
     }
 
+    /// **The chain's order is its links, not its clock.** Every act here happens at one frozen
+    /// moment, so `occurred_at` and `created_at` tie on every row and only the `superseded_by`
+    /// links can say which position came first. That is the state `theAdderMovesThePin` reached
+    /// on main (CI run 43543728441) when an add and a move landed inside one millisecond: the chain
+    /// read back head first.
+    ///
+    /// Six trees, each moved twice, so the old tie-break on random ids would have to guess all six
+    /// three-row orders right by chance (1 in 6 each) to pass.
+    ///
+    /// Red-proof: return the fetched rows from `TreeLocationStore.chain` without
+    /// `orderedByLinks` (the old `ORDER BY occurred_at, created_at, id`) — red on "read back as".
+    @Test("a chain whose rows share one timestamp reads root first, in the order of its links")
+    func aChainWithTiedTimestampsFollowsItsLinks() async throws {
+        let frozen = Date(timeIntervalSince1970: 1_790_000_000)
+        let store = try await CypressStore.inMemory()
+        let api = LocalAPI(store: store, deviceID: Self.deviceID, now: { frozen })
+
+        for index in 0..<6 {
+            let origin = ProximityDedupeTests.diagonal(from: Self.offshore, meters: 200 * Double(index))
+            let tree = try await Self.add(api, at: origin)
+            let first = ProximityDedupeTests.diagonal(from: origin, meters: 30)
+            let second = ProximityDedupeTests.diagonal(from: origin, meters: 60)
+            _ = try await api.correctLocation(
+                treeID: tree.id, to: first, placement: .contributorPlaced, locationAccuracyM: nil
+            )
+            _ = try await api.correctLocation(
+                treeID: tree.id, to: second, placement: .contributorPlaced, locationAccuracyM: nil
+            )
+
+            let chain = try await Self.chain(store, tree.id)
+            #expect(
+                chain.allSatisfy { $0.occurredAt == frozen && $0.createdAt == frozen },
+                "fixture: tree \(index)'s rows do not share one timestamp, so this proves nothing"
+            )
+            #expect(
+                chain.map(\.coordinate) == [origin, first, second],
+                """
+                tree \(index) was added and then moved twice, and its chain read back as \
+                \(chain.map(\.coordinate)) where the acts were \([origin, first, second])
+                """
+            )
+            #expect(chain.first?.id == tree.id, "tree \(index)'s chain does not start at its root")
+            let links = zip(chain, chain.dropFirst()).allSatisfy { $0.supersededBy == $1.id }
+            #expect(links, "tree \(index)'s chain is not in the order of its superseded_by links")
+            #expect(chain.last?.isCurrent == true, "tree \(index)'s chain does not end at its head")
+        }
+    }
+
+    /// The ordering helper on chains the links cannot fully place. Pure, so the ids can be chosen:
+    /// every id here sorts against the chain, which is the case the old tie-break got wrong.
+    @Test("rows the links cannot place keep their place after the walked chain")
+    func orderingByLinksKeepsWhatItCannotPlace() {
+        let moment = Date(timeIntervalSince1970: 1_790_000_000)
+        func row(_ id: String, next: String? = nil) -> TreeLocation {
+            TreeLocation(
+                id: UUID(uuidString: id)!,
+                treeID: UUID(uuidString: "FFFFFFFF-0000-4000-8000-000000000000")!,
+                clientUUID: UUID(),
+                coordinate: Self.offshore,
+                placement: .gps,
+                owner: .nobody,
+                supersededBy: next.flatMap(UUID.init(uuidString:)),
+                occurredAt: moment,
+                createdAt: moment,
+                updatedAt: moment
+            )
+        }
+        let root = "FFFFFFFF-0000-4000-8000-000000000000"
+        let middle = "00000000-0000-4000-8000-000000000002"
+        let head = "00000000-0000-4000-8000-000000000001"
+        let stray = "00000000-0000-4000-8000-000000000000"
+
+        // Arrives in id order, as the old ORDER BY would hand it over on a tie: head first.
+        let linked = [row(head), row(middle, next: head), row(root, next: middle)]
+        #expect(
+            TreeLocationStore.orderedByLinks(linked).map(\.id.uuidString) == [root, middle, head],
+            "a three-row chain arriving in id order was not put back in the order of its links"
+        )
+
+        // A second row with no predecessor: the walk starts at the first one in time order (the
+        // stray here), and the rows it does not reach follow in the order they arrived, kept
+        // rather than dropped.
+        let damaged = [row(stray), row(root, next: head), row(head)]
+        #expect(
+            TreeLocationStore.orderedByLinks(damaged).map(\.id.uuidString) == [stray, root, head],
+            "a chain with two roots did not keep every row in time order after the walk"
+        )
+
+        // A link that loops back ends the walk instead of spinning.
+        let loop = [row(root, next: head), row(head, next: root)]
+        #expect(TreeLocationStore.orderedByLinks(loop).count == 2, "a looped chain did not come back whole")
+    }
+
     /// Red-proof: make `correctLocation` skip the `isOwned(by:)` guard — red here on "a tree nobody
     /// added was moved".
     @Test("a tree whose adder is nobody cannot be moved by anybody")

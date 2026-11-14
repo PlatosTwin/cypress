@@ -27,10 +27,12 @@
 //  2. **It writes a 2×2 contact sheet per screen**, so the four appearances of one screen are one
 //     image and the comparison is a glance rather than four file-opens.
 //
-//  Output goes to `CYPRESS_SHOT_DIR` if set, otherwise a temporary directory. Paths are printed.
-//  The one spelling that sets it is `export TEST_RUNNER_CYPRESS_SHOT_DIR=<dir>` in the shell,
-//  before `Tools/run_tests.sh` — the same spelling for this target and for CypressUITests, argued
-//  once in that script's header. Written as an `xcodebuild` argument it silently does nothing.
+//  Output goes to `CYPRESS_SHOT_DIR` when it is set, and paths are printed. When it is not set
+//  (every CI run), each screen is still rendered and still judged by `ShotBlankGuard`, but no PNG
+//  is encoded, no file is written and no contact sheet is built. The one spelling that sets it
+//  is `export TEST_RUNNER_CYPRESS_SHOT_DIR=<dir>` in the shell, before `Tools/run_tests.sh` —
+//  the same spelling for this target and for CypressUITests, argued once in that script's
+//  header. Written as an `xcodebuild` argument it silently does nothing.
 //
 
 #if DEBUG
@@ -51,10 +53,24 @@ struct ScreenSweepShots {
     /// argument is evaluated at the call site rather than inside the isolated body.
     nonisolated static let height: CGFloat = 852
 
-    static var outputDirectory: URL {
-        let base = ProcessInfo.processInfo.environment["CYPRESS_SHOT_DIR"]
-            .map { URL(fileURLWithPath: $0) }
-            ?? FileManager.default.temporaryDirectory.appendingPathComponent("cypress-sweep")
+    /// The directory an operator chose, or `nil` when nobody is going to look.
+    ///
+    /// With `nil` the harness still renders and still runs `ShotBlankGuard` on the pixels, but it
+    /// encodes no PNG, writes no file and builds no contact sheet. CI never uploads these files
+    /// (it keeps only `unit.log` and `unit.xcresult`), and the encoding and the sheets were most
+    /// of the sweep's main-thread time.
+    nonisolated static var shotDirectory: URL? {
+        guard let path = ProcessInfo.processInfo.environment["CYPRESS_SHOT_DIR"] else { return nil }
+        let base = URL(fileURLWithPath: path)
+        try? FileManager.default.createDirectory(at: base, withIntermediateDirectories: true)
+        return base
+    }
+
+    /// Where a file would go: the operator's directory, or a temporary one. Printed by the
+    /// suites that photograph, and used by tests that write on purpose.
+    nonisolated static var outputDirectory: URL {
+        if let chosen = shotDirectory { return chosen }
+        let base = FileManager.default.temporaryDirectory.appendingPathComponent("cypress-sweep")
         try? FileManager.default.createDirectory(at: base, withIntermediateDirectories: true)
         return base
     }
@@ -79,11 +95,17 @@ struct ScreenSweepShots {
     ///   screen whose subject is below the fold — a `ScrollView` rendered off-screen cannot be
     ///   scrolled, so the only way to photograph the bottom of screen 03 is to give it a window with
     ///   room for all of it (ERRATA E145). It is not a device size and is not meant to look like one.
+    /// - Parameter directory: where the PNG goes. `nil` (the default when `CYPRESS_SHOT_DIR` is not
+    ///   set) renders and judges the capture but writes nothing.
+    /// - Parameter settleFloor: the least time `RenderSettle` waits. Pass
+    ///   `RenderSettle.legacyBudget` for a screen that loads with no spinner.
     static func capture(
         _ name: String,
         size: DynamicTypeSize,
         scheme: ColorScheme,
         viewportHeight: CGFloat = height,
+        writingTo directory: URL? = shotDirectory,
+        settleFloor: Duration = RenderSettle.defaultFloor,
         @ViewBuilder _ content: () -> some View
     ) async -> UIImage? {
         let host = UIHostingController(
@@ -106,12 +128,8 @@ struct ScreenSweepShots {
 
         // `await`, not `RunLoop.run(until:)` — a run-loop spin does not drain the cooperative
         // executor a `.task` is suspended on, so every screen that loads asynchronously would be
-        // captured in its `ProgressView` state.
-        for _ in 0..<8 {
-            try? await Task.sleep(for: .milliseconds(120))
-            host.view.setNeedsLayout()
-            host.view.layoutIfNeeded()
-        }
+        // captured in its `ProgressView` state. `RenderSettle` says when the view stopped changing.
+        await RenderSettle.settle(host.view, label: name, floor: settleFloor)
 
         let image = UIGraphicsImageRenderer(bounds: frame).image { _ in
             host.view.drawHierarchy(in: frame, afterScreenUpdates: true)
@@ -123,11 +141,12 @@ struct ScreenSweepShots {
             print("BLANK CAPTURE \(name) — \(Int(width))×\(Int(viewportHeight)) — \(reason)")
             return nil
         }
+        guard let directory else { return image }
         guard let data = image.pngData() else {
             print("BLANK CAPTURE \(name) — pngData() returned nil")
             return nil
         }
-        guard ShotBlankGuard.write(data, to: outputDirectory.appendingPathComponent("\(name).png")) else {
+        guard ShotBlankGuard.write(data, to: directory.appendingPathComponent("\(name).png")) else {
             return nil
         }
         return image
@@ -141,7 +160,7 @@ struct ScreenSweepShots {
 
     /// Lays four captures out 2×2 under their labels and writes one PNG.
     static func contactSheet(_ name: String, _ shots: [(label: String, image: UIImage)]) {
-        guard !shots.isEmpty else { return }
+        guard !shots.isEmpty, let directory = shotDirectory else { return }
         let caption: CGFloat = 26
         let gap: CGFloat = 8
         let columns = 2
@@ -177,7 +196,7 @@ struct ScreenSweepShots {
             print("SHEET FAILED \(name) — pngData() returned nil")
             return
         }
-        let url = outputDirectory.appendingPathComponent("\(name)-SHEET.png")
+        let url = directory.appendingPathComponent("\(name)-SHEET.png")
         guard ShotBlankGuard.write(data, to: url) else { return }
         print("SHEET \(url.path)")
     }
@@ -201,6 +220,7 @@ struct ScreenSweepShots {
         _ name: String,
         viewportHeight: CGFloat = height,
         ax5ViewportHeight: CGFloat? = nil,
+        settleFloor: Duration = RenderSettle.defaultFloor,
         @ViewBuilder _ content: @escaping () -> some View
     ) async -> Bool {
         var shots: [(label: String, image: UIImage)] = []
@@ -211,6 +231,7 @@ struct ScreenSweepShots {
                 size: variant.size,
                 scheme: variant.scheme,
                 viewportHeight: isAX5 ? (ax5ViewportHeight ?? viewportHeight) : viewportHeight,
+                settleFloor: settleFloor,
                 content
             ) else { return false }
             shots.append((variant.suffix, image))
@@ -228,10 +249,14 @@ struct ScreenSweepShots {
 
     @Test("01–19, plus the two tab roots, in four appearances each")
     func everyScreen() async throws {
-        print("SWEEP DIR \(Self.outputDirectory.path)")
+        print("SWEEP DIR \(Self.shotDirectory?.path ?? "not set: each capture is judged, nothing is written")")
 
+        // `settleFloor: RenderSettle.legacyBudget` marks a screen that loads with no spinner, so it
+        // keeps the old 0.96 s wait (`RenderSettle`'s header lists them and says why).
         // ── 02. Presented as a `fullScreenCover` (RootView `.identify`), so no NavigationStack. ──
-        #expect(await Self.sweep("02-identify") { VisitPreviewFixtures.identify() })
+        #expect(await Self.sweep("02-identify", settleFloor: RenderSettle.legacyBudget) {
+            VisitPreviewFixtures.identify()
+        })
 
         // ── The community add composer — the visit flow's other door, previewed since E174 but
         //    never swept, which is how #132 stayed a report from the owner's phone rather than a
@@ -260,12 +285,12 @@ struct ScreenSweepShots {
         //       two light ones, which is itself the check.
         #expect(await Self.sweep("04-visit-camera") { VisitPreviewFixtures.camera() })
 
-        #expect(await Self.sweep("05-check-in") {
+        #expect(await Self.sweep("05-check-in", settleFloor: RenderSettle.legacyBudget) {
             NavigationStack { CheckInPreviewFixtures.view(draft: CheckInPreviewFixtures.drawnState) }
                 .environment(AppRouter())
         })
 
-        #expect(await Self.sweep("06-report") {
+        #expect(await Self.sweep("06-report", settleFloor: RenderSettle.legacyBudget) {
             NavigationStack {
                 ReportView(
                     treeID: SweepFixtures.reportTreeID,
@@ -296,7 +321,7 @@ struct ScreenSweepShots {
         })
 
         // ── 09 and 10 are `fullScreenCover`s and draw their own scrim. ───────────────────────
-        #expect(await Self.sweep("09-care-log") {
+        #expect(await Self.sweep("09-care-log", settleFloor: RenderSettle.legacyBudget) {
             CareLogPreviewFixtures.view(draft: CareLogPreviewFixtures.drawnState)
         })
 
@@ -321,7 +346,7 @@ struct ScreenSweepShots {
             .environment(AppRouter())
         })
 
-        #expect(await Self.sweep("12-almanac") {
+        #expect(await Self.sweep("12-almanac", settleFloor: RenderSettle.legacyBudget) {
             NavigationStack {
                 AlmanacView(
                     api: AlmanacPreviewAPI(payload: SweepFixtures.almanac),
@@ -350,7 +375,7 @@ struct ScreenSweepShots {
         //    because the difference between them is one line of copy: the whole group says `All nine
         //    are on this map.` and a page says which twenty of 1,474 are, and E38 is the entry for
         //    what happens when a screen loses that distinction.
-        #expect(await Self.sweep("12b-group-whole") {
+        #expect(await Self.sweep("12b-group-whole", settleFloor: RenderSettle.legacyBudget) {
             NavigationStack {
                 PinSetMapView(
                     set: SweepFixtures.coverageGroup,
@@ -362,7 +387,7 @@ struct ScreenSweepShots {
             .environment(AppRouter())
         })
 
-        #expect(await Self.sweep("12c-group-page") {
+        #expect(await Self.sweep("12c-group-page", settleFloor: RenderSettle.legacyBudget) {
             NavigationStack {
                 PinSetMapView(
                     set: SweepFixtures.vacantGroup,
@@ -467,7 +492,7 @@ struct ScreenSweepShots {
             }
             .environment(AppRouter())
         })
-        #expect(await Self.sweep("20-journal-tab") {
+        #expect(await Self.sweep("20-journal-tab", settleFloor: RenderSettle.legacyBudget) {
             NavigationStack {
                 JournalTabView(
                     api: AlmanacPreviewAPI(payload: SweepFixtures.almanac),
@@ -476,7 +501,7 @@ struct ScreenSweepShots {
             }
             .environment(AppRouter())
         })
-        #expect(await Self.sweep("21-you-tab") {
+        #expect(await Self.sweep("21-you-tab", settleFloor: RenderSettle.legacyBudget) {
             NavigationStack {
                 YouTabView(
                     outbox: SweepFixtures.outboxViewState(),
@@ -505,7 +530,7 @@ struct ScreenSweepShots {
     /// absent and the land-context line must still be there, stated rather than inferred.
     @Test("the city-record section, five states, in four appearances each")
     func cityRecordStates() async throws {
-        print("SWEEP DIR \(Self.outputDirectory.path)")
+        print("SWEEP DIR \(Self.shotDirectory?.path ?? "not set: each capture is judged, nothing is written")")
         let states: [(String, TreeProfile)] = [
             ("c01-city-record-full-fuf", TreeProfileSeedFixtures.fullCityRecord),
             ("c02-city-record-bare", TreeProfileSeedFixtures.bareCityRecord),
@@ -555,13 +580,13 @@ struct ScreenSweepShots {
     /// since task #144: an empty state is mostly sentences, and sentences are what the ramp moves.
     @Test("the cold and empty states, in four appearances each")
     func coldStates() async throws {
-        #expect(await Self.sweep("e02-identify-denied") {
+        #expect(await Self.sweep("e02-identify-denied", settleFloor: RenderSettle.legacyBudget) {
             VisitPreviewFixtures.identify(fix: .denied)
         })
-        #expect(await Self.sweep("e02-identify-no-tells") {
+        #expect(await Self.sweep("e02-identify-no-tells", settleFloor: RenderSettle.legacyBudget) {
             VisitPreviewFixtures.identify(rows: VisitPreviewFixtures.untelledRows)
         })
-        #expect(await Self.sweep("e06-report-nothing-selected") {
+        #expect(await Self.sweep("e06-report-nothing-selected", settleFloor: RenderSettle.legacyBudget) {
             NavigationStack {
                 ReportView(
                     treeID: SweepFixtures.reportTreeID,
@@ -583,7 +608,7 @@ struct ScreenSweepShots {
             }
             .environment(AppRouter())
         })
-        #expect(await Self.sweep("e09-care-log-untouched") {
+        #expect(await Self.sweep("e09-care-log-untouched", settleFloor: RenderSettle.legacyBudget) {
             CareLogPreviewFixtures.view()
         })
         #expect(await Self.sweep("e11-growth-empty") {
@@ -597,7 +622,7 @@ struct ScreenSweepShots {
             }
             .environment(AppRouter())
         })
-        #expect(await Self.sweep("e12-almanac-fresh") {
+        #expect(await Self.sweep("e12-almanac-fresh", settleFloor: RenderSettle.legacyBudget) {
             NavigationStack {
                 AlmanacView(
                     api: AlmanacPreviewAPI(payload: SweepFixtures.freshAlmanac),
@@ -659,7 +684,7 @@ struct ScreenSweepShots {
             }
             .environment(AppRouter())
         })
-        #expect(await Self.sweep("e12-almanac-read-failed") {
+        #expect(await Self.sweep("e12-almanac-read-failed", settleFloor: RenderSettle.legacyBudget) {
             NavigationStack {
                 AlmanacView(
                     api: AlmanacPreviewAPI(fails: true),
@@ -674,7 +699,7 @@ struct ScreenSweepShots {
         // They join the sweep beside the failed read for the same reason that one did: all four of
         // this screen's near-empty states used to be two pictures, and the only way they stay four
         // is by being photographed.
-        #expect(await Self.sweep("e12-almanac-radius-area") {
+        #expect(await Self.sweep("e12-almanac-radius-area", settleFloor: RenderSettle.legacyBudget) {
             NavigationStack {
                 AlmanacView(
                     api: AlmanacPreviewAPI(payload: SweepFixtures.radiusAlmanac),
@@ -685,7 +710,7 @@ struct ScreenSweepShots {
             }
             .environment(AppRouter())
         })
-        #expect(await Self.sweep("e12-almanac-out-of-range") {
+        #expect(await Self.sweep("e12-almanac-out-of-range", settleFloor: RenderSettle.legacyBudget) {
             NavigationStack {
                 AlmanacView(
                     api: AlmanacPreviewAPI(payload: .empty),

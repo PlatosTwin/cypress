@@ -1,0 +1,1 @@
+internal: CI builds the app once for the UI shards, boots each simulator while it builds, and skips the suite on a push to main whose tree already passed on its pull request; no tester-visible change.

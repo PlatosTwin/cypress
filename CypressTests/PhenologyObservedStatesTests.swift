@@ -193,7 +193,7 @@ struct PhenologyObservedStatesShots {
 
     @Test("the tray for sf/222615's species, a curated control, and the no-species state")
     func photograph() async throws {
-        print("SHOT DIR \(ScreenSweepShots.outputDirectory.path)")
+        print("SHOT DIR \(ScreenSweepShots.shotDirectory?.path ?? "not set: nothing is written")")
 
         // The report: an uncurated species, empty calendar. Before #151 this tray had no chip row.
         let cassia = try PhenologyObservedStatesTests.goldMedallion()

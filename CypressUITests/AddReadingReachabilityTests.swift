@@ -72,10 +72,7 @@ final class AddReadingReachabilityTests: XCTestCase {
         // Screen 03 is longer than the screen and these links close it, so reaching them is a
         // scroll. That is the ordinary way down a profile and not what this test is about.
         Self.scrollIntoView(addReading, in: app)
-        XCTAssertTrue(
-            addReading.isHittable,
-            "the link is in the profile's tree but nothing could press it"
-        )
+        assertReachable(addReading, "the profile's link into screen 16")
 
         // Presence is not the claim. Pressing it, and arriving, is.
         addReading.tap()
@@ -125,7 +122,9 @@ final class AddReadingReachabilityTests: XCTestCase {
         // Both links have to be on screen before a coordinate tap means anything: a normalized
         // offset into an off-screen element resolves to a point that is not the words.
         Self.scrollIntoView(app.buttons[Self.addReadingLink], in: app)
-        XCTAssertTrue(growth.isHittable, "See every reading scrolled out of reach, so the tap below would not be on it")
+        assertReachable(
+            growth, "See every reading, which the tap below must land on once both links are scrolled to,"
+        )
 
         growth.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
 
@@ -200,8 +199,8 @@ final class AddReadingReachabilityTests: XCTestCase {
     /// **`isHittableWithoutRaising` because this is a filter position**, which is the distinction
     /// `HittabilityFilterGateTests` enforces: the raw property *raises* rather than answering
     /// `false` for an element with no computable activation point, and here that exception would be
-    /// the test failure. The `XCTAssertTrue(…isHittable)` calls above are claims and correctly use
-    /// the raw property. `app.frame` is hoisted above the loop, per that helper's own note.
+    /// the test failure. The `assertReachable` calls above are claims, and that helper waits for
+    /// them (`HittabilityFilterGateTests` refuses a one-shot claim). `app.frame` is hoisted above the loop, per that helper's own note.
     private static func scrollIntoView(_ element: XCUIElement, in app: XCUIApplication) {
         let screen = app.frame
         for _ in 0..<6 {

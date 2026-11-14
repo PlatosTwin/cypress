@@ -489,7 +489,7 @@ struct SpeciesClaimTests {
             near: VisitPinAdjust.offset(Self.offshore, northM: 300, eastM: 0),
             speciesQuery: nil
         )
-        print("SHOT DIR \(ScreenSweepShots.outputDirectory.path)")
+        print("SHOT DIR \(ScreenSweepShots.shotDirectory?.path ?? "not set: nothing is written")")
 
         #expect(await ScreenSweepShots.sweep("e141-species-claimed") {
             NavigationStack { TreeProfileView(treeID: claimed, api: api) }.environment(AppRouter())
