@@ -138,7 +138,9 @@ final class MapLocationProvider {
     /// being taken; a replay from CoreLocation's cache can be hours old. Sixty seconds is far
     /// outside the first, and a walker covers about 85 m in it, a fifth of the 400 m circle a
     /// neighborhood is resolved over (`AlmanacLimits.neighborhoodResolutionRadiusM`).
-    static let replayedFixAgeOnArrival: TimeInterval = 60
+    ///
+    /// `nonisolated` because `FixTiming.isReplayed`, a `Sendable` value's property, reads it.
+    nonisolated static let replayedFixAgeOnArrival: TimeInterval = 60
 
     /// `fixTiming.isReplayed`, observed. Written **only when it changes**, so it costs no redraw
     /// per fix: it is how a reader such as My Grove's ring hears that a replayed place has been
