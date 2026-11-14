@@ -155,6 +155,22 @@ struct RenderSettleTests {
         #expect(pair.before != pair.after, "swapping red for blue in a fixed frame left the signature unchanged")
     }
 
+    /// A starved runner can stretch one 40 ms yield to many seconds. The budget must still run the
+    /// old loop's pass count before it gives up, or a capture is drawn after one layout pass. A
+    /// budget of 1 ms stands in for that runner: its time is gone before the first pass ends.
+    @Test("the budget does not end the wait before the old loop's pass count")
+    func budgetRunsTheLegacyPassCount() async {
+        let (window, view) = Self.mount(ProgressView())
+        defer { window.isHidden = true; window.rootViewController = nil }
+
+        let outcome = await RenderSettle.settle(view, label: "starved-budget", budget: .milliseconds(1))
+        #expect(outcome.reachedBudget, "a view that shows a spinner settled: \(outcome)")
+        #expect(
+            outcome.passes >= RenderSettle.legacyPasses,
+            "the budget ended the wait after \(outcome.passes) passes, fewer than the old loop's \(RenderSettle.legacyPasses)"
+        )
+    }
+
     /// The other direction: a still view must settle on its own decision. If the signature changed
     /// on every pass, every capture would wait the whole budget and the sweep would be as slow
     /// as before.
