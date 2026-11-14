@@ -400,11 +400,30 @@ extension DeepLinkHarness {
         for (kind, type) in controls {
             // The raw labels, so the live query below matches exactly what the snapshot read. A
             // label of only whitespace counts as no label, as it did before.
-            let blank = Set(found.filter { $0.type == type && Self.isBlank($0.label) }.map(\.label))
-            guard !blank.isEmpty else { continue }
+            let blankEntries = found.filter { $0.type == type && Self.isBlank($0.label) }
+            guard !blankEntries.isEmpty else { continue }
+            // `label == nil` as well, in case the query engine reads a missing label as nil where
+            // the snapshot read it as "".
             let unlabeled = app.descendants(matching: type)
-                .matching(NSPredicate(format: "label IN %@", Array(blank)))
+                .matching(NSPredicate(
+                    format: "label IN %@ OR label == nil", Array(Set(blankEntries.map(\.label)))
+                ))
                 .allElementsBoundByAccessibilityElement
+            // **The live query must find what the snapshot saw on the screen.** If the snapshot
+            // holds a blank control whose frame lies on the screen and the live query matches
+            // nothing, this check cannot ask whether that control is hittable, and passing
+            // would be passing on a question it never asked. So that is a failure of its own.
+            if unlabeled.isEmpty,
+               let onScreen = blankEntries.first(where: {
+                   frameCanAnswerHittability($0.frame, onScreen: appFrame)
+               }) {
+                XCTFail(
+                    "\(screen): the tree snapshot holds a \(kind) at \(onScreen.frame) with no "
+                        + "accessibility label, and the live query for unlabeled \(kind)s found "
+                        + "nothing, so whether it is reachable was never checked",
+                    file: file, line: line
+                )
+            }
             for element in unlabeled {
                 // **`isHittableWithoutRaising`, never the raw property** (`UIWait.swift`). Screens
                 // 09, 10 and 18 are presented *over* the map tab root, so screen 01's annotations
