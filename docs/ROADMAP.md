@@ -2019,12 +2019,17 @@ into this section in the round that finds it, and nowhere else. Each item stands
     adder test once it lands. Owner call: build the cheap rule in C2, or wait for `added_by_you`.
     **Owner, 2026-11-13: not an issue today**, because every tree added so far was added by the
     owner. Revisit before other people add trees.
-108. **Test wait limits now trip on many CI runs (2026-11-13).** In one day: three `MapSearchTests`
+108. ~~**Test wait limits now trip on many CI runs (2026-11-13).** In one day: three `MapSearchTests`
     timed out at `TestWait.ceiling` (90 s, each failed after 102 s) on #208's run 43495993786;
     `MapRecenterTests` on a main run; `CityDownloadTests`' 60 s time limit on #207; and
     `AppleSignInUITests`' 30 s reachability wait on #210. Each passed on a re-run. `TestWait.swift`
     says a 90 s timeout means to check whether the model settles at all, so investigate before
-    raising any limit. The unit suite has grown to 2,134 tests, which is the first thing to measure.
+    raising any limit. The unit suite has grown to 2,134 tests, which is the first thing to measure.~~
+    **DONE by `test/map-settle-waits`, for the unit tests:** the five map suites no longer wait on a
+    wall clock. `TestWait.settle` awaits `MapModel`'s own tasks and fails at once when the model is
+    idle with the condition false, so time spent queued behind other tests no longer counts.
+    `CityDownloadTests`' limit is now 3 minutes. The `AppleSignInUITests` UI wait was not touched.
+    The deeper cause, pool contention from per-test seed stores, is item 117.
 109. **`PhotoBrowserReachabilityTests` asserts on a one-shot `isHittable`** (lines 60 and 133). That
     is the race that #210 fixed in `PhotoDeletionReachabilityTests` (item 103). Move both asserts to
     `UIWait.assertReachable`.
@@ -2052,6 +2057,16 @@ into this section in the round that finds it, and nowhere else. Each item stands
     has about 1 h left, and one transient failure expires it. Give the held move a hold reason that
     `window` credits, or restart its window when the hold releases. Found by the review of #209's
     merge with F35.
+117. **Share one opened seed store per read-only suite (follow-up to 108).** 52 test files call
+    `CypressStore.inMemory(seedURL:)`, which opens an in-memory store and attaches the 103 MB seed,
+    and those files hold about 570 `@Test` declarations (counted 2026-11-13). Many tests open their
+    own store. On CI's 3-core runner that work competes for the same cooperative pool as every other
+    test, which is the load that starved the map waits in item 108. A suite that only reads could
+    open the store once and share it. Measure the unit job's time before and after.
+    Two related leftovers from #214's review: `CityDownloadTests`' time limit was raised from one
+    minute to three, not investigated, and is still exposed to the same starvation; and other waits
+    still run against a wall clock (`AlmanacLocationTransitionTests.waitUntil`,
+    `OutboxWifiOnlyTests`' 10 s `waitUntilBlocked`, `PhotoIdentityTests`' one-minute suite limit).
 118. **Move pin sits in a wide empty band on the profile (TestFlight, build 87, 2026-11-13).** The
     owner's note: "Terrible spacing here". #209 padded the link by a whole tap target (44 pt) above
     and below, so it sat about 62 pt from its neighbors, center to center. **DONE in #216:** a

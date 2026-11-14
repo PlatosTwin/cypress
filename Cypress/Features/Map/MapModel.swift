@@ -354,6 +354,21 @@ final class MapModel {
     private var selectionTask: Task<Void, Never>?
     private var paletteNameTask: Task<Void, Never>?
 
+    /// **For tests only** (`TestWait.settle` in `CypressTests`). Every task this model holds, in the
+    /// order one can start the next: a search or a membership read rebuilds the viewport and calls
+    /// `scheduleFetch`, and a finished fetch can show the toast. Nothing in the app reads it.
+    ///
+    /// It lets a test wait for the model's own work instead of for a wall clock. A task that has
+    /// already finished stays listed, and awaiting it returns at once; the waiter compares this list
+    /// before and after it awaits, and an unchanged list means the model started nothing new.
+    /// Reading it changes no state.
+    var outstandingTasks: [Task<Void, Never>] {
+        [
+            searchTask, membershipTask, membershipRefresh, fetchTask,
+            selectionTask, paletteNameTask, needsCareToastTask,
+        ].compactMap { $0 }
+    }
+
     /// A pan emits camera changes every frame. 200 ms is long enough that a flick costs one read
     /// and short enough that letting go feels like the map answered immediately.
     static let cameraDebounce: Duration = .milliseconds(200)

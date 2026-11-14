@@ -18,7 +18,7 @@ import SwiftUI
 import Testing
 @testable import Cypress
 
-@Suite("The empty-inventory notice (#190)")
+@Suite("The empty-inventory notice (#190)", .timeLimit(.minutes(5)))
 struct MapEmptyInventoryTests {
 
     // MARK: - The four gates
@@ -312,7 +312,7 @@ struct MapEmptyInventoryTests {
         // A screenful the inventory has nothing for — Golden Gate Park.
         await api.answer(with: .pins(PinAnswer([])))
         model.cameraDidChange(bounds: Self.park, zoom: 18)
-        try await Self.waitUntil { model.inventoryIsEmptyHere }
+        await TestWait.settle(model) { model.inventoryIsEmptyHere }
         #expect(
             model.inventoryIsEmptyHere,
             "a completed read that drew nothing left screen 01 with nothing to say about it"
@@ -321,7 +321,7 @@ struct MapEmptyInventoryTests {
         // One pan north, onto a street the inventory does list.
         await api.answer(with: .clusters([TreeCluster(id: "fulton-1", coordinate: Self.fultonCenter, count: 27)]))
         model.cameraDidChange(bounds: Self.fulton, zoom: 18)
-        try await Self.waitUntil { !model.inventoryIsEmptyHere }
+        await TestWait.settle(model) { !model.inventoryIsEmptyHere }
         #expect(
             !model.inventoryIsEmptyHere,
             "the notice survived onto a map that is drawing markers"
@@ -339,33 +339,6 @@ struct MapEmptyInventoryTests {
         minLongitude: -122.4878, maxLongitude: -122.4846
     )
     private static let fultonCenter = Coordinate(latitude: 37.7754, longitude: -122.4862)
-
-    /// Polls rather than sleeping a fixed span: the map debounces the camera, and a test that
-    /// pinned the debounce would fail the day it is retuned (`MapRecenterTests.waitUntil`).
-    ///
-    /// **This kept its own 5-second ceiling through #202 and should not have.** The judgment then
-    /// was that a suite driving a fake API with no seed could not be starved the way the
-    /// seed-backed map suites were. Run 30873340010 refuted it: `inventoryIsEmptyHere → false` at
-    /// line 301, on a runner busy enough that five seconds was not enough for a debounce and a
-    /// recompute. A fake API removes the I/O, not the scheduler — the wait is wall-clock either
-    /// way. It now shares `TestWait.ceiling` with everything else, and reports a timeout as a
-    /// timeout instead of returning silently into whichever assertion came next.
-    private static func waitUntil(
-        timeout: Duration = TestWait.ceiling,
-        sourceLocation: SourceLocation = #_sourceLocation,
-        _ condition: @MainActor () -> Bool
-    ) async throws {
-        let started = ContinuousClock.now
-        let deadline = started + timeout
-        while ContinuousClock.now < deadline {
-            if await condition() { return }
-            try await Task.sleep(for: .milliseconds(25))
-        }
-        let settled = await condition()
-        TestWait.timedOut(
-            after: started.duration(to: .now), sourceLocation: sourceLocation, { settled }
-        )
-    }
 }
 
 /// A `CypressAPI` that answers `mapContent` with whatever it was last handed, so a viewport the
