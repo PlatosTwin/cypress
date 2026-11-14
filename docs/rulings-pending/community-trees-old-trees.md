@@ -54,7 +54,8 @@ added should make it onto everyone's phone regardless of when they were added."*
   `CommunityTreeStore.firstQueuedAddsAt` is the cutoff ROADMAP 107 uses for it. That rule hides Move
   pin for such a tree; once the tree is sent, the offer should follow the add row as it does for a new
   tree.
-- The service's proximity rule can answer an old tree's add with a conflict. What the phone then does
-  with the rows recorded on that tree needs a decision when it is found.
+- The service's proximity rule can answer an old tree's add with a conflict. The owner removed that
+  rule later the same day (`community-trees-no-proximity-rule.md`), so this stops being a problem
+  once the service change is deployed. Send the old trees only after that deploy.
 - "The day it was added" needs the service to keep the phone's date for the tree and for each row.
   Check what `POST /sync` records for an `add_tree` today before promising it.
