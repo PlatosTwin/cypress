@@ -357,6 +357,10 @@ struct GroveRingFollowTests {
             )
         )
         #expect(GroveModel.ringCoordinate(atTheLimit) == Self.placeA)
+
+        // The rule itself, asked of the timing directly: the limit is inclusive.
+        #expect(stillStanding.timing?.isReplayed == false)
+        #expect(atTheLimit.timing?.isReplayed == false, "a fix exactly at the limit was judged replayed")
     }
 
     @Test("a pinned provider (CYPRESS_LOCATION, R58) gives a fix the ring uses")
