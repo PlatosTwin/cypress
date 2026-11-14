@@ -480,4 +480,39 @@ struct DeleteAccountResponse: Decodable {
     let contributions: Int
     let photos: Int
     let tombstones: Int
+    /// What the service did to each community tree the account added (`ROADMAP` 104 and 105), or
+    /// nil when the answer does not carry it.
+    ///
+    /// Nil has two causes, and both mean "keep the phone's own rule": a service deployed before the
+    /// key existed, and a `community_trees` value this build cannot read. The second is decoded
+    /// with `try?` on purpose. This body is read after the service has already deleted the account,
+    /// and a throw here makes `RoutedAPI` skip the local half entirely (see
+    /// `RemoteAPI.deleteAccount`). A malformed optional field must cost the phone its better answer,
+    /// never the whole local deletion.
+    let communityTrees: AccountDeletion.ServiceTreeVerdicts?
+
+    enum CodingKeys: String, CodingKey {
+        case deleted, choice, contributions, photos, tombstones
+        case communityTrees = "community_trees"
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        deleted = try container.decode(Bool.self, forKey: .deleted)
+        choice = try container.decode(String.self, forKey: .choice)
+        contributions = try container.decode(Int.self, forKey: .contributions)
+        photos = try container.decode(Int.self, forKey: .photos)
+        tombstones = try container.decode(Int.self, forKey: .tombstones)
+        let trees = try? container.decodeIfPresent(CommunityTrees.self, forKey: .communityTrees)
+        communityTrees = trees.map {
+            AccountDeletion.ServiceTreeVerdicts(deleted: Set($0.deleted), anonymized: Set($0.anonymized))
+        }
+    }
+
+    /// The wire shape of `community_trees`. Both lists are required: the service always sends both,
+    /// `[]` when empty, so an object missing one is not an answer this build trusts.
+    private struct CommunityTrees: Decodable {
+        let deleted: [UUID]
+        let anonymized: [UUID]
+    }
 }

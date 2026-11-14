@@ -602,8 +602,12 @@ public struct RoutedAPI: CypressAPI {
         guard let signedInUserID, await signedInUserID() != nil else {
             return try await local.deleteAccount(choice)
         }
-        _ = try await remote.deleteAccount(choice)
-        return try await local.deleteAccount(choice)
+        // The service's answer about the trees the account added goes to the local half, which
+        // acts on it instead of guessing (`ROADMAP` 104 and 105). Nil from an older service keeps
+        // the phone's own rule. If this answer is lost (the request throws after the service
+        // deleted), nothing local runs at all, which is the arm the header above describes.
+        let answer = try await remote.deleteAccountOnService(choice)
+        return try await local.deleteAccount(choice, actingOn: answer.trees)
     }
 
     // MARK: - Class R, R-degraded: the account's own rows

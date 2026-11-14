@@ -216,4 +216,71 @@ struct GoldenWireFixtureTests {
         #expect(pending.shotType == .leaf)
         #expect(!pending.isPubliclyVisible)
     }
+
+    // MARK: DELETE /me
+
+    static func deletingRemote(answering body: String) -> (RemoteAPI, ScriptedTransport) {
+        let transport = ScriptedTransport()
+        transport.answer("DELETE /me", with: body)
+        let remote = RemoteAPI(
+            baseURL: URL(string: "https://service.invalid/api/v1")!,
+            transport: transport,
+            session: .shared,
+            pendingOutboxKeys: { [] }
+        )
+        return (remote, transport)
+    }
+
+    /// `delete_me.json` is `deletionBody`'s own output (`TestDeleteMeGolden`). The tree lists must
+    /// arrive by value, or the phone falls back to its own rule without a word (`ROADMAP` 104, 105).
+    ///
+    /// Red-proof: rename the `community_trees` coding key in `DeleteAccountResponse` — red on
+    /// "the service's tree answer did not decode".
+    @Test("delete_me.json decodes through RemoteAPI, tree lists and all")
+    func deleteMeJSONDecodesThroughTheClient() async throws {
+        let data = try Self.fixture("delete_me.json")
+        #expect(data.count > 0, "server/testdata/delete_me.json is empty")
+        let (remote, _) = Self.deletingRemote(answering: String(decoding: data, as: UTF8.self))
+
+        let answer = try await remote.deleteAccountOnService(.leaveRecords)
+
+        let deleted = try #require(UUID(uuidString: "d1e7e7ed-0104-4c2a-9b6e-000000000104"))
+        let anonymized = try #require(UUID(uuidString: "a0a0a0a0-0105-4c2a-9b6e-000000000105"))
+        let trees = try #require(answer.trees, "the service's tree answer did not decode")
+        #expect(trees.deleted == [deleted])
+        #expect(trees.anonymized == [anonymized])
+        // The counters, so a decode that kept only the new key cannot pass.
+        #expect(answer.outcome.anonymizedContributions == 4)
+        #expect(answer.outcome.anonymizedPhotos == 1)
+    }
+
+    /// The service as deployed today sends no `community_trees`. That must decode, and decode to
+    /// "no answer", so the phone keeps its own rule.
+    @Test("a DELETE /me answer with no community_trees decodes as no answer")
+    func anOlderServicesAnswerDecodesAsNoAnswer() async throws {
+        let (remote, _) = Self.deletingRemote(
+            answering: #"{"deleted":true,"choice":"eraseEverything","contributions":2,"photos":0,"tombstones":0}"#
+        )
+
+        let answer = try await remote.deleteAccountOnService(.eraseEverything)
+
+        #expect(answer.trees == nil)
+        #expect(answer.outcome.deletedContributions == 2, "the counters did not decode")
+    }
+
+    /// The answer is read after the service deleted the account, and a throw here would skip the
+    /// whole local half. So a `community_trees` this build cannot read costs only the better answer.
+    ///
+    /// Red-proof: decode `communityTrees` with `try` instead of `try?` — red on the throw.
+    @Test("a malformed community_trees costs the answer, never the deletion")
+    func aMalformedTreeAnswerDoesNotThrow() async throws {
+        let (remote, _) = Self.deletingRemote(
+            answering: #"{"deleted":true,"choice":"leaveRecords","contributions":1,"photos":0,"tombstones":0,"community_trees":{"deleted":null}}"#
+        )
+
+        let answer = try await remote.deleteAccountOnService(.leaveRecords)
+
+        #expect(answer.trees == nil)
+        #expect(answer.outcome.anonymizedContributions == 1)
+    }
 }
