@@ -376,8 +376,10 @@ public actor LocalAPI: CypressAPI {
             let adder = addedHere ? try communityTrees.adder(treeID: id, connection: connection) : nil
             // The adder test, and ROADMAP 107's: a tree the service never received (R77) is
             // answered `not_found`, so its move is not offered. C2's `added_by_you` replaces both.
-            let canMovePin = (adder?.isOwned(by: attribution) ?? false)
-                && (try communityTrees.mayHaveReachedService(treeID: id, connection: connection))
+            let isAdder = adder?.isOwned(by: attribution) ?? false
+            let canMovePin = isAdder
+                ? try communityTrees.mayHaveReachedService(treeID: id, connection: connection)
+                : false
 
             return TreeProfile(
                 tree: tree,
