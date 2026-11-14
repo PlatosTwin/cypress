@@ -810,6 +810,12 @@ private struct ProbeAPI: CypressAPI {
     func deleteAccount(_ choice: AccountDeletionChoice) async throws -> AccountDeletion.Outcome {
         throw log.reached("deleteAccount")
     }
+    func finishAccountDeletion(
+        _ choice: AccountDeletionChoice,
+        actingOn serviceTrees: AccountDeletion.ServiceTreeVerdicts?
+    ) async throws -> AccountDeletion.Outcome {
+        throw log.reached("finishAccountDeletion")
+    }
     func deviceContributions() async throws -> DeviceContributions { throw log.reached("deviceContributions") }
     func mapMembership(_ kind: MapMembership) async throws -> Set<UUID> { throw log.reached("mapMembership") }
     func contributedPlaces() async throws -> [ContributedPlace] { throw log.reached("contributedPlaces") }
@@ -1149,6 +1155,9 @@ struct APIConformanceGuardTests {
         await check("journal") { _ = try await api.journal(cursor: nil, limit: 1) }
         await check("claimDevice") { try await api.claimDevice(deviceUUID: id, userID: id) }
         await check("deleteAccount") { _ = try await api.deleteAccount(.leaveRecords) }
+        await check("finishAccountDeletion") {
+            _ = try await api.finishAccountDeletion(.leaveRecords, actingOn: nil)
+        }
         await check("deviceContributions") { _ = try await api.deviceContributions() }
         await check("mapMembership") { _ = try await api.mapMembership(.favorites) }
         await check("contributedPlaces") { _ = try await api.contributedPlaces() }

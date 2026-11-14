@@ -32,6 +32,10 @@ struct GroveView: View {
     /// Where a row on the `Trees` pill goes: the tree it names.
     private let onOpenTree: ((UUID) -> Void)?
 
+    /// The shared provider's fix, watched so the ring can follow it. See `init(model:fix:…)`.
+    private let fix: MapLocationProvider.Availability?
+    private let fixIsReplayed: Bool
+
     init(
         api: any CypressAPI,
         now: @escaping @Sendable () -> Date = { Date() },
@@ -40,6 +44,8 @@ struct GroveView: View {
         onOpenTree: ((UUID) -> Void)? = nil
     ) {
         _model = State(wrappedValue: GroveModel(api: api, now: now, tab: tab))
+        self.fix = nil
+        self.fixIsReplayed = false
         self.onOpenSpecies = onOpenSpecies
         self.onOpenTree = onOpenTree
     }
@@ -57,12 +63,21 @@ struct GroveView: View {
     /// view's storage on each fresh mount with whatever it is handed, and what it is handed is the
     /// **same instance** every time. The phase is already `.loaded`, so `.task` repaints from it
     /// instantly and refreshes behind it (`GroveModel.load()`).
+    ///
+    /// `fix` is the shared provider's `availability`, watched rather than read: when it changes
+    /// while this view is mounted, the model decides whether the ring has to follow
+    /// (`GroveModel.followLocation()`, ROADMAP 114). The model reads the fix itself, with its age.
+    /// `fixIsReplayed` is the provider's `fixIsReplayed`, watched for the same reason.
     init(
         model: GroveModel,
+        fix: MapLocationProvider.Availability? = nil,
+        fixIsReplayed: Bool = false,
         onOpenSpecies: ((UUID) -> Void)? = nil,
         onOpenTree: ((UUID) -> Void)? = nil
     ) {
         _model = State(wrappedValue: model)
+        self.fix = fix
+        self.fixIsReplayed = fixIsReplayed
         self.onOpenSpecies = onOpenSpecies
         self.onOpenTree = onOpenTree
     }
@@ -105,6 +120,16 @@ struct GroveView: View {
         .navigationBarBackButtonHidden(true)
         .toolbar(.hidden, for: .navigationBar)
         .task { await model.load() }
+        // ROADMAP 114: the ring follows the reader while this tab is showing. `onChange` does not
+        // fire on mount, where `load()` above reads the fix, and it goes away with the view.
+        .onChange(of: fix) { model.followLocation() }
+        // A replayed fix confirmed by a fresh one leaves `availability` as it was, so the
+        // provider's `fixIsReplayed` is watched as well (ROADMAP 114).
+        .onChange(of: fixIsReplayed) { model.followLocation() }
+        // A pushed species page or tree profile leaves this view mounted under it, so `onChange`
+        // alone would follow behind a screen nobody is looking at (`GroveModel.isShowing`).
+        .onAppear { model.screenDidAppear() }
+        .onDisappear { model.screenDidDisappear() }
         // The trees read is deferred until somebody asks for that pill, and the model makes it run
         // once — `.task(id:)` fires again on every switch back, so the guard cannot live here.
         .task(id: model.tab) {

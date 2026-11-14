@@ -340,8 +340,8 @@ public actor OutboxQueue {
 
     /// One pass, and up to two more if it released a pin move.
     ///
-    /// A pin move held behind its tree's add (`OutboxStore.dueItems`) becomes due the moment a
-    /// pass settles that add. One more pass sends it now, rather than at whatever next asks for a
+    /// A pin move or species claim held behind its tree's add (`OutboxStore.dueItems`) becomes due
+    /// the moment a pass settles that add. One more pass sends it now, rather than at whatever next asks for a
     /// drain. Bounded: one add releases its moves in one pass, and a pass that settled nothing
     /// released nothing. "Settled" is sent or synced, because with no send sink wired an add
     /// releases its move by reaching `done`, which counts as synced.
@@ -350,7 +350,7 @@ public actor OutboxQueue {
         var settled = report.sent + report.synced
         for _ in 0..<2 {
             guard settled > 0,
-                  try await hasDueLocationCorrection(photoUploadsAllowed: photoUploadsAllowed)
+                  try await hasDueReleasableRow(photoUploadsAllowed: photoUploadsAllowed)
             else { break }
             let next = try await drainPass(photoUploadsAllowed: photoUploadsAllowed)
             report.absorb(next)
@@ -359,12 +359,13 @@ public actor OutboxQueue {
         return report
     }
 
-    /// Whether a `location_correction` is due right now, which after a pass that sent something
-    /// means a move its tree's add was holding has been released.
+    /// Whether a row of a kind that waits for its tree's add (`OutboxItem.Kind.waitsForItsTreeAdd`)
+    /// is due right now, which after a pass that sent something means a row its tree's add was
+    /// holding has been released.
     ///
     /// It uses the same filters and limit as the next pass (`excludingHeldForWifi`), so on
     /// cellular a batch full of rows held for wi-fi cannot hide a due move.
-    private func hasDueLocationCorrection(photoUploadsAllowed: Bool) async throws -> Bool {
+    private func hasDueReleasableRow(photoUploadsAllowed: Bool) async throws -> Bool {
         let at = now()
         return try await queue.read { connection in
             try store.dueItems(
@@ -373,7 +374,7 @@ public actor OutboxQueue {
                 excludingHeldForWifi: !photoUploadsAllowed,
                 connection: connection
             )
-                .contains { $0.item.kind == .locationCorrection }
+                .contains { $0.item.kind.waitsForItsTreeAdd }
         }
     }
 
@@ -422,6 +423,9 @@ public actor OutboxQueue {
         // what keeps "nothing disappears silently" true across a crash.
         let due: [OutboxStore.Record] = try await queue.write { connection in
             _ = try store.recoverInterrupted(at: startedAt, connection: connection)
+            // Rows still held behind their tree's add bank the time they have waited, before the
+            // add can send in this pass and release them (ROADMAP 116).
+            try store.creditHeldBehindAdd(at: startedAt, connection: connection)
             // On a pass that may not send photographs, rows held for wi-fi have nothing to do, and
             // taking them would let them fill the batch ahead of newer notes (`dueItems`).
             let records = try store.dueItems(

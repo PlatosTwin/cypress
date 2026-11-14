@@ -826,7 +826,14 @@ func (s *Store) TakeDownCommunityTree(ctx context.Context, id uuid.UUID) error {
 //     "a tree the erasing account added stays, anonymized, if anyone else has a live visit/
 //     contribution or photo on it"). This runs after the account's own contributions and photos
 //     are gone, so what remains is other people's.
-func deleteAccountTrees(ctx context.Context, tx pgx.Tx, userID uuid.UUID, choice DeletionChoice, now time.Time) (anonymized, deleted int, err error) {
+//
+// It returns the ids of the trees it kept, anonymized, and of the trees it deleted. `DELETE /me`
+// sends both lists to the phone, which acts on them instead of its own guess (`ROADMAP` 104 and
+// 105): the phone cannot see publication (decision 12), and it cannot see other people's rows that
+// never reached it (decision 6). Both slices are non-nil, so the response says `[]` and never
+// `null` when the account added nothing.
+func deleteAccountTrees(ctx context.Context, tx pgx.Tx, userID uuid.UUID, choice DeletionChoice, now time.Time) (anonymized, deleted []uuid.UUID, err error) {
+	anonymized, deleted = []uuid.UUID{}, []uuid.UUID{}
 	type owned struct {
 		ID        uuid.UUID
 		Published bool
@@ -835,20 +842,20 @@ func deleteAccountTrees(ctx context.Context, tx pgx.Tx, userID uuid.UUID, choice
 		SELECT id, published_at IS NOT NULL FROM community_trees WHERE user_id = $1 FOR UPDATE
 	`, userID)
 	if err != nil {
-		return 0, 0, err
+		return nil, nil, err
 	}
 	var trees []owned
 	for rows.Next() {
 		var tree owned
 		if err := rows.Scan(&tree.ID, &tree.Published); err != nil {
 			rows.Close()
-			return 0, 0, err
+			return nil, nil, err
 		}
 		trees = append(trees, tree)
 	}
 	rows.Close()
 	if err := rows.Err(); err != nil {
-		return 0, 0, err
+		return nil, nil, err
 	}
 
 	self := UserOwner(userID)
@@ -861,7 +868,7 @@ func deleteAccountTrees(ctx context.Context, tx pgx.Tx, userID uuid.UUID, choice
 			case EraseEverything:
 				keep, err = othersHaveBuiltOn(ctx, tx, tree.ID, self)
 				if err != nil {
-					return 0, 0, err
+					return nil, nil, err
 				}
 			}
 		}
@@ -871,9 +878,9 @@ func deleteAccountTrees(ctx context.Context, tx pgx.Tx, userID uuid.UUID, choice
 				   SET user_id = NULL, device_id = NULL, anonymized_at = $2, updated_at = $2
 				 WHERE id = $1
 			`, tree.ID, now); err != nil {
-				return 0, 0, err
+				return nil, nil, err
 			}
-			anonymized++
+			anonymized = append(anonymized, tree.ID)
 			continue
 		}
 		// `was_public` is the tree's own answer, never a constant: an unpublished tree (decision 12)
@@ -883,12 +890,12 @@ func deleteAccountTrees(ctx context.Context, tx pgx.Tx, userID uuid.UUID, choice
 			INSERT INTO withdrawn_community_trees (id, withdrawn_at, was_public) VALUES ($1, $2, $3)
 			ON CONFLICT (id) DO NOTHING
 		`, tree.ID, now, tree.Published); err != nil {
-			return 0, 0, err
+			return nil, nil, err
 		}
 		if _, err := tx.Exec(ctx, `DELETE FROM community_trees WHERE id = $1`, tree.ID); err != nil {
-			return 0, 0, err
+			return nil, nil, err
 		}
-		deleted++
+		deleted = append(deleted, tree.ID)
 	}
 
 	// The account's name comes off every chain row and event it or any device it claimed performed,
@@ -902,7 +909,7 @@ func deleteAccountTrees(ctx context.Context, tx pgx.Tx, userID uuid.UUID, choice
 			 WHERE actor_user_id = $1
 			    OR actor_device_id IN (SELECT id FROM devices WHERE user_id = $1)
 		`, userID, now); err != nil {
-			return 0, 0, err
+			return nil, nil, err
 		}
 	}
 	return anonymized, deleted, nil

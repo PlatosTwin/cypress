@@ -1,10 +1,12 @@
 import Foundation
 import Network
 
-/// Whether the phone's current connection is unmetered, and when that changes.
+/// Whether the phone's current connection is unmetered, whether it has one at all, and when either
+/// changes.
 ///
-/// This is the reachability source ERRATA **E81** found missing. Its one job is to answer the
-/// question screen 17's toggle asks: "Sync photos on wifi only" holds photo binaries back on a
+/// This is the reachability source ERRATA **E81** found missing. It answers two questions for
+/// screen 17. The second is the header pill's `offline` clause (`connectedNow()`). The first is the
+/// question the toggle asks: "Sync photos on wifi only" holds photo binaries back on a
 /// connection that may cost the volunteer money, and nothing in the app could tell which connection
 /// that was. Without an answer, every drain passed `photoUploadsAllowed: true`, and photographs went
 /// over cellular with the switch on (beta feedback F35).
@@ -29,6 +31,25 @@ public protocol NetworkPathSource: Sendable {
     /// The first reading counts as a change, so a listener that subscribes before the system has
     /// answered still hears it.
     func unmeteredChanges() -> AsyncStream<Bool>
+
+    /// Whether the phone may have a usable path right now, or nil before the first reading. Screen
+    /// 17's header pill reads this to add the `offline` clause that ERRATA E81 dropped.
+    ///
+    /// False only for `NWPath.Status.unsatisfied`: no path at all. `.requiresConnection` counts as
+    /// connected, because a new connection may bring that path up (VPN On Demand with an idle
+    /// tunnel, some cellular cases), and the next drain may succeed. Calling that `offline` would be
+    /// the untrue label E81 refused.
+    ///
+    /// **Not the same question as `isUnmetered`.** A phone on cellular is connected and metered, so
+    /// a metered connection with the wi-fi toggle on is never offline.
+    ///
+    /// Never waits, and never guesses: nil means nothing has been read, and a caller that would
+    /// claim `offline` must not claim it from nil.
+    func connectedNow() -> Bool?
+
+    /// Every change of `connectedNow()`, in order. Each call returns a new stream. The first reading
+    /// counts as a change, the same rule as `unmeteredChanges()`.
+    func connectedChanges() -> AsyncStream<Bool>
 }
 
 /// The state behind a changing `NetworkPathSource`: the latest reading, the listeners waiting for
@@ -83,6 +104,16 @@ public final class NetworkPathState: @unchecked Sendable {
         }
     }
 
+    /// The latest reading, or nil when there has been none. Does not wait.
+    public var latest: Bool? { currentValue() }
+
+    /// How many change streams are open. A test reads it to know a listener has subscribed.
+    public var listenerCount: Int {
+        lock.lock()
+        defer { lock.unlock() }
+        return listeners.count
+    }
+
     private func currentValue() -> Bool? {
         lock.lock()
         defer { lock.unlock() }
@@ -133,10 +164,12 @@ public final class SystemNetworkPath: NetworkPathSource, @unchecked Sendable {
 
     private let monitor = NWPathMonitor()
     private let state = NetworkPathState()
+    private let connection = NetworkPathState()
 
     private init() {
-        monitor.pathUpdateHandler = { [state] path in
+        monitor.pathUpdateHandler = { [state, connection] path in
             state.publish(Self.isUnmetered(path))
+            connection.publish(Self.isConnected(path))
         }
         monitor.start(queue: DispatchQueue(label: "app.cypress.network-path", qos: .utility))
     }
@@ -146,6 +179,17 @@ public final class SystemNetworkPath: NetworkPathSource, @unchecked Sendable {
         path.status == .satisfied && !path.isExpensive && !path.isConstrained
     }
 
+    static func isConnected(_ path: NWPath) -> Bool {
+        isConnected(path.status)
+    }
+
+    /// The definition, in one place, and on the status alone so a test can check every case
+    /// (`NWPath` itself cannot be built in a test). Only `.unsatisfied` is what screen 17 calls
+    /// `offline`. `.requiresConnection` is connected: a new connection may bring the path up.
+    static func isConnected(_ status: NWPath.Status) -> Bool {
+        status != .unsatisfied
+    }
+
     public func isUnmetered() async -> Bool {
         await state.value(waitingUpTo: Self.firstReadingTimeout)
     }
@@ -153,20 +197,37 @@ public final class SystemNetworkPath: NetworkPathSource, @unchecked Sendable {
     public func unmeteredChanges() -> AsyncStream<Bool> {
         state.changes()
     }
+
+    public func connectedNow() -> Bool? {
+        connection.latest
+    }
+
+    public func connectedChanges() -> AsyncStream<Bool> {
+        connection.changes()
+    }
 }
 
 /// A path that says one thing and never changes. What a DEBUG launch that pins the connection
 /// (`DebugNetworkPathOverride`) wires.
 public struct PinnedNetworkPath: NetworkPathSource {
     public let unmetered: Bool
+    public let connected: Bool
 
-    public init(unmetered: Bool) {
-        self.unmetered = unmetered
+    /// A path with no connection is never unmetered, so `connected: false` forces `unmetered` off.
+    public init(unmetered: Bool, connected: Bool = true) {
+        self.unmetered = unmetered && connected
+        self.connected = connected
     }
 
     public func isUnmetered() async -> Bool { unmetered }
 
     public func unmeteredChanges() -> AsyncStream<Bool> {
+        AsyncStream { $0.finish() }
+    }
+
+    public func connectedNow() -> Bool? { connected }
+
+    public func connectedChanges() -> AsyncStream<Bool> {
         AsyncStream { $0.finish() }
     }
 }

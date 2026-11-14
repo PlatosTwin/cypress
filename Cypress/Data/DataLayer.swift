@@ -132,6 +132,11 @@ public struct DataLayer: Sendable {
     /// (`AccountSurfaceTests`, `AccountLinkTests`) still compile. `boot` always sets it.
     var outboxWifiWatcher: OutboxWifiWatcher? = nil
 
+    /// The connection source `boot` was given, kept for screen 17's `offline` clause
+    /// (`makeOutboxViewState`). A `var` with a default for the same two hand-built layers as
+    /// `outboxWifiWatcher`; a layer without one never says offline.
+    var networkPath: (any NetworkPathSource)? = nil
+
     /// Opens the store, runs migrations, attaches the seed, and wires the router and both outbox
     /// sinks.
     ///
@@ -487,7 +492,8 @@ public struct DataLayer: Sendable {
             refreshTreeProfile: refreshTreeProfile,
             reconcileFavorite: reconcileFavorite,
             refreshMapMembership: refreshMapMembership,
-            outboxWifiWatcher: OutboxWifiWatcher(queue: outbox, networkPath: networkPath)
+            outboxWifiWatcher: OutboxWifiWatcher(queue: outbox, networkPath: networkPath),
+            networkPath: networkPath
         )
     }
 
@@ -548,6 +554,7 @@ public struct DataLayer: Sendable {
             queue: outbox,
             store: store,
             syncPhotosOnWifiOnly: true,
+            networkPath: networkPath,
             // `displayNames` asks for a name and nothing else. Reading a whole profile per queued
             // tree would pull photo, visit and care series across for a row that renders one string.
             treeNameResolver: { ids in await api.displayNames(for: ids) }

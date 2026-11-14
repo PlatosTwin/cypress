@@ -161,6 +161,14 @@ enum DebugDeepLink {
         /// hand" and the first half of that test could not be told from the second. Each launch
         /// takes the first free slot on its own line (`movePinSpot`).
         case movePin
+        /// 03 over a **fresh** community tree this installation just added, with **no species**: the
+        /// state where the identity block draws its full column of links, one under the next — `Show
+        /// me where this is`, `Move pin`, `Say what species you think this is` and `Report that there
+        /// is no tree here` (ROADMAP 119). Fresh on every launch, like `.movePin`, because the test
+        /// that drives it presses `Report`, which writes a flag, and a tree a previous run reported
+        /// no longer draws that link. Each launch takes the first free slot on its own line
+        /// (`profileLinksSpot`).
+        case profileLinks
         /// Screen 07 with a nearby hero drawn from a photograph **this installation took under an
         /// account it can no longer sign into** — RULINGS **R82**, ERRATA **E277**.
         ///
@@ -420,6 +428,23 @@ enum DebugDeepLink {
                 }
                 guard let id else { throw APIError.conflict }
                 router.push(.treeProfile(id))
+            case .profileLinks:
+                // `.movePin`'s slot search, on a line of its own and with no species.
+                var id: UUID?
+                for step in 0..<Self.profileLinksSlots {
+                    let slot = VisitPinAdjust.offset(
+                        Self.profileLinksSpot, northM: 0, eastM: -Self.movePinSlotSpacingM * Double(step)
+                    )
+                    let taken = try await api.treesNear(
+                        slot, radiusM: Self.movePinSlotSpacingM, limit: 1
+                    )
+                    if taken.isEmpty {
+                        id = try await api.debugAddCommunityTree(near: slot, speciesQuery: nil)
+                        break
+                    }
+                }
+                guard let id else { throw APIError.conflict }
+                router.push(.treeProfile(id))
             case .recordDefect:
                 // Resolved-then-added, like `.communityPhotos` and unlike `.speciesClaim`, because
                 // this case is meant to be *run twice*: the second run is how the withdrawal is
@@ -586,6 +611,12 @@ enum DebugDeepLink {
     private static let movePinSpot = Coordinate(latitude: 37.7672, longitude: -122.5300)
     private static let movePinSlotSpacingM: Double = 30
     private static let movePinSlots = 60
+    /// The sixth, ~200 m north of the fifth, with a line of slots west of it the same way. One tree
+    /// per launch. `ProfileLinkColumnUITests` has two tests and each launches this case once, so one
+    /// run of that class takes two slots, and 200 slots is 100 runs on one simulator before
+    /// `.conflict` says the line is full.
+    private static let profileLinksSpot = Coordinate(latitude: 37.7690, longitude: -122.5300)
+    private static let profileLinksSlots = 200
 
     /// The candidate window, **with this device's own status overrides laid over it**.
     ///

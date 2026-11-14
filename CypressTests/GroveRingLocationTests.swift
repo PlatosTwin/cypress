@@ -282,7 +282,11 @@ struct GroveRingLocationTests {
         let api = Self.api(store)
 
         func caption(_ fix: MapLocationProvider.Availability) async throws -> String {
-            let model = GroveModel(api: api, now: { Self.now }, currentFix: { fix })
+            // A fix that arrived as soon as it was taken: only its place and accuracy are on test.
+            let timing = MapLocationProvider.FixTiming(capturedAt: Self.now, receivedAt: Self.now)
+            let model = GroveModel(
+                api: api, now: { Self.now }, currentFix: { .init(availability: fix, timing: timing) }
+            )
             await model.load()
             return try #require(model.presentation?.progress, "no ring for \(fix)").caption
         }
