@@ -32,6 +32,9 @@ struct GroveView: View {
     /// Where a row on the `Trees` pill goes: the tree it names.
     private let onOpenTree: ((UUID) -> Void)?
 
+    /// The shared provider's fix, watched so the ring can follow it. See `init(model:fix:…)`.
+    private let fix: MapLocationProvider.Availability?
+
     init(
         api: any CypressAPI,
         now: @escaping @Sendable () -> Date = { Date() },
@@ -40,6 +43,7 @@ struct GroveView: View {
         onOpenTree: ((UUID) -> Void)? = nil
     ) {
         _model = State(wrappedValue: GroveModel(api: api, now: now, tab: tab))
+        self.fix = nil
         self.onOpenSpecies = onOpenSpecies
         self.onOpenTree = onOpenTree
     }
@@ -57,12 +61,18 @@ struct GroveView: View {
     /// view's storage on each fresh mount with whatever it is handed, and what it is handed is the
     /// **same instance** every time. The phase is already `.loaded`, so `.task` repaints from it
     /// instantly and refreshes behind it (`GroveModel.load()`).
+    ///
+    /// `fix` is the shared provider's `availability`, watched rather than read: when it changes
+    /// while this view is mounted, the model decides whether the ring has to follow
+    /// (`GroveModel.followLocation()`, ROADMAP 114). The model reads the fix itself, with its age.
     init(
         model: GroveModel,
+        fix: MapLocationProvider.Availability? = nil,
         onOpenSpecies: ((UUID) -> Void)? = nil,
         onOpenTree: ((UUID) -> Void)? = nil
     ) {
         _model = State(wrappedValue: model)
+        self.fix = fix
         self.onOpenSpecies = onOpenSpecies
         self.onOpenTree = onOpenTree
     }
@@ -105,6 +115,9 @@ struct GroveView: View {
         .navigationBarBackButtonHidden(true)
         .toolbar(.hidden, for: .navigationBar)
         .task { await model.load() }
+        // ROADMAP 114: the ring follows the reader while this tab is showing. `onChange` does not
+        // fire on mount, where `load()` above reads the fix, and it goes away with the view.
+        .onChange(of: fix) { model.followLocation() }
         // The trees read is deferred until somebody asks for that pill, and the model makes it run
         // once — `.task(id:)` fires again on every switch back, so the guard cannot live here.
         .task(id: model.tab) {

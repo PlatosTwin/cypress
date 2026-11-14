@@ -182,7 +182,9 @@ struct RootView: View {
                 api: data.api,
                 refreshSpecies: data.refreshGroveSpecies,
                 refreshTrees: data.refreshGrove,
-                currentFix: { location.availability }
+                currentFix: {
+                    GroveModel.RingFix(availability: location.availability, timing: location.fixTiming)
+                }
             )
         )
         _map = State(
@@ -647,8 +649,12 @@ struct RootView: View {
             // The model is `RootView`'s, not this view's — see the `grove` property. A `switch`
             // rebuilds the arm it selects, so a model built here would be built again on every
             // return to the tab.
+            //
+            // `fix` is read here, inside this arm, so `RootView` observes the provider only while
+            // My Grove is the tab showing; the view follows it from there (ROADMAP 114).
             GroveView(
                 model: grove,
+                fix: location.availability,
                 onOpenSpecies: { id in router.push(.species(id)) },
                 onOpenTree: { id in router.push(.treeProfile(id)) }
             )

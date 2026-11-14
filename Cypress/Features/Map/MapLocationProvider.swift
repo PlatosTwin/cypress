@@ -102,6 +102,34 @@ final class MapLocationProvider {
     /// turned on the spot. `nil` is a state the map draws (the bare dot), not an error.
     private(set) var headingDegrees: Double?
 
+    /// When CoreLocation took the newest fix it has delivered, and when this provider received it
+    /// (ROADMAP 114, F38's follow-ups).
+    ///
+    /// **The gap between the two is the age that matters, not the gap to now.** While updates run,
+    /// CoreLocation stays silent for as long as the reader has not moved `distanceFilter` meters, so
+    /// a reader standing still in a café keeps an old capture time and a fix that is still true. The
+    /// fix that lies is the one CoreLocation replays from its cache when updates start: it arrives
+    /// as if new and can be minutes or hours old. `receivedAt - capturedAt` tells the two apart.
+    ///
+    /// Written on **every** delivered fix, also one `isWorthPublishing` drops, because a dropped fix
+    /// is within five meters of the published one and says the published place is still current.
+    /// `@ObservationIgnored` for the same reason: written at CoreLocation's own rate (24 to 42 a
+    /// second on a route, see `publishDistanceM`), an observed property would re-run every view
+    /// that reads it. A reader asks for it when `availability` changes or when it reads anyway.
+    struct FixTiming: Equatable, Sendable {
+        var capturedAt: Date
+        var receivedAt: Date
+
+        /// How old the fix already was when it arrived.
+        var ageOnArrival: TimeInterval { receivedAt.timeIntervalSince(capturedAt) }
+    }
+
+    @ObservationIgnored private(set) var fixTiming: FixTiming?
+
+    /// The clock `fixTiming.receivedAt` is read from. Injected so a test can deliver a fix of a
+    /// known age without waiting.
+    @ObservationIgnored private let now: () -> Date
+
     private let manager: CLLocationManager
     private var delegate: Delegate?
 
@@ -119,15 +147,18 @@ final class MapLocationProvider {
     /// session. A provider nobody asked is inert, which is what makes a stray one harmless.
     private var hasStarted = false
 
-    init(manager: CLLocationManager = CLLocationManager()) {
+    init(manager: CLLocationManager = CLLocationManager(), now: @escaping () -> Date = { Date() }) {
         self.manager = manager
+        self.now = now
         self.authorization = manager.authorizationStatus
         let delegate = Delegate()
         delegate.onAuthorizationChange = { [weak self] status in
             self?.apply(authorization: status)
         }
-        delegate.onLocation = { [weak self] coordinate, accuracyM, accuracyIsKnown in
-            self?.publish(coordinate: coordinate, accuracyM: accuracyM, accuracyIsKnown: accuracyIsKnown)
+        delegate.onLocation = { [weak self] coordinate, accuracyM, accuracyIsKnown, capturedAt in
+            guard let self else { return }
+            self.fixTiming = FixTiming(capturedAt: capturedAt, receivedAt: self.now())
+            self.publish(coordinate: coordinate, accuracyM: accuracyM, accuracyIsKnown: accuracyIsKnown)
         }
         delegate.onHeading = { [weak self] heading in
             self?.publish(heading: heading)
@@ -181,10 +212,19 @@ final class MapLocationProvider {
     ///
     /// `precision` pins the two facts `Precision` carries — Precise Location off, and a fix whose
     /// radius CoreLocation did not state — which a simulator cannot be made to produce on demand.
+    ///
+    /// A pinned fix is **current**: it was taken and received at construction (`fixTiming`). The
+    /// pin states where the reader is now (R58's `CYPRESS_LOCATION`), so no reader may judge it a
+    /// replayed fix.
     init(pinnedAvailability: Availability, precision: Precision = .ordinary) {
         self.manager = CLLocationManager()
+        let pinnedAt = Date()
+        self.now = { pinnedAt }
         self.availability = pinnedAvailability
         self.precision = precision
+        if pinnedAvailability.coordinate != nil {
+            self.fixTiming = FixTiming(capturedAt: pinnedAt, receivedAt: pinnedAt)
+        }
         switch pinnedAvailability {
         case .notAsked:                     self.authorization = .notDetermined
         case .denied:                       self.authorization = .denied
@@ -378,8 +418,9 @@ final class MapLocationProvider {
     /// Keeping the delegate separate is cheaper than fighting either constraint.
     private final class Delegate: NSObject, CLLocationManagerDelegate {
         var onAuthorizationChange: (@MainActor (CLAuthorizationStatus) -> Void)?
-        /// A fix, its radius, and whether CoreLocation stated that radius (see `Precision`).
-        var onLocation: (@MainActor (Coordinate, Double, Bool) -> Void)?
+        /// A fix, its radius, whether CoreLocation stated that radius (see `Precision`), and when
+        /// CoreLocation took it (see `FixTiming`).
+        var onLocation: (@MainActor (Coordinate, Double, Bool, Date) -> Void)?
         /// A heading, or `nil` for one that cannot be trusted. See `MapHeading.usable`.
         var onHeading: (@MainActor (Double?) -> Void)?
         /// CoreLocation could not produce a fix. See `failureCount`.
@@ -404,7 +445,8 @@ final class MapLocationProvider {
             let accuracy = last.horizontalAccuracy
             let isKnown = accuracy >= 0
             let effective = isKnown ? accuracy : VisitShortlist.assumedAccuracyM
-            MainActor.assumeIsolated { onLocation?(coordinate, effective, isKnown) }
+            let capturedAt = last.timestamp
+            MainActor.assumeIsolated { onLocation?(coordinate, effective, isKnown, capturedAt) }
         }
 
         func locationManager(_ manager: CLLocationManager, didUpdateHeading newHeading: CLHeading) {
