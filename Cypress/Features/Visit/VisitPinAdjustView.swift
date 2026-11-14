@@ -244,6 +244,9 @@ struct VisitPinAdjustView: View {
                     }
                     .accessibilityLabel(VisitPinAdjustCopy.nudge(direction))
                 }
+                // RED-PROOF ONLY, never merged: one deliberately unlabeled control.
+                SecondaryOutlineButton(" ", style: .compact) {}
+                    .accessibilityLabel("")
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
