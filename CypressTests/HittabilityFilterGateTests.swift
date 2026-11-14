@@ -299,12 +299,20 @@ struct HittabilityFilterGateTests {
     /// `XCTAssertFalse` at all.
     ///
     /// What counts as a claim: `XCTAssertTrue(` or `XCTAssert(` whose **first argument** reads the
-    /// raw property, and `XCTAssertEqual(` whose first two arguments are a raw read and `true`. The
+    /// raw property, `XCTAssertEqual(` whose first two arguments are a raw read and `true`, and
+    /// `XCTAssertNotEqual(` whose first two are a raw read and `false`. Space between the name and
+    /// its `(` is allowed. The
     /// argument is read across lines with parentheses counted, because most claims in the suite put
     /// their condition on the line after the call. String prose is removed first (with
     /// interpolations kept, `codeOutsideStringLiterals`), and comments are already removed by
     /// `DragGestureGateTests.uiTestSources`, so a sentence that mentions the property is not a read.
-    static let claimCalls = ["XCTAssertTrue", "XCTAssert", "XCTAssertEqual"]
+    ///
+    /// **Holes it does not close**, found by #222's review: a helper that returns the raw read
+    /// (`func ok(_ e: XCUIElement) -> Bool { e.isHittable }`, then `XCTAssertTrue(ok(x))`); a claim
+    /// on a line after a string holding `//`, which the comment stripper cuts; and a `/* … */`
+    /// comment that mentions the pattern, which it refuses. `XCTAssertTrue(!x.isHittable)` is also
+    /// refused: write a negative claim as `XCTAssertFalse`.
+    static let claimCalls = ["XCTAssertTrue", "XCTAssert", "XCTAssertEqual", "XCTAssertNotEqual"]
 
     /// The 1-based lines on which a positive one-shot hittability claim starts.
     static func oneShotClaims(in code: String) -> [Int] {
@@ -314,13 +322,15 @@ struct HittabilityFilterGateTests {
             case "XCTAssertTrue", "XCTAssert":
                 guard let first = arguments.first, readsRawProperty(first) else { return nil }
                 return assertion.line
-            case "XCTAssertEqual":
+            case "XCTAssertEqual", "XCTAssertNotEqual":
                 guard arguments.count >= 2 else { return nil }
                 let pair = [arguments[0], arguments[1]].map {
                     $0.trimmingCharacters(in: .whitespacesAndNewlines)
                 }
-                let claims = (readsRawProperty(pair[0]) && pair[1] == "true")
-                    || (readsRawProperty(pair[1]) && pair[0] == "true")
+                // `== true` and `!= false` say the same thing.
+                let literal = assertion.call == "XCTAssertEqual" ? "true" : "false"
+                let claims = (readsRawProperty(pair[0]) && pair[1] == literal)
+                    || (readsRawProperty(pair[1]) && pair[0] == literal)
                 return claims ? assertion.line : nil
             default:
                 return nil
@@ -332,7 +342,8 @@ struct HittabilityFilterGateTests {
     ///
     /// `call` is one of `claimCalls` or `XCTAssertFalse` (kept so the calibration below can prove
     /// the parser reads negative claims too, which it then leaves alone). A name only counts as a
-    /// whole word followed directly by `(`, so `XCTAssertTrue` is never read as `XCTAssert`.
+    /// whole word followed by `(`, with only spaces or tabs between, so `XCTAssertTrue` is never
+    /// read as `XCTAssert`.
     static func assertions(in code: String) -> [(call: String, line: Int, arguments: [String])] {
         // Prose removed per line, then the lines joined again, so an argument can span lines.
         // Lines inside a `"""` literal are dropped whole: `codeOutsideStringLiterals` reads a line
@@ -360,18 +371,23 @@ struct HittabilityFilterGateTests {
         var index = 0
         while index < text.count {
             if text[index] == "\n" { line += 1; index += 1; continue }
+            // The index of the `(` after `name` at `index`, past any spaces or tabs, if it is there.
+            func openParen(after name: String) -> Int? {
+                var end = index + name.count
+                guard end < text.count, String(text[index..<end]) == name else { return nil }
+                while end < text.count, text[end] == " " || text[end] == "\t" { end += 1 }
+                return end < text.count && text[end] == "(" ? end : nil
+            }
             guard text[index] == "X", index == 0 || !continues(text[index - 1]),
-                  let name = names.first(where: { name in
-                      let end = index + name.count
-                      return end < text.count && String(text[index..<end]) == name && text[end] == "("
-                  })
+                  let name = names.first(where: { openParen(after: $0) != nil }),
+                  let paren = openParen(after: name)
             else { index += 1; continue }
 
             // Arguments to the matching `)`, split at commas outside any bracket.
             var depth = 0
             var arguments: [String] = []
             var current = ""
-            var cursor = index + name.count + 1
+            var cursor = paren + 1
             while cursor < text.count {
                 let character = text[cursor]
                 if "([{".contains(character) { depth += 1 }
@@ -415,14 +431,16 @@ struct HittabilityFilterGateTests {
             "with a filter set behind a shut control there is no reachable chip"
         )
         XCTAssertTrue(revealedChip(label, app).isHittable, "at AX5 the \\(label) chip cannot be pressed")
+        XCTAssertTrue (gap.isHittable)
+        XCTAssertNotEqual(row.isHittable, false)
         """
         #expect(
-            Self.oneShotClaims(in: mustCatch) == [1, 2, 3, 7, 11, 15],
+            Self.oneShotClaims(in: mustCatch) == [1, 2, 3, 7, 11, 15, 16, 17],
             """
-            the claim scanner found \(Self.oneShotClaims(in: mustCatch)) where lines 1, 2, 3, 7, 11 \
-            and 15 each start a positive one-shot claim this suite has contained (single-line, \
-            `XCTAssert`, multi-line, a composition, an `XCTAssertEqual` against `true`, and a read \
-            through a call)
+            the claim scanner found \(Self.oneShotClaims(in: mustCatch)) where lines 1, 2, 3, 7, 11, \
+            15, 16 and 17 each start a positive one-shot claim (single-line, `XCTAssert`, \
+            multi-line, a composition, an `XCTAssertEqual` against `true`, a read through a call, a \
+            space before the parenthesis, and an `XCTAssertNotEqual` against `false`)
             """
         )
 
@@ -437,6 +455,7 @@ struct HittabilityFilterGateTests {
         XCTAssertTrue(cta.isEnabled, "the CTA is drawn disabled; isHittable is a later line")
         XCTAssertTrue(wait { self.chips(app).isEmpty }, "chips at \\(chip.isHittable)")
         XCTAssertEqual(row.isHittable, false, "a negative claim spelled as an equality")
+        XCTAssertNotEqual(row.isHittable, true, "a negative claim spelled as an inequality")
         let message = \"\"\"
             XCTAssertTrue(pill.isHittable, "inside a multi-line literal")
             \"\"\"

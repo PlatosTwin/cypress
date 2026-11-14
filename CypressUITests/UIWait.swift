@@ -553,13 +553,12 @@ extension XCUIElement {
 
     /// `assertReachable`'s late look: present, with a frame `isHittable` can be asked about, and
     /// hittable. The frame is checked first because `isHittable` raises rather than answering
-    /// `false` for a frame with no finite interior (see `isHittableWithoutRaising`), and a raise
-    /// here would replace `assertReachable`'s own message with one about the frame.
+    /// `false` for a frame that is not finite, has no interior, or lies wholly off the screen (see
+    /// `frameCanAnswerHittability`), and a raise here would replace `assertReachable`'s own
+    /// message with one about the frame.
     var isReachableNow: Bool {
         guard exists else { return false }
-        let rect = frame
-        guard isFiniteFrame(rect), rect.width > 0, rect.height > 0 else { return false }
-        return isHittable
+        return isHittableWithoutRaising(in: XCUIApplication())
     }
 }
 

@@ -111,7 +111,10 @@ public struct TreeLocationStore {
     /// other row names as its successor, then its successor, and so on until a row has none.
     ///
     /// Rows the walk does not reach (a second root, or a link to a row that is not here) follow in
-    /// the order they arrived. A link that loops back stops the walk, so this always ends.
+    /// the order they arrived, which for tied times is id order, not link order. Only the first
+    /// root is walked. The schema allows one head per tree and `supersede` stamps only the head,
+    /// so a second root should not occur. A link that loops back stops the walk, so this always
+    /// ends.
     static func orderedByLinks(_ rows: [TreeLocation]) -> [TreeLocation] {
         guard rows.count > 1 else { return rows }
         let byID = Dictionary(rows.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
