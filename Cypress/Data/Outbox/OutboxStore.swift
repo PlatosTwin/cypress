@@ -519,7 +519,7 @@ public struct OutboxStore {
         _ = try read.reset()
         guard let row else { return }
         let moved = Self.window(
-            row.2, leavingOutHoldSince: row.1, lastError: row.0, heldBehindAdd: row.3, now: date
+            row.2, leavingOutHoldSince: row.1, lastError: row.0, heldBehindAdd: false, now: date
         )
         guard moved != row.2 else { return }
         try setWindowStart(id, to: moved, connection: connection)

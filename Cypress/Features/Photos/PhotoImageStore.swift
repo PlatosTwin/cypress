@@ -139,7 +139,7 @@ final class PhotoImageStore {
     /// not too often.
     private func mayReadAgain(_ id: UUID) -> Bool {
         guard let failure = failures[id] else { return !missing.contains(id) }
-        return failure.count < Self.thumbnailReadLimit
+        return failure.count <= Self.thumbnailReadLimit
             && now().timeIntervalSince(failure.last) >= Self.thumbnailRetryInterval
     }
 
