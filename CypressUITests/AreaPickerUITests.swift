@@ -60,7 +60,7 @@ final class AreaPickerUITests: XCTestCase {
             pill.exists,
             "the almanac's header pill is not a button, so the screen offers no way to change its area"
         )
-        assertReachable(pill, "the header pill, a button a reader must be able to press,")
+        XCTAssertTrue(pill.isHittable, "RED-PROOF: a one-shot claim the gate must refuse")
 
         // The retired control, checked for while a control that proves the screen rendered is in
         // hand — `pill` above. An absence on its own would pass on a screen that drew nothing.

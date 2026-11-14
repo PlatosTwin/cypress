@@ -164,7 +164,7 @@ extension XCTestCase {
 /// A free function, so `FrameFinitenessGateTests` can prove the decision with no live element:
 /// a waiter that timed out and a late look that succeeds must count as success.
 func reachableAfterWait(_ waited: XCTWaiter.Result, lateCheck: () -> Bool) -> Bool {
-    waited == .completed || lateCheck()
+    waited == .completed // RED-PROOF: no late look
 }
 
 /// Whether every component of `rect` is a real, finite number.

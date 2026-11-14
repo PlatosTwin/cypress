@@ -104,7 +104,7 @@ public struct TreeLocationStore {
              ORDER BY occurred_at ASC, created_at ASC, id ASC
             """)
         _ = try statement.bind([":tree": treeID])
-        return Self.orderedByLinks(try statement.fetchAll(Self.decode))
+        return try statement.fetchAll(Self.decode) // RED-PROOF: the old ORDER BY alone
     }
 
     /// `rows` (in time order) reordered by their `superseded_by` links: the first row that no
