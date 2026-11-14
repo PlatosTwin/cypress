@@ -2137,10 +2137,19 @@ into this section in the round that finds it, and nowhere else. Each item stands
     ruling: match the column. **DONE in #224:** Move pin has no extra padding and sits about 18 pt
     from its neighbors, like the other links; the test now checks that. It ships with the next
     release, because releases are paused (see `TESTFLIGHT_RELEASE_PAUSED` in testflight.yml).
-119. **"Say what species you think this is" and "Report that there is no tree here" overlap.** On
+119. ~~**"Say what species you think this is" and "Report that there is no tree here" overlap.** On
     the profile of a tree with no species, the two links are about 18 pt apart, center to center,
     so their 44 pt hit areas overlap and a tap meant for one can reach the other. This predates
-    #216 and #216 does not make it worse. Seen in the owner's build 87 screenshot. Since #224 the
+    #216 and #216 does not make it worse. Seen in the owner's build 87 screenshot.~~
+    **DONE in the overnight round of 2026-11-14 (`claude/overnight-bug-fixes-8154ea`), with nothing
+    visible changed.** The links stay where they are. Each link in the identity column that can sit
+    under another link now takes taps only from the midpoint of the gap above it
+    (`cypressHitArea(_:reachingAbove:)`), so the upper link keeps its own words; below and to the
+    sides nothing changed, and links that sit under a sentence keep the full area.
+    `ProfileLinkColumnUITests` taps 2 pt either side of each midpoint and checks the column's pitch
+    against itself. Nobody has watched a tap land: which link an overlapped tap reached before the
+    fix was worked out from geometry and from what #139 saw, and the round's red-proof run on CI is
+    the first observation. Since #224 the
     whole column ("Show me where this is", "Move pin", and these two) sits about 18 pt apart, so
     every pair of neighbors in it overlaps the same way.
 120. **`addReadingLink`'s comment overstates the hit-area overhang.** `TreeProfileView.swift`
