@@ -2166,9 +2166,30 @@ into this section in the round that finds it, and nowhere else. Each item stands
     service; the phone keeps it even when the answer names it, so it can keep a pin the service
     deleted. (b) When the phone deletes a tree on the service's answer, other rows stay on a
     `tree_uuid` that names no tree (the account's anonymized visits under the leaving door, this
-    installation's unclaimed visit, a stranger's visit). Nobody checked how the Journal draws such a
-    visit. Owner question: should the phone also delete this installation's own unclaimed rows on a
-    tree the service deleted? (c) The service returns the tree ids and logs none of them.
+    installation's unclaimed visit, a stranger's visit). ~~Nobody checked how the Journal draws such a
+    visit.~~ **Read on 2026-11-14 (code only, nothing was run), at the owner's request before any
+    change.** Nothing crashes. `forgetCommunityTrees` deletes the tree and its `tree_locations` and
+    no other row, and no foreign key points at `community_trees`. What a reader gets: (i) **a
+    Journal row that leads nowhere.** This installation's own unclaimed visit, check-in,
+    measurement or care event on the deleted tree stays in the Journal, titled with the fallback
+    `Tree`; a tap opens the profile's "No record for this tree." with no retry, and the row cannot
+    be removed. The account's own anonymized rows are hidden from the Journal. (ii) This
+    installation's favorite and private reminder on the tree stay: `deviceContributions` on the
+    You tab counts them and My Grove hides them, and the heart cannot be removed. (iii)
+    Photographs on the tree are reachable from no screen; under the leaving door their bytes stay
+    on disk. (iv) The CSV export lists the tree's rows and the GeoJSON export skips them. (v) Found
+    beside it, and not caused by the deletion: `ContributionStore.contributedTreeIDs` has no
+    tombstone clause, so an account's anonymized rows still count under `Yours`. The stranger's
+    visit in the sentence above may not be reachable: the only `INSERT INTO visits` is this
+    phone's own, and the test builds that row with raw SQL. Not settled by reading: whether the
+    drain sends this installation's queued rows after sign-out, whether an anonymized nickname
+    still titles the row, what `privateReminders` draws for a reminder whose tree is gone, and
+    whether the profile's failure state shows a way back. One unit test over `journal`,
+    `grovePage`, `deviceContributions`, `mapMembership`, `privateReminders`, `exportLatest` and
+    `treeProfile` after `finishAccountDeletion` settles the first three; the screen needs a UI
+    run. **Owner question, still open, now with the facts:** should the phone also delete this
+    installation's own unclaimed rows (and the photographs' bytes) on a tree the service deleted,
+    or should the Journal only skip rows whose tree does not resolve, as My Grove does? (c) The service returns the tree ids and logs none of them.
     (d) Stale prose found by the review of the guard fix: `RemoteSurface.noRouteOnThisService`'s
     doc in `RemoteWire.swift` lists its users and does not name `finishAccountDeletion`, and its
     description says "yet" for an act that will never have a route; `APIConformanceGuardTests`'
