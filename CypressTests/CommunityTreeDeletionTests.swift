@@ -33,12 +33,17 @@ struct CommunityTreeDeletionTests {
 
     /// Somebody else's visit, written as a row: another installation, never this account's.
     private static func strangersVisit(on treeID: UUID, _ store: CypressStore) async throws {
+        try await deviceVisit(on: treeID, by: Fixture.otherDeviceID, store)
+    }
+
+    /// A device-owned visit (`user_id` NULL), by the installation named.
+    private static func deviceVisit(on treeID: UUID, by device: UUID, _ store: CypressStore) async throws {
         let stamp = SQLiteTimestamp.string(from: Date())
         try await store.queue.write { connection in
             try connection.execute("""
                 INSERT INTO visits (id, tree_uuid, device_id, client_uuid, captured_at, created_at, updated_at)
                 VALUES ('\(UUID().uuidString)', '\(treeID.uuidString)',
-                        '\(Fixture.otherDeviceID.uuidString)', '\(UUID().uuidString)',
+                        '\(device.uuidString)', '\(UUID().uuidString)',
                         '\(stamp)', '\(stamp)', '\(stamp)');
                 """)
         }
@@ -116,6 +121,182 @@ struct CommunityTreeDeletionTests {
         #expect(try await Fixture.adder(store, tree.id) == .nobody)
         let chain = try await Fixture.chain(store, tree.id)
         #expect(chain.count == 1 && chain.allSatisfy { $0.owner == .nobody }, "\(chain.map(\.owner))")
+    }
+
+    // MARK: - The service's answer (`ROADMAP` 104 and 105)
+
+    /// `ROADMAP` 104. The service deleted the account's tree under the leaving door (decision 12: it
+    /// was never published), so the phone deletes it too, with its chain, instead of keeping a pin
+    /// the service dropped.
+    ///
+    /// Red-proof: in `forgetCommunityTrees`, ignore `serviceTrees.deleted` — red on "the leaving
+    /// door kept a tree the service deleted".
+    @Test("the leaving door deletes a tree the service reported deleted, with its chain")
+    func theLeavingDoorFollowsTheServicesDeletion() async throws {
+        let store = try await CypressStore.inMemory()
+        let api = Self.signedIn(store)
+        let dropped = try await Fixture.add(api)
+        let kept = try await Fixture.add(
+            api, at: ProximityDedupeTests.diagonal(from: Fixture.offshore, meters: 200)
+        )
+
+        let outcome = try await api.deleteAccount(
+            .leaveRecords,
+            actingOn: AccountDeletion.ServiceTreeVerdicts(deleted: [dropped.id], anonymized: [kept.id])
+        )
+
+        #expect(try await Self.communityTree(store, dropped.id) == nil, "the leaving door kept a tree the service deleted")
+        #expect(try await Fixture.chain(store, dropped.id).isEmpty, "positions outlived the deleted tree")
+        #expect(outcome.deletedCommunityTrees == 1, "\(outcome)")
+        #expect(outcome.anonymizedCommunityTrees == 1, "\(outcome)")
+        #expect(try await Self.communityTree(store, kept.id) != nil, "the kept tree went too")
+        #expect(try await Fixture.adder(store, kept.id) == .nobody)
+    }
+
+    /// `ROADMAP` 105(a). Somebody else's visit that never reached this phone kept the tree on the
+    /// service. The phone holds no such visit, so its own rule would delete the tree; it keeps it,
+    /// anonymized, because the service did.
+    ///
+    /// Red-proof: in `forgetCommunityTrees`, ignore `serviceTrees.anonymized` — red on "the erasing
+    /// door deleted a tree the service kept".
+    @Test("the erasing door keeps a tree the service kept, though nobody built on it here")
+    func theErasingDoorFollowsTheServicesKeep() async throws {
+        let store = try await CypressStore.inMemory()
+        let api = Self.signedIn(store)
+        let tree = try await Fixture.add(api)
+
+        let outcome = try await api.deleteAccount(
+            .eraseEverything, actingOn: AccountDeletion.ServiceTreeVerdicts(anonymized: [tree.id])
+        )
+
+        #expect(try await Self.communityTree(store, tree.id) != nil, "the erasing door deleted a tree the service kept")
+        #expect(try await Fixture.adder(store, tree.id) == .nobody)
+        #expect(outcome.anonymizedCommunityTrees == 1, "\(outcome)")
+        #expect(outcome.deletedCommunityTrees == 0, "\(outcome)")
+    }
+
+    /// `ROADMAP` 105(b). This installation's own unclaimed visit is on the tree. The phone's rule
+    /// reads it as somebody else's and would keep the tree; the service read it as the account's
+    /// after the claim, erased it, and deleted the tree. The phone deletes the tree too.
+    ///
+    /// Red-proof: in `forgetCommunityTrees`, ignore `serviceTrees.deleted` — red on "the erasing
+    /// door kept a tree the service deleted".
+    @Test("the erasing door deletes a tree the service deleted, though this device's own visit is on it")
+    func theErasingDoorFollowsTheServicesDeletion() async throws {
+        let store = try await CypressStore.inMemory()
+        let api = Self.signedIn(store)
+        let tree = try await Fixture.add(api)
+        try await Self.deviceVisit(on: tree.id, by: Fixture.deviceID, store)
+
+        let outcome = try await api.deleteAccount(
+            .eraseEverything, actingOn: AccountDeletion.ServiceTreeVerdicts(deleted: [tree.id])
+        )
+
+        #expect(try await Self.communityTree(store, tree.id) == nil, "the erasing door kept a tree the service deleted")
+        #expect(try await Fixture.chain(store, tree.id).isEmpty)
+        #expect(outcome.deletedCommunityTrees == 1, "\(outcome)")
+    }
+
+    /// The control for the test above: with no answer, the same rows keep the tree, so the device's
+    /// own visit really is what the phone's rule reads as "built on". Without this, the test above
+    /// could pass on a fixture whose visit never landed.
+    @Test("with no answer, this device's own visit keeps the tree under the erasing door")
+    func withNoAnswerTheOwnRuleKeepsTheTree() async throws {
+        let store = try await CypressStore.inMemory()
+        let api = Self.signedIn(store)
+        let tree = try await Fixture.add(api)
+        try await Self.deviceVisit(on: tree.id, by: Fixture.deviceID, store)
+
+        let outcome = try await api.deleteAccount(.eraseEverything, actingOn: nil)
+
+        #expect(try await Self.communityTree(store, tree.id) != nil)
+        #expect(outcome.anonymizedCommunityTrees == 1, "\(outcome)")
+    }
+
+    /// A tree the answer does not name (the service never received it) keeps the phone's own rule,
+    /// under both doors: deleted under the erasing door when nobody built on it here, kept under the
+    /// leaving door.
+    ///
+    /// Red-proof: in `forgetCommunityTrees`, decide an unnamed tree as "keep" — red on "an unnamed
+    /// tree nobody met survived the erasure".
+    @Test("a tree the answer does not name gets the phone's own rule", arguments: AccountDeletionChoice.allCases)
+    func anUnnamedTreeGetsTheOwnRule(choice: AccountDeletionChoice) async throws {
+        let store = try await CypressStore.inMemory()
+        let api = Self.signedIn(store)
+        let unnamed = try await Fixture.add(api)
+
+        let outcome = try await api.deleteAccount(
+            choice, actingOn: AccountDeletion.ServiceTreeVerdicts(deleted: [UUID()], anonymized: [UUID()])
+        )
+
+        switch choice {
+        case .leaveRecords:
+            #expect(try await Self.communityTree(store, unnamed.id) != nil, "the leaving door deleted an unnamed tree")
+            #expect(outcome.anonymizedCommunityTrees == 1, "\(outcome)")
+        case .eraseEverything:
+            #expect(try await Self.communityTree(store, unnamed.id) == nil, "an unnamed tree nobody met survived the erasure")
+            #expect(outcome.deletedCommunityTrees == 1, "\(outcome)")
+        }
+    }
+
+    /// The whole path a signed-in deletion takes: `DELETE /me` answers with `community_trees`, and
+    /// `RoutedAPI` hands it to the real `LocalAPI`. This is what proves the answer is not dropped at
+    /// the protocol boundary: `RoutedAPI` holds its local half as `any CypressAPI`, and a witness
+    /// that did not reach `LocalAPI` would delete with the phone's own rule and keep the tree.
+    ///
+    /// Red-proof: in `RoutedAPI.deleteAccount`, pass `actingOn: nil` — red on "the routed deletion
+    /// dropped the service's answer".
+    @Test("a routed deletion acts on the service's answer")
+    func aRoutedDeletionActsOnTheAnswer() async throws {
+        let store = try await CypressStore.inMemory()
+        let local = Self.signedIn(store)
+        let tree = try await Fixture.add(local)
+        let transport = ScriptedTransport()
+        transport.answer("DELETE /me", with: """
+            {"deleted":true,"choice":"leaveRecords","contributions":0,"photos":0,"tombstones":0,
+             "community_trees":{"deleted":["\(tree.id.uuidString.lowercased())"],"anonymized":[]}}
+            """)
+        let remote = RemoteAPI(
+            baseURL: URL(string: "https://service.invalid/api/v1")!,
+            transport: transport,
+            session: .shared,
+            pendingOutboxKeys: { [] }
+        )
+        let router = RoutedAPI(local: local, remote: remote, signedInUserID: { Fixture.userID })
+
+        let outcome = try await router.deleteAccount(.leaveRecords)
+
+        #expect(transport.call("DELETE /me") != nil, "fixture: the service was never asked")
+        #expect(try await Self.communityTree(store, tree.id) == nil, "the routed deletion dropped the service's answer")
+        #expect(outcome.deletedCommunityTrees == 1, "\(outcome)")
+    }
+
+    /// The other half of interoperating with the service as deployed today: an answer with no
+    /// `community_trees` leaves the phone's own rule in charge, so the leaving door keeps the tree
+    /// exactly as it did before the field existed.
+    @Test("a routed deletion against an older service keeps the phone's own rule")
+    func aRoutedDeletionAgainstAnOlderService() async throws {
+        let store = try await CypressStore.inMemory()
+        let local = Self.signedIn(store)
+        let tree = try await Fixture.add(local)
+        let transport = ScriptedTransport()
+        transport.answer(
+            "DELETE /me",
+            with: #"{"deleted":true,"choice":"leaveRecords","contributions":0,"photos":0,"tombstones":0}"#
+        )
+        let remote = RemoteAPI(
+            baseURL: URL(string: "https://service.invalid/api/v1")!,
+            transport: transport,
+            session: .shared,
+            pendingOutboxKeys: { [] }
+        )
+        let router = RoutedAPI(local: local, remote: remote, signedInUserID: { Fixture.userID })
+
+        let outcome = try await router.deleteAccount(.leaveRecords)
+
+        #expect(try await Self.communityTree(store, tree.id) != nil, "an older service's answer deleted a tree")
+        #expect(outcome.anonymizedCommunityTrees == 1, "\(outcome)")
+        #expect(try await Fixture.adder(store, tree.id) == .nobody)
     }
 
     // MARK: - The species chain (chip 79)

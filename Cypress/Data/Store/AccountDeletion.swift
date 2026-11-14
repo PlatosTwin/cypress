@@ -156,18 +156,38 @@ public struct AccountDeletion {
         // anonymized, and one nobody has is deleted — so one erasure can do both. `forgetCommunityTrees`
         // carries the rule.
 
-        /// Community trees the account added that stay, with no adder. Every one under
-        /// `leaveRecords`; under `eraseEverything`, the ones another identity has built on.
+        /// Community trees the account added that stay, with no adder. Under `leaveRecords`, every
+        /// one the service did not report deleted; under `eraseEverything`, the ones the service
+        /// reported kept, or, for a tree it did not name, the ones another identity has built on here.
         public var anonymizedCommunityTrees: Int = 0
         /// Community trees the account added that are gone, with every position their pin held.
-        /// Zero under `leaveRecords` on this phone — see `forgetCommunityTrees` for the one case the
-        /// service deletes that the phone cannot see.
+        /// Under `leaveRecords` these are only the trees the service reported deleted (decision 12's
+        /// unpublished trees); with no such report it is zero. See `forgetCommunityTrees`.
         public var deletedCommunityTrees: Int = 0
         /// Pin positions the account set that stay on their tree with no mover, under either door.
         /// A position on a tree the erasing door deleted is not counted here: it went with its tree.
         public var anonymizedTreeLocations: Int = 0
 
         public init() {}
+    }
+
+    /// The service's answer about the community trees the account added: which it deleted and which
+    /// it kept, anonymized (`DELETE /me`'s `community_trees`, `ROADMAP` 104 and 105).
+    ///
+    /// The phone acts on this answer instead of its own rule wherever the answer names a tree,
+    /// because the service holds two facts the phone does not: whether a tree was ever published
+    /// (decision 12 deletes an unpublished tree under both doors), and every row anybody else has
+    /// put on the tree (decision 6). See `forgetCommunityTrees`.
+    public struct ServiceTreeVerdicts: Sendable, Equatable {
+        /// Trees the service removed and tombstoned.
+        public var deleted: Set<UUID>
+        /// Trees the service kept with no adder.
+        public var anonymized: Set<UUID>
+
+        public init(deleted: Set<UUID> = [], anonymized: Set<UUID> = []) {
+            self.deleted = deleted
+            self.anonymized = anonymized
+        }
     }
 
     // MARK: - The bytes
@@ -264,11 +284,16 @@ public struct AccountDeletion {
     /// person's. The column is nullable, so both doors take the name off and leave the decision. This
     /// was residue before the two doors existed: the id stayed in that column after a deletion, and
     /// nothing noticed.
+    ///
+    /// `serviceTrees` is the service's answer about the trees the account added, when the deletion
+    /// went through `DELETE /me` and the answer carried one. Nil keeps the phone's own rule for every
+    /// tree, which is what a signed-out deletion and an older service get.
     @discardableResult
     public func delete(
         userID: UUID,
         choice: AccountDeletionChoice,
         at date: Date,
+        serviceTrees: ServiceTreeVerdicts? = nil,
         connection: SQLiteConnection
     ) throws -> Outcome {
         try connection.transaction {
@@ -331,7 +356,8 @@ public struct AccountDeletion {
             // anybody else built on this tree" is asked of what is left once the account's own
             // visits and photographs are gone — the service's order too (`deleteAccountTrees`).
             try forgetCommunityTrees(
-                userID: userID, choice: choice, at: date, into: &outcome, on: connection
+                userID: userID, choice: choice, at: date, serviceTrees: serviceTrees,
+                into: &outcome, on: connection
             )
 
             // A moderation decision keeps its effect and loses its author, whichever door was taken.
@@ -742,12 +768,25 @@ public struct AccountDeletion {
     ///   the service takes the account's name off every chain row too. The positions stay, because
     ///   they are where the tree is.
     ///
-    /// **What the phone cannot do, stated rather than implied.** Decision 12 deletes an
-    /// *unpublished* tree under both doors, including `leaveRecords`. Publication is the service's
-    /// fact — it depends on the license the account held when the tree went live (decisions 7 and
-    /// 10) — and this round's phone does not hold it, so the leaving door anonymizes every tree here
-    /// and the service deletes the unpublished ones. The phone keeps a pin the service has dropped
-    /// until the round that syncs the layer down can tell it otherwise (`ROADMAP` chip backlog 104).
+    /// **The service's answer wins where it names a tree** (`ROADMAP` 104 and 105). The phone's own
+    /// rule above is a guess in two places. Decision 12 deletes an *unpublished* tree under both
+    /// doors, including `leaveRecords`, and publication is the service's fact (decisions 7 and 10).
+    /// And decision 6's "built on" is read here from this phone's rows only: somebody else's visit
+    /// that never reached this phone does not count, and this installation's own unclaimed row
+    /// counts as somebody else's. So when `DELETE /me` reports what it did (`serviceTrees`):
+    ///
+    /// - a tree the service **deleted** is deleted here with its chain, under either door;
+    /// - a tree the service **kept** is kept here, anonymized, under either door;
+    /// - a tree the answer does not name (the service never received it, for example an add still
+    ///   in the outbox) gets the phone's own rule above, as it did before the answer existed.
+    ///
+    /// With no answer at all (`serviceTrees == nil`: a signed-out deletion, or a service deployed
+    /// before the field) every tree gets the phone's own rule, exactly as before. The leaving door
+    /// then still keeps a pin the service has dropped, which is `ROADMAP` 104 on an older service.
+    ///
+    /// Only trees this account added are touched. An id the answer names that this phone holds as
+    /// somebody else's, or not at all, is ignored, for the reason `delete` gives about a device's own
+    /// rows.
     ///
     /// Nothing references `community_trees(id)` by foreign key: visits and photographs name a tree
     /// by `tree_uuid`, which may be a city row. A visit by somebody else on a deleted tree cannot
@@ -757,14 +796,16 @@ public struct AccountDeletion {
         userID: UUID,
         choice: AccountDeletionChoice,
         at date: Date,
+        serviceTrees: ServiceTreeVerdicts?,
         into outcome: inout Outcome,
         on connection: SQLiteConnection
     ) throws {
         let userAndNow: [String: SQLiteBindable?] = [":user": userID.uuidString, ":now": date]
 
+        // The phone's own rule: under the erasing door, the trees nobody else has built on. A
+        // `LEFT JOIN`-free `NOT EXISTS` per table, each seeking its `idx_<table>_tree` index.
+        var ownRule: [String] = []
         if choice == .eraseEverything {
-            // The trees nobody else has built on. A `LEFT JOIN`-free `NOT EXISTS` per table, each
-            // seeking its `idx_<table>_tree` index.
             let unbuilt = Self.builtOnTables.map { table in
                 """
                 NOT EXISTS (SELECT 1 FROM main.\(table) x
@@ -778,20 +819,39 @@ public struct AccountDeletion {
                    AND \(unbuilt)
                 """)
             _ = try doomed.bind([":user": userID.uuidString])
-            let ids = try doomed.fetchAll { try $0.string("id") }
+            ownRule = try doomed.fetchAll { try $0.string("id") }
             _ = try doomed.reset()
+        }
 
-            for id in ids {
-                // The chain first: its rows name the tree, not the other way round, and a deleted
-                // tree's positions are not the forest's to keep.
-                try run(
-                    "DELETE FROM main.tree_locations WHERE tree_id = :tree COLLATE NOCASE",
-                    [":tree": id], on: connection
-                )
-                outcome.deletedCommunityTrees += try run(
-                    "DELETE FROM main.community_trees WHERE id = :tree", [":tree": id], on: connection
-                )
+        var ids = ownRule
+        if let serviceTrees {
+            // Every tree this account added, against the service's answer. The answer decides each
+            // tree it names; the own rule decides the rest.
+            let added = try connection.cachedStatement(
+                "SELECT id FROM main.community_trees WHERE user_id = :user COLLATE NOCASE"
+            )
+            _ = try added.bind([":user": userID.uuidString])
+            let all = try added.fetchAll { try $0.string("id") }
+            _ = try added.reset()
+            let unbuilt = Set(ownRule)
+            ids = all.filter { id in
+                guard let uuid = UUID(uuidString: id) else { return unbuilt.contains(id) }
+                if serviceTrees.deleted.contains(uuid) { return true }
+                if serviceTrees.anonymized.contains(uuid) { return false }
+                return unbuilt.contains(id)
             }
+        }
+
+        for id in ids {
+            // The chain first: its rows name the tree, not the other way round, and a deleted
+            // tree's positions are not the forest's to keep.
+            try run(
+                "DELETE FROM main.tree_locations WHERE tree_id = :tree COLLATE NOCASE",
+                [":tree": id], on: connection
+            )
+            outcome.deletedCommunityTrees += try run(
+                "DELETE FROM main.community_trees WHERE id = :tree", [":tree": id], on: connection
+            )
         }
 
         outcome.anonymizedCommunityTrees += try run(

@@ -660,6 +660,17 @@ public struct RemoteAPI: CypressAPI {
     ///   injected — see that property for why an empty array is not an acceptable substitute.
     @discardableResult
     public func deleteAccount(_ choice: AccountDeletionChoice) async throws -> AccountDeletion.Outcome {
+        try await deleteAccountOnService(choice).outcome
+    }
+
+    /// `DELETE /me`, returning the service's answer about the community trees the account added
+    /// beside the outcome (`ROADMAP` 104 and 105). `trees` is nil when the answer carried none: a
+    /// service deployed before the field, or a value this build cannot read (`DeleteAccountResponse`).
+    /// `RoutedAPI.deleteAccount` hands `trees` to the local half. Everything `deleteAccount(_:)`
+    /// says above holds here too.
+    func deleteAccountOnService(
+        _ choice: AccountDeletionChoice
+    ) async throws -> (outcome: AccountDeletion.Outcome, trees: AccountDeletion.ServiceTreeVerdicts?) {
         guard let pendingOutboxKeys else { throw RemoteSurface.communityHalfOnly }
         let pending = try await pendingOutboxKeys()
 
@@ -682,7 +693,7 @@ public struct RemoteAPI: CypressAPI {
             outcome.deletedContributions = response.contributions
             outcome.deletedPhotos = response.photos
         }
-        return outcome
+        return (outcome, response.communityTrees)
     }
 
     /// **Class D — device-only, never remote** (spec §3.1).

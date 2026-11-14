@@ -405,6 +405,21 @@ public protocol CypressAPI: Sendable {
     @discardableResult
     func deleteAccount(_ choice: AccountDeletionChoice) async throws -> AccountDeletion.Outcome
 
+    /// The local half of a deletion the service has accepted, acting on the service's answer about
+    /// the community trees the account added (`ROADMAP` 104 and 105). `RoutedAPI.deleteAccount` is
+    /// the caller; nil means the answer carried none.
+    ///
+    /// **A requirement, so it dispatches to the conformance** (ERRATA **E125**): `RoutedAPI` holds
+    /// its local half as `any CypressAPI`, and an extension-only member would reach the default
+    /// below every time and never `LocalAPI`'s. The default is honest here, unlike the one the
+    /// requirement above refuses: it performs the same deletion and keeps the phone's own rule for
+    /// the trees, which is exactly what every build did before the answer existed.
+    @discardableResult
+    func deleteAccount(
+        _ choice: AccountDeletionChoice,
+        actingOn serviceTrees: AccountDeletion.ServiceTreeVerdicts?
+    ) async throws -> AccountDeletion.Outcome
+
     /// What this device is holding that `claimDevice` would carry onto an account (D9).
     ///
     /// Not a BUILD-PLAN §6 endpoint. §6 has no read of a device's own unattributed rows because it
@@ -458,6 +473,16 @@ public protocol CypressAPI: Sendable {
 }
 
 public extension CypressAPI {
+    /// The default for `deleteAccount(_:actingOn:)`: the same deletion, with the phone's own rule
+    /// for the trees. `LocalAPI` overrides it and acts on the answer.
+    @discardableResult
+    func deleteAccount(
+        _ choice: AccountDeletionChoice,
+        actingOn serviceTrees: AccountDeletion.ServiceTreeVerdicts?
+    ) async throws -> AccountDeletion.Outcome {
+        try await deleteAccount(choice)
+    }
+
     /// The grove-derived default for `isFavorite(treeID:)` — one membership bit out of the same
     /// read the heart used before the per-tree read existed (#167). Correct for any conformance
     /// whose `grove()` tells the truth; `LocalAPI` overrides it with the narrow query.

@@ -4063,6 +4063,18 @@ public actor LocalAPI: CypressAPI {
     public func deleteAccount(
         _ choice: AccountDeletionChoice = .default
     ) async throws -> AccountDeletion.Outcome {
+        try await deleteAccount(choice, actingOn: nil)
+    }
+
+    /// The local half of `DELETE /me`, acting on the service's answer about the community trees the
+    /// account added (`ROADMAP` 104 and 105). `RoutedAPI.deleteAccount` passes the answer after the
+    /// service accepted the deletion; nil keeps the phone's own rule. See
+    /// `AccountDeletion.forgetCommunityTrees`.
+    @discardableResult
+    public func deleteAccount(
+        _ choice: AccountDeletionChoice,
+        actingOn serviceTrees: AccountDeletion.ServiceTreeVerdicts?
+    ) async throws -> AccountDeletion.Outcome {
         guard let account = userID else { throw APIError.unauthorized }
         let moment = now()
 
@@ -4088,7 +4100,8 @@ public actor LocalAPI: CypressAPI {
 
         let outcome = try await store.queue.write { connection in
             try AccountDeletion().delete(
-                userID: account, choice: choice, at: moment, connection: connection
+                userID: account, choice: choice, at: moment, serviceTrees: serviceTrees,
+                connection: connection
             )
         }
         userID = nil
