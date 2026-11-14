@@ -1971,6 +1971,9 @@ into this section in the round that finds it, and nowhere else. Each item stands
       on a loaded runner, or a push the stack did not draw. The test now waits for the pill to be
       reachable before tapping it, and on failure it reports whether a second tap works, which
       separates the two. Keep this open until a recurrence says which, or a few dozen green runs.
+    **Still open after `test/flake-classes` (item 121).** That branch makes every positive
+    hittability claim in the UI suite wait, which is the first failure's class. It does not touch
+    the second failure, a tap that changed nothing; that part stays open as described above.
 
 104. **C2 item: the phone's leaving door anonymizes trees the service deletes (decision 12).** From
     community-trees C1. Decision 12 of 2026-09-28 deletes an *unpublished* tree under both deletion
@@ -2030,9 +2033,10 @@ into this section in the round that finds it, and nowhere else. Each item stands
     idle with the condition false, so time spent queued behind other tests no longer counts.
     `CityDownloadTests`' limit is now 3 minutes. The `AppleSignInUITests` UI wait was not touched.
     The deeper cause, pool contention from per-test seed stores, is item 117.
-109. **`PhotoBrowserReachabilityTests` asserts on a one-shot `isHittable`** (lines 60 and 133). That
+109. ~~**`PhotoBrowserReachabilityTests` asserts on a one-shot `isHittable`** (lines 60 and 133). That
     is the race that #210 fixed in `PhotoDeletionReachabilityTests` (item 103). Move both asserts to
-    `UIWait.assertReachable`.
+    `UIWait.assertReachable`.~~ **DONE by `test/flake-classes`** (item 121), with 19 more sites of
+    the same shape, and a gate that refuses new ones.
 110. **E81's "offline" state for the outbox pill can now be built.** #208 added `NetworkPathSource`
     (`NWPathMonitor`), the source E81 said was missing. Out of scope for F35, logged here.
 111. **The agent simulators in CLAUDE.md no longer exist.** None of the four UDIDs listed under
@@ -2079,6 +2083,23 @@ into this section in the round that finds it, and nowhere else. Each item stands
 120. **`addReadingLink`'s comment overstates the hit-area overhang.** `TreeProfileView.swift`
     (around line 988) says `cypressHitArea` overhangs a 13 pt label by about 17 pt. The background
     is a centered 44 pt minimum height, so the overhang is about 14 pt at the default text size.
+121. ~~**Three classes of flake from a catalog of 70 CI runs (2026-10-23 to 2026-11-14).**~~
+    **DONE by `test/flake-classes`:**
+    (a) `UIWait.assertReachable` gave up when one accessibility read took most of its 30 s
+    (`AppleSignInUITests`: launch 17 s, one read 29 s). It now looks once more after the deadline,
+    and its failure message prints the element's frame. `settledFrame`'s presence wait does the same.
+    (b) 21 positive one-shot `isHittable` asserts (items 103 and 109's shape) now wait through
+    `assertReachable`, and `HittabilityFilterGateTests` refuses a new one. Negative asserts
+    (`XCTAssertFalse(… .isHittable)`) are left as they are, because waiting for something to stop
+    being hittable lets a slow runner pass by never drawing it.
+    (c) `TreeLocationStore.chain` sorted by time and then by a random id, so an add and a move inside
+    one millisecond could read back head first
+    (`LocationCorrectionTests.theAdderMovesThePin`, main run 43543728441). It now follows the
+    `superseded_by` links from the root.
+122. **`SpeciesAssertionStore.chain` has the same tie-break as item 121(c).** It sorts by
+    `created_at, id`, so two assertions on one tree inside one millisecond can read back in either
+    order. Follow its `superseded_by` links the same way. Found by `test/flake-classes`, not changed
+    there.
 
 
 **Retire the format-1 manifest — DONE, 2026-08-23.** The owner overrode the trigger the day after
