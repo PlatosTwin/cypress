@@ -156,8 +156,8 @@ struct TreeProfileView: View {
             }
             // "Take back your report?" before a city-record dispute is withdrawn (owner, 2026-09-28).
             //
-            // **An alert, not the `confirmationDialog` the app's other take-backs use, and the reason
-            // is iOS 26.** On CI's iPhone 17 Pro (iOS 26.2) the dialog's title was in the tree and its
+            // **An alert, not the `confirmationDialog` the app's other take-backs used then, and the
+            // reason is iOS 26.** (ROADMAP 77 later made those alerts too.) On CI's iPhone 17 Pro (iOS 26.2) the dialog's title was in the tree and its
             // `.cancel` button, *Keep it*, was not — twice, in runs 36517992402 and 36530577356. iOS
             // 26 presents a confirmation dialog as a popover that is dismissed by tapping outside it,
             // and leaves the cancel action undrawn; on the 16 Pro's iOS 18.6 the same dialog draws
