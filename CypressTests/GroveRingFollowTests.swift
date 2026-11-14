@@ -370,7 +370,64 @@ struct GroveRingFollowTests {
         #expect(GroveModel.ringCoordinate(fix) == Self.placeA)
     }
 
+    /// A `CLLocationManager` whose authorization the test sets, so a denial can be delivered
+    /// through the provider's real delegate.
+    final class StubbedManager: CLLocationManager {
+        var stubbedAuthorization: CLAuthorizationStatus = .authorizedWhenInUse
+        override var authorizationStatus: CLAuthorizationStatus { stubbedAuthorization }
+        override func startUpdatingLocation() {}
+        override func stopUpdatingLocation() {}
+        override func requestWhenInUseAuthorization() {}
+    }
+
+    @Test("a denial after a replayed fix leaves no fix and no replayed state")
+    func aDenialClearsTheReplayedState() {
+        let manager = StubbedManager()
+        let provider = MapLocationProvider(manager: manager, now: { GroveFollowFixture.now })
+        let replayed = CLLocation(
+            coordinate: CLLocationCoordinate2D(latitude: Self.placeA.latitude, longitude: Self.placeA.longitude),
+            altitude: 0,
+            horizontalAccuracy: 8,
+            verticalAccuracy: 1,
+            timestamp: GroveFollowFixture.now.addingTimeInterval(-3_600)
+        )
+        manager.delegate?.locationManager?(manager, didUpdateLocations: [replayed])
+        #expect(provider.fixIsReplayed, "the replayed fix was not marked; this measures the wrong path")
+
+        manager.stubbedAuthorization = .denied
+        manager.delegate?.locationManagerDidChangeAuthorization?(manager)
+
+        #expect(provider.availability == .denied)
+        #expect(provider.fixIsReplayed == false, "the provider has no fix and still says it is replayed")
+        #expect(provider.fixTiming == nil)
+    }
+
     // MARK: - 3. The newest read wins
+
+    @Test("one new fix that reaches the model twice in one turn starts exactly one read")
+    func twoTriggersForOneFixStartOneRead() async {
+        let api = ByPlaceAPI()
+        let box = FixBox(Self.current(Self.placeA))
+        let model = GroveModel(api: api, now: { GroveFollowFixture.now }, currentFix: { box.fix })
+        await model.load()
+        model.screenDidAppear()
+
+        // One provider update changes both `fix` and `fixIsReplayed`: SwiftUI calls both
+        // `onChange` handlers in the same main-actor turn, before either read has started.
+        box.fix = Self.current(Self.placeB)
+        model.followLocation()
+        let first = model.followRead
+        model.followLocation()
+        let second = model.followRead
+        await first?.value
+        await second?.value
+
+        #expect(
+            api.asked.map(Self.name(of:)) == ["A", "B"],
+            "one fix started more than one read: \(api.asked.map(Self.name(of:)))"
+        )
+        #expect(model.phase == .loaded(Self.grove(named: "B")))
+    }
 
     @Test("two overlapping reads resolved in reverse order: the newer read's ring stands")
     func theNewestReadWins() async throws {

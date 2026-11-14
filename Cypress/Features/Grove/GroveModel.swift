@@ -270,6 +270,11 @@ final class GroveModel {
         guard isShowing, phase != .failed, speciesReadsStarted > 0 else { return }
         let coordinate = Self.ringCoordinate(currentFix?())
         guard Self.ringHasMoved(from: ringReadCoordinate, to: coordinate) else { return }
+        // Claimed now, not when the task first runs: one provider update can change both `fix`
+        // and `fixIsReplayed`, and SwiftUI then calls this twice in one main-actor turn. The second
+        // call has to see this read, or it starts another. `readSpecies` writes the same value
+        // again, and its failure reset still hands the claim back afterwards.
+        ringReadCoordinate = coordinate
         followRead = Task { [weak self] in
             await self?.readSpecies(near: coordinate, failureBlanks: false)
         }

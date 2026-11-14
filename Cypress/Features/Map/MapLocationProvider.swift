@@ -145,7 +145,8 @@ final class MapLocationProvider {
     /// `fixTiming.isReplayed`, observed. Written **only when it changes**, so it costs no redraw
     /// per fix: it is how a reader such as My Grove's ring hears that a replayed place has been
     /// confirmed by a fresh fix that `isWorthPublishing` dropped, which leaves `availability`
-    /// unchanged. `false` when there is no fix.
+    /// unchanged. `false` when there is no fix: `apply(authorization:)` resets it, with
+    /// `fixTiming`, whenever a denial or a reset drops the fix.
     private(set) var fixIsReplayed = false
 
     /// The clock `fixTiming.receivedAt` is read from. Injected so a test can deliver a fix of a
@@ -462,6 +463,12 @@ final class MapLocationProvider {
             if hasStarted { manager.startUpdatingLocation() }
         @unknown default:
             availability = .notAsked
+        }
+        // A dropped fix takes its timing with it, so `fixIsReplayed` is `false` with no fix, as
+        // its doc says. Written only when it is `true`, so nothing extra is observed.
+        if availability.coordinate == nil {
+            fixTiming = nil
+            if fixIsReplayed { fixIsReplayed = false }
         }
     }
 
