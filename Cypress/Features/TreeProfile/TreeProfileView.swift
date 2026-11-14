@@ -590,6 +590,7 @@ struct TreeProfileView: View {
             }
             .buttonStyle(.plain)
             .cypressHitArea()
+            .padding(.vertical, 30) // RED-PROOF: build 88's gap
         }
     }
 
