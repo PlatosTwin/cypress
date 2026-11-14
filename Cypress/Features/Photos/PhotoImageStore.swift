@@ -60,18 +60,37 @@ final class PhotoImageStore {
     /// eviction policy is the jetsam report that reasoning was avoiding. One slot has an eviction
     /// policy that needs no measuring: opening a second photograph drops the first.
     private var viewerSlot: (id: UUID, image: UIImage)?
-    /// Photographs whose bytes are gone or unreadable. Kept so a broken row is asked for once and
-    /// draws its placeholder from then on, rather than retrying on every scroll.
+    /// Photographs whose last read failed, or that were deleted. A row here draws its placeholder.
     private var missing: Set<UUID> = []
+    /// Failed reads of each photograph in this session: how many, and when the last one was.
+    ///
+    /// **A thumbnail asks again, within limits** (ROADMAP 113, the follow-up to report F36). This
+    /// record used to be a plain "asked once, never again", so one failed read (the network, or a
+    /// file the device could not find at that moment) drew the placeholder until the app was
+    /// killed. Retrying on every appearance would read a broken row again on every scroll, so
+    /// `load` retries only after `thumbnailRetryInterval` has passed since the last failure, and
+    /// stops after `thumbnailReadLimit` failures. Nothing here tells a transient failure from a
+    /// lasting one (a lost file and a stale path both read as `notFound`), so the count is what
+    /// keeps a lasting one bounded. A deleted photograph (`forgotten`) is never read again.
+    private var failures: [UUID: (count: Int, last: Date)] = [:]
     /// Photographs deleted in this session (`forget`). Unlike a failed read, this never clears: a
     /// deleted picture must not come back because a screen asked for it again.
     private var forgotten: Set<UUID> = []
     private var inFlight: Set<UUID> = []
+    /// The clock that times `thumbnailRetryInterval`. Injected so a test can move it.
+    private let now: () -> Date
+
+    /// How long a thumbnail waits after a failed read before a new appearance may read it again.
+    static let thumbnailRetryInterval: TimeInterval = 10
+    /// How many failed reads of one photograph `load` accepts in a session before it stops asking.
+    /// The viewer's own retry (`loadViewer`, one read per tap) is not limited by this.
+    static let thumbnailReadLimit = 4
 
     /// `nil` stands a screen up from fixtures with no bytes behind it — the same seam
     /// `ModerationModel` uses, and what previews and the screen sweep pass.
-    init(api: (any CypressAPI)? = nil) {
+    init(api: (any CypressAPI)? = nil, now: @escaping () -> Date = Date.init) {
         self.api = api
+        self.now = now
     }
 
     /// The image if it is already decoded. Never blocks and never starts a load: a `View` body must
@@ -82,24 +101,50 @@ final class PhotoImageStore {
     func isMissing(_ id: UUID) -> Bool { missing.contains(id) }
 
     /// Decodes one photograph into the cache, if it is not there already.
+    ///
+    /// A row whose last read failed is read again when a screen asks for it after
+    /// `thumbnailRetryInterval`, up to `thumbnailReadLimit` failures (see `failures`). A screen asks
+    /// each time the image appears, so the trigger is the same kind of event as the viewer's tap.
     func load(_ id: UUID) async {
-        guard let api, images[id] == nil, !missing.contains(id), !inFlight.contains(id) else { return }
+        guard let api, images[id] == nil, !forgotten.contains(id), !inFlight.contains(id),
+              mayReadAgain(id) else { return }
         inFlight.insert(id)
         defer { inFlight.remove(id) }
 
         guard let data = try? await api.photoData(id: id) else {
-            missing.insert(id)
+            recordFailure(id)
             return
         }
         let edge = Self.maximumEdge
         let decoded = await Task.detached(priority: .userInitiated) {
             Self.downsample(data, maximumEdge: edge)
         }.value
+        // A `forget` while the read was out wins: a deleted picture is not put back.
+        guard !forgotten.contains(id) else { return }
         if let decoded {
             images[id] = decoded
+            recordSuccess(id)
         } else {
-            missing.insert(id)
+            recordFailure(id)
         }
+    }
+
+    /// Whether `load` may read this photograph now: never failed, or failed long enough ago and
+    /// not too often.
+    private func mayReadAgain(_ id: UUID) -> Bool {
+        guard let failure = failures[id] else { return !missing.contains(id) }
+        return failure.count < Self.thumbnailReadLimit
+            && now().timeIntervalSince(failure.last) >= Self.thumbnailRetryInterval
+    }
+
+    private func recordFailure(_ id: UUID) {
+        missing.insert(id)
+        failures[id] = (count: (failures[id]?.count ?? 0) + 1, last: now())
+    }
+
+    private func recordSuccess(_ id: UUID) {
+        missing.remove(id)
+        failures[id] = nil
     }
 
     /// The viewer-resolution copy of one photograph, if it is the one currently in the slot.
@@ -127,15 +172,24 @@ final class PhotoImageStore {
         guard let api, viewerSlot?.id != id, !forgotten.contains(id) else { return }
 
         guard let data = try? await api.photoData(id: id) else {
-            missing.insert(id)
+            recordFailure(id)
             return
         }
-        // The bytes read, so this row is not missing; the browsing cache may now load it too.
-        missing.remove(id)
+        // A `forget` while the read was out wins: a deleted picture is not put back.
+        guard !forgotten.contains(id) else { return }
+        // The bytes read, so this row is not missing.
+        recordSuccess(id)
+        // When the browsing cache has no copy (its own read failed earlier), decode one from the
+        // same bytes, so the thumbnail behind the viewer recovers too instead of waiting for its
+        // screen to appear again (ROADMAP 113).
         let edge = Self.viewerMaximumEdge
-        let decoded = await Task.detached(priority: .userInitiated) {
-            Self.downsample(data, maximumEdge: edge)
+        let browsingEdge: Int? = images[id] == nil ? Self.maximumEdge : nil
+        let (decoded, browsing) = await Task.detached(priority: .userInitiated) {
+            (Self.downsample(data, maximumEdge: edge),
+             browsingEdge.flatMap { Self.downsample(data, maximumEdge: $0) })
         }.value
+        guard !forgotten.contains(id) else { return }
+        if let browsing, images[id] == nil { images[id] = browsing }
         // A failed decode leaves the slot alone rather than emptying it: `viewerImage` then keeps
         // falling back to the thumbnail, which is a soft picture rather than no picture. Marking the
         // row `missing` would be wrong — the bytes read fine for the browsing cache.
@@ -160,6 +214,7 @@ final class PhotoImageStore {
         if viewerSlot?.id == id { viewerSlot = nil }
         inFlight.remove(id)
         missing.insert(id)
+        failures[id] = nil
         forgotten.insert(id)
     }
 
