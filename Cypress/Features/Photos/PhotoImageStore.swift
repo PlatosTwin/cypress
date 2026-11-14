@@ -67,11 +67,13 @@ final class PhotoImageStore {
     /// **A thumbnail asks again, within limits** (ROADMAP 113, the follow-up to report F36). This
     /// record used to be a plain "asked once, never again", so one failed read (the network, or a
     /// file the device could not find at that moment) drew the placeholder until the app was
-    /// killed. Retrying on every appearance would read a broken row again on every scroll, so
-    /// `load` retries only after `thumbnailRetryInterval` has passed since the last failure, and
-    /// stops after `thumbnailReadLimit` failures. Nothing here tells a transient failure from a
-    /// lasting one (a lost file and a stale path both read as `notFound`), so the count is what
-    /// keeps a lasting one bounded. A deleted photograph (`forgotten`) is never read again.
+    /// killed. Now `load` reads a failed row again each time a screen shows it, which happens when a
+    /// screen appears: no `PhotoImage` sits in a lazy container, so a scroll does not ask again.
+    /// `thumbnailRetryInterval` only stops a burst of appearances from using the whole limit at
+    /// once, and `load` stops after `thumbnailReadLimit` failures. Nothing here tells a transient
+    /// failure from a lasting one (a lost file and a stale path both read as `notFound`), so the
+    /// count is what keeps a lasting one bounded. A deleted photograph (`forgotten`) is never read
+    /// again. A read cancelled because its screen went away is not a failure and is not counted.
     private var failures: [UUID: (count: Int, last: Date)] = [:]
     /// Photographs deleted in this session (`forget`). Unlike a failed read, this never clears: a
     /// deleted picture must not come back because a screen asked for it again.
@@ -81,7 +83,9 @@ final class PhotoImageStore {
     private let now: () -> Date
 
     /// How long a thumbnail waits after a failed read before a new appearance may read it again.
-    static let thumbnailRetryInterval: TimeInterval = 10
+    /// Short on purpose: a person who taps a row whose thumbnail just failed should see the hero
+    /// try again. It exists only so several appearances in quick succession cost one read.
+    static let thumbnailRetryInterval: TimeInterval = 1
     /// How many failed reads of one photograph `load` accepts in a session before it stops asking.
     /// The viewer's own retry (`loadViewer`, one read per tap) is not limited by this.
     static let thumbnailReadLimit = 4
@@ -104,7 +108,7 @@ final class PhotoImageStore {
     ///
     /// A row whose last read failed is read again when a screen asks for it after
     /// `thumbnailRetryInterval`, up to `thumbnailReadLimit` failures (see `failures`). A screen asks
-    /// each time the image appears, so the trigger is the same kind of event as the viewer's tap.
+    /// when it appears, so the trigger is the same kind of event as the viewer's tap.
     func load(_ id: UUID) async {
         guard let api, images[id] == nil, !forgotten.contains(id), !inFlight.contains(id),
               mayReadAgain(id) else { return }
@@ -112,7 +116,9 @@ final class PhotoImageStore {
         defer { inFlight.remove(id) }
 
         guard let data = try? await api.photoData(id: id) else {
-            recordFailure(id)
+            // SwiftUI cancels a `.task` when its view goes away, and a cancelled network read
+            // throws. That says nothing about the photograph, so it is not counted against it.
+            if !Task.isCancelled { recordFailure(id) }
             return
         }
         let edge = Self.maximumEdge
@@ -164,21 +170,18 @@ final class PhotoImageStore {
     /// 1,400 px thumbnail and the whole point here is the pixels it does not have.
     ///
     /// **A row in `missing` is asked for again here, once per time the viewer opens it** (report
-    /// F36). `missing` exists so a scroll does not retry a broken row on every frame; the viewer
-    /// opens on a tap, so a retry here costs one read per tap. Without it, one failed read (the
+    /// F36). The viewer opens on a tap, so a retry here costs one read per tap and is not limited
+    /// by `thumbnailReadLimit`. Without it, one failed read (the
     /// network, or a file the device could not find at that moment) said "That photograph could
     /// not be opened" until the app was killed. A deleted photograph is never retried.
     func loadViewer(_ id: UUID) async {
         guard let api, viewerSlot?.id != id, !forgotten.contains(id) else { return }
 
         guard let data = try? await api.photoData(id: id) else {
-            recordFailure(id)
+            // A read cancelled because the viewer closed is not a failure (see `load`).
+            if !Task.isCancelled { recordFailure(id) }
             return
         }
-        // A `forget` while the read was out wins: a deleted picture is not put back.
-        guard !forgotten.contains(id) else { return }
-        // The bytes read, so this row is not missing.
-        recordSuccess(id)
         // When the browsing cache has no copy (its own read failed earlier), decode one from the
         // same bytes, so the thumbnail behind the viewer recovers too instead of waiting for its
         // screen to appear again (ROADMAP 113).
@@ -188,7 +191,10 @@ final class PhotoImageStore {
             (Self.downsample(data, maximumEdge: edge),
              browsingEdge.flatMap { Self.downsample(data, maximumEdge: $0) })
         }.value
+        // A `forget` while the read or the decode was out wins: a deleted picture is not put back.
         guard !forgotten.contains(id) else { return }
+        // The bytes read, so this row is not missing.
+        recordSuccess(id)
         if let browsing, images[id] == nil { images[id] = browsing }
         // A failed decode leaves the slot alone rather than emptying it: `viewerImage` then keeps
         // falling back to the thumbnail, which is a soft picture rather than no picture. Marking the

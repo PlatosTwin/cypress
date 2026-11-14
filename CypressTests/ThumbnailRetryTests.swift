@@ -28,14 +28,64 @@ struct ThumbnailRetryTests {
         func advance(_ seconds: TimeInterval) { now = now.addingTimeInterval(seconds) }
     }
 
-    /// `photoData` fails on its first `failures` calls and answers on every later one.
+    /// Holds the first read open until the test releases it, so a test can cancel the task or
+    /// delete the photograph while the read is out. No wall clock: the test waits on `entered`.
+    private final class Gate: @unchecked Sendable {
+        let entered: AsyncStream<Void>
+        private let enteredContinuation: AsyncStream<Void>.Continuation
+        private let lock = NSLock()
+        private var waiter: CheckedContinuation<Void, Never>?
+        private var released = false
+
+        init() {
+            (entered, enteredContinuation) = AsyncStream.makeStream()
+        }
+
+        /// Called by the fake: says the read has started, then waits for `release`.
+        func pass() async {
+            enteredContinuation.yield()
+            await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+                lock.lock()
+                if released {
+                    lock.unlock()
+                    continuation.resume()
+                } else {
+                    waiter = continuation
+                    lock.unlock()
+                }
+            }
+        }
+
+        /// Waits until the fake's read has started.
+        func waitUntilEntered() async {
+            for await _ in entered { return }
+        }
+
+        func release() {
+            lock.lock()
+            released = true
+            let continuation = waiter
+            waiter = nil
+            lock.unlock()
+            continuation?.resume()
+        }
+    }
+
+    /// `photoData` fails on its first `failures` calls and answers on every later one. With a
+    /// `gate`, the first call waits at the gate, then throws if its task was cancelled meanwhile,
+    /// as `URLSession` does.
     private struct PhotoFailsFirst: CypressAPI {
         let reads: Reads
         let failures: Int
         let bytes: Data
+        var gate: Gate?
 
         func photoData(id: UUID) async throws -> Data {
             reads.count += 1
+            if reads.count == 1, let gate {
+                await gate.pass()
+                try Task.checkCancellation()
+            }
             if reads.count <= failures { throw APIError.serverError }
             return bytes
         }
@@ -63,9 +113,13 @@ struct ThumbnailRetryTests {
         func exportLatest(_ format: ExportFormat) async throws -> Data { Data() }
     }
 
-    private static func store(failures: Int, reads: Reads, clock: Clock) throws -> PhotoImageStore {
+    private static func store(
+        failures: Int, reads: Reads, clock: Clock, gate: Gate? = nil
+    ) throws -> PhotoImageStore {
         PhotoImageStore(
-            api: PhotoFailsFirst(reads: reads, failures: failures, bytes: try StoredPhotoPathTests.jpeg()),
+            api: PhotoFailsFirst(
+                reads: reads, failures: failures, bytes: try StoredPhotoPathTests.jpeg(), gate: gate
+            ),
             now: { clock.now }
         )
     }
@@ -141,5 +195,86 @@ struct ThumbnailRetryTests {
         await store.loadViewer(id)
         #expect(reads.count == 2)
         #expect(store.image(id) != nil, "the thumbnail behind the viewer must draw the photograph")
+    }
+
+    // MARK: - A read that is out when something changes
+
+    @Test("a thumbnail read cancelled with its screen is not counted, so the next screen reads at once")
+    func cancelledThumbnailReadIsNotAFailure() async throws {
+        let reads = Reads()
+        let clock = Clock()
+        let gate = Gate()
+        let store = try Self.store(failures: 0, reads: reads, clock: clock, gate: gate)
+        let id = UUID()
+
+        // A list row's thumbnail is loading; the reader taps the row and SwiftUI cancels its task.
+        let row = Task { await store.load(id) }
+        await gate.waitUntilEntered()
+        row.cancel()
+        gate.release()
+        await row.value
+        #expect(!store.isMissing(id), "a cancelled read must not mark the photograph missing")
+
+        // The profile hero asks for the same photograph at once. No time passes.
+        await store.load(id)
+        #expect(reads.count == 2, "the hero must read, not wait out a retry interval")
+        #expect(store.image(id) != nil)
+    }
+
+    @Test("a viewer read cancelled with the viewer is not counted, so the thumbnail reads at once")
+    func cancelledViewerReadIsNotAFailure() async throws {
+        let reads = Reads()
+        let clock = Clock()
+        let gate = Gate()
+        let store = try Self.store(failures: 0, reads: reads, clock: clock, gate: gate)
+        let id = UUID()
+
+        let viewer = Task { await store.loadViewer(id) }
+        await gate.waitUntilEntered()
+        viewer.cancel()
+        gate.release()
+        await viewer.value
+        #expect(!store.isMissing(id), "a cancelled read must not mark the photograph missing")
+
+        await store.load(id)
+        #expect(reads.count == 2, "the thumbnail must read, not wait out a retry interval")
+        #expect(store.image(id) != nil)
+    }
+
+    @Test("a photograph deleted while its thumbnail read is out is not put back")
+    func deleteDuringThumbnailReadWins() async throws {
+        let reads = Reads()
+        let clock = Clock()
+        let gate = Gate()
+        let store = try Self.store(failures: 0, reads: reads, clock: clock, gate: gate)
+        let id = UUID()
+
+        let row = Task { await store.load(id) }
+        await gate.waitUntilEntered()
+        store.forget(id)
+        gate.release()
+        await row.value
+        #expect(reads.count == 1, "the read did return its bytes")
+        #expect(store.image(id) == nil, "a deleted photograph must not be drawn")
+        #expect(store.isMissing(id))
+    }
+
+    @Test("a photograph deleted while the viewer's read is out is not put back")
+    func deleteDuringViewerReadWins() async throws {
+        let reads = Reads()
+        let clock = Clock()
+        let gate = Gate()
+        let store = try Self.store(failures: 0, reads: reads, clock: clock, gate: gate)
+        let id = UUID()
+
+        let viewer = Task { await store.loadViewer(id) }
+        await gate.waitUntilEntered()
+        store.forget(id)
+        gate.release()
+        await viewer.value
+        #expect(reads.count == 1, "the read did return its bytes")
+        #expect(store.viewerImage(id) == nil, "a deleted photograph must not be drawn in the viewer")
+        #expect(store.image(id) == nil, "nor in the thumbnail behind it")
+        #expect(store.isMissing(id))
     }
 }
