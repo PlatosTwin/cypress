@@ -443,8 +443,7 @@ public struct OutboxStore {
     /// A pruned add row holds nothing, because a pruned row was `done`. The tree is matched on the
     /// payloads' `treeID`, which every kind carries.
     static let heldBehindAddSQL = """
-        (outbox.kind IN (\(OutboxItem.Kind.allCases.filter(\.waitsForItsTreeAdd)
-            .map { "'\($0.rawValue)'" }.joined(separator: ",")))
+        (outbox.kind IN (\(waitingKindList))
          AND EXISTS (
              SELECT 1 FROM outbox AS addition
               WHERE addition.kind = 'add_tree'
@@ -454,6 +453,12 @@ public struct OutboxStore {
                     = upper(json_extract(outbox.payload, '$.treeID'))
          ))
         """
+
+    /// `waitsForItsTreeAdd`'s kinds as SQL literals, for `heldBehindAddSQL`.
+    private static let waitingKindList = OutboxItem.Kind.allCases
+        .filter(\.waitsForItsTreeAdd)
+        .map { "'\($0.rawValue)'" }
+        .joined(separator: ",")
 
     /// Leaves out of each held row's 48 h window the time it has waited behind its tree's add, and
     /// restamps `updated_at` so the next pass counts from here (ROADMAP 116).
