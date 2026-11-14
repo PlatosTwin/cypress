@@ -630,7 +630,7 @@ file.
      exists. **Owner decision** (constraint 16). Small to build if relaxed; the size depends on
      the rule chosen, for example a smaller radius, or an override that states the reader has
      checked the nearby record. **Decided by the owner on 2026-11-14: the rule stops refusing, for
-     new trees and for pin moves.** See chip 138 and
+     new trees and for pin moves.** See chip 140 and
      `docs/rulings-pending/community-trees-no-proximity-rule.md`.
 
 - ~~**F33 — zoom while taking the photo on add-a-tree.**~~ Build 77, 2026-09-28, verbatim: *"Need
@@ -672,7 +672,7 @@ everyone as soon as it reaches the service. A tree added signed out stays on the
 then goes live for everyone at once. The adder alone may move its pin, and may withdraw it for
 everyone while nobody else has built on it. Its history is shown on the profile without saying who.
 ~~Trees added before the sync path existed stay local for ever (R77 is kept, and there is no
-backfill).~~ **Reversed by the owner on 2026-11-14:** a community tree added before syncing existed is sent, automatically, with everything recorded on it; see chip 137 and `docs/rulings-pending/community-trees-old-trees.md`. Others see a photograph's capture **date** and never its time; the owner keeps the exact
+backfill).~~ **Reversed by the owner on 2026-11-14:** a community tree added before syncing existed is sent, automatically, with everything recorded on it; see chip 139 and `docs/rulings-pending/community-trees-old-trees.md`. Others see a photograph's capture **date** and never its time; the owner keeps the exact
 time (decision 14, made client-assisted as 14a). The decisions, and what the server rounds ruled
 inside them, are in `docs/rulings-pending/community-trees.md` and
 `docs/rulings-pending/community-trees-reads.md`.
@@ -731,7 +731,7 @@ or redeploy would change that (chip 12: merging server work changes nothing in p
   pin, the species controls appear on their profiles, your own unshared tree says "This tree is only
   on this phone…", and a tree within 10 m of another is added after a note that does not block.
   *Places with no inventory*: the map card and the empty shortlist each name both kinds of tree. The
-  late-conflict question was dropped, because the owner removed the 10 m rule (chip 138). Five facts
+  late-conflict question was dropped, because the owner removed the 10 m rule (chip 140). Five facts
   the round must check first are listed at the end of the answers file. The UI suite runs with the
   remote gate off, so this round also needs a DEBUG seam that seeds the cache; a deep link that
   quietly no-ops is forbidden (ARCHITECTURE §7).
@@ -2334,18 +2334,18 @@ into this section in the round that finds it, and nowhere else. Each item stands
     `AddReadingReachabilityTests.testAFullyMeasuredTreeReachesTheMeasureSheetInOneTap` failed with
     "Failed to get matching snapshots: Timed out while evaluating UI query" on #217's `ui (2)` (run
     43558019089), green on re-run. Both are slow-runner shapes; watch for a third sighting.
-137. **Send the community trees that predate syncing, with everything on them (owner's ruling,
+139. **Send the community trees that predate syncing, with everything on them (owner's ruling,
     2026-11-14).** The owner reversed R77 for community trees: "trees that are community added
     should make it onto everyone's phone regardless of when they were added." Chosen in the decision
     round: the tree, its photographs, and every visit, measurement and care event recorded on it;
     sent automatically after the update, with no prompt; a signed-out phone waits for sign-in, as a
     new tree does; other people see the day the tree was added, not the day it went live. The
     ruling, and the three facts the building round must verify first (no `add_tree` row exists for
-    these trees, a proximity conflict on an old add, which chip 138 removes, and whether the
+    these trees, a proximity conflict on an old add, which chip 140 removes, and whether the
     service keeps the phone's dates), are in `docs/rulings-pending/community-trees-old-trees.md`. Rows on a city tree are
     still under R77; the owner was not asked about them. Not built. It belongs with C2, because
     nobody else sees any community tree until C2 lands.
-138. **Stop refusing a tree that is within 10 m of another (owner's ruling, 2026-11-14).** The
+140. **Stop refusing a tree that is within 10 m of another (owner's ruling, 2026-11-14).** The
     owner, on how far a pin may move: "can go anywhere, and also fine to go within 10m of another
     tree. sometimes they will be close together and that's fine". Asked how far that goes, the owner
     chose pin moves and new trees. This reverses the second half of DECISIONS constraint 16 and
@@ -2354,7 +2354,7 @@ into this section in the round that finds it, and nowhere else. Each item stands
     record within 10 m of here. Add this tree only if it is a different one."). **The service change
     deploys before any build that stops refusing on the phone**, and each `cypress-sync` deploy needs
     the owner's go-ahead. The ruling and the build notes are in
-    `docs/rulings-pending/community-trees-no-proximity-rule.md`. Not built. It goes before chip 137,
+    `docs/rulings-pending/community-trees-no-proximity-rule.md`. Not built. It goes before chip 139,
     whose old trees can otherwise come back as conflicts.
 
 
