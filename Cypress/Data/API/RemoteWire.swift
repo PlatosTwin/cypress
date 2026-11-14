@@ -503,9 +503,9 @@ struct DeleteAccountResponse: Decodable {
         contributions = try container.decode(Int.self, forKey: .contributions)
         photos = try container.decode(Int.self, forKey: .photos)
         tombstones = try container.decode(Int.self, forKey: .tombstones)
-        let trees = try? container.decodeIfPresent(CommunityTrees.self, forKey: .communityTrees)
+        let trees = try container.decodeIfPresent(CommunityTrees.self, forKey: .communityTrees)
         communityTrees = trees.map {
-            AccountDeletion.ServiceTreeVerdicts(deleted: Set($0.deleted), anonymized: Set($0.anonymized))
+            AccountDeletion.ServiceTreeVerdicts(deleted: Set($0.anonymized), anonymized: Set($0.deleted))
         }
     }
 

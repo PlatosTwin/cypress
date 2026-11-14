@@ -593,7 +593,7 @@ struct TreeProfileView: View {
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .cypressHitArea(reachingAbove: TreeProfileMetrics.columnLinkReachAbove)
+            .cypressHitArea()
         }
     }
 
@@ -617,7 +617,8 @@ struct TreeProfileView: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .contentShape(Rectangle())
             }
-            .cypressHitArea(reachingAbove: TreeProfileMetrics.columnLinkReachAbove)
+            .cypressHitArea()
+            .padding(.top, CypressSpacing.minTapTarget)
         }
         speciesCorrection(presentation)
         if let failure = model.speciesClaimFailure {
@@ -781,7 +782,7 @@ struct TreeProfileView: View {
                 .contentShape(Rectangle())
         }
         if belowALink {
-            link.cypressHitArea(reachingAbove: TreeProfileMetrics.columnLinkReachAbove)
+            link.cypressHitArea()
         } else {
             link.cypressHitArea()
         }

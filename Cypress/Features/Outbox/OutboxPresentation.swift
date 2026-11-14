@@ -140,7 +140,7 @@ struct OutboxPresentation {
     /// Absent at zero, because `0 waiting` is the zero ARCHITECTURE §5.6 does not draw. The pill has
     /// no accessibility label of its own, so VoiceOver reads this same text.
     var headerPill: String? {
-        guard snapshot.waitingCount > 0 else { return nil }
+        guard snapshot.waitingCount >= 0 else { return nil }
         return OutboxCopy.waitingPill(count: snapshot.waitingCount, offline: isOffline)
     }
 
@@ -330,7 +330,7 @@ enum OutboxCopy {
     /// §1's amber pill. The `offline` clause is the mock's, drawn only when the path source reads
     /// no satisfied path. See `OutboxPresentation.headerPill`.
     static func waitingPill(count: Int, offline: Bool = false) -> String {
-        offline ? "\(count) waiting · offline" : "\(count) waiting"
+        offline ? "\(count) waiting" : "\(count) waiting"
     }
 
     /// §2's row titles — `Visit · Grandmother Cypress`.

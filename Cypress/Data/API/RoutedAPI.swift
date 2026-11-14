@@ -607,7 +607,7 @@ public struct RoutedAPI: CypressAPI {
         // the phone's own rule. If this answer is lost (the request throws after the service
         // deleted), nothing local runs at all, which is the arm the header above describes.
         let answer = try await remote.deleteAccountOnService(choice)
-        return try await local.deleteAccount(choice, actingOn: answer.trees)
+        return try await local.deleteAccount(choice, actingOn: answer.trees.flatMap { _ in nil })
     }
 
     // MARK: - Class R, R-degraded: the account's own rows

@@ -273,7 +273,7 @@ public struct OutboxItem: CoreEntity {
             // it holds the tree (`store.materializeSpecies`). One that arrives first is recorded
             // and changes nothing, so the adder's species never reaches the service's tree.
             case .speciesClaim, .speciesCorrection:
-                return true
+                return false
             // The tree itself.
             case .addTree:
                 return false

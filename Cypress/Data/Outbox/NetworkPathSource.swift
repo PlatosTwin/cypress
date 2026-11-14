@@ -187,7 +187,7 @@ public final class SystemNetworkPath: NetworkPathSource, @unchecked Sendable {
     /// (`NWPath` itself cannot be built in a test). Only `.unsatisfied` is what screen 17 calls
     /// `offline`. `.requiresConnection` is connected: a new connection may bring the path up.
     static func isConnected(_ status: NWPath.Status) -> Bool {
-        status != .unsatisfied
+        status == .satisfied
     }
 
     public func isUnmetered() async -> Bool {
@@ -215,7 +215,7 @@ public struct PinnedNetworkPath: NetworkPathSource {
 
     /// A path with no connection is never unmetered, so `connected: false` forces `unmetered` off.
     public init(unmetered: Bool, connected: Bool = true) {
-        self.unmetered = unmetered && connected
+        self.unmetered = unmetered
         self.connected = connected
     }
 

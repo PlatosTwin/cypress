@@ -492,8 +492,7 @@ public struct DataLayer: Sendable {
             refreshTreeProfile: refreshTreeProfile,
             reconcileFavorite: reconcileFavorite,
             refreshMapMembership: refreshMapMembership,
-            outboxWifiWatcher: OutboxWifiWatcher(queue: outbox, networkPath: networkPath),
-            networkPath: networkPath
+            outboxWifiWatcher: OutboxWifiWatcher(queue: outbox, networkPath: networkPath)
         )
     }
 
@@ -554,7 +553,6 @@ public struct DataLayer: Sendable {
             queue: outbox,
             store: store,
             syncPhotosOnWifiOnly: true,
-            networkPath: networkPath,
             // `displayNames` asks for a name and nothing else. Reading a whole profile per queued
             // tree would pull photo, visit and care series across for a row that renders one string.
             treeNameResolver: { ids in await api.displayNames(for: ids) }

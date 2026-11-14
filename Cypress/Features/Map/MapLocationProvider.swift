@@ -127,7 +127,7 @@ final class MapLocationProvider {
         var ageOnArrival: TimeInterval { receivedAt.timeIntervalSince(capturedAt) }
 
         /// Whether CoreLocation replayed this fix from its cache rather than took it now.
-        var isReplayed: Bool { ageOnArrival > MapLocationProvider.replayedFixAgeOnArrival }
+        var isReplayed: Bool { ageOnArrival >= MapLocationProvider.replayedFixAgeOnArrival }
     }
 
     @ObservationIgnored private(set) var fixTiming: FixTiming?
@@ -249,9 +249,6 @@ final class MapLocationProvider {
         self.now = { pinnedAt }
         self.availability = pinnedAvailability
         self.precision = precision
-        if pinnedAvailability.coordinate != nil {
-            self.fixTiming = FixTiming(capturedAt: pinnedAt, receivedAt: pinnedAt)
-        }
         switch pinnedAvailability {
         case .notAsked:                     self.authorization = .notDetermined
         case .denied:                       self.authorization = .denied
@@ -397,7 +394,7 @@ final class MapLocationProvider {
         timing: FixTiming
     ) {
         let published = willPublish(coordinate: coordinate, accuracyM: accuracyM, accuracyIsKnown: accuracyIsKnown)
-        if published || !timing.isReplayed {
+        if published {
             fixTiming = timing
             if fixIsReplayed != timing.isReplayed { fixIsReplayed = timing.isReplayed }
         }
@@ -468,7 +465,6 @@ final class MapLocationProvider {
         // its doc says. Written only when it is `true`, so nothing extra is observed.
         if availability.coordinate == nil {
             fixTiming = nil
-            if fixIsReplayed { fixIsReplayed = false }
         }
     }
 

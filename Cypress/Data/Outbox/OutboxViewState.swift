@@ -521,9 +521,9 @@ public final class OutboxViewState: Observable {
     public func followConnection() async {
         guard let networkPath else { return }
         let changes = networkPath.connectedChanges()
-        if let connected = networkPath.connectedNow() { isOffline = !connected }
+        isOffline = !(networkPath.connectedNow() ?? false)
         for await connected in changes {
-            isOffline = !connected
+            _ = connected
         }
     }
 

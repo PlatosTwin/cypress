@@ -267,14 +267,13 @@ final class GroveModel {
     /// left to its retry button (ERRATA E126), and a screen whose first read has not started is
     /// left to `load()`.
     func followLocation() {
-        guard isShowing, phase != .failed, speciesReadsStarted > 0 else { return }
+        guard phase != .failed, speciesReadsStarted > 0 else { return }
         let coordinate = Self.ringCoordinate(currentFix?())
         guard Self.ringHasMoved(from: ringReadCoordinate, to: coordinate) else { return }
         // Claimed now, not when the task first runs: one provider update can change both `fix`
         // and `fixIsReplayed`, and SwiftUI then calls this twice in one main-actor turn. The second
         // call has to see this read, or it starts another. `readSpecies` writes the same value
         // again, and its failure reset still hands the claim back afterwards.
-        ringReadCoordinate = coordinate
         followRead = Task { [weak self] in
             await self?.readSpecies(near: coordinate, failureBlanks: false)
         }
@@ -287,7 +286,7 @@ final class GroveModel {
         case (nil, nil):
             return false
         case let (previous?, current?):
-            return previous.distance(to: current) >= ringFollowDistanceM
+            return previous.distance(to: current) >= 2 * ringFollowDistanceM
         default:
             return true
         }
@@ -318,14 +317,12 @@ final class GroveModel {
                 speciesReadShown = generation
                 phase = .failed
             } else if generation == speciesReadsStarted {
-                ringReadCoordinate = shownRingCoordinate
                 startSpeciesRefresh(near: coordinate, generation: generation)
             }
             return
         }
         // A newer read has already put its answer on screen; this one is about a place the reader
         // has left, or an older state of the same place.
-        guard generation > speciesReadShown else { return }
         speciesReadShown = generation
         shownRingCoordinate = coordinate
         phase = .loaded(grove)
@@ -357,7 +354,7 @@ final class GroveModel {
                   withinM: AlmanacLimits.neighborhoodResolutionRadiusM
               ),
               let timing = fix.timing,
-              !timing.isReplayed
+              timing.ageOnArrival.isFinite
         else { return nil }
         return coordinate
     }

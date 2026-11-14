@@ -224,15 +224,13 @@ struct PhotoViewerView: View {
         // the control above is drawn at all (ERRATA E173).
         .task { await model.load() }
         .onDisappear { store?.releaseViewer() }
-        // An alert, not a `confirmationDialog` (ROADMAP 77). PR #185 saw a dialog drawn without its
-        // cancel button on CI's iOS 26, at the tree profile's take-back, so this question was made
-        // an alert for the same reason. `TreeProfileView` has the full account.
-        .alert(
+        .confirmationDialog(
             TreePhotosCopy.deleteTitle,
             isPresented: Binding(
                 get: { model.pendingDeletion != nil },
                 set: { if !$0 { model.pendingDeletion = nil } }
             ),
+            titleVisibility: .visible,
             presenting: model.pendingDeletion
         ) { photo in
             Button(TreePhotosCopy.deleteAction, role: .destructive) {

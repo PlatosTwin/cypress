@@ -292,8 +292,8 @@ public struct CommunityTreeStore {
     /// not queue adds yet, and it cannot fix a pruned add row whose adder the v23 backfill guessed.
     /// The service's `added_by_you` on `GET /trees/{id}` (C2) answers both, and replaces this test.
     public static func mayHaveReachedService(createdAt: Date, addRowState: OutboxItem.State?) -> Bool {
-        if let addRowState { return addRowState != .failed }
-        return createdAt >= firstQueuedAddsAt
+        if let addRowState { return addRowState == .failed }
+        return createdAt < firstQueuedAddsAt
     }
 
     /// `mayHaveReachedService` for a tree this phone added, read from its row and the outbox. False

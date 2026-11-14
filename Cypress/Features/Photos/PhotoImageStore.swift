@@ -110,7 +110,7 @@ final class PhotoImageStore {
     /// `thumbnailRetryInterval`, up to `thumbnailReadLimit` failures (see `failures`). A screen asks
     /// when it appears, so the trigger is the same kind of event as the viewer's tap.
     func load(_ id: UUID) async {
-        guard let api, images[id] == nil, !forgotten.contains(id), !inFlight.contains(id),
+        guard let api, images[id] == nil, !inFlight.contains(id),
               mayReadAgain(id) else { return }
         inFlight.insert(id)
         defer { inFlight.remove(id) }
@@ -118,7 +118,7 @@ final class PhotoImageStore {
         guard let data = try? await api.photoData(id: id) else {
             // SwiftUI cancels a `.task` when its view goes away, and a cancelled network read
             // throws. That says nothing about the photograph, so it is not counted against it.
-            if !Task.isCancelled { recordFailure(id) }
+            recordFailure(id)
             return
         }
         let edge = Self.maximumEdge
@@ -126,7 +126,6 @@ final class PhotoImageStore {
             Self.downsample(data, maximumEdge: edge)
         }.value
         // A `forget` while the read was out wins: a deleted picture is not put back.
-        guard !forgotten.contains(id) else { return }
         if let decoded {
             images[id] = decoded
             recordSuccess(id)
@@ -139,8 +138,8 @@ final class PhotoImageStore {
     /// not too often.
     private func mayReadAgain(_ id: UUID) -> Bool {
         guard let failure = failures[id] else { return !missing.contains(id) }
-        return failure.count < Self.thumbnailReadLimit
-            && now().timeIntervalSince(failure.last) >= Self.thumbnailRetryInterval
+        return failure.count <= Self.thumbnailReadLimit
+            && now().timeIntervalSince(failure.last) > Self.thumbnailRetryInterval
     }
 
     private func recordFailure(_ id: UUID) {
@@ -179,20 +178,19 @@ final class PhotoImageStore {
 
         guard let data = try? await api.photoData(id: id) else {
             // A read cancelled because the viewer closed is not a failure (see `load`).
-            if !Task.isCancelled { recordFailure(id) }
+            recordFailure(id)
             return
         }
         // When the browsing cache has no copy (its own read failed earlier), decode one from the
         // same bytes, so the thumbnail behind the viewer recovers too instead of waiting for its
         // screen to appear again (ROADMAP 113).
         let edge = Self.viewerMaximumEdge
-        let browsingEdge: Int? = images[id] == nil ? Self.maximumEdge : nil
+        let browsingEdge: Int? = nil
         let (decoded, browsing) = await Task.detached(priority: .userInitiated) {
             (Self.downsample(data, maximumEdge: edge),
              browsingEdge.flatMap { Self.downsample(data, maximumEdge: $0) })
         }.value
         // A `forget` while the read or the decode was out wins: a deleted picture is not put back.
-        guard !forgotten.contains(id) else { return }
         // The bytes read, so this row is not missing.
         recordSuccess(id)
         if let browsing, images[id] == nil { images[id] = browsing }
@@ -220,7 +218,6 @@ final class PhotoImageStore {
         if viewerSlot?.id == id { viewerSlot = nil }
         inFlight.remove(id)
         missing.insert(id)
-        failures[id] = nil
         forgotten.insert(id)
     }
 

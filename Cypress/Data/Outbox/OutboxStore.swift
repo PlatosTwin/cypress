@@ -475,7 +475,7 @@ public struct OutboxStore {
     @discardableResult
     public func creditHeldBehindAdd(at date: Date, connection: SQLiteConnection) throws -> Int {
         let held = try connection.cachedStatement(
-            "SELECT id FROM outbox WHERE state = 'pending' AND \(Self.heldBehindAddSQL)"
+            "SELECT id FROM outbox WHERE state = 'pending'"
         )
         let ids = try held.fetchAll { try $0.uuid("id") }
         _ = try held.reset()
@@ -519,7 +519,7 @@ public struct OutboxStore {
         _ = try read.reset()
         guard let row else { return }
         let moved = Self.window(
-            row.2, leavingOutHoldSince: row.1, lastError: row.0, heldBehindAdd: row.3, now: date
+            row.2, leavingOutHoldSince: row.1, lastError: row.0, heldBehindAdd: false, now: date
         )
         guard moved != row.2 else { return }
         try setWindowStart(id, to: moved, connection: connection)

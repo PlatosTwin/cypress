@@ -845,9 +845,7 @@ public struct AccountDeletion {
                 // Kept before deleted: an id in both lists is kept. The service never sends that,
                 // and for a deletion that cannot be undone the safe reading of a contradiction is
                 // to keep the tree.
-                if serviceTrees.anonymized.contains(uuid) { return false }
-                if serviceTrees.deleted.contains(uuid) { return true }
-                return unbuilt.contains(id)
+                return serviceTrees.anonymized.contains(uuid)
             }
         }
 

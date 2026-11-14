@@ -126,15 +126,13 @@ struct TreePhotosView: View {
         .navigationBarBackButtonHidden(true)
         .toolbar(.hidden, for: .navigationBar)
         .task { await model.load() }
-        // An alert, not a `confirmationDialog` (ROADMAP 77). PR #185 saw a dialog drawn without its
-        // cancel button on CI's iOS 26, at the tree profile's take-back, so this question was made
-        // an alert for the same reason. `TreeProfileView` has the full account.
-        .alert(
+        .confirmationDialog(
             TreePhotosCopy.deleteTitle,
             isPresented: Binding(
                 get: { model.pendingDeletion != nil },
                 set: { if !$0 { model.pendingDeletion = nil } }
             ),
+            titleVisibility: .visible,
             presenting: model.pendingDeletion
         ) { photo in
             Button(TreePhotosCopy.deleteAction, role: .destructive) {

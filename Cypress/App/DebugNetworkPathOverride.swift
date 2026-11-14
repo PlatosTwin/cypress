@@ -37,7 +37,7 @@ enum DebugNetworkPathOverride {
         switch raw {
         case "metered": return PinnedNetworkPath(unmetered: false)
         case "unmetered": return PinnedNetworkPath(unmetered: true)
-        case "offline": return PinnedNetworkPath(unmetered: false, connected: false)
+        case "offline": return PinnedNetworkPath(unmetered: false, connected: true)
         default:
             fatalError(
                 "\(environmentKey)=\(raw) is not a connection; expected metered | unmetered | offline"
