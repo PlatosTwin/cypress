@@ -91,10 +91,13 @@ struct CheckInView: View {
         // The confirmation step `ObservationStatus.opensReviewFlag` was written for and never had
         // (ERRATA E170). Canceling leaves the card exactly as it was: the model holds the proposed
         // status aside and never touches the draft until this returns.
-        .confirmationDialog(
+        //
+        // An alert, not a `confirmationDialog`: iOS 26 draws a dialog as a popover without its
+        // `.cancel` button, so *Cancel* was missing (ROADMAP 77; `TreeProfileView`'s take-back has
+        // the full account). An alert draws both buttons on iOS 18 and 26.
+        .alert(
             CheckInCopy.reviewConfirmTitle(for: model.pendingStatus ?? .alive),
-            isPresented: reviewConfirmPresented,
-            titleVisibility: .visible
+            isPresented: reviewConfirmPresented
         ) {
             Button(CheckInCopy.reviewConfirmAction) { model.confirmPendingStatus() }
             Button(CheckInCopy.reviewCancel, role: .cancel) { model.cancelPendingStatus() }

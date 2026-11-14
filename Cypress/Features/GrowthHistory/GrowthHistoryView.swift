@@ -42,13 +42,16 @@ struct GrowthHistoryView: View {
             // `TreePhotosView`'s arrangement exactly: one dialog for the whole list, driven by the
             // model's `pendingWithdrawal`, rather than one per row. A dialog per row is a dialog
             // per row of state, and the log is a `ForEach`.
-            .confirmationDialog(
+            //
+            // An alert, not a `confirmationDialog`: iOS 26 draws a dialog as a popover without its
+            // `.cancel` button, so *Keep it* was missing (ROADMAP 77; `TreeProfileView`'s take-back
+            // has the full account). An alert draws both buttons on iOS 18 and 26.
+            .alert(
                 GrowthHistoryCopy.withdrawTitle,
                 isPresented: Binding(
                     get: { model.pendingWithdrawal != nil },
                     set: { if !$0 { model.pendingWithdrawal = nil } }
                 ),
-                titleVisibility: .visible,
                 presenting: model.pendingWithdrawal
             ) { row in
                 Button(GrowthHistoryCopy.withdrawAction, role: .destructive) {
