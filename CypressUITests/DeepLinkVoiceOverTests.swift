@@ -164,7 +164,7 @@ final class DeepLinkVoiceOverTests: XCTestCase, DeepLinkHarness {
         )
 
         let north = app.buttons["Move the pin north"]
-        for _ in 0..<3 { north.tap() }
+        nudgeNorth(north, pin, times: 3)
 
         XCTAssertEqual(
             pin.value as? String, "15 m north of where you are standing.",
@@ -195,7 +195,7 @@ final class DeepLinkVoiceOverTests: XCTestCase, DeepLinkHarness {
         XCTAssertTrue(pin.waitForExistence(timeout: 10), "pinAdjust: the pin is not in the accessibility tree at all")
 
         let north = app.buttons["Move the pin north"]
-        for _ in 0..<15 { north.tap() }
+        nudgeNorth(north, pin, times: 15)
 
         XCTAssertEqual(
             pin.value as? String, "75 m north of where you are standing.",
@@ -225,6 +225,35 @@ final class DeepLinkVoiceOverTests: XCTestCase, DeepLinkHarness {
         )
 
         app.terminate()
+    }
+
+    /// Nudges the pin north `times` times, one 5 m step at a time, waiting after each tap until the
+    /// pin reads the new distance.
+    ///
+    /// Taps sent back to back lost one on a loaded CI runner (main run 43551707747, ui shard 1:
+    /// fifteen taps left the pin at 70 m, not 75). Waiting for each step makes the test measure the
+    /// control, not the runner's speed. A step that never lands still fails here, at that step.
+    private func nudgeNorth(
+        _ north: XCUIElement,
+        _ pin: XCUIElement,
+        times: Int,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) {
+        for step in 1...times {
+            north.tap()
+            let expected = "\(step * 5) m north of where you are standing."
+            let landed = XCTNSPredicateExpectation(
+                predicate: NSPredicate(format: "value == %@", expected),
+                object: pin
+            )
+            XCTAssertEqual(
+                XCTWaiter().wait(for: [landed], timeout: 10), .completed,
+                "pinAdjust: nudge \(step) left the pin at '\(pin.value as? String ?? "nothing")' "
+                    + "rather than '\(expected)', so a nudge inside the circle was refused or lost",
+                file: file, line: line
+            )
+        }
     }
 
     /// The pin, found by the words it says rather than by its type — the reticle is a drawn shape and
