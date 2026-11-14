@@ -27,6 +27,7 @@ final class MovePinUITests: XCTestCase, DeepLinkHarness {
     private enum Copy {
         static let action = "Move pin"
         static let unmoved = "The pin has not moved."
+        static let movedFiveNorth = "5 m north of where it was."
         static let movedTenNorth = "10 m north of where it was."
         static let rulePrefix = "Drag the map to put the pin on the tree."
         static let nudgeNorth = "Move the pin north"
@@ -67,7 +68,13 @@ final class MovePinUITests: XCTestCase, DeepLinkHarness {
 
         let north = app.buttons[Copy.nudgeNorth]
         assertReachable(north, "the north nudge")
+        // One nudge at a time: a second tap sent while the first is still redrawing the screen was
+        // lost once on a loaded CI runner (run 43536693607, ui shard 2).
         north.tap()
+        XCTAssertTrue(
+            app.staticTexts[Copy.movedFiveNorth].waitForExistence(timeout: 10),
+            "one north nudge did not put the pin 5 m north of where it was"
+        )
         north.tap()
         XCTAssertTrue(
             app.staticTexts[Copy.movedTenNorth].waitForExistence(timeout: 10),
