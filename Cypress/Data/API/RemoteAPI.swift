@@ -663,6 +663,18 @@ public struct RemoteAPI: CypressAPI {
         try await deleteAccountOnService(choice).outcome
     }
 
+    /// **No route.** This is the local half of a deletion, and the service has no call for it: the
+    /// rows it acts on are on the phone. `RoutedAPI.deleteAccount` calls it on its local half and
+    /// never on this type. A refusal rather than the protocol's default, because that default
+    /// calls `deleteAccount`, which on this type sends `DELETE /me`.
+    @discardableResult
+    public func finishAccountDeletion(
+        _ choice: AccountDeletionChoice,
+        actingOn serviceTrees: AccountDeletion.ServiceTreeVerdicts?
+    ) async throws -> AccountDeletion.Outcome {
+        try await deleteAccount(choice)
+    }
+
     /// `DELETE /me`, returning the service's answer about the community trees the account added
     /// beside the outcome (`ROADMAP` 104 and 105). `trees` is nil when the answer carried none: a
     /// service deployed before the field, or a value this build cannot read (`DeleteAccountResponse`).

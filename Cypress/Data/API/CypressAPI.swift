@@ -413,9 +413,14 @@ public protocol CypressAPI: Sendable {
     /// its local half as `any CypressAPI`, and an extension-only member would reach the default
     /// below every time and never `LocalAPI`'s. The default is honest here, unlike the one the
     /// requirement above refuses: it performs the same deletion and keeps the phone's own rule for
-    /// the trees, which is exactly what every build did before the answer existed.
+    /// the trees, which is exactly what every build did before the answer existed. The default is
+    /// for preview and test doubles; the three shipping conformances each declare this method
+    /// (`APIConformanceGuardTests`).
+    ///
+    /// **Its own base name, not an overload of `deleteAccount`.** `APIConformanceGuardTests` keys
+    /// its probe of each requirement by base name, so two requirements may not share one.
     @discardableResult
-    func deleteAccount(
+    func finishAccountDeletion(
         _ choice: AccountDeletionChoice,
         actingOn serviceTrees: AccountDeletion.ServiceTreeVerdicts?
     ) async throws -> AccountDeletion.Outcome
@@ -473,10 +478,10 @@ public protocol CypressAPI: Sendable {
 }
 
 public extension CypressAPI {
-    /// The default for `deleteAccount(_:actingOn:)`: the same deletion, with the phone's own rule
-    /// for the trees. `LocalAPI` overrides it and acts on the answer.
+    /// The default for `finishAccountDeletion(_:actingOn:)`: the same deletion, with the phone's
+    /// own rule for the trees. `LocalAPI` overrides it and acts on the answer.
     @discardableResult
-    func deleteAccount(
+    func finishAccountDeletion(
         _ choice: AccountDeletionChoice,
         actingOn serviceTrees: AccountDeletion.ServiceTreeVerdicts?
     ) async throws -> AccountDeletion.Outcome {

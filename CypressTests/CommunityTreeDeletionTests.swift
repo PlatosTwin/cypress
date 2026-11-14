@@ -154,7 +154,7 @@ struct CommunityTreeDeletionTests {
             api, at: ProximityDedupeTests.diagonal(from: Fixture.offshore, meters: 200)
         )
 
-        let outcome = try await api.deleteAccount(
+        let outcome = try await api.finishAccountDeletion(
             .leaveRecords,
             actingOn: AccountDeletion.ServiceTreeVerdicts(deleted: [dropped.id], anonymized: [kept.id])
         )
@@ -179,7 +179,7 @@ struct CommunityTreeDeletionTests {
         let api = Self.signedIn(store)
         let tree = try await Fixture.add(api)
 
-        let outcome = try await api.deleteAccount(
+        let outcome = try await api.finishAccountDeletion(
             .eraseEverything, actingOn: AccountDeletion.ServiceTreeVerdicts(anonymized: [tree.id])
         )
 
@@ -204,7 +204,7 @@ struct CommunityTreeDeletionTests {
         try await Self.deviceVisit(on: tree.id, by: Fixture.deviceID, store)
         #expect(try await Self.deviceVisits(on: tree.id, by: Fixture.deviceID, store) == 1, "fixture: the visit did not land")
 
-        let outcome = try await api.deleteAccount(
+        let outcome = try await api.finishAccountDeletion(
             .eraseEverything, actingOn: AccountDeletion.ServiceTreeVerdicts(deleted: [tree.id])
         )
 
@@ -228,7 +228,7 @@ struct CommunityTreeDeletionTests {
         let api = Self.signedIn(store)
         let tree = try await Fixture.add(api)
 
-        let outcome = try await api.deleteAccount(
+        let outcome = try await api.finishAccountDeletion(
             choice, actingOn: AccountDeletion.ServiceTreeVerdicts(deleted: [tree.id], anonymized: [tree.id])
         )
 
@@ -248,7 +248,7 @@ struct CommunityTreeDeletionTests {
         let tree = try await Fixture.add(api)
         try await Self.deviceVisit(on: tree.id, by: Fixture.deviceID, store)
 
-        let outcome = try await api.deleteAccount(.eraseEverything, actingOn: nil)
+        let outcome = try await api.finishAccountDeletion(.eraseEverything, actingOn: nil)
 
         #expect(try await Self.communityTree(store, tree.id) != nil)
         #expect(outcome.anonymizedCommunityTrees == 1, "\(outcome)")
@@ -266,7 +266,7 @@ struct CommunityTreeDeletionTests {
         let api = Self.signedIn(store)
         let unnamed = try await Fixture.add(api)
 
-        let outcome = try await api.deleteAccount(
+        let outcome = try await api.finishAccountDeletion(
             choice, actingOn: AccountDeletion.ServiceTreeVerdicts(deleted: [UUID()], anonymized: [UUID()])
         )
 
@@ -338,6 +338,43 @@ struct CommunityTreeDeletionTests {
         #expect(try await Self.communityTree(store, tree.id) != nil, "an older service's answer deleted a tree")
         #expect(outcome.anonymizedCommunityTrees == 1, "\(outcome)")
         #expect(try await Fixture.adder(store, tree.id) == .nobody)
+    }
+
+    /// `RoutedAPI.finishAccountDeletion` is the local half alone. The protocol's default for it
+    /// calls `deleteAccount`, which on the router asks the service first, so the router declares
+    /// its own and forwards to its local half.
+    ///
+    /// Red-proof: make `RoutedAPI.finishAccountDeletion` call `deleteAccount(choice)` — red on "the
+    /// router's local half asked the service", and on the tree, which the scripted older-service
+    /// answer leaves in place.
+    @Test("the router's local half acts on the answer it is given and asks the service nothing")
+    func theRoutersLocalHalfAsksTheServiceNothing() async throws {
+        let store = try await CypressStore.inMemory()
+        let local = Self.signedIn(store)
+        let tree = try await Fixture.add(local)
+        let transport = ScriptedTransport()
+        transport.answer(
+            "DELETE /me",
+            with: #"{"deleted":true,"choice":"leaveRecords","contributions":0,"photos":0,"tombstones":0}"#
+        )
+        let remote = RemoteAPI(
+            baseURL: URL(string: "https://service.invalid/api/v1")!,
+            transport: transport,
+            session: .shared,
+            pendingOutboxKeys: { [] }
+        )
+        let router = RoutedAPI(local: local, remote: remote, signedInUserID: { Fixture.userID })
+
+        let outcome = try await router.finishAccountDeletion(
+            .leaveRecords, actingOn: AccountDeletion.ServiceTreeVerdicts(deleted: [tree.id])
+        )
+
+        #expect(
+            transport.calls.isEmpty,
+            "the router's local half asked the service: \(transport.calls.map { "\($0.method) \($0.path)" })"
+        )
+        #expect(try await Self.communityTree(store, tree.id) == nil, "the router's local half dropped the answer")
+        #expect(outcome.deletedCommunityTrees == 1, "\(outcome)")
     }
 
     // MARK: - The species chain (chip 79)
