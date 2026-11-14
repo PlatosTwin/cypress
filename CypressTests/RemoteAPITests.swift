@@ -788,8 +788,15 @@ struct RemoteAPITests {
             // `grovePage` sits with `grove` and for its reason: the service sends no display
             // name and no coordinate, so there is no `GroveEntry` here to cut into pages.
             "treeProfile", "deletePhoto", "grove", "grovePage", "groveSpecies", "journal",
-            // The one refusal that is about a missing *provider* rather than a missing route.
-            "deleteAccount"
+            // The one refusal that is about a missing *provider* rather than a missing route. It is
+            // the body of `DELETE /me`, which `deleteAccount` and `RoutedAPI.deleteAccount` both
+            // call (`ROADMAP` 104 and 105), so the refusal is written there and not in
+            // `deleteAccount` itself.
+            "deleteAccountOnService",
+            // The local half of a deletion: the rows it acts on are on the phone, so there is no
+            // route. A refusal rather than the protocol's default, which would call
+            // `deleteAccount` and send `DELETE /me` again.
+            "finishAccountDeletion"
         ]
 
         let naming = Self.methodsNaming("RemoteSurface", in: source)
@@ -1008,6 +1015,25 @@ struct RemoteAPITests {
             _ = try await Self.api(transport).deleteAccount(.leaveRecords)
         }
         #expect(transport.calls.isEmpty, "a deletion was sent that could not say what was queued")
+    }
+
+    /// **The local half of a deletion has no route here.** `RoutedAPI.deleteAccount` calls
+    /// `finishAccountDeletion` on its local half after the service accepted the deletion. The
+    /// protocol's default for it calls `deleteAccount`, which on this type sends `DELETE /me`, so
+    /// this type declares a refusal.
+    ///
+    /// Red-proof: make `RemoteAPI.finishAccountDeletion` call `deleteAccount(choice)` — red on both
+    /// expectations: nothing is thrown, and one request was sent.
+    @Test("finishAccountDeletion refuses and sends nothing")
+    func finishAccountDeletionRefusesAndSendsNothing() async throws {
+        let transport = ScriptedTransport()
+        transport.answer("DELETE /me", with: #"{"deleted":true,"choice":"leaveRecords","contributions":0,"photos":0,"tombstones":0}"#)
+
+        await #expect(throws: RemoteSurface.noRouteOnThisService) {
+            _ = try await Self.api(transport, pendingOutboxKeys: { [] })
+                .finishAccountDeletion(.leaveRecords, actingOn: nil)
+        }
+        #expect(transport.calls.isEmpty, "the local half of a deletion sent \(transport.calls.count) request(s)")
     }
 
     /// The choice travels, the queued keys travel, and the counters land on the door that was used.

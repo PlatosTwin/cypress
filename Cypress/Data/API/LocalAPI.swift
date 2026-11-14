@@ -4070,7 +4070,7 @@ public actor LocalAPI: CypressAPI {
     public func deleteAccount(
         _ choice: AccountDeletionChoice = .default
     ) async throws -> AccountDeletion.Outcome {
-        try await deleteAccount(choice, actingOn: nil)
+        try await finishAccountDeletion(choice, actingOn: nil)
     }
 
     /// The local half of `DELETE /me`, acting on the service's answer about the community trees the
@@ -4078,7 +4078,7 @@ public actor LocalAPI: CypressAPI {
     /// service accepted the deletion; nil keeps the phone's own rule. See
     /// `AccountDeletion.forgetCommunityTrees`.
     @discardableResult
-    public func deleteAccount(
+    public func finishAccountDeletion(
         _ choice: AccountDeletionChoice,
         actingOn serviceTrees: AccountDeletion.ServiceTreeVerdicts?
     ) async throws -> AccountDeletion.Outcome {
