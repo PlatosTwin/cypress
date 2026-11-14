@@ -37,16 +37,29 @@ held behind an add the same way it credits a wi-fi hold, so the other writes tha
 (`creditHold`) bank it too. No column and no reason sentence: screen 17 draws a pending row's reason,
 and the hold has no ruled sentence.
 
-Known limit: if an add fails terminally and is later retried, a dependent row that was not drained
-in between is credited for the failed stretch as well. That only delays expiry.
+Known limits:
+
+- If an add fails terminally and is later retried, a dependent row that was not drained in between
+  is credited for the failed stretch as well. That only delays expiry.
+- A `failed` add holds nothing, so a species claim or correction behind it is released and sent. The
+  service records it as `applied` and does not apply it, because it does not hold the tree. If the
+  add is later retried and succeeds, the claim is not sent again, so the adder's species never
+  reaches the service's tree. Nothing on the phone says so.
 
 ### E??? — Move pin is offered only for a tree the service may hold
 
-ROADMAP 107. `CommunityTreeStore.mayHaveReachedService`: the tree's `add_tree` row is still in the
-outbox, or the tree was added on or after `firstQueuedAddsAt`, 2026-08-21 18:54:57 UTC. That is the
-date of `build-43`, the first build tag containing #s34 (`6ae2f4f9`), a lightweight tag on PR #103's
-merge commit `ac4d8cbd`. The tag's date is used, not the commit's, because only builds 42 and older
-existed before the merge, and none of them queued adds.
+ROADMAP 107. `CommunityTreeStore.mayHaveReachedService`. When the tree's `add_tree` row still exists,
+its state decides: offered unless the row is `failed`. A failed add was refused for good or gave up
+at the 48 h cap, and `pruneCompleted` deletes only `done` rows, so a failed row stays. When no row
+exists, the date decides: offered for a tree added on or after `firstQueuedAddsAt`, 2026-08-21
+18:54:57 UTC. `build-43` is the first build tag containing #s34 (`6ae2f4f9`). It is a lightweight
+tag on PR #103's merge commit `ac4d8cbd` and carries no date of its own, so the date is that merge
+commit's committer date. It is used rather than the #s34 commit's own date, because only builds 42
+and older existed before the merge, and none of them queued adds.
 
 Still wrong, stated: a tree added after that date on a build that had not been updated yet, and a
 pruned add row whose adder v23 guessed. C2's `added_by_you` replaces this test.
+
+Known limit: an add refused with `conflict` (another tree within 10 m) cannot be repaired by moving
+the pin. The add's payload is frozen in its outbox row, so a retry sends the same coordinate and is
+refused again, and Move pin is hidden for that tree.

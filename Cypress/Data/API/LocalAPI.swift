@@ -460,9 +460,11 @@ public actor LocalAPI: CypressAPI {
                 ),
                 // Set above, beside the overwrite it describes, so the two cannot be changed apart.
                 statusProvenance: statusProvenance,
-                // `correctLocation`'s own test, read in the same transaction as the tree: a tree
-                // this phone added (a cached or city row is never movable from here), and an adder
-                // who is the reader. A withdrawn tree never reaches this line (it threw above).
+                // `correctLocation`'s adder test plus ROADMAP 107's, read in the same transaction
+                // as the tree: a tree this phone added (a cached or city row is never movable from
+                // here), an adder who is the reader, and a tree the service may hold
+                // (`mayHaveReachedService`, which `correctLocation` does not apply). A withdrawn
+                // tree never reaches this line (it threw above).
                 canMovePin: canMovePin
             )
         }

@@ -133,9 +133,16 @@ struct TreeAddHoldTests {
     /// ROADMAP 116. The add is in backoff for 47 h, then sends. The released row's window starts
     /// at the release, so a transient failure and two more hours do not expire it.
     ///
-    /// Red on today's code: nothing banks the held time, the window still starts at the save, and
-    /// the test goes red on "the window starts 0 h after the save, not 47 h"; then at 49 h the
-    /// row expires, red on "the row expired".
+    /// Red on today's code, differently per argument:
+    /// - `locationCorrection` is held but nothing banks the held time. The window still starts at
+    ///   the save, red on "the window starts 0.0 h after the save, not 47 h"; then at 49 h the row
+    ///   expires, red on "the row expired: failed, Tried for 48 hours…".
+    /// - `speciesClaim` and `speciesCorrection` are not held on today's code, so the first drain
+    ///   sends them and they are `done` before the 47 h drain. Red on "fixture: the released row
+    ///   was not tried: done" and on "the window starts 0.0 h after the save, not 47 h"; the last
+    ///   check passes, because the row is already `done`. Those two go red through the missing
+    ///   hold (ROADMAP 115). The credit itself (116) is proven for them only with the hold in
+    ///   place and the credit broken.
     @Test("a row held 47 h behind its add has its full 48 h window after release",
           arguments: heldKinds)
     func heldTimeIsNotCounted(_ kind: OutboxItem.Kind) async throws {
@@ -177,8 +184,10 @@ struct TreeAddHoldTests {
 
     /// The hold credits only a held row: a row not about an unsent tree keeps its window.
     ///
-    /// Red-proof: make `creditHeldBehindAdd` select every pending row — red on "a row that was
-    /// never held had its window moved".
+    /// Red-proof: make `creditHeldBehindAdd` select every pending row — red on "a row that was not
+    /// held was credited" (the count). The window line stays green under that break, because
+    /// `creditHold` checks the hold again for each row and moves no window for a row that is not
+    /// held.
     @Test("a row that is not held keeps the window it was saved with")
     func anUnheldRowKeepsItsWindow() async throws {
         let store = try await CypressStore.inMemory()

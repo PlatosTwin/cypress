@@ -603,8 +603,10 @@ public struct OutboxStore {
     /// service (`heldBehindAddSQL`). Without the hold, an add in backoff lets the move go first,
     /// the service answers `not_found` for a tree it has not received, and that answer is
     /// terminal; a species claim that goes first is recorded and never applied to the tree. A
-    /// `failed` add holds nothing, so a released row goes and fails out loud. The time a row waits
-    /// is left out of its 48 h window (`creditHeldBehindAdd`).
+    /// `failed` add holds nothing, so a released row goes: a move then fails out loud with
+    /// `not_found`, but a species claim or correction is recorded as `applied` and silently never
+    /// reaches the tree, even if the add is later retried and succeeds. The time a row waits is
+    /// left out of its 48 h window (`creditHeldBehindAdd`).
     ///
     /// - Parameter excludingHeldForWifi: leave out rows held for wi-fi. The drain passes `true`
     ///   when photographs may not go. A held row's note is already applied, and sent when a sink is

@@ -1129,8 +1129,10 @@ public struct TreeProfile: Hashable, Sendable {
 
     /// Whether this reader may move the tree's pin: a community tree this phone added, not
     /// withdrawn, whose adder is the reader (the owner's decision 5 of 2026-09-28, and the Move pin
-    /// control of 2026-11-12). The same test `LocalAPI.correctLocation` applies before it writes, so
-    /// the control is drawn only where the verb would accept it.
+    /// control of 2026-11-12), and which the service may hold (ROADMAP 107,
+    /// `CommunityTreeStore.mayHaveReachedService`). `LocalAPI.correctLocation` applies only the
+    /// adder test before it writes. The second test is the profile's alone: it hides the control on
+    /// a tree whose move the service would answer `not_found`.
     ///
     /// `false` for every stub and preview, the safe direction: it offers nothing.
     public let canMovePin: Bool
