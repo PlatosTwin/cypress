@@ -39,13 +39,13 @@ struct GrowthHistoryView: View {
             .task { if model.presentation == nil { await model.load() } }
             // ── The question, on the screen rather than on the row ────────────────────────────
             //
-            // `TreePhotosView`'s arrangement exactly: one dialog for the whole list, driven by the
-            // model's `pendingWithdrawal`, rather than one per row. A dialog per row is a dialog
+            // `TreePhotosView`'s arrangement exactly: one alert for the whole list, driven by the
+            // model's `pendingWithdrawal`, rather than one per row. An alert per row is an alert
             // per row of state, and the log is a `ForEach`.
             //
-            // An alert, not a `confirmationDialog`: iOS 26 draws a dialog as a popover without its
-            // `.cancel` button, so *Keep it* was missing (ROADMAP 77; `TreeProfileView`'s take-back
-            // has the full account). An alert draws both buttons on iOS 18 and 26.
+            // An alert, not a `confirmationDialog` (ROADMAP 77). PR #185 saw a dialog drawn without
+            // its cancel button on CI's iOS 26, at the tree profile's take-back, so this question
+            // was made an alert for the same reason. `TreeProfileView` has the full account.
             .alert(
                 GrowthHistoryCopy.withdrawTitle,
                 isPresented: Binding(

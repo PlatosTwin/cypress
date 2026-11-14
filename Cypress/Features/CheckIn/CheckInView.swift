@@ -92,9 +92,9 @@ struct CheckInView: View {
         // (ERRATA E170). Canceling leaves the card exactly as it was: the model holds the proposed
         // status aside and never touches the draft until this returns.
         //
-        // An alert, not a `confirmationDialog`: iOS 26 draws a dialog as a popover without its
-        // `.cancel` button, so *Cancel* was missing (ROADMAP 77; `TreeProfileView`'s take-back has
-        // the full account). An alert draws both buttons on iOS 18 and 26.
+        // An alert, not a `confirmationDialog` (ROADMAP 77). PR #185 saw a dialog drawn without its
+        // cancel button on CI's iOS 26, at the tree profile's take-back, so this question was made
+        // an alert for the same reason. `TreeProfileView` has the full account.
         .alert(
             CheckInCopy.reviewConfirmTitle(for: model.pendingStatus ?? .alive),
             isPresented: reviewConfirmPresented

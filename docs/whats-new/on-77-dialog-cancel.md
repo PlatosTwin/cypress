@@ -1,1 +1,1 @@
-Questions that ask before deleting a photo, withdrawing a reading, reporting a tree as dead, or erasing your account now show their Cancel or Keep it button on iOS 26.
+Asking before you delete a photo, withdraw a reading, report a tree as dead, confirm or dismiss a review, or erase your account is now an alert with Keep it, Cancel, or Go back.

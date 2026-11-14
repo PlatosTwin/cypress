@@ -85,10 +85,10 @@ struct AccountDeletionSheet: View {
         // out to the *choice*, where the account still exists, which is why it says `Go back`
         // rather than `Keep my account`.
         //
-        // An alert, not a `confirmationDialog`: iOS 26 draws a dialog as a popover without its
-        // `.cancel` button, so `Go back` was missing and only a tap outside backed out (ROADMAP
-        // 77; `TreeProfileView`'s take-back has the full account). An alert draws both buttons on
-        // iOS 18 and 26. It has no tap outside, so `Go back` is the way out.
+        // An alert, not a `confirmationDialog` (ROADMAP 77). PR #185 saw a dialog drawn without its
+        // cancel button on CI's iOS 26, at the tree profile's take-back, so this question was made
+        // an alert for the same reason. `TreeProfileView` has the full account. An alert has no
+        // tap outside, so `Go back` is the way out.
         // ══════════════════════════════════════════════════════════════════════════════════════
         .alert(
             AccountDeletionCopy.eraseConfirmTitle,

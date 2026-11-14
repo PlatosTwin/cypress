@@ -47,9 +47,9 @@ struct ModerationReviewList: View {
                 }
             }
         }
-        // Alerts, not `confirmationDialog`s: iOS 26 draws a dialog as a popover without its
-        // `.cancel` button, so *Cancel* was missing on both (ROADMAP 77; `TreeProfileView`'s
-        // take-back has the full account). An alert draws both buttons on iOS 18 and 26.
+        // Alerts, not `confirmationDialog`s (ROADMAP 77). PR #185 saw a dialog drawn without its
+        // cancel button on CI's iOS 26, at the tree profile's take-back, so these two questions
+        // were made alerts for the same reason. `TreeProfileView` has the full account.
         .alert(
             ModerationCopy.confirmTitle(kind: pending?.kind),
             isPresented: confirmPresented,
