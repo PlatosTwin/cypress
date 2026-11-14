@@ -1930,7 +1930,7 @@ into this section in the round that finds it, and nowhere else. Each item stands
     screen" question the 2026-09-09 section left open, so F4 now waits only on the period vocabulary.
 97. **Chip numbers 85-87 collide.** `feat/community-trees-core` (C1) and PR #201
     (`ci/build-once-for-ui-shards`) each add their own chips 85-87, and main now uses 85-93 for
-    D.C. Whoever merges either branch renumbers its chips past the highest on main. C1 (`feat/community-trees-c1`) renumbered its chips to 104-106.
+    D.C. Whoever merges either branch renumbers its chips past the highest on main. C1 (`feat/community-trees-c1`) renumbered its chips to 104-106, and #201 renumbered its chips to 121-123, and the 2026-11-14 merge train moved them to 134-136.
 98. **DONE by #208: the queue now decides with an `NWPathMonitor` source, and waiting photos upload when wi-fi returns.** ~~**P0: the "Sync photos on wifi only" switch does nothing (F35, 2026-09-30).**~~ A tester saw
     photos upload over cellular. Every feature writer and `OutboxViewState.retry`/`retryAll` call
     `OutboxQueue.drain()`, whose `photoUploadsAllowed` defaults to `true`; the only call that passes
@@ -1984,6 +1984,9 @@ into this section in the round that finds it, and nowhere else. Each item stands
       on a loaded runner, or a push the stack did not draw. The test now waits for the pill to be
       reachable before tapping it, and on failure it reports whether a second tap works, which
       separates the two. Keep this open until a recurrence says which, or a few dozen green runs.
+    **Still open after `test/flake-classes` (item 132).** That branch makes every positive
+    hittability claim in the UI suite wait, which is the first failure's class. It does not touch
+    the second failure, a tap that changed nothing; that part stays open as described above.
 
 104. ~~**C2 item: the phone's leaving door anonymizes trees the service deletes (decision 12).** From
     community-trees C1. Decision 12 of 2026-09-28 deletes an *unpublished* tree under both deletion
@@ -2058,9 +2061,10 @@ into this section in the round that finds it, and nowhere else. Each item stands
     idle with the condition false, so time spent queued behind other tests no longer counts.
     `CityDownloadTests`' limit is now 3 minutes. The `AppleSignInUITests` UI wait was not touched.
     The deeper cause, pool contention from per-test seed stores, is item 117.
-109. **`PhotoBrowserReachabilityTests` asserts on a one-shot `isHittable`** (lines 60 and 133). That
+109. ~~**`PhotoBrowserReachabilityTests` asserts on a one-shot `isHittable`** (lines 60 and 133). That
     is the race that #210 fixed in `PhotoDeletionReachabilityTests` (item 103). Move both asserts to
-    `UIWait.assertReachable`.
+    `UIWait.assertReachable`.~~ **DONE by `test/flake-classes`** (item 132), with 19 more sites of
+    the same shape, and a gate that refuses new ones.
 110. ~~**E81's "offline" state for the outbox pill can now be built.** #208 added `NetworkPathSource`
     (`NWPathMonitor`), the source E81 said was missing. Out of scope for F35, logged here.~~
     **DONE in the overnight round of 2026-11-14 (`claude/overnight-bug-fixes-8154ea`).** Screen 17's pill reads `N waiting · offline` when rows are waiting and
@@ -2208,7 +2212,99 @@ into this section in the round that finds it, and nowhere else. Each item stands
     eight authors wrote files through the shell instead, some after the refusal. "Working in a
     worktree (agents)" should name the tool and forbid the shell route. (CLAUDE.md is the owner's;
     this round did not edit it.)
-
+129. **DONE in `test/pin-nudge-waits`: the pin-adjust UI test lost a tap.** Main run 43551707747
+    (ui shard 1) failed `DeepLinkVoiceOverTests.testThePinSaysWhenItHasGoneAsFarAsItGoes`: fifteen
+    north nudges sent back to back left the pin at 70 m, not 75. The same lost second tap failed
+    `MovePinUITests` on run 43536693607. Both tests now wait for each nudge to land.
+130. **Two accessibility checks spend minutes on one-element queries (UI shards 1 and 3).**
+    `assertEveryControlIsLabeled` asked `exists`, `isHittable` and `label` of every control in the
+    app, one query each. Screens 09, 10 and 18 open over the map, so about 150 pin buttons behind
+    the cover were each walked: 135, 127 and 117 s in `DeepLinkVoiceOverTests.testPinAdjust`,
+    `testCareLog` and `testShare`. `DeepLinkSweepTests.testNothingIsAnnouncedTwice` did the same over
+    every static text (about 175 s). **DONE in the PR from `test/snapshot-label-checks`:** both read
+    the labels from one snapshot of the tree, and only an unlabeled control, or a repeated static
+    text, is checked live for hittability. The rules and their failure messages are unchanged.
+131. ~~**The screen-photo tests are most of the unit job's time (2026-11-13).** On main run
+    43543728441, 2,134 tests took 283 s, and the last 218 s was about 35 `@MainActor` render
+    tests. `ScreenSweepShots` alone: `everyScreen` 278 s, `coldStates` 259 s, `cityRecordStates`
+    173 s, `afterTheSave` 150 s. Each capture slept a fixed 0.96 s, then encoded and wrote a PNG and
+    a contact sheet that CI never uploads.~~
+    **DONE by `test/faster-screen-captures`:** `RenderSettle` replaces the fixed sleeps in
+    `ScreenSweepShots`, `DynamicTypeScreenshotTests` and `AX5ReflowTests`. It returns when the
+    layer tree has not changed for three 40 ms passes, no spinner is visible and 160 ms have
+    passed, and never waits longer than the old loop. Screens that load with no spinner (02, 05,
+    06, 09, 12, 12b, 12c, 20, 21 and the e12 states) keep the old 0.96 s floor, and the AX5 width
+    guard on 02 waits for its shortlist query to answer. Without `CYPRESS_SHOT_DIR`, the harnesses
+    still draw each screen and run the blank guard, but encode and write nothing. After: measured
+    on #220's final CI run; see the PR body.
+132. ~~**Three classes of flake from a catalog of 70 CI runs (2026-10-23 to 2026-11-14).**~~
+    **DONE by `test/flake-classes`:**
+    (a) `UIWait.assertReachable` gave up when one accessibility read took most of its 30 s
+    (`AppleSignInUITests`: launch 17 s, one read 29 s). It now looks once more after the deadline,
+    and its failure message prints the element's frame. `settledFrame`'s presence wait does the same.
+    (b) 21 positive one-shot `isHittable` asserts (items 103 and 109's shape) now wait through
+    `assertReachable`, and `HittabilityFilterGateTests` refuses a new one. Negative asserts
+    (`XCTAssertFalse(… .isHittable)`) are left as they are, because waiting for something to stop
+    being hittable lets a slow runner pass by never drawing it.
+    (c) `TreeLocationStore.chain` sorted by time and then by a random id, so an add and a move inside
+    one millisecond could read back head first
+    (`LocationCorrectionTests.theAdderMovesThePin`, main run 43543728441). It now follows the
+    `superseded_by` links from the root.
+133. **`SpeciesAssertionStore.chain` has the same tie-break as item 132(c).** It sorts by
+    `created_at, id`, so two assertions on one tree inside one millisecond can read back in either
+    order. Follow its `superseded_by` links the same way. Found by `test/flake-classes`, not changed
+    there.
+134. **Two unit tests that failed on CI and passed on the next run, neither explained.** (a) `MapSuggestionTests`'
+    "choosing a suggestion narrows the map to that one species and puts its name in the field" failed
+    after 105 s with two issues (`MapSuggestionTests.swift:265` and `:268`), on the unit job of the
+    build-once PR's run 36665812582. That PR changes no app or test source. (b) The day before, on
+    another PR's run 36609447255, `MapRecenterTests`' "moving the camera keeps the species the
+    search narrowed to" and "zooming in on the recenter's second step keeps the narrowing too" failed
+    in the same area. Both are map-narrowing tests, which is the only thing the two sightings share.
+    A green re-run proves a failure was intermittent, never why, so this is a flake-watch entry
+    until one recurs with a cause (item 75 is its UI-side neighbor; item 108 has since fixed the `MapSearchTests` waits).
+135. **What is left of the CI speedup (#199, #201).** (a) `unit` could use `ui-build`'s products too and
+    save about 7 more minutes a run, but only if warning certification moves to `ui-build`'s fresh
+    build log: the owner's call, since `unit` is where the zero-warning line is certified today.
+    (b) The shards could boot their simulators while `ui-build` runs; `prepare` is 2 to 3.5 minutes per
+    shard and is now the largest cost that is not tests. Partly done by item 137: each job now boots
+    in the background, which hides the boot behind `unit`'s build but only about 30 s of it in a shard.
+    Starting the shards before `ui-build` ends would hide the rest, at the cost of runners held idle
+    under the five-job cap. (c) Item 2 (rebalance the shards) is worth
+    doing now: shard time is almost all test time, and `ui (1)` at about 18 minutes of tests sets the
+    pace. (d) The account's concurrent macOS runner cap is untouched: on run 36635369200 three shards
+    waited 32, 36 and 74 minutes for a runner, and no workflow change fixes that. (e) The build artifact
+    is kept one day, so re-running one shard later than that needs a re-run of all jobs.
+136. **Gaps the review of #199 and #201 found and accepted.** (a) `web.yml` groups its pull-request
+    runs by head branch alone (`web-<head_ref>`, cancel on), so two pull requests from one head branch
+    against different bases that both touch `web/` cancel each other's web run; `testflight.yml` and
+    `server.yml` were given the base as well. (b) A fork pull request whose head branch name equals an
+    in-repo branch's, against the same base, shares its run group and can cancel it. (c) `Tools/run_tests.sh`'s
+    DerivedData collision key compares path spellings, not directories: a relative, `..` or symlinked
+    spelling of the same directory is not caught. (d) `verify_test_log.sh` trusts a prebuilt log's header
+    completely: a log with no `CYPRESS-RUN: products` lines, or with a `** TEST SUCCEEDED **` where only
+    `** TEST EXECUTE SUCCEEDED **` can come from `test-without-building`, still ends VERIFY-OK. Reachable
+    only by hand-editing a log or running a pre-fix script, which CLAUDE.md already treats as unknown
+    provenance.
+137. **DONE by #201: CI asks for fewer macOS runner-minutes.** Measured over 14 runs: the account runs
+    at most five macOS jobs at once and each TestFlight run asked for five, so overlapping runs waited
+    20 to 70 minutes for runners; each job built the app itself; and pushes to main used about a
+    quarter of the runner-minutes re-running the suite the pull request had just passed. #201 builds
+    once for the UI shards (`ui-build`), boots each job's simulator in the background while it builds
+    (`unit` now builds with `build-for-testing`, certifies warnings from that fresh build, then tests
+    the products), and skips `unit`, `ui-build` and `ui` on a push to main whose tree already passed
+    on its pull request (decision `tested-on-pr`, CLAUDE.md's fifth string; `release` still runs). No
+    billed or self-hosted runners (owner, 2026-11-13). The first live use of the main-push skip is the
+    merge of #201 itself.
+138. **Two UI flakes from 2026-11-14, neither caused by the PR it hit.** (a) `MapSuggestionUITests`
+    could not give the search field keyboard focus, twice in one day: `testLeavingTheKeyboardClosesTheList`
+    on #222's `ui (4)` (run 43558780976) and `testTypingDropsRowsCarryingBothNames` on #224's `ui (4)`
+    (run 43561537245), both "Failed to synthesize event: Neither element nor any descendant has
+    keyboard focus", both classed `VERIFY-ENV-REFUSED` by `run_tests.sh`, both green on a re-run of
+    the shard. A wait for the field's focus before typing is the likely fix. (b)
+    `AddReadingReachabilityTests.testAFullyMeasuredTreeReachesTheMeasureSheetInOneTap` failed with
+    "Failed to get matching snapshots: Timed out while evaluating UI query" on #217's `ui (2)` (run
+    43558019089), green on re-run. Both are slow-runner shapes; watch for a third sighting.
 
 **Retire the format-1 manifest — DONE, 2026-08-23.** The owner overrode the trigger the day after
 setting it: rather than firing at the publish *after* New York, format 1 retired immediately. Full
