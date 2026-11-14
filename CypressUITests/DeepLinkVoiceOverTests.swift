@@ -175,7 +175,16 @@ final class DeepLinkVoiceOverTests: XCTestCase, DeepLinkHarness {
 
         // And the way back is one press, not fifteen.
         app.buttons["Back to where you are standing"].tap()
-        XCTAssertEqual(pin.value as? String, "Right where you are standing.")
+        // Waited for, like each nudge: a read sent the moment the tap returns can see the old value.
+        let back = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "value == %@", "Right where you are standing."),
+            object: pin
+        )
+        XCTAssertEqual(
+            XCTWaiter().wait(for: [back], timeout: 10), .completed,
+            "pinAdjust: 'Back to where you are standing' left the pin at "
+                + "'\(pin.value as? String ?? "nothing")'"
+        )
 
         app.terminate()
     }
