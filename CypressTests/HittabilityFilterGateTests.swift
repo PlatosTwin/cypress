@@ -23,11 +23,12 @@ import Testing
 /// .isHittableWithoutRaising` in `UIWait.swift` is the suite's only filter-position spelling, and
 /// this fails the build if a second one appears.
 ///
-/// **Filter positions only, and the distinction is the whole design.** A test that *asserts*
-/// reachability — `XCTAssertTrue(delete.isHittable, "…")` — is making a claim, and the raw property
-/// is the right thing to say there: nothing is being skipped, and the assertion's own message is
-/// what a reader wants. A test that uses the property to decide whether an element is looked at at
-/// all is asking a question it must get an answer to rather than an exception.
+/// **Filter positions, and separately claims.** A test that uses the property to decide whether an
+/// element is looked at at all is asking a question it must get an answer to rather than an
+/// exception; that is the first scanner below. A test that *asserts* reachability is making a
+/// claim, and a claim must wait for its answer rather than read it once: that is the second
+/// scanner (`oneShotClaims`), which sends a positive claim to `assertReachable`. A negative claim,
+/// `XCTAssertFalse(tab.isHittable, "…")`, is neither, and the raw property stays right there.
 ///
 /// Checked from the unit suite for `DragGestureGateTests`' reason: it runs on every build and every
 /// shard, where a gate living inside the UI suite could be skipped by the very sharding it protects.
@@ -70,13 +71,13 @@ struct HittabilityFilterGateTests {
     /// suite prefers a blunt instrument it can calibrate. Two holes follow from that, and they are
     /// written here rather than papered over:
     ///
-    /// - **A boolean composition on a continuation line of a multi-line assertion.**
-    ///   `PrimaryCTAReachabilityTests` has one: `control.exists && control.isHittable,` sitting on
-    ///   its own line inside an `XCTAssertTrue(`. That line carries no keyword and no call, and
-    ///   `&&` is deliberately *not* in the vocabulary, because on one line it cannot be told apart
-    ///   from the same operator inside an assertion — which this suite allows on purpose. A `&&`
-    ///   composition that is a genuine filter is caught by whatever introduces it (`let`, `return`,
-    ///   `guard`, `if`); one written as a bare continuation line is not.
+    /// - **A boolean composition on a continuation line of a multi-line assertion.** A line such as
+    ///   `control.exists && control.isHittable,` inside an `XCTAssertTrue(` carries no keyword and
+    ///   no call, and `&&` is deliberately *not* in the vocabulary, because on one line it cannot be
+    ///   told apart from the same operator inside an assertion. A `&&` composition that is a
+    ///   genuine filter is caught by whatever introduces it (`let`, `return`, `guard`, `if`); one
+    ///   written as a bare continuation line is not. (Inside a positive assertion, that line is
+    ///   now refused by `oneShotClaims` instead.)
     /// - **A filter split so that the keyword and the read land on different lines.** No instance
     ///   exists in the suite today; the two that were once cited here as examples
     ///   (`DeepLinkHarness.waitForCoverToArrive`'s `return … && title.isHittable` and
