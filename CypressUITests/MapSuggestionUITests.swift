@@ -110,10 +110,7 @@ final class MapSuggestionUITests: XCTestCase {
             latin.trimmingCharacters(in: .whitespaces).isEmpty,
             "the suggestion row announces “\(row.label)” — a common name and nothing behind the comma"
         )
-        XCTAssertTrue(
-            row.isHittable,
-            "the suggestion row is in the accessibility tree but nothing can touch it"
-        )
+        assertReachable(row, "the suggestion row")
         // The row is the target, not the words in it (ARCHITECTURE §6's 44 pt minimum). Two serif
         // lines with the card's padding clear it comfortably; measured because "comfortably" is the
         // kind of claim that stops being true when somebody tightens a padding token.
@@ -202,10 +199,7 @@ final class MapSuggestionUITests: XCTestCase {
             wait { chip.frame.minY > before },
             "the suggestion list did not push the filter chips down, so it is drawn over them"
         )
-        XCTAssertTrue(
-            chip.isHittable,
-            "a filter chip under the suggestion list is in the tree but cannot be activated"
-        )
+        assertReachable(chip, "a filter chip under the suggestion list")
     }
 
     /// **The dropdown belongs to the act of typing.** R16 gave the bar a `Done` above the keyboard so

@@ -279,4 +279,219 @@ struct HittabilityFilterGateTests {
             """
         )
     }
+
+    // MARK: - One-shot claims
+
+    /// **A positive hittability claim waits; it is never one read.**
+    ///
+    /// `XCTAssertTrue(pill.isHittable, "…")` asks once, at whatever instant the line runs. On a
+    /// contended CI runner that instant can be before layout, before a scroll has come to rest, or
+    /// while the launch animation is still drawing, and the claim then fails with a sentence that
+    /// reads like an accessibility defect. Two `PhotoDeletionReachabilityTests` failures were
+    /// exactly this (ROADMAP 103, #210), and a catalog of 70 CI runs from 2026-10-23 to 2026-11-14
+    /// found nineteen more sites of the same shape waiting their turn. `assertReachable`
+    /// (`UIWait.swift`) is the waiting spelling of the same claim.
+    ///
+    /// **Positive claims only.** `XCTAssertFalse(tab.isHittable)` is a different sentence: waiting
+    /// for something to *stop* being hittable would let a slow runner pass it by never having drawn
+    /// (`UIWait.swift` says so where `assertReachable` is defined). This scanner does not look at
+    /// `XCTAssertFalse` at all.
+    ///
+    /// What counts as a claim: `XCTAssertTrue(` or `XCTAssert(` whose **first argument** reads the
+    /// raw property, and `XCTAssertEqual(` whose first two arguments are a raw read and `true`. The
+    /// argument is read across lines with parentheses counted, because most claims in the suite put
+    /// their condition on the line after the call. String prose is removed first (with
+    /// interpolations kept, `codeOutsideStringLiterals`), and comments are already removed by
+    /// `DragGestureGateTests.uiTestSources`, so a sentence that mentions the property is not a read.
+    static let claimCalls = ["XCTAssertTrue", "XCTAssert", "XCTAssertEqual"]
+
+    /// The 1-based lines on which a positive one-shot hittability claim starts.
+    static func oneShotClaims(in code: String) -> [Int] {
+        assertions(in: code).compactMap { assertion in
+            let arguments = assertion.arguments
+            switch assertion.call {
+            case "XCTAssertTrue", "XCTAssert":
+                guard let first = arguments.first, readsRawProperty(first) else { return nil }
+                return assertion.line
+            case "XCTAssertEqual":
+                guard arguments.count >= 2 else { return nil }
+                let pair = [arguments[0], arguments[1]].map {
+                    $0.trimmingCharacters(in: .whitespacesAndNewlines)
+                }
+                let claims = (readsRawProperty(pair[0]) && pair[1] == "true")
+                    || (readsRawProperty(pair[1]) && pair[0] == "true")
+                return claims ? assertion.line : nil
+            default:
+                return nil
+            }
+        }
+    }
+
+    /// Every assertion call in `code` that this gate knows by name, with its top-level arguments.
+    ///
+    /// `call` is one of `claimCalls` or `XCTAssertFalse` (kept so the calibration below can prove
+    /// the parser reads negative claims too, which it then leaves alone). A name only counts as a
+    /// whole word followed directly by `(`, so `XCTAssertTrue` is never read as `XCTAssert`.
+    static func assertions(in code: String) -> [(call: String, line: Int, arguments: [String])] {
+        // Prose removed per line, then the lines joined again, so an argument can span lines.
+        // Lines inside a `"""` literal are dropped whole: `codeOutsideStringLiterals` reads a line
+        // at a time and cannot see that it is inside one.
+        var inBlock = false
+        let lines = code.split(separator: "\n", omittingEmptySubsequences: false).map { raw -> String in
+            let line = String(raw)
+            let fences = line.components(separatedBy: "\"\"\"").count - 1
+            if inBlock {
+                if fences % 2 == 1 { inBlock = false }
+                return ""
+            }
+            if fences % 2 == 1 {
+                inBlock = true
+                return codeOutsideStringLiterals(in: line.components(separatedBy: "\"\"\"")[0])
+            }
+            return codeOutsideStringLiterals(in: line)
+        }
+        let text = Array(lines.joined(separator: "\n"))
+        let names = claimCalls + ["XCTAssertFalse"]
+        let continues: (Character) -> Bool = { $0.isLetter || $0.isNumber || $0 == "_" }
+
+        var found: [(call: String, line: Int, arguments: [String])] = []
+        var line = 1
+        var index = 0
+        while index < text.count {
+            if text[index] == "\n" { line += 1; index += 1; continue }
+            guard text[index] == "X", index == 0 || !continues(text[index - 1]),
+                  let name = names.first(where: { name in
+                      let end = index + name.count
+                      return end < text.count && String(text[index..<end]) == name && text[end] == "("
+                  })
+            else { index += 1; continue }
+
+            // Arguments to the matching `)`, split at commas outside any bracket.
+            var depth = 0
+            var arguments: [String] = []
+            var current = ""
+            var cursor = index + name.count + 1
+            while cursor < text.count {
+                let character = text[cursor]
+                if "([{".contains(character) { depth += 1 }
+                if ")]}".contains(character) {
+                    if depth == 0 { break }
+                    depth -= 1
+                }
+                if character == "," && depth == 0 {
+                    arguments.append(current)
+                    current = ""
+                } else {
+                    current.append(character)
+                }
+                cursor += 1
+            }
+            arguments.append(current)
+            found.append((call: name, line: line, arguments: arguments))
+            // Continue just past the name, so a claim nested in another call's arguments is seen.
+            index += name.count
+        }
+        return found
+    }
+
+    /// **The calibration for the claim scanner**, in both directions, the same house style as
+    /// `scannerIsCalibrated`.
+    @Test("the claim scanner catches a one-shot positive claim and leaves everything else alone")
+    func claimScannerIsCalibrated() {
+        let mustCatch = """
+        XCTAssertTrue(pill.isHittable, "the header pill is a button nobody can press")
+        XCTAssert(row.isHittable)
+        XCTAssertTrue(
+            door.isHittable,
+            "the way onward is in the viewer's tree and nothing could press it"
+        )
+        XCTAssertTrue(
+            control.exists && control.isHittable,
+            "\\(screen): the arming control never became reachable"
+        )
+        XCTAssertEqual(
+            revealedChip(Self.clear, app).isHittable, true,
+            "with a filter set behind a shut control there is no reachable chip"
+        )
+        XCTAssertTrue(revealedChip(label, app).isHittable, "at AX5 the \\(label) chip cannot be pressed")
+        """
+        #expect(
+            Self.oneShotClaims(in: mustCatch) == [1, 2, 3, 7, 11, 15],
+            """
+            the claim scanner found \(Self.oneShotClaims(in: mustCatch)) where lines 1, 2, 3, 7, 11 \
+            and 15 each start a positive one-shot claim this suite has contained (single-line, \
+            `XCTAssert`, multi-line, a composition, an `XCTAssertEqual` against `true`, and a read \
+            through a call)
+            """
+        )
+
+        let mustNotCatch = """
+        XCTAssertFalse(tab.isHittable, "a tab behind a modal cover must stay unreachable")
+        XCTAssertFalse(
+            blank.isHittable,
+            "an unlabeled control at \\(blank.frame) is reachable inside the filter row"
+        )
+        XCTAssertTrue(row.exists, "the row is drawn but its isHittable answer was never asked")
+        XCTAssertTrue(element.isHittableWithoutRaising(in: app), "the helper is not the raw read")
+        XCTAssertTrue(cta.isEnabled, "the CTA is drawn disabled; isHittable is a later line")
+        XCTAssertTrue(wait { self.chips(app).isEmpty }, "chips at \\(chip.isHittable)")
+        XCTAssertEqual(row.isHittable, false, "a negative claim spelled as an equality")
+        let message = \"\"\"
+            XCTAssertTrue(pill.isHittable, "inside a multi-line literal")
+            \"\"\"
+        assertReachable(pill, "the header pill")
+        """
+        #expect(
+            Self.oneShotClaims(in: mustNotCatch).isEmpty,
+            """
+            the claim scanner flagged \(Self.oneShotClaims(in: mustNotCatch)), and every one of \
+            those lines is a negative claim, a different property, the helper, a read inside a \
+            message's interpolation, text inside a multi-line literal, or the waiting spelling
+            """
+        )
+    }
+
+    @Test("no UI test makes a positive hittability claim with a single read")
+    func everyPositiveClaimWaits() throws {
+        let root = AppSourceLiterals.repositoryRoot()
+        let sources = try DragGestureGateTests.uiTestSources(root: root)
+
+        // The controls: an empty read, or a parser that sees no assertions, satisfies the check
+        // below vacuously. The suite has hundreds of `XCTAssertTrue` calls, and its negative
+        // hittability claims (`AreaPickerUITests`, `MapFilterAccessibilityTests`) are written
+        // across lines, so seeing them proves the multi-line reading works on the real files.
+        #expect(sources.count >= 10, "found only \(sources.count) UI test files; the scanner is not reading the source")
+        let parsed = sources.flatMap { Self.assertions(in: $0.code) }
+        let positives = parsed.filter { $0.call == "XCTAssertTrue" }.count
+        #expect(
+            positives >= 100,
+            "the parser found only \(positives) `XCTAssertTrue` calls in the UI suite, so it is not reading real code"
+        )
+        let negatives = parsed.filter {
+            $0.call == "XCTAssertFalse" && $0.arguments.first.map(Self.readsRawProperty) == true
+        }.count
+        #expect(
+            negatives >= 3,
+            """
+            the parser found only \(negatives) `XCTAssertFalse(… .isHittable …)` claims, and the \
+            suite has at least three written across lines. A scanner that cannot see those cannot \
+            see a multi-line positive claim either
+            """
+        )
+
+        let offenders = sources
+            .map { (name: $0.name, lines: Self.oneShotClaims(in: $0.code)) }
+            .filter { !$0.lines.isEmpty }
+            .map { "\($0.name) \($0.lines)" }
+        #expect(
+            offenders.isEmpty,
+            """
+            \(offenders.joined(separator: ", ")) assert `isHittable` is true with a single read. \
+            That read happens at whatever instant the line runs, and on a contended runner the \
+            element is often not laid out yet, so the claim fails with a sentence that reads like \
+            an accessibility defect (ROADMAP 103). Call `assertReachable(element, "…")` \
+            (`UIWait.swift`), which waits for the same claim and says which half of it failed.
+            """
+        )
+    }
 }

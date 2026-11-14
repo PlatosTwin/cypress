@@ -61,7 +61,8 @@ extension XCTestCase {
         XCTFail(
             element.exists
                 ? "\(description) is in the accessibility tree but never became hittable within "
-                    + "\(Int(timeout))s — it is present and cannot be activated"
+                    + "\(Int(timeout))s — it is present and cannot be activated. Its frame is "
+                    + "\(element.frame)"
                 : "\(description) never appeared in the accessibility tree at all within "
                     + "\(Int(timeout))s",
             file: file, line: line
