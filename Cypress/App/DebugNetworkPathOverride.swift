@@ -11,6 +11,7 @@
 //
 //      CYPRESS_NETWORK_PATH=metered      the phone is on cellular, a hotspot, or Low Data Mode
 //      CYPRESS_NETWORK_PATH=unmetered    the phone is on wi-fi
+//      CYPRESS_NETWORK_PATH=offline      the phone has no connection at all (screen 17's pill)
 //
 //  Read from the process environment and `#if DEBUG`, for `DebugLocationOverride`'s reasons: only
 //  whoever launched the process can set it, and a Release build does not contain it.
@@ -36,8 +37,11 @@ enum DebugNetworkPathOverride {
         switch raw {
         case "metered": return PinnedNetworkPath(unmetered: false)
         case "unmetered": return PinnedNetworkPath(unmetered: true)
+        case "offline": return PinnedNetworkPath(unmetered: false, connected: false)
         default:
-            fatalError("\(environmentKey)=\(raw) is not a connection; expected metered | unmetered")
+            fatalError(
+                "\(environmentKey)=\(raw) is not a connection; expected metered | unmetered | offline"
+            )
         }
     }
 }

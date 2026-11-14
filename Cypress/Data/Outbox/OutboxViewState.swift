@@ -421,6 +421,24 @@ public final class OutboxViewState: Observable {
         }
     }
 
+    private var storedIsOffline = false
+    /// True only when the network path source has read the path and found no satisfied path. False
+    /// before the first reading, and false on cellular whatever the wi-fi toggle says: `offline` is
+    /// a statement about now, and the app does not make it without a reading (ERRATA E81, E???).
+    ///
+    /// Never derived from a row's failure sentence. "No connection." records the last attempt, not
+    /// the present, which is the untrue label E81 refused.
+    public private(set) var isOffline: Bool {
+        get {
+            registrar.access(self, keyPath: \.isOffline)
+            return storedIsOffline
+        }
+        set {
+            guard newValue != storedIsOffline else { return }
+            registrar.withMutation(of: self, keyPath: \.isOffline) { storedIsOffline = newValue }
+        }
+    }
+
     private var storedSyncPhotosOnWifiOnly: Bool
     /// Screen 17's toggle: "Sync photos on wifi only". Applies to photo binaries only; notes and
     /// numbers sync on any connection (BUILD-PLAN §4).
@@ -454,16 +472,20 @@ public final class OutboxViewState: Observable {
     /// Resolves a tree id to the name a row should show. Supplied by the composition root so this
     /// type does not reach into the API itself.
     private let treeNameResolver: @Sendable ([UUID]) async -> [UUID: String]
+    /// Where `isOffline` comes from. Nil means nothing can say, so the screen never says offline.
+    private let networkPath: (any NetworkPathSource)?
     private var observerToken: UUID?
 
     public init(
         queue: OutboxQueue,
         store: CypressStore? = nil,
         syncPhotosOnWifiOnly: Bool = true,
+        networkPath: (any NetworkPathSource)? = nil,
         treeNameResolver: @escaping @Sendable ([UUID]) async -> [UUID: String] = { _ in [:] }
     ) {
         self.queue = queue
         self.store = store
+        self.networkPath = networkPath
         self.storedSyncPhotosOnWifiOnly = syncPhotosOnWifiOnly
         self.treeNameResolver = treeNameResolver
         self.storedSnapshot = OutboxSnapshot(
@@ -485,6 +507,23 @@ public final class OutboxViewState: Observable {
             syncPhotosOnWifiOnly = OutboxQueue.syncPhotosOnWifiOnly(fromStored: stored)
         }
         await refresh()
+    }
+
+    /// Keeps `isOffline` current until the calling task is cancelled.
+    ///
+    /// The screen calls this from its own `.task`, so it listens exactly as long as screen 17 is
+    /// open and SwiftUI cancels it when the screen goes. It never returns on its own while the
+    /// source is live.
+    ///
+    /// The stream is made before the current reading is read. A change that lands between the two
+    /// is then heard on the stream rather than lost.
+    public func followConnection() async {
+        guard let networkPath else { return }
+        let changes = networkPath.connectedChanges()
+        if let connected = networkPath.connectedNow() { isOffline = !connected }
+        for await connected in changes {
+            isOffline = !connected
+        }
     }
 
     public func stop() async {

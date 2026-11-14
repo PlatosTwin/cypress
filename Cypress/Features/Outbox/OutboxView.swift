@@ -52,6 +52,7 @@ struct OutboxView: View {
         OutboxScreen(
             presentation: OutboxPresentation(
                 snapshot: state.snapshot,
+                isOffline: state.isOffline,
                 now: now(),
                 calendar: calendar
             ),
@@ -62,6 +63,11 @@ struct OutboxView: View {
         )
         .task {
             await state.start()
+        }
+        // A second task, because this one never returns while the screen is open: it keeps the
+        // pill's `offline` clause current as the path changes, and SwiftUI cancels it on leave.
+        .task {
+            await state.followConnection()
         }
     }
 }
@@ -122,7 +128,8 @@ struct OutboxScreen: View {
 
     // MARK: - §1 Header (C1)
 
-    /// `title: Outbox`, trailing amber pill `3 waiting`. No pill when nothing is waiting.
+    /// `title: Outbox`, trailing amber pill `3 waiting`, or `3 waiting · offline` when the path
+    /// source reads no connection. No pill when nothing is waiting.
     @ViewBuilder
     private var header: some View {
         if let pill = presentation.headerPill {

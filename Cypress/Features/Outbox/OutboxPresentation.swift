@@ -103,17 +103,22 @@ struct OutboxPresentation {
     }
 
     let snapshot: OutboxSnapshot
+    /// `OutboxViewState.isOffline`: a reading of the network path that found no satisfied path.
+    /// False before any reading.
+    private let isOffline: Bool
     private let now: Date
     private let calendar: Calendar
     private let locale: Locale
 
     init(
         snapshot: OutboxSnapshot,
+        isOffline: Bool = false,
         now: Date = Date(),
         calendar: Calendar = .current,
         locale: Locale = .current
     ) {
         self.snapshot = snapshot
+        self.isOffline = isOffline
         self.now = now
         self.calendar = calendar
         self.locale = locale
@@ -121,20 +126,22 @@ struct OutboxPresentation {
 
     // MARK: - §1 Header pill
 
-    /// `3 waiting`, or nil.
+    /// `3 waiting · offline`, `3 waiting`, or nil.
     ///
-    /// **The mock's second clause is dropped.** §1 draws `3 waiting · offline`, and nothing in this
-    /// app is wired to say whether it is offline. The one reachability source (`NetworkPathSource`,
-    /// added for F35) answers "is this connection unmetered" for the wi-fi toggle and nothing else,
-    /// and a failure sentence reading "No connection." is a record of the last attempt rather than a
-    /// statement about now.
-    /// Printing `offline` beside a live connection would be the same class of untrue label as
-    /// "sent to the city" (ARCHITECTURE §5.4). See ERRATA.
+    /// **The mock's second clause is drawn only from a reading of now.** ERRATA E81 dropped
+    /// `· offline` because nothing in the app knew whether it was offline. `NetworkPathSource` now
+    /// says whether any path is satisfied (ERRATA E???), and `isOffline` is true only after it read
+    /// the path and found none. Before the first reading, and on cellular with the wi-fi toggle on,
+    /// the pill says `3 waiting` and stops. A failure sentence reading "No connection." is still
+    /// never the source: it records the last attempt, not the present, and printing `offline` beside
+    /// a live connection would be the same class of untrue label as "sent to the city"
+    /// (ARCHITECTURE §5.4).
     ///
-    /// Absent at zero, because `0 waiting` is the zero ARCHITECTURE §5.6 does not draw.
+    /// Absent at zero, because `0 waiting` is the zero ARCHITECTURE §5.6 does not draw. The pill has
+    /// no accessibility label of its own, so VoiceOver reads this same text.
     var headerPill: String? {
         guard snapshot.waitingCount > 0 else { return nil }
-        return OutboxCopy.waitingPill(count: snapshot.waitingCount)
+        return OutboxCopy.waitingPill(count: snapshot.waitingCount, offline: isOffline)
     }
 
     // MARK: - §2 The queue
@@ -320,8 +327,11 @@ enum OutboxCopy {
     /// §1's header title.
     static let screenTitle = "Outbox"
 
-    /// §1's amber pill, minus its `offline` clause. See `OutboxPresentation.headerPill`.
-    static func waitingPill(count: Int) -> String { "\(count) waiting" }
+    /// §1's amber pill. The `offline` clause is the mock's, drawn only when the path source reads
+    /// no satisfied path. See `OutboxPresentation.headerPill`.
+    static func waitingPill(count: Int, offline: Bool = false) -> String {
+        offline ? "\(count) waiting · offline" : "\(count) waiting"
+    }
 
     /// §2's row titles — `Visit · Grandmother Cypress`.
     ///

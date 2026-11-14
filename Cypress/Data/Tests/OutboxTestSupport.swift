@@ -362,14 +362,24 @@ extension OutboxTestSupport {
     /// source that started unknown counts as a change.
     public final class ManualNetworkPath: NetworkPathSource, @unchecked Sendable {
         private let state: NetworkPathState
+        private let connection: NetworkPathState
 
-        public init(unmetered: Bool) {
+        /// - Parameter connected: whether any path is satisfied. Nil is a source that has not read
+        ///   the path yet. Independent of `unmetered` so a test can set each reading on its own.
+        public init(unmetered: Bool, connected: Bool? = true) {
             state = NetworkPathState(initial: unmetered)
+            connection = NetworkPathState(initial: connected)
         }
 
         /// Moves the phone onto (or off) an unmetered connection, as `NWPathMonitor` would report.
         public func set(unmetered: Bool) {
             state.publish(unmetered)
+        }
+
+        /// Gives the phone a satisfied path, or takes every path away, as `NWPathMonitor` would
+        /// report.
+        public func set(connected: Bool) {
+            connection.publish(connected)
         }
 
         public func isUnmetered() async -> Bool {
@@ -378,6 +388,14 @@ extension OutboxTestSupport {
 
         public func unmeteredChanges() -> AsyncStream<Bool> {
             state.changes()
+        }
+
+        public func connectedNow() -> Bool? {
+            connection.latest
+        }
+
+        public func connectedChanges() -> AsyncStream<Bool> {
+            connection.changes()
         }
     }
 }
