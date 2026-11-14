@@ -669,8 +669,8 @@ The owner decided both halves of F31 on 2026-09-28. A tree added while signed in
 everyone as soon as it reaches the service. A tree added signed out stays on the adder's phone until sign-in and
 then goes live for everyone at once. The adder alone may move its pin, and may withdraw it for
 everyone while nobody else has built on it. Its history is shown on the profile without saying who.
-Trees added before the sync path existed stay local for ever (R77 is kept, and there is no
-backfill). Others see a photograph's capture **date** and never its time; the owner keeps the exact
+~~Trees added before the sync path existed stay local for ever (R77 is kept, and there is no
+backfill).~~ **Reversed by the owner on 2026-11-14:** a community tree added before syncing existed is sent, automatically, with everything recorded on it; see chip 129 and `docs/rulings-pending/community-trees-old-trees.md`. Others see a photograph's capture **date** and never its time; the owner keeps the exact
 time (decision 14, made client-assisted as 14a). The decisions, and what the server rounds ruled
 inside them, are in `docs/rulings-pending/community-trees.md` and
 `docs/rulings-pending/community-trees-reads.md`.
@@ -2233,6 +2233,17 @@ into this section in the round that finds it, and nowhere else. Each item stands
     eight authors wrote files through the shell instead, some after the refusal. "Working in a
     worktree (agents)" should name the tool and forbid the shell route. (CLAUDE.md is the owner's;
     this round did not edit it.)
+129. **Send the community trees that predate syncing, with everything on them (owner's ruling,
+    2026-11-14).** The owner reversed R77 for community trees: "trees that are community added
+    should make it onto everyone's phone regardless of when they were added." Chosen in the decision
+    round: the tree, its photographs, and every visit, measurement and care event recorded on it;
+    sent automatically after the update, with no prompt; a signed-out phone waits for sign-in, as a
+    new tree does; other people see the day the tree was added, not the day it went live. The
+    ruling, and the three facts the building round must verify first (no `add_tree` row exists for
+    these trees, a proximity conflict on an old add, and whether the service keeps the phone's
+    dates), are in `docs/rulings-pending/community-trees-old-trees.md`. Rows on a city tree are
+    still under R77; the owner was not asked about them. Not built. It belongs with C2, because
+    nobody else sees any community tree until C2 lands.
 
 
 **Retire the format-1 manifest — DONE, 2026-08-23.** The owner overrode the trigger the day after
