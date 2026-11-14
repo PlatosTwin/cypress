@@ -103,18 +103,16 @@ final class MovePinUITests: XCTestCase, DeepLinkHarness {
 
     // MARK: - 2 · Where the link sits on the profile
 
-    /// The owner's TestFlight note on build 87 (2026-11-13): "Terrible spacing here", on a profile
-    /// where `Move pin` floated about 62 pt from the links above and below it, center to center,
-    /// while the other links in the column sat against each other.
+    /// The owner's TestFlight notes on builds 87 and 88: `Move pin` floated in a band of empty space,
+    /// about 62 pt and then about 48 pt from the links beside it, center to center, while the other
+    /// links in the column sit about 18 pt apart. The owner's ruling (2026-11-14): match the column.
     ///
-    /// Two bounds, both on the distance between label centers. **At least 44 pt**, because each link
-    /// has a 44 pt hit rect centered on its words, and closer than that one link takes taps meant
-    /// for the other (`AddReadingReachabilityTests`). **At most 52 pt** (44 plus the 8 pt row gap),
-    /// because anything more is the empty band the owner reported. Build 87's 62 pt fails the
-    /// second bound by 10 pt; the fix draws about 47.7 pt. The upper bound holds only at the default
-    /// text size, which is the size this test launches at: the distance is the label height plus
-    /// 32 pt, so it passes 52 pt from about the footnote style's xxxLarge size upward.
-    func testMovePinSitsOneTapTargetFromTheLinksBesideIt() {
+    /// Two bounds on the distance between label centers. **At most 26 pt**: one 13 pt label, the
+    /// column's 2 pt spacing and some slack for rounding; build 88's 48 pt fails it by 22 pt. **At
+    /// least 12 pt**, so the labels do not draw over each other. Measured on label centers, not on
+    /// frame edges, because each link's 44 pt hit area can overlap its neighbor's. Holds at the
+    /// default text size, which is the size this test launches at.
+    func testMovePinSitsInTheColumnLikeTheLinksBesideIt() {
         let app = launch("movePin")
 
         let action = app.buttons[Copy.action]
@@ -131,15 +129,15 @@ final class MovePinUITests: XCTestCase, DeepLinkHarness {
         let move = action.frame
         let above = showWhere.frame
         XCTAssertGreaterThan(move.height, 0, "Move pin has no frame to measure")
-        XCTAssertLessThan(above.maxY, move.minY, "'\(Copy.showWhere)' is not above Move pin")
+        XCTAssertLessThan(above.midY, move.midY, "'\(Copy.showWhere)' is not above Move pin")
         assertPitch(from: above, to: move, "'\(Copy.showWhere)' to Move pin")
 
         // The next control down the same column, whichever the profile offers this tree: the
         // nearest button below Move pin whose left edge lines up with it.
         let below = app.buttons.allElementsBoundByIndex
             .map(\.frame)
-            .filter { $0.minY > move.maxY && abs($0.minX - move.minX) < 1 && $0.height > 0 }
-            .min { $0.minY < $1.minY }
+            .filter { $0.midY > move.midY + 1 && abs($0.minX - move.minX) < 1 && $0.height > 0 }
+            .min { $0.midY < $1.midY }
         guard let below else {
             XCTFail("no link sits under Move pin in its column, so the gap below it was not measured")
             return
@@ -151,18 +149,16 @@ final class MovePinUITests: XCTestCase, DeepLinkHarness {
         from upper: CGRect, to lower: CGRect, _ what: String,
         file: StaticString = #filePath, line: UInt = #line
     ) {
-        let tapTarget: CGFloat = 44
-        let rowGap: CGFloat = 8
         let pitch = lower.midY - upper.midY
         XCTAssertGreaterThanOrEqual(
-            pitch, tapTarget,
-            "\(what): the label centers are \(pitch) pt apart, so their 44 pt hit rects overlap",
+            pitch, 12,
+            "\(what): the label centers are \(pitch) pt apart, so the labels draw over each other",
             file: file, line: line
         )
         XCTAssertLessThanOrEqual(
-            pitch, tapTarget + rowGap,
-            "\(what): the label centers are \(pitch) pt apart, which leaves an empty band around "
-                + "Move pin (build 87's spacing)",
+            pitch, 26,
+            "\(what): the label centers are \(pitch) pt apart, which leaves a band of empty space "
+                + "around Move pin (builds 87 and 88)",
             file: file, line: line
         )
     }

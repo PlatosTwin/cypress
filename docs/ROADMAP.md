@@ -2072,6 +2072,10 @@ into this section in the round that finds it, and nowhere else. Each item stands
     and below, so it sat about 62 pt from its neighbors, center to center. **DONE in #216:** a
     30 pt gap keeps the centers at least 44 pt apart at every text size (about 47.7 pt at the
     default size), and `MovePinUITests` measures both distances.
+    **Not fixed by #216: build 88 still showed the band** (about 48 pt, the owner's second TestFlight
+    note, 2026-11-14). #216 kept a 44 pt tap-target rule the owner had not asked for. The owner's
+    ruling: match the column. **DONE in `fix/move-pin-tight`:** Move pin has no extra padding and
+    sits about 18 pt from its neighbors, like the other links; the test now checks that.
 119. **"Say what species you think this is" and "Report that there is no tree here" overlap.** On
     the profile of a tree with no species, the two links are about 18 pt apart, center to center,
     so their 44 pt hit areas overlap and a tap meant for one can reach the other. This predates
