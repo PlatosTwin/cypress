@@ -46,6 +46,11 @@ struct RootView: View {
     /// A failure costs the reader the two buttons and not the page, so it is swallowed to `.none`.
     @State private var areaChoices: AreaChoices = .none
 
+    /// Read for one reason: the outbox drains when the app comes to the front (F35). A photograph
+    /// held back on cellular goes as soon as the app is opened on wi-fi, even if the connection
+    /// changed while the app was suspended and the path watcher could not run.
+    @Environment(\.scenePhase) private var scenePhase
+
     /// Screen 17's model, owned here because **two screens now show the same preference**.
     ///
     /// The You tab draws the wi-fi toggle beside the outbox row, and screen 17 draws it in its own
@@ -166,11 +171,18 @@ struct RootView: View {
             wrappedValue: AccountModel(api: data.local, session: data.session, router: data.api)
         )
         _photoImages = State(wrappedValue: PhotoImageStore(api: data.api))
+        // The location provider is built here rather than as the property's default so that the
+        // grove model can ask it where the reader is at each read (F38: the Species ring follows
+        // the reader's location). `@State` keeps the first value, exactly as the default did, and
+        // the closure captures that same instance.
+        let location = RootView.launchLocationProvider()
+        _location = State(wrappedValue: location)
         _grove = State(
             wrappedValue: GroveModel(
                 api: data.api,
                 refreshSpecies: data.refreshGroveSpecies,
-                refreshTrees: data.refreshGrove
+                refreshTrees: data.refreshGrove,
+                currentFix: { location.availability }
             )
         )
         _map = State(
@@ -205,7 +217,7 @@ struct RootView: View {
     /// *detect* the simulator's ambient state and skip when it is not the one they need. See
     /// `DebugLocationOverride`. On every ordinary launch, and in every Release build, this is the
     /// real provider and the expression below is one dictionary lookup that finds nothing.
-    @State private var location = RootView.launchLocationProvider()
+    @State private var location: MapLocationProvider
 
     /// The provider this process should use. See `location`.
     ///
@@ -242,6 +254,13 @@ struct RootView: View {
         // its own dimming and the live screen behind it — none of which is what the mocks draw.
         // `AppRouter.sheet` already distinguishes these from `path` for exactly this reason.
         .task { areaChoices = (try? await data.api.areaChoices()) ?? .none }
+        // The one foreground drain (F35). `drain()` decides about photographs itself, and returns at
+        // once when another drain is running, so this cannot double-send.
+        .onChange(of: scenePhase) { _, phase in
+            guard phase == .active else { return }
+            let outbox = data.outbox
+            Task { _ = try? await outbox.drain() }
+        }
         .fullScreenCover(isPresented: presentingSheet) {
             // ══════════════════════════════════════════════════════════════════════════════════
             // **The environment is handed over explicitly, and it has to be.**
@@ -972,6 +991,18 @@ struct RootView: View {
                         outbox: data.outbox
                     )
                 }
+            )
+
+        case let .movePin(id, coordinate):
+            // The owner's Move pin control (2026-11-12). The move is local first and queued, through
+            // `RoutedAPI.correctLocation`; both exits pop back to the profile, which re-reads itself
+            // on reappearing (ERRATA E127) and so draws the tree where it now is.
+            MovePinView(
+                treeID: id,
+                coordinate: coordinate,
+                api: data.api,
+                onSaved: { router.pop() },
+                onCancel: { router.pop() }
             )
 
         case .dataDispute(let id):

@@ -124,8 +124,10 @@ struct OutboxPresentation {
     /// `3 waiting`, or nil.
     ///
     /// **The mock's second clause is dropped.** §1 draws `3 waiting · offline`, and nothing in this
-    /// app knows whether it is offline: there is no reachability monitor, and a failure sentence
-    /// reading "No connection." is a record of the last attempt rather than a statement about now.
+    /// app is wired to say whether it is offline. The one reachability source (`NetworkPathSource`,
+    /// added for F35) answers "is this connection unmetered" for the wi-fi toggle and nothing else,
+    /// and a failure sentence reading "No connection." is a record of the last attempt rather than a
+    /// statement about now.
     /// Printing `offline` beside a live connection would be the same class of untrue label as
     /// "sent to the city" (ARCHITECTURE §5.4). See ERRATA.
     ///
@@ -182,7 +184,9 @@ struct OutboxPresentation {
     /// it in both places on a queue of one is the screen telling somebody the same thing twice.
     private func reason(for item: OutboxItemSnapshot) -> String? {
         guard let reason = item.reason else { return nil }
-        return reason == OutboxFailureReason.awaitingWifi(photoCount: item.photoCount) ? nil : reason
+        // By kind, not by count: a withdrawn photograph changes the count after the sentence was
+        // written (F35 review).
+        return OutboxFailureReason.isAwaitingWifi(reason) ? nil : reason
     }
 
     /// `waiting` / `retry`.
@@ -366,6 +370,12 @@ enum OutboxCopy {
         // rather than a second noun. Neither invents a botanical or civic fact.
         case .dataDispute: return "Data issue"
         case .dataDisputeWithdrawal: return "Data issue withdrawn"
+        // **NOT SPECIFIED, and provisional.** No screen can queue this kind yet — the move-pin
+        // flow is the community-trees UI round's, and screen 17's row copy for it is one of that
+        // round's questions to the owner (DECISIONS constraint 21). The switch has no `default`,
+        // so the case needs an answer to compile; this one is `Species correction`'s shape, one
+        // seam over, and invents no fact. The UI round replaces it with the owner's words.
+        case .locationCorrection: return "Location correction"
         }
     }
 
@@ -424,7 +434,10 @@ enum OutboxCopy {
              // and R79 is the constraint-21 authority for which controls exist while the words on
              // them are still the owner's to give (the sheet's whole copy is PR-C's ask). A sub-line
              // here would be this file inventing that copy first and the sheet inheriting it.
-             .dataDispute, .dataDisputeWithdrawal:
+             .dataDispute, .dataDisputeWithdrawal,
+             // A moved pin, for the same refusal: "moved 12 m north" is the kind of phrase the UI
+             // round asks the owner for, and printing coordinates would be worse than nothing.
+             .locationCorrection:
             return nil
 
         // The one §3.4-shaped kind that *does* carry a sub-line, because the fact is on the payload

@@ -75,7 +75,7 @@ import Testing
 /// the test to those**, which is what `AlmanacStatementCensusTests` does for all nine of its
 /// statements. That third horn was called the better one and left unbuilt because it is a
 /// production change. It is now built: `ContributionStore.groveRecordsSQL`,
-/// `ContributionStore.ownHeroPhotoCandidatesSQL` and `CommunityTreeStore.treesSQL` are the hoists,
+/// `ContributionStore.ownHeroPhotoCandidatesSQL` and `CommunityLayer.treesSQL` are the hoists,
 /// `ContributionStore.groveTreeIDsSQL` already existed for `GrovePagedStatementCensusTests`, and
 /// the second copy of the tallies text inside `heroPhotoIDs(treeIDs:connection:)` — the production
 /// defect the earlier header reported rather than fixed — is gone, so both scoped hero reads now
@@ -165,7 +165,7 @@ struct GroveStatementCensusTests {
             ContributionStore.scopedHeroPhotoTalliesSQL,
             // hop 2
             treeQueries.treesSQL(),
-            CommunityTreeStore.treesSQL,
+            CommunityLayer.treesSQL,
             ContributionStore.activeNamesSQL
         ]
     }
@@ -259,7 +259,7 @@ struct GroveStatementCensusTests {
     ///
     /// It used to cover two of the seven, because five were string literals with no property to
     /// hold them to. `ContributionStore.groveRecordsSQL`, `ownHeroPhotoCandidatesSQL` and
-    /// `CommunityTreeStore.treesSQL` are this round's hoists and close that gap.
+    /// `CommunityLayer.treesSQL` are this round's hoists and close that gap.
     @Test("each of the seven statements the repository names runs exactly once, off its property")
     func thePropertyBackedTextsAreTheOnesThatRun() async throws {
         let (api, store, _) = try await Self.seeded()

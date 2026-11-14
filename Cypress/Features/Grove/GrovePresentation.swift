@@ -210,7 +210,7 @@ struct GrovePresentation: Equatable {
             fraction: fraction,
             ringLabel: GroveCopy.ringLabel(fraction: fraction),
             headline: GroveCopy.headline(recognized: numerator, total: denominator),
-            caption: GroveCopy.caption(area: neighborhood.area)
+            caption: GroveCopy.caption(area: neighborhood.area, basis: neighborhood.basis)
         )
     }
 
@@ -341,11 +341,28 @@ enum GroveCopy {
     /// tree, which is A4's inference said out loud rather than a place name invented for a circle.
     /// It never names the city; the app does not know one, only that no boundary in the record
     /// covers anything this contributor has touched.
-    static func caption(area: AlmanacArea) -> String {
-        switch area {
-        case let .named(name):
+    ///
+    /// **F38 (owner decision 2026-11-12): the ring follows the reader's location**, so the caption
+    /// also says what the area was resolved *from*. The owner granted a constraint-21 exception
+    /// for this change on condition that these strings are drafted for ratification (ROADMAP 99):
+    ///
+    /// - a fix inside a polygon keeps the mock's words, because that place is where the reader is
+    ///   (owner ruling 2026-11-13);
+    /// - a fix outside every polygon (all of Washington, D.C. today) states R29's distance and
+    ///   measures it from the reader, "of where you are", in the existing radius sentence's form;
+    /// - otherwise the area is A4's most-visited inference, and the caption says so, so it is
+    ///   never read as the reader's location (the F38 report: "in the Castro/Upper Market" for a
+    ///   reader in D.C.). That covers no usable fix, a fix no inventory covers, and a fix whose
+    ///   area holds none of the reader's species (owner ruling 2026-11-13).
+    static func caption(area: AlmanacArea, basis: GroveAreaBasis) -> String {
+        switch (area, basis) {
+        case let (.named(name), .whereYouAre):
             return "you can recognize in the \(name)"
-        case .radius:
+        case (.radius, .whereYouAre):
+            return "you can recognize within a 15-minute walk of where you are"
+        case let (.named(name), .mostVisited):
+            return "you can recognize in the \(name), your most-visited neighborhood"
+        case (.radius, .mostVisited):
             return "you can recognize within a 15-minute walk of your most-visited tree"
         }
     }

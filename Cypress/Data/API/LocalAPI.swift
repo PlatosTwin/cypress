@@ -14,6 +14,13 @@ public actor LocalAPI: CypressAPI {
     private let treeQueries: TreeQueries?
     private let speciesQueries: SpeciesQueries?
     private let communityTrees = CommunityTreeStore()
+    /// The merge helper over `community_trees` and `community_tree_cache` (`AppSchema` v23): every
+    /// read that asks "what community trees are there" goes through it, and every write that acts
+    /// on the record itself goes through `communityTrees` alone. `CommunityLayer`'s header lists
+    /// which is which.
+    private let layer = CommunityLayer()
+    /// A community tree's pin, as a chain (`AppSchema` v23).
+    private let locations = TreeLocationStore()
     private let contributions = ContributionStore()
     private let assertions = SpeciesAssertionStore()
     /// `tree_data_disputes` and its two children (`AppSchema` v22, `RULINGS R79`).
@@ -36,6 +43,10 @@ public actor LocalAPI: CypressAPI {
     /// Where photo binaries live once "uploaded". `LocalAPI`'s upload is a move into this
     /// directory, which is what makes the outbox's photo phase exercisable with no network.
     private let photoDirectory: URL
+    /// This container's Application Support folder, as it is now. A stored photograph path that an
+    /// app update left pointing at an old container is re-rooted onto it (report F36; see
+    /// `StoredPhotoPath`). Injected so a test can stand in a container of its own.
+    private let applicationSupportDirectory: URL
 
     /// `tree_status_overrides`, held between the writes that can change it.
     ///
@@ -57,8 +68,11 @@ public actor LocalAPI: CypressAPI {
         userID: UUID? = nil,
         role: UserRole = .member,
         photoDirectory: URL? = nil,
+        applicationSupportDirectory: URL? = nil,
         now: @escaping @Sendable () -> Date = { Date() }
     ) {
+        self.applicationSupportDirectory = applicationSupportDirectory
+            ?? FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
         self.store = store
         self.deviceID = deviceID
         self.userID = userID
@@ -111,8 +125,10 @@ public actor LocalAPI: CypressAPI {
                 try $0.mapContent(in: viewport, connection: connection)
             } ?? (viewport.shouldCluster ? .clusters([]) : .pins([]))
 
-            // Community-added trees live in `main` and are merged here rather than unioned in SQL.
-            // See `CommunityTreeStore` for why.
+            // Community trees live in `main` and are merged here rather than unioned in SQL with
+            // the seed. See `CommunityTreeStore` for why. Since `AppSchema` v23 they are two
+            // tables — the trees this phone added and other people's from the service — and
+            // `CommunityLayer` reads them as one, the phone's own row winning.
             //
             // **The narrowing has to be applied to them too, in Swift, or "only" leaks.** The seed
             // half of a narrowed viewport is filtered in SQL; this half is a separate table that
@@ -120,8 +136,9 @@ public actor LocalAPI: CypressAPI {
             // tree in the box on top of the matches — and drawn them *dashed*, which reads as "the
             // community found you these", the most convincing possible way to be wrong. Filtering
             // here rather than in `CommunityTreeStore.inBounds` keeps the narrowing in one place per
-            // layer and costs nothing: the table holds one row per tree this device added.
-            let allAdded = try communityTrees.inBounds(
+            // layer and costs nothing: the layer holds the trees this device added and the published
+            // trees of the tiles it has fetched, not an inventory.
+            let allAdded = try layer.inBounds(
                 viewport.bounds,
                 limit: viewport.pinLimit,
                 connection: connection
@@ -282,7 +299,10 @@ public actor LocalAPI: CypressAPI {
             return try treeQueries.nearest(to: coordinate, radiusM: radiusM, limit: limit, connection: connection)
         }
         let added = try await store.queue.read { connection in
-            try communityTrees.near(coordinate, radiusM: radiusM, limit: limit, connection: connection)
+            // The whole community layer, other people's cached trees included: this is the add
+            // dedupe's candidate list, and a tree somebody else published 5 m away is as much a
+            // duplicate as one this phone added (constraint 16, `AppSchema` v23).
+            try layer.near(coordinate, radiusM: radiusM, limit: limit, connection: connection)
         }
         guard !added.isEmpty else { return Array(fromSeed.prefix(limit)) }
 
@@ -304,8 +324,15 @@ public actor LocalAPI: CypressAPI {
         let moment = now()
         return try await store.queue.readConsistently { connection -> TreeProfile in
             let record = try treeQueries?.tree(id: id, connection: connection)
-            let inventoryTree = try record?.tree ?? communityTrees.tree(id: id, connection: connection)
-            guard var tree = inventoryTree else { throw APIError.notFound }
+            // A community tree is either one this phone added or one the service sent down
+            // (`CommunityLayer`). Which of the two it is decides which controls the record offers:
+            // somebody else's tree gets no species or record control this round, because every
+            // verb behind one acts only on a tree this phone added (the round's orchestrator
+            // ruling: "Others' trees: no species/report/dispute controls this round").
+            let cityTree = record?.tree
+            let community = try cityTree == nil ? layer.row(id: id, connection: connection) : nil
+            let addedHere = community?.isAddedHere ?? false
+            guard var tree = record?.tree ?? community?.tree else { throw APIError.notFound }
 
             // A withdrawn community record is not a tree (task **#125**). `CommunityTreeStore.tree`
             // is the one read in that file which does *not* filter `deleted_at`, deliberately, so a
@@ -345,6 +372,9 @@ public actor LocalAPI: CypressAPI {
             // series *is* `latestObservation`, so asking the database twice for facts that have to
             // agree is a way for them to stop agreeing.
             let observations = try contributions.observations(treeID: id, connection: connection)
+
+            let adder = addedHere ? try communityTrees.adder(treeID: id, connection: connection) : nil
+            let canMovePin = adder?.isOwned(by: attribution) ?? false
 
             return TreeProfile(
                 tree: tree,
@@ -414,13 +444,21 @@ public actor LocalAPI: CypressAPI {
                 // about the chain's head and the reports against it, and a control drawn from one
                 // moment's answer against another moment's species is a control that offers to
                 // correct something that has already been corrected.
-                speciesCorrection: try speciesCorrectionOffer(tree: tree, connection: connection),
+                speciesCorrection: try speciesCorrectionOffer(
+                    tree: tree, addedHere: addedHere, connection: connection
+                ),
                 // Same transaction, same reason (task #125): the offer is a statement about the
                 // open reports against this record, and a control drawn from one moment's answer
                 // over another moment's record offers to withdraw something already withdrawn.
-                recordDefect: try recordDefectOffer(tree: tree, connection: connection),
+                recordDefect: try recordDefectOffer(
+                    tree: tree, addedHere: addedHere, connection: connection
+                ),
                 // Set above, beside the overwrite it describes, so the two cannot be changed apart.
-                statusProvenance: statusProvenance
+                statusProvenance: statusProvenance,
+                // `correctLocation`'s own test, read in the same transaction as the tree: a tree
+                // this phone added (a cached or city row is never movable from here), and an adder
+                // who is the reader. A withdrawn tree never reaches this line (it threw above).
+                canMovePin: canMovePin
             )
         }
     }
@@ -497,7 +535,14 @@ public actor LocalAPI: CypressAPI {
         )
 
         try await store.queue.write { connection in
-            try communityTrees.insert(tree, clientUUID: draft.clientUUID, connection: connection)
+            // The adder goes on the tree, and the root of its location chain with it
+            // (`AppSchema` v23): whoever adds a tree is who may move its pin (decision 5).
+            try communityTrees.insert(
+                tree,
+                clientUUID: draft.clientUUID,
+                adder: ContributionOwner(attribution),
+                connection: connection
+            )
             // The "at the same time" half of the species request opens the chain, exactly as
             // `claimSpecies` does for the "after" half (AppSchema v14). A tree added *with* a species
             // and a tree named afterwards must end in the same state, or one of the two would be
@@ -551,6 +596,122 @@ public actor LocalAPI: CypressAPI {
             )
         }
         return tree
+    }
+
+    /// Moves a community tree's pin. `LocationCorrection.swift` states who may, and why.
+    ///
+    /// The order is the service's (`store.applyLocationCorrection`), so the phone refuses what the
+    /// service would and nothing it would not: the position's shape first, then whose the tree is,
+    /// then the 10 m dedupe against every *other* tree — the tree being moved is 0 m from its own
+    /// old position and is not its own duplicate.
+    public func correctLocation(
+        treeID: UUID,
+        to coordinate: Coordinate,
+        placement: TreePlacement,
+        locationAccuracyM: Double?
+    ) async throws -> Tree {
+        // The service's `validation_failed` checks, verbatim in meaning (`api/sync.go`): a position
+        // off the map, or an accuracy that is not a distance. `!(x >= 0)` and not `x < 0`, so a NaN
+        // is refused as well — the comparison the service makes.
+        guard (-90.0...90.0).contains(coordinate.latitude),
+              (-180.0...180.0).contains(coordinate.longitude)
+        else { throw APIError.validationFailed }
+        if let locationAccuracyM, !(locationAccuracyM >= 0) { throw APIError.validationFailed }
+
+        let mine = attribution
+        let (subject, adder) = try await store.queue.read {
+            connection -> (Tree?, ContributionOwner?) in
+            (
+                try communityTrees.tree(id: treeID, connection: connection),
+                try communityTrees.adder(treeID: treeID, connection: connection)
+            )
+        }
+        guard let subject else {
+            // Not a tree this phone added. A city row or somebody else's cached tree is real and
+            // not this person's to move — `.forbidden`, `claimSpecies`' distinction between "not
+            // allowed" and "no such tree", which the screen says differently.
+            let isSomebodyElses = try await store.queue.read { connection -> Bool in
+                // `flatMap` on the optional store, for `raiseDataDispute`'s reason: a chained
+                // `treeQueries?.tree(…) != nil` is true whenever a seed is attached at all.
+                let city = try treeQueries.flatMap { try $0.tree(id: treeID, connection: connection) }
+                if city != nil { return true }
+                return try layer.exists(id: treeID, connection: connection)
+            }
+            throw isSomebodyElses ? APIError.forbidden : APIError.notFound
+        }
+        // A tree this phone withdrew is gone, here as on the service (`tree.DeletedAt != nil`).
+        guard subject.deletedAt == nil else { throw APIError.notFound }
+        guard let adder, adder.isOwned(by: mine) else { throw APIError.forbidden }
+
+        let nearby = try await treesNear(
+            coordinate, radiusM: TreeDraft.proximityDedupeRadiusM, limit: 11
+        ).filter { $0.tree.id != treeID }
+        if !nearby.isEmpty {
+            throw ProximityConflict(candidates: Array(nearby.prefix(10)))
+        }
+
+        let moment = now()
+        // Two ids, as the wire has two (`server/testdata/sync_location_correction.json`): the chain
+        // row's own, sent as the payload's `id`, and the act's, which keys the queue row. Neither is
+        // the tree's — the root row already holds that one, and the service refuses a correction
+        // spelled with it.
+        let correctionID = UUID()
+        let clientUUID = UUID()
+        try await store.queue.write { connection in
+            guard let head = try locations.head(treeID: treeID, connection: connection) else {
+                // Every tree has a root: v23's backfill wrote one for every tree before it and
+                // `CommunityTreeStore.insert` writes one for every tree after. A chain with no head
+                // is damage, and papering over it with a new root would erase where the tree was.
+                throw APIError.conflict
+            }
+            // The old head stops being one before the new row exists: the head index is not
+            // deferrable, the foreign key is (`AppSchema` v23 — and the service's order too).
+            guard try locations.supersede(
+                id: head.id, with: correctionID, at: moment, connection: connection
+            ) else { throw APIError.conflict }
+            try locations.insert(
+                TreeLocation(
+                    id: correctionID,
+                    treeID: treeID,
+                    clientUUID: clientUUID,
+                    coordinate: coordinate,
+                    placement: placement,
+                    locationAccuracyM: locationAccuracyM,
+                    owner: ContributionOwner(mine),
+                    occurredAt: moment,
+                    createdAt: moment,
+                    updatedAt: moment
+                ),
+                connection: connection
+            )
+            // The read cache follows its chain's head, in the same transaction — `claimSpecies`'
+            // rule for `species_current`, applied to the position.
+            guard try communityTrees.move(
+                treeID: treeID, to: coordinate, placement: placement, at: moment,
+                connection: connection
+            ) else {
+                // Withdrawn between the read above and this write.
+                throw APIError.notFound
+            }
+            // Spec §3.4, in the same transaction as the move — see `addTree`.
+            try Self.queueAppliedMutation(
+                .locationCorrection(
+                    TreeLocationCorrection(
+                        id: correctionID,
+                        clientUUID: clientUUID,
+                        treeID: treeID,
+                        coordinate: coordinate,
+                        placement: placement,
+                        locationAccuracyM: locationAccuracyM,
+                        attribution: mine,
+                        occurredAt: moment
+                    )
+                ),
+                at: moment,
+                connection: connection
+            )
+        }
+        return try await treeProfile(id: treeID).tree
     }
 
     /// Names the species on a community tree that has none. `SpeciesClaim` carries the argument for
@@ -862,6 +1023,7 @@ public actor LocalAPI: CypressAPI {
     /// role live rather than in a view (`SpeciesCorrectionOffer`).
     private func speciesCorrectionOffer(
         tree: Tree,
+        addedHere: Bool,
         connection: SQLiteConnection
     ) throws -> SpeciesCorrectionOffer {
         // **A city row answers R79's surface, not this one.** It answered `.unavailable` until
@@ -871,6 +1033,11 @@ public actor LocalAPI: CypressAPI {
         guard tree.source == .community else {
             return .dataDispute(try dataDisputeOffer(tree: tree, connection: connection))
         }
+        // Somebody else's tree, from the cache. `claimSpecies`, `correctSpecies` and
+        // `flagWrongSpecies` all act only on a tree this phone added, so any control here would be
+        // one the tap is refused behind. Stated rather than left to fall out of the missing chain
+        // below, which answers the same today for a reason that is not this one.
+        guard addedHere else { return .unavailable }
         guard tree.speciesCurrentID != nil else { return .unavailable }
         let head = try assertions.current(treeID: tree.id, connection: connection)
         let isMine = head?.isSupersedable(by: attribution) ?? false
@@ -967,9 +1134,12 @@ public actor LocalAPI: CypressAPI {
     /// this flag never enters `openReviews`, and no status can be written by accident.
     ///
     /// Gated on `userRole.canConfirmReviewFlag` (DECISIONS §3.7), and the gate is on the write, so a
-    /// surface drawn in error cannot withdraw a record. There is no author's arm the way the species
-    /// seam has one: `community_trees` records no author at all (R45's finding, unchanged), so there
-    /// is nobody whose own record this is to take back.
+    /// surface drawn in error cannot withdraw a record. There is no author's arm here the way the
+    /// species seam has one. `community_trees` records its adder since `AppSchema` v23, but the
+    /// adder's own withdrawal is a different act — the owner's decision 8, a withdrawal *for
+    /// everyone*, refused once anybody else has built on the tree, and sent as `tree_withdrawal` —
+    /// which this phone does not implement yet. This verb is the lead's answer to a report, and it
+    /// stays one.
     public func withdrawRecord(flagID: UUID) async throws {
         guard userRole.canConfirmReviewFlag else { throw APIError.forbidden }
         let moment = now()
@@ -1054,11 +1224,15 @@ public actor LocalAPI: CypressAPI {
     /// this boolean. `SpeciesClaim.swift`'s header carries the same note for the species half.
     private func recordDefectOffer(
         tree: Tree,
+        addedHere: Bool,
         connection: SQLiteConnection
     ) throws -> RecordDefectOffer {
         guard tree.source == .community else {
             return .dataDispute(try dataDisputeOffer(tree: tree, connection: connection))
         }
+        // Somebody else's tree: `flagNeverExisted` reads only the trees this phone added, so a
+        // `.reportable` here would draw a control the tap is refused behind.
+        guard addedHere else { return .unavailable }
         guard tree.deletedAt == nil else { return .unavailable }
         if let reported = try Self.openRecordReviews(
             treeID: tree.id, store: contributions, connection: connection
@@ -1968,7 +2142,10 @@ public actor LocalAPI: CypressAPI {
                  // `data_dispute` would file a second objection against a record that already
                  // carries this person's; re-applying a withdrawal would re-stamp a
                  // `withdrawn_at` that is already a fact.
-                 .dataDispute, .dataDisputeWithdrawal:
+                 .dataDispute, .dataDisputeWithdrawal,
+                 // Re-applying a moved pin would append a second head to a chain that has already
+                 // moved.
+                 .locationCorrection:
                 throw APIError.validationFailed
             }
         }
@@ -1981,7 +2158,9 @@ public actor LocalAPI: CypressAPI {
     private func requireTree(_ id: UUID, connection: SQLiteConnection) throws {
         let inSeed = (try? treeQueries?.exists(id: id, connection: connection)) ?? false
         if inSeed == true { return }
-        if try communityTrees.exists(id: id, connection: connection) { return }
+        // Either community table: a visit to somebody else's published tree is a visit to a tree
+        // (`CommunityLayer`).
+        if try layer.exists(id: id, connection: connection) { return }
         throw APIError.notFound
     }
 
@@ -2022,8 +2201,16 @@ public actor LocalAPI: CypressAPI {
         return PhotoUploadTicket(photoID: photo.id, destination: destination)
     }
 
+    /// Where a stored photograph path names a file today, for a caller outside this actor that reads
+    /// the file itself (the apply sink's size read). See `StoredPhotoPath` and report F36.
+    nonisolated func resolvedPhotoPath(_ stored: String) -> String {
+        StoredPhotoPath.resolve(stored, applicationSupport: applicationSupportDirectory).path
+    }
+
     public func uploadPhoto(at localPath: String, ticket: PhotoUploadTicket) async throws {
-        let source = URL(fileURLWithPath: localPath)
+        // Resolved rather than trusted: a photo queued before an app update holds the old
+        // container's path, and the file has moved with the container (report F36).
+        let source = StoredPhotoPath.resolve(localPath, applicationSupport: applicationSupportDirectory)
         let manager = FileManager.default
         guard manager.fileExists(atPath: source.path) else {
             // The binary is gone. Not retryable: no amount of waiting brings a deleted file back.
@@ -2087,7 +2274,8 @@ public actor LocalAPI: CypressAPI {
 
         let candidates = [
             location.storageKey.map { photoDirectory.appendingPathComponent(($0 as NSString).lastPathComponent) },
-            location.localPath.map { URL(fileURLWithPath: $0) }
+            // A path stored before an app update can name the old container (report F36).
+            location.localPath.map { StoredPhotoPath.resolve($0, applicationSupport: applicationSupportDirectory) }
         ].compactMap { $0 }
 
         for url in candidates {
@@ -2225,7 +2413,9 @@ public actor LocalAPI: CypressAPI {
         let manager = FileManager.default
         let files = [
             subject.storageKey.map { photoDirectory.appendingPathComponent(($0 as NSString).lastPathComponent) },
-            subject.localPath.map { URL(fileURLWithPath: $0) }
+            // Resolved as `photoData` resolves it, or a delete after an app update would miss the
+            // moved file and leave the deleted picture on the device (report F36).
+            subject.localPath.map { StoredPhotoPath.resolve($0, applicationSupport: applicationSupportDirectory) }
         ].compactMap { $0 }
 
         // 4. The rows, then the bytes, in one transaction. The order inside it is the point: the
@@ -2671,7 +2861,7 @@ public actor LocalAPI: CypressAPI {
         let (seedRecords, community, activeNames) = try await store.queue.read { connection in
             (
                 try treeQueries?.trees(ids: treeIDs, connection: connection) ?? [:],
-                try communityTrees.trees(ids: treeIDs, connection: connection),
+                try layer.trees(ids: treeIDs, connection: connection),
                 try contributions.activeNames(treeIDs: treeIDs, connection: connection)
             )
         }
@@ -2765,7 +2955,7 @@ public actor LocalAPI: CypressAPI {
         let resolved = try? await store.queue.read { connection in
             (
                 try treeQueries?.trees(ids: treeIDs, connection: connection) ?? [:],
-                try communityTrees.trees(ids: treeIDs, connection: connection),
+                try layer.trees(ids: treeIDs, connection: connection),
                 try contributions.activeNames(treeIDs: treeIDs, connection: connection)
             )
         }
@@ -2825,17 +3015,59 @@ public actor LocalAPI: CypressAPI {
     ///
     /// A device with no seed attached has no city inventory to compare against and no tree to
     /// resolve a species from, so it has an empty grove rather than a wrong one.
-    public func groveSpecies() async throws -> GroveSpecies {
+    public func groveSpecies(near coordinate: Coordinate?) async throws -> GroveSpecies {
         guard let groveQueries else { return .empty }
         let userID = userID
         let deviceID = deviceID
+        let speciesQueries = speciesQueries
+        let almanacQueries = almanacQueries
         return try await store.queue.read { connection -> GroveSpecies in
             let known = try groveQueries.knownSpecies(
                 userID: userID,
                 deviceID: deviceID,
                 connection: connection
             )
-            // --- Which area the ring is about (RULINGS R29, the same order `almanac` resolves in).
+            // --- Which area the ring is about (F38: the ring follows the reader's location, owner
+            // decisions of 2026-11-12 and 2026-11-13; RULINGS R29 for the shapes).
+            //
+            // **With a usable fix, the ring is about where the reader is**, resolved exactly as
+            // `almanac` resolves `.here`: the polygon at the fix first, then R29's stated radius
+            // around the reader if that circle holds any record. Before F38 this read never looked
+            // at location, so a reader in Washington, D.C. was told "in the Castro/Upper Market",
+            // their most-visited area, as if that were where they stood.
+            //
+            // Two cases fall through to the most-visited ring below, by the owner's ruling of
+            // 2026-11-13, and its caption says "most-visited", so neither is presented as the
+            // reader's location:
+            // (a) no inventory on this phone covers the reader, so there is no area here at all;
+            // (b) the area holds a record, but the reader has met none of its species, so the ring
+            //     would read zero. The test is against this phone's species; the account's half
+            //     arrives later through `RoutedAPI.refreshedGroveSpecies(near:)`, which keeps the
+            //     area this read chose.
+            if let coordinate, let speciesQueries, let almanacQueries {
+                var located: AlmanacScope?
+                if let polygon = try speciesQueries.resolveNeighborhood(near: coordinate, connection: connection) {
+                    located = .neighborhood(id: polygon.id, name: polygon.name)
+                } else {
+                    let around = AlmanacScope.radius(center: coordinate, meters: AlmanacLimits.fallbackRadiusM)
+                    if try almanacQueries.holdsAnyRecord(scope: around, connection: connection) {
+                        located = around
+                    }
+                }
+                if let located {
+                    let species = try groveQueries.speciesIDs(scope: located, connection: connection)
+                    let growsHere = Set(species.items)
+                    if known.items.contains(where: { growsHere.contains($0.speciesID) }) {
+                        return GroveSpecies(
+                            neighborhood: GroveNeighborhood(area: located.area, species: species, basis: .whereYouAre),
+                            known: known
+                        )
+                    }
+                }
+            }
+
+            // --- No usable fix, or (a) or (b) above: A4's inference, in R29's order, labeled as
+            // most-visited.
             //
             // A4's inference reads the same contributions, so a contributor with none has no
             // area at all and the ring has nothing to be a fraction of. The polygon first — the
@@ -2863,7 +3095,7 @@ public actor LocalAPI: CypressAPI {
             }
             let species = try groveQueries.speciesIDs(scope: scope, connection: connection)
             return GroveSpecies(
-                neighborhood: GroveNeighborhood(area: scope.area, species: species),
+                neighborhood: GroveNeighborhood(area: scope.area, species: species, basis: .mostVisited),
                 known: known
             )
         }
@@ -3176,7 +3408,7 @@ public actor LocalAPI: CypressAPI {
                 // The tree may be a seed row or a community add; resolve through the same two-step the
                 // profile uses. A flag whose tree cannot be found is skipped rather than shown nameless.
                 let record = try treeQueries?.tree(id: flag.treeID, connection: connection)
-                guard let tree = try record?.tree ?? communityTrees.tree(id: flag.treeID, connection: connection)
+                guard let tree = try record?.tree ?? layer.tree(id: flag.treeID, connection: connection)
                 else { return nil }
                 let name = try contributions.activeName(treeID: flag.treeID, connection: connection)?.name
                     ?? Self.resolveSpecies(
@@ -3848,7 +4080,9 @@ public actor LocalAPI: CypressAPI {
                 )
             }
             for path in bytes.absolutePaths {
-                try? manager.removeItem(at: URL(fileURLWithPath: path))
+                try? manager.removeItem(
+                    at: StoredPhotoPath.resolve(path, applicationSupport: applicationSupportDirectory)
+                )
             }
         }
 
@@ -3954,7 +4188,7 @@ public actor LocalAPI: CypressAPI {
             let placed = Set(inventory.map(\.treeID))
             let unplaced = ids.subtracting(placed)
             guard !unplaced.isEmpty else { return places }
-            for tree in try communityTrees.trees(
+            for tree in try layer.trees(
                 ids: Array(unplaced), connection: connection
             ).values {
                 places.append(
@@ -4119,7 +4353,7 @@ public actor LocalAPI: CypressAPI {
     private func treeIfPresent(_ id: UUID) async throws -> Tree? {
         try await store.queue.read { connection -> Tree? in
             if let record = try treeQueries?.tree(id: id, connection: connection) { return record.tree }
-            return try communityTrees.tree(id: id, connection: connection)
+            return try layer.tree(id: id, connection: connection)
         }
     }
 

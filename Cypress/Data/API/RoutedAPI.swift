@@ -412,6 +412,20 @@ public struct RoutedAPI: CypressAPI {
         try await local.addTree(draft)
     }
 
+    /// Local, like every write: the move lands on this phone and reaches the account through the
+    /// queue as a `location_correction` (`AppSchema` v23).
+    public func correctLocation(
+        treeID: UUID,
+        to coordinate: Coordinate,
+        placement: TreePlacement,
+        locationAccuracyM: Double?
+    ) async throws -> Tree {
+        try await local.correctLocation(
+            treeID: treeID, to: coordinate, placement: placement,
+            locationAccuracyM: locationAccuracyM
+        )
+    }
+
     public func claimSpecies(treeID: UUID, speciesID: UUID) async throws -> Tree {
         try await local.claimSpecies(treeID: treeID, speciesID: speciesID)
     }
@@ -805,17 +819,20 @@ public struct RoutedAPI: CypressAPI {
     /// than as an error.
     ///
     /// **This method is the paint and it does not touch the wire** — `grove()`'s note above, for the
-    /// same ruling and the same reason. The join is `refreshedGroveSpecies()`, and this screen's
+    /// same ruling and the same reason. The join is `refreshedGroveSpecies(near:)`, and this screen's
     /// Species pill is the one the owner reported as worst: it is the tab My Grove opens on, so its
     /// read was the one every visit waited through.
-    public func groveSpecies() async throws -> GroveSpecies {
-        try await local.groveSpecies()
+    public func groveSpecies(near coordinate: Coordinate?) async throws -> GroveSpecies {
+        try await local.groveSpecies(near: coordinate)
     }
 
-    /// `groveSpecies()` again, with `GET /me/grove/species` merged in — the read that reaches the
+    /// `groveSpecies(near:)` again, with `GET /me/grove/species` merged in — the read that reaches the
     /// service. See `refreshedGrove()` for what "refreshed" means here and what it does to `log`.
-    public func refreshedGroveSpecies() async throws -> GroveSpecies {
-        let mine = try await local.groveSpecies()
+    ///
+    /// `coordinate` is the same fix the paint was read with, so the merge cannot repaint the ring
+    /// about a different area than the one on screen (F38).
+    public func refreshedGroveSpecies(near coordinate: Coordinate?) async throws -> GroveSpecies {
+        let mine = try await local.groveSpecies(near: coordinate)
         guard let delta = try? await remote.groveSpeciesDelta() else {
             // `refreshedGrove()`'s cancellation note, for the same reason and the same reader.
             if !Task.isCancelled { await log.record(.groveSpecies, .fellBackToLocal) }
@@ -1092,7 +1109,10 @@ public struct RoutedAPI: CypressAPI {
             // The local answer, like `tree` itself: `tree_status_overrides` is this device's table
             // and the service has no view of it. Taking the remote half's value here would let a
             // merge quietly un-attribute a death this phone's reviewer confirmed.
-            statusProvenance: mine.statusProvenance
+            statusProvenance: mine.statusProvenance,
+            // The local answer: who added a tree is this phone's `community_trees` row, and the
+            // move it gates is a local write.
+            canMovePin: mine.canMovePin
         )
     }
 

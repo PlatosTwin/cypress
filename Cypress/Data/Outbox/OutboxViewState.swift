@@ -116,6 +116,26 @@ public enum OutboxFailureReason {
             : "The note is saved. \(photoCount) photos are waiting for wi-fi."
     }
 
+    /// Whether a stored reason is an `awaitingWifi` sentence, **for any count**.
+    ///
+    /// Recognized by kind and not by matching `awaitingWifi(photoCount:)` for the current count:
+    /// a withdrawn photograph lowers the count a row owes after the sentence was written, and an
+    /// exact match then missed the row everywhere at once. The watcher skipped it, screen 17
+    /// miscounted it, and its held time stopped being exempt from the 48 h cap (F35 review).
+    public static func isAwaitingWifi(_ reason: String?) -> Bool {
+        guard let reason else { return false }
+        return reason.hasPrefix(awaitingWifiPrefix) && reason.hasSuffix(awaitingWifiSuffix)
+    }
+
+    /// The fixed parts of both `awaitingWifi` sentences. The `photoCount == 1` and plural forms
+    /// share them, which is what lets the reason be recognized by kind.
+    static let awaitingWifiPrefix = "The note is saved. "
+    static let awaitingWifiSuffix = " waiting for wi-fi."
+
+    /// `isAwaitingWifi` as an SQL `LIKE` pattern, for `OutboxStore.dueItems`. Neither fixed part
+    /// contains `%` or `_`, so nothing in them needs escaping.
+    static var awaitingWifiLikePattern: String { awaitingWifiPrefix + "%" + awaitingWifiSuffix }
+
     /// Narrows any thrown error to the §6 taxonomy, or `nil` when it did not come from the API at
     /// all (a dropped connection, a file that vanished).
     public static func apiError(from error: Error) -> APIError? {
@@ -288,7 +308,9 @@ public struct OutboxSnapshot: Sendable, Equatable {
                 treeID: treeID,
                 treeName: treeNames[treeID],
                 payload: payload,
-                photoCount: record.item.photos.count,
+                // Every binary still owed, so a row whose photograph is applied and waiting to be
+                // sent says so too (F35 review, S1).
+                photoCount: record.owedPhotoCount,
                 createdAt: record.item.createdAt,
                 updatedAt: record.item.updatedAt,
                 nextAttemptAt: record.nextAttemptAt
@@ -310,12 +332,20 @@ public struct OutboxSnapshot: Sendable, Equatable {
         let awaitingWifi = syncPhotosOnWifiOnly
             ? records.filter {
                 $0.locallyApplied
-                    && !$0.item.photos.isEmpty
+                    // Staged binaries, or binaries applied and not yet sent **because the drain
+                    // held them for wi-fi**. Counting staged files alone missed a photograph
+                    // applied on wi-fi whose send then waited, so the watcher never drained it
+                    // (F35 review, S1). The unsent half is narrowed by its reason: a binary whose
+                    // send merely failed ("hasn't gone through yet") is not waiting for wi-fi, and
+                    // saying so would be E32 again.
+                    && (!$0.item.photos.isEmpty
+                        || ($0.unsentPhotoCount > 0
+                            && OutboxFailureReason.isAwaitingWifi($0.item.lastError)))
                     && ($0.item.state == .pending || $0.item.state == .uploading)
             }
             : []
         awaitingWifiCount = awaitingWifi.count
-        awaitingWifiPhotoCount = awaitingWifi.reduce(0) { $0 + $1.item.photos.count }
+        awaitingWifiPhotoCount = awaitingWifi.reduce(0) { $0 + $1.owedPhotoCount }
         // A row that is neither waiting, failed, nor done has no state left to be in. The outbox's
         // four states are exhaustive, so this is structurally zero; it is here because the screen
         // claims it out loud.
@@ -408,9 +438,13 @@ public final class OutboxViewState: Observable {
             // statement about the toggle as much as about the rows: turning it off means no photo
             // is waiting on wi-fi any more, and the screen has to stop saying so in the same
             // gesture that made it untrue (ERRATA E32).
+            //
+            // Turning it off also drains: the photographs it was holding back may go now, on
+            // whatever connection there is, and the drain reads the value just persisted (F35).
             Task {
                 await self.persistWifiPreference(newValue)
                 await self.refresh()
+                if !newValue { _ = try? await self.queue.drain() }
             }
         }
     }
@@ -447,7 +481,8 @@ public final class OutboxViewState: Observable {
             await self?.refresh()
         }
         if let stored = try? await store?.appState(.syncPhotosOnWifiOnly) {
-            syncPhotosOnWifiOnly = (stored as NSString).boolValue
+            // The queue's parser, so the screen and the drain cannot read one value two ways.
+            syncPhotosOnWifiOnly = OutboxQueue.syncPhotosOnWifiOnly(fromStored: stored)
         }
         await refresh()
     }
@@ -485,8 +520,7 @@ public final class OutboxViewState: Observable {
     /// `OutboxStore.retry` moves the row to `pending` and **NULLs `last_error` and
     /// `last_error_code`**. That is right for a row that is about to be attempted again and it is a
     /// lie for a row that is not: until this line drained, the only drains in the app were the six
-    /// feature writers, which fire when somebody saves *other* work, and `syncNow(isOnWifi:)` had
-    /// no call site at all. So one tap on a terminally refused item left it reading `waiting` —
+    /// feature writers, which fire when somebody saves *other* work. So one tap on a terminally refused item left it reading `waiting` —
     /// SCREENS.md 17's word for "still trying" — counted in the header's `N waiting` pill, with its
     /// sentence and its taxonomy code both erased, and it stayed there until an unrelated save
     /// happened along. Measured, before and after, on a `forbidden` item:
@@ -511,10 +545,10 @@ public final class OutboxViewState: Observable {
     /// enough on its own**: nothing draws the code (`OutboxPresentation.state(for:)` stopped reading
     /// it under ruling 3), so keeping it would leave every drawn moment exactly as wrong.
     ///
-    /// `drain()` and not `syncNow(isOnWifi:)`: the toggle's parameter is a question about the
-    /// connection and nothing in this app can answer it (ERRATA **E81** — there is no reachability
-    /// monitor), which is why `syncNow` never acquired a caller. The bare `drain()` is the same call
-    /// all six feature writers make.
+    /// The bare `drain()` is the same call all six feature writers make, and since F35 it honors the
+    /// wi-fi toggle by itself: the queue reads the stored toggle and its `NetworkPathSource`.
+    /// `syncNow(isOnWifi:)`, which asked the caller to know the connection, is gone; it never had a
+    /// caller, because nothing could answer that question (ERRATA E81).
     public func retry(id: UUID) async {
         guard (try? await queue.retry(id: id)) == true else { return }
         _ = try? await queue.drain()
@@ -524,14 +558,6 @@ public final class OutboxViewState: Observable {
     public func retryAll() async {
         _ = try? await queue.retryAllFailed()
         _ = try? await queue.drain()
-    }
-
-    /// Drains, honoring the wi-fi toggle.
-    ///
-    /// - Parameter isOnWifi: whether the current connection is unmetered. The toggle only bites
-    ///   when it is off.
-    public func syncNow(isOnWifi: Bool) async {
-        _ = try? await queue.drain(photoUploadsAllowed: isOnWifi || !syncPhotosOnWifiOnly)
     }
 
     private func persistWifiPreference(_ value: Bool) async {

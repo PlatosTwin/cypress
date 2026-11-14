@@ -46,6 +46,34 @@ public protocol CypressAPI: Sendable {
     /// dedupe against any species and returns `.conflict` with the candidate list when it trips.
     func addTree(_ draft: TreeDraft) async throws -> Tree
 
+    /// Moves a community tree's pin — the owner's decisions 2 and 5 of 2026-09-28: the move
+    /// supersedes the position in force, and only the tree's adder may make it.
+    ///
+    /// **Not a BUILD-PLAN §6 endpoint.** It reaches the account through the queue, as outbox kind
+    /// `location_correction` (`AppSchema` v23), exactly as a species correction does.
+    ///
+    /// Appends a row to the tree's `tree_locations` chain, stamps the old head, moves the tree's
+    /// read cache and queues the correction, in one transaction. No distance bound is applied here:
+    /// how far a pin may move, and from where, is the UI round's question to the owner.
+    ///
+    /// - Returns: the tree as it now stands.
+    /// - Throws: `.notFound` when there is no such tree, or this phone withdrew it; `.forbidden`
+    ///   when the tree is real and not this person's to move — a city row, somebody else's tree
+    ///   from the cache, or a tree this phone added whose adder is not whoever is asking, including
+    ///   a tree whose adder is nobody (every tree an account deletion anonymized);
+    ///   `.validationFailed` for a position off the map or a negative
+    ///   accuracy; `ProximityConflict` (`.conflict`) when the new position is within 10 m of another
+    ///   tree.
+    ///
+    /// Defaulted in `LocationCorrection.swift` to `.notFound`. **Declared here and not only in an
+    /// extension**, for the reason `photoData` gives below at length (ERRATA E125).
+    func correctLocation(
+        treeID: UUID,
+        to coordinate: Coordinate,
+        placement: TreePlacement,
+        locationAccuracyM: Double?
+    ) async throws -> Tree
+
     /// Names the species on a community tree that has none — the "after" half of "add tree species
     /// after/at same time as adding a custom tree".
     ///
@@ -342,7 +370,12 @@ public protocol CypressAPI: Sendable {
     /// different things — one on the contributor's trees, one on the species they have come to know
     /// — and because the ring's denominator is a fact about the city's inventory that no list of
     /// the contributor's own trees contains. See `GroveSpecies`.
-    func groveSpecies() async throws -> GroveSpecies
+    ///
+    /// `coordinate` is the reader's fix, already checked by the caller against
+    /// `AlmanacLimits.fixCanResolveAnArea`, or nil when there is no usable fix. With a fix the ring
+    /// is about where the reader is; without one it is about their most-visited area, and the
+    /// payload says which (`GroveAreaBasis`, F38).
+    func groveSpecies(near coordinate: Coordinate?) async throws -> GroveSpecies
 
     /// `GET /me/journal`, cursor-paginated (`?cursor`, `?limit` max 100).
     func journal(cursor: String?, limit: Int) async throws -> Page<JournalEntry>
@@ -1094,6 +1127,14 @@ public struct TreeProfile: Hashable, Sendable {
     /// community reviewer confirmed anything. See `TreeStatusProvenance`.
     public let statusProvenance: TreeStatusProvenance
 
+    /// Whether this reader may move the tree's pin: a community tree this phone added, not
+    /// withdrawn, whose adder is the reader (the owner's decision 5 of 2026-09-28, and the Move pin
+    /// control of 2026-11-12). The same test `LocalAPI.correctLocation` applies before it writes, so
+    /// the control is drawn only where the verb would accept it.
+    ///
+    /// `false` for every stub and preview, the safe direction: it offers nothing.
+    public let canMovePin: Bool
+
     public init(
         tree: Tree,
         activeName: TreeName? = nil,
@@ -1116,7 +1157,8 @@ public struct TreeProfile: Hashable, Sendable {
         inventorySource: InventorySource? = nil,
         speciesCorrection: SpeciesCorrectionOffer = .unavailable,
         recordDefect: RecordDefectOffer = .unavailable,
-        statusProvenance: TreeStatusProvenance = .record
+        statusProvenance: TreeStatusProvenance = .record,
+        canMovePin: Bool = false
     ) {
         self.tree = tree
         self.activeName = activeName
@@ -1140,6 +1182,7 @@ public struct TreeProfile: Hashable, Sendable {
         self.speciesCorrection = speciesCorrection
         self.recordDefect = recordDefect
         self.statusProvenance = statusProvenance
+        self.canMovePin = canMovePin
     }
 
     /// Whether this device contributed the photo, and may therefore show it to the person who took

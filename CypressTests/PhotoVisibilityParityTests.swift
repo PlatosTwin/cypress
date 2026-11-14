@@ -91,7 +91,7 @@ struct PhotoVisibilityParityTests {
         }
         func uploadPhoto(at localPath: String, ticket: PhotoUploadTicket) async throws {}
         func grove() async throws -> [GroveEntry] { [] }
-        func groveSpecies() async throws -> GroveSpecies { .empty }
+        func groveSpecies(near coordinate: Coordinate?) async throws -> GroveSpecies { .empty }
         func journal(cursor: String?, limit: Int) async throws -> Page<JournalEntry> { Page(items: []) }
         func claimDevice(deviceUUID: UUID, userID: UUID) async throws {}
         func deleteAccount(_ choice: AccountDeletionChoice) async throws -> AccountDeletion.Outcome {

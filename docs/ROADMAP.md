@@ -683,7 +683,15 @@ a service that refuses it. That deploy happened on 2026-09-29: `cypress-sync` bo
 (#190 merged) at server schema 7. Still check its release before C1 merges, because a later revert
 or redeploy would change that (chip 12: merging server work changes nothing in production).
 
-- **C1 — the core (`feat/community-trees-core`). Open, and next.** The one client migration author
+- ~~**C1 — the core (`feat/community-trees-core`). Built; in review once its PR opens.**~~ **DONE in
+  `feat/community-trees-c1`** (the PR titled "Community trees C1: location chain, adder backfill, and
+  Move pin"). Two owner decisions of 2026-11-12 rode with it: v23 gives every pre-v23 tree this
+  install's own owner as its adder (not nobody), and a minimal **Move pin** control on the profile of
+  a tree the reader added, with no distance bound because the service has none
+  (`docs/rulings-pending/community-trees-adder-backfill.md`, `community-trees-move-pin.md`). **F37
+  ("Put the pin in the wrong place") is answered for trees the reader added.** What follows is the
+  round's original scope, kept for the record. Migration v23
+  is C1's. The one client migration author
   of the round: the writable database's next migration (the design proposal names v23; read
   `AppSchema.migrations`, not this line). It carries the new stores and the merge helper; a
   location-correction verb with its outbox kind and `accountDeletionTreatment`; `addTree` writing
@@ -695,7 +703,10 @@ or redeploy would change that (chip 12: merging server work changes nothing in p
   it, so their photographs keep today's behavior). It **neutralizes `RemoteAPI.addTree`**, which
   would key the tree on `client_uuid`. And it **rewrites the comments R45 made false** — "no
   author" and "nothing syncs anyone else's rows down" — re-verifying them rather than trusting this
-  sentence. Chip 70 (`species_assertions` in both deletion doors) folds into it.
+  sentence. Chip 70 (`species_assertions` in both deletion doors) folds into it. **Left for the
+  rounds after it, and stated rather than implied:** the `tree_withdrawal` verb (the queue's CHECK
+  already admits the kind), a location-correction offer on the profile (C3), and the cache's
+  fetching (C2; the store and its schema are in C1, unwired).
 - **C2 — sync down (`feat/community-trees-sync-down`). Open; no migration; merges after C1.**
   `RemoteAPI` decoders and tile-delta accessors; `GoldenWireFixtureTests` over the new wire files;
   the `RoutedAPI` merge (history, `added_by_you`, adopting the adder from the service); the
@@ -1690,14 +1701,17 @@ into this section in the round that finds it, and nowhere else. Each item stands
     ERRATA entries carry the same sentence (`docs/ERRATA.md`, lines 20095 and 20525 at that
     commit). A confident comment is where bugs live here, so re-verify each against the code before
     rewriting it. (From #182.)
-70. ~~**Neither account-deletion door touches `species_assertions`.**~~ **Duplicate of 79**, which #186
+70. ~~**Neither account-deletion door touches `species_assertions`.**~~ **DONE in community-trees C1
+    (with 79).** **Duplicate of 79**, which #186
     wrote with the measurement; track it there. The table carries `user_id`, and
     `Cypress/Data/Store/AccountDeletion.swift` never names it, so an owned row survives leaving and
     erasing alike and still points at the deleted account. Fix it on R3's contribution pattern
     (leaving anonymizes, erasing deletes), and decide the tombstone question, since these rows have
     no `client_uuid`. **Fold it into community trees C1**, which touches the table anyway. (From the
     community-trees design and #186.)
-71. **`ContributionStore.claimDevice` is another hand-kept table list.** It adopts `visits`,
+71. **`ContributionStore.claimDevice` is another hand-kept table list.** *(Community-trees C1 added
+    `community_trees`, `tree_locations` and `species_assertions` to the adoption, which closes this
+    item's `species_assertions` half; the guard it asks for is still open.)* It adopts `visits`,
     `observations`, `measurements`, `care_events`, reminders, photographs, favorites, and photo
     votes, and nothing else. `species_assertions` carries a `device_id`, so a species claim made
     before sign-in is never adopted into the account, and nothing guards the list. (`tree_data_disputes`
@@ -1763,7 +1777,10 @@ into this section in the round that finds it, and nowhere else. Each item stands
     #198 (`fix/dispute-fix-clock`): (a) tested, (b) fixed and tested, (c) ruled by the owner
     2026-09-29 ("Start at the grant") and built; the ruling is pending a number. #198's reviews
     left the phone checks in item 82.
-79. **Neither account-deletion door reaches `species_assertions`.** OPEN. `LocalAPI.addTree`,
+79. ~~**Neither account-deletion door reaches `species_assertions`.**~~ **FIXED in community-trees C1**
+    (the leaving door anonymizes, the erasing door deletes and splices each chain shut, and
+    `claimDevice` now adopts the table, which also closes chip 71's `species_assertions` half). The
+    original entry follows as the record. OPEN (when written). `LocalAPI.addTree`,
     `claimSpecies` and `correctSpecies` write the signed-in account's id into
     `species_assertions.user_id` (`SpeciesAssertionStore.insert`), and no statement in
     `AccountDeletion` or `OutboxStore` names the table. Nothing cascades into it either: it has no
@@ -1837,7 +1854,232 @@ into this section in the round that finds it, and nowhere else. Each item stands
     unlocks without pairing them with locks, so an `openAtOneX` that always unlocks would stay
     green. Make the stand-in refuse an unmatched unlock, and assert the lens ends unlocked in
     `aRaisedFloorOpensAtTheFloor` too.
-85. **Two unit tests that failed on CI and passed on the next run, neither explained.** (a) `MapSuggestionTests`'
+85. **Washington, D.C.: what shipped, and the species follow-up.** The D.C. round (2026-11-12,
+    `feat/dc-street-trees`) built the `us-dc-dc` pack from DDOT's street tree layer: 200,313 rows
+    (194,086 alive, 3,332 standing dead, 2,895 vacant sites), published beside the seven live packs
+    by `publish_cities.py --add-pack`. Detail: `docs/investigations/dc-street-trees.md`. Species
+    coverage under D20 is 86.27% and was waived for D.C. (`docs/rulings-pending/dc-species-gate.md`).
+    Follow-up: a D.C. species round, the way `nyc_species.yaml` was built. Two parts. First, cited
+    rules for the notation the R0 to R3 cascade misses (`Ginkgo biloba (male)`/`(female)` 3,682 rows,
+    `Genus species` 12,000+ rows, curly-quoted cultivars, `Liquidambar Stryaciflua`). Second, a
+    `dc_species.yaml` content fixture for the D.C. taxa no fixture covers (`Cladrastis lutea`,
+    `Liquidambar rotundiloba`, `Quercus shumardi` and others). No content may be written by hand
+    (DECISIONS constraint 15).
+86. **D.C. in the bundle and the data gates.** The D.C. pack is download-only. If D.C. joins the
+    bundled seed, `Cypress/Data/Tests/DataGates.swift` needs a D.C. bounding box, and
+    `Fixtures/seed/pinned-seed.json` plus `CypressTests/SeedCorpus.swift` need a deliberate bump
+    (the pin's own "HOW TO BUMP IT" steps). `Tools/verify_seed.py` checks are SF-shaped (nyc-ingest
+    §7) and were not extended for D.C.
+87. **Recheck that DDOT's GLOBALID is stable, in early December 2026.** The D.C. uuids are
+    uuid5 over `us-dc-dc:<GLOBALID>`, and nobody has shown that GLOBALID survives a DDOT republish
+    of the live layer. Re-fetch with `Tools/fetch_dc_trees.py` into a new cache and join on
+    GLOBALID against the 2026-11-12 cache: count kept, gone and new ids. If ids churn, every D.C.
+    tree's public identity churns with them, and the id choice needs a decision before more
+    community data attaches to D.C. trees.
+88. **D.C. neighborhoods.** None ship (San Jose's shape). The District publishes neighborhood
+    boundaries; adding them is a schema-free change to the neighborhood stamp, but the polygons are
+    civic content and need a cited source.
+89. **`dim_region` ids collide across packs built from different seeds.** The app's
+    `InventoryUnionSQL.mirrorFirstWins` copies `dim_region` with `id` as PRIMARY KEY and filters only
+    on `pack_id`, so two packs that carry the same region id under different pack ids collide and
+    the second is refused. Every pack before D.C. came from one fused seed, so this never fired.
+    `publish_cities.py --add-pack` works around it by giving the new pack an unused id (D.C. is 8).
+    It is still a trap: a full rebuild that includes D.C. assigns New York's boroughs 4..8 instead
+    of 3..7 (`us-dc-dc` sorts first), so a phone mid-update can hold an old pack and a new pack
+    that share an id. Fix in the app (renumber `dim_region` on mirror, as `dim_city` already is) or
+    freeze region ids in `build_seed.REGIONS`; either needs its own round and a test.
+    The same copy leaves `dim_region.city_id` pointing at the pack's own `dim_city` numbering,
+    which the app renumbers: in a merged union the boroughs' `city_id` 3 points at `us-dc-dc` and
+    D.C.'s `city_id` 2 points at `us-ca-sj` (#203 review). Nothing reads it today
+    (`SeedCities.swift` reads `dim_region.display_name` by `pack_id` only); re-point it through
+    `dim_city.slug` in the same fix. `Tools/test_publish_cities.py`'s region-id test checks
+    `len(cities) + 1` against its own fixture, not the ids live packs use, so it would stay green
+    if an entry were ever removed from the manifest.
+90. **`upload.sh` should refuse a stale previous manifest.** It replaces `manifest-v2.json`
+    whole, so a publish by someone else between the build and the upload is undone silently. The
+    D.C. publish (2026-11-12) re-fetched and compared by hand. Make `upload.sh` compare the live
+    manifest's sha256 with the one `--previous-manifest` read, and refuse on a mismatch.
+91. **Merged species content depends on which packs are installed.** 98 species carry different
+    common names in the D.C. pack and the August packs ("Trident maple" vs "trident maple",
+    "Cherry (Snowgoose)"), and the first installed pack wins. `species_map.species_id` is copied
+    into the union untranslated (only `DataGates` reads it). Decide one source of common names.
+92. **D.C. planting dates use the UTC day.** About 1.7% of dated D.C. trees (1,711 of 102,067)
+    were stamped 00:00-03:59 UTC, the evening before in D.C., so `parse_planted_date` lands them
+    one day late. Convert with America/New_York at the next D.C. build.
+93. **The web does not serve D.C. yet.** `web/src/lib/idSpaces.ts` now knows `us-dc-dc` (#203), but
+    the `cypress-web` volume holds only the seven August packs and is sized for 713 MB; D.C. adds
+    120 MB. Copy the pack to the volume (and restart the machine, chip 47) in its own round.
+94. **DONE 2026-11-12: the owner accepted the agreement; run 43331239955 pulled feedback again.** ~~**P0, owner only: accept the expired Apple agreement (App Store Connect, Business).**~~ Every
+    App Store Connect API call has answered HTTP 403 `REQUIRED_AGREEMENTS_MISSING_OR_EXPIRED` since
+    2026-10-02. The `release` job of run 36968512685 (#200's merge) failed on it, so **build 82
+    (2026-09-30) is the last build testers have**: #200 and #203's release note are on main and in
+    no build, and build 82 expires around **2026-12-29**. The feedback pull (run 43328447485) fails
+    the same way, so no tester feedback after 2026-09-28 has been read. The Account Holder accepts it
+    at App Store Connect > Business; no key is involved. Then re-run the failed `release` job, re-pull
+    feedback, and redo `docs/investigations/beta-feedback-triage-2026-11-12.md` for 2026-09-28 on.
+95. **F1's leftover owner decision.** The leading fix shipped (d7fdbd4a), but ERRATA E254 §2's choice
+    for the no-ghost caption (its 80 pt width, or the copy `no ghost yet · first photo`) was never
+    made; the 2026-08-28 reconciliation counted F1 as fully shipped. Owner call; P3.
+96. **F4 was filed on My Grove > Species (screen 08).** The tester's screenshot answers the "which
+    screen" question the 2026-09-09 section left open, so F4 now waits only on the period vocabulary.
+97. **Chip numbers 85-87 collide.** `feat/community-trees-core` (C1) and PR #201
+    (`ci/build-once-for-ui-shards`) each add their own chips 85-87, and main now uses 85-93 for
+    D.C. Whoever merges either branch renumbers its chips past the highest on main. C1 (`feat/community-trees-c1`) renumbered its chips to 104-106, and #201 renumbered its chips to 121-123.
+98. **DONE by #208: the queue now decides with an `NWPathMonitor` source, and waiting photos upload when wi-fi returns.** ~~**P0: the "Sync photos on wifi only" switch does nothing (F35, 2026-09-30).**~~ A tester saw
+    photos upload over cellular. Every feature writer and `OutboxViewState.retry`/`retryAll` call
+    `OutboxQueue.drain()`, whose `photoUploadsAllowed` defaults to `true`; the only call that passes
+    the switch is `syncNow(isOnWifi:)`, which nothing calls, because the app has no reachability
+    source (ERRATA E81 names the missing source, not this effect). Fix: one `NWPathMonitor`-backed
+    source, passed to every `drain()`, with a test that fails if a writer drains without it.
+99. **DONE (PR #207): the ring follows the reader's location, owner decision 2026-11-12; strings
+    in `docs/rulings-pending/grove-ring-follows-location.md`.** ~~**The Grove ring names the most-visited neighborhood, not where the reader is (F38,
+    2026-11-12).** The tester, in D.C., saw My Grove > Species say "in the Castro/Upper Market".
+    `LocalAPI.groveSpecies` follows R29 (most-visited neighborhood) and the caption does not say so;
+    F17 fixed the same complaint on the Journal's stats but not on screen 08. Owner choice: label it
+    "your most-visited neighborhood", reuse F17's picker, or follow location. D.C. ships no
+    neighborhoods yet (chip 88).~~
+100. ~~**A tester's own photo will not open (F36, 2026-10-02).** "That photograph could not be opened"
+    on a tree they added. Unreproduced; suspects are chip 67 (a keyed photo row with no bytes) and
+    chip 76(a). Reproduce first.~~ **DONE in #206.** Cause: a photo row stores an absolute
+    `local_path` into the app's data container, and an add-tree photo keeps it for good because it
+    is never uploaded. An app update can move the container (the tester went from build 77 to 82),
+    so the stored prefix named a folder that no longer existed and the server had no copy. iOS
+    moves the files with the container, so `StoredPhotoPath` now re-roots the part after
+    `Library/Application Support/` onto the current folder when the stored path is missing; no
+    migration. `uploadPhoto` and both deletes use it too, and the viewer now retries a failed read
+    when it opens again. Chips 67 and 76(a) stay open as separate suspects. Follow-up: store
+    relative paths in `addTree` (after C1 merges, since C1 edits those lines).
+101. **A white band under the tab bar (F34, 2026-09-30).** About 60 pt, after browsing the
+    Journal's City and Neighborhood tabs. Unreproduced; same visual family as F8. P2.
+102. ~~**F37 (2026-10-31) is a second report of F31(a), moving a pin.**~~ **Answered by C1's Move pin
+    control for trees the reader added** (owner decision 2026-11-12). C3 still owns the rest of F31.
+103. **`PhotoDeletionReachabilityTests.testTheHeroPhotographReachesADeleteThatWorks` failed once on
+    main** (run 43327553492, ui shard 4, #203's merge, 2026-11-12): "the delete is in the viewer's
+    tree but nothing could" (line 52). The same tree's Swift passed on the PR's merge run, and the
+    merge changed no Swift. A re-run is evidence it is intermittent, not of why. Watch for a second
+    occurrence before chasing it.
+    **Second occurrence, in the sibling test** (run 43421121135, ui shard 4, #206's merge,
+    2026-11-13): `testAPhotographOpenedFromTheBrowserReachesTheSameDelete`, "the metadata pill did
+    not open the photo browser" (line 104). Read from the two runs' recordings and snapshots:
+    - **The first is the race `UIWait.assertReachable` documents.** The viewer stopped moving at
+      6.85 s; the one-shot `isHittable` at 8.99 s said false; the tap at 9.21 s still opened the
+      confirmation. Fixed by waiting for reachability (this PR).
+    - **The second is not explained.** The tap landed at the pill's center (318, 202), and for ten
+      seconds after it nothing changed: no browser, no viewer, the same pixels. Screen 20 was never
+      reached, so F36's changes to `PhotoImageStore` were not on the failing path, and the first
+      failure predates F36. The candidates are a touch dropped while the pushed profile was settling
+      on a loaded runner, or a push the stack did not draw. The test now waits for the pill to be
+      reachable before tapping it, and on failure it reports whether a second tap works, which
+      separates the two. Keep this open until a recurrence says which, or a few dozen green runs.
+
+104. **C2 item: the phone's leaving door anonymizes trees the service deletes (decision 12).** From
+    community-trees C1. Decision 12 of 2026-09-28 deletes an *unpublished* tree under both deletion
+    doors, `leaveRecords` included. Publication is the service's fact (decisions 7 and 10: it turns
+    on the license the account held when the tree went live), and C1's phone does not hold it, so
+    `AccountDeletion.forgetCommunityTrees` anonymizes every tree the account added under
+    `leaveRecords` and the service deletes the ones that were never public. The phone then keeps a
+    pin the service has dropped. **Close it in C2**: the tile's withdrawn-ids list is what drops the
+    stale row from `community_tree_cache`, but the stale row is in `community_trees` (the authored
+    table), so C2 has to decide how a phone learns an authored tree was deleted for it — most
+    likely by reading the service's answer to the account's own trees at sign-out or on the next
+    tile — and then delete the local row and its chain. Until then the gap is visible only to the
+    deleted account's own phone.
+105. **C2 item: the erasing door's local "built on" test is the phone's view of the tree.** From
+    community-trees C1. Decision 6 keeps a tree the erasing account added if another identity has
+    built on it; the service decides that from all the rows it holds, and
+    `AccountDeletion.forgetCommunityTrees` decides it from this phone's `visits`, `observations`,
+    `measurements`, `care_events` and `photos` with `deleted_at IS NULL` (`builtOnTables`). Two
+    edges differ. (a) Somebody else's contribution to the tree that never reached this phone
+    does not count locally, so the phone can delete a tree the service keeps, anonymized; the
+    next sync-down would bring it back as somebody else's tree. (b) A row by this same
+    installation but not yet claimed (device-owned) counts locally as "somebody else"; the service
+    reads it as the account's after the claim. C2 should make the service's answer the one the
+    phone acts on, or at least reconcile the two after the deletion lands.
+106. **Owner question: deletion copy for the new erasing-door behavior (decision 6).** From
+    community-trees C1. The erasing door now deletes a tree the account added unless somebody else
+    has built on it, and the owner's decision 6 says "deletion copy must say so".
+    `AccountDeletionCopy` says nothing about trees the account added: it names visits, check-ins,
+    measurements, care notes, photo votes, tree names and photographs. Copy is the owner's under
+    constraint 21, and C1 has no UI, so none was written. Needs the sentence for both doors (the
+    leaving door keeps the tree and takes the name off; the erasing door deletes it or, where
+    somebody else has built on it, keeps it anonymized), and the confirmation screen's count line
+    if it should report trees.
+
+107. **Move pin is offered on trees the service never received (R77), and on trees whose adder the
+    backfill guessed.** From #209's review (F1) and the owner's ruling of 2026-11-13. A tree added
+    before the sync path existed was never queued, so v23 gives it this installation's current owner
+    and the profile offers Move pin; the service has no such tree and answers the move with a
+    terminal `not_found`, a permanent red row on screen 17. The same happens where the `add_tree` row
+    was pruned (24 h after `done`) and the current owner is not the one the add was made as
+    (`forbidden`). **A cheap rule, proposed and not built:** offer Move pin only when the tree's
+    `add_tree` row is still in the outbox, or the tree's `created_at` is on or after the first build
+    that queued adds (#s34, merged 2026-08-21; read the `build-N` tag for the exact date). That hides
+    every R77 tree and keeps every tree the service has. It does not fix a pruned row with a wrong
+    guess; C2's `added_by_you` from `GET /trees/{id}` is the real answer, and should replace the local
+    adder test once it lands. Owner call: build the cheap rule in C2, or wait for `added_by_you`.
+    **Owner, 2026-11-13: not an issue today**, because every tree added so far was added by the
+    owner. Revisit before other people add trees.
+108. ~~**Test wait limits now trip on many CI runs (2026-11-13).** In one day: three `MapSearchTests`
+    timed out at `TestWait.ceiling` (90 s, each failed after 102 s) on #208's run 43495993786;
+    `MapRecenterTests` on a main run; `CityDownloadTests`' 60 s time limit on #207; and
+    `AppleSignInUITests`' 30 s reachability wait on #210. Each passed on a re-run. `TestWait.swift`
+    says a 90 s timeout means to check whether the model settles at all, so investigate before
+    raising any limit. The unit suite has grown to 2,134 tests, which is the first thing to measure.~~
+    **DONE by `test/map-settle-waits`, for the unit tests:** the five map suites no longer wait on a
+    wall clock. `TestWait.settle` awaits `MapModel`'s own tasks and fails at once when the model is
+    idle with the condition false, so time spent queued behind other tests no longer counts.
+    `CityDownloadTests`' limit is now 3 minutes. The `AppleSignInUITests` UI wait was not touched.
+    The deeper cause, pool contention from per-test seed stores, is item 117.
+109. **`PhotoBrowserReachabilityTests` asserts on a one-shot `isHittable`** (lines 60 and 133). That
+    is the race that #210 fixed in `PhotoDeletionReachabilityTests` (item 103). Move both asserts to
+    `UIWait.assertReachable`.
+110. **E81's "offline" state for the outbox pill can now be built.** #208 added `NetworkPathSource`
+    (`NWPathMonitor`), the source E81 said was missing. Out of scope for F35, logged here.
+111. **The agent simulators in CLAUDE.md no longer exist.** None of the four UDIDs listed under
+    "Simulators" is on the owner's Mac (checked with `xcrun simctl list devices`, 2026-11-13). This
+    round's agents made their own. Update the list, or say how an agent makes its device.
+112. **Owner action: local test runs hang on this Mac.** `xcodebuild test` stops with "test runner
+    hung before establishing connection" and "DTServiceHubClient failed to bless service hub". The
+    usual fix is `sudo xcodebuild -runFirstLaunch`, which needs the owner's password. Until then,
+    CI is the only test evidence.
+113. **F36 follow-up: thumbnails do not retry a failed read.** #206 made the photo viewer retry;
+    a thumbnail's `load()` still keeps its first failure for the session.
+114. **F38 follow-ups (#207).** The ring reads the location once, when the tab opens, and does not
+    follow the reader while the tab stays open. It does not check how old the fix is. Two reads that
+    overlap can finish out of order, and the older one can win.
+115. **C1 follow-up: other community kinds can reach the service before their tree's add.** #209
+    holds a pin move until its tree's add is sent. A species claim, a report or a photo vote on a
+    tree whose add is in backoff can still arrive first, and the service answers `not_found`, which
+    is terminal. Hold them the same way, or make the answer retryable.
+116. **C1 follow-up: a pin move's time held behind its tree's add counts toward its 48 h window.**
+    The held move has no reason on its row, so the F35 credit (`OutboxStore.window`) does not
+    leave the held time out. If the add is in backoff for 47 h and then sends, the released move
+    has about 1 h left, and one transient failure expires it. Give the held move a hold reason that
+    `window` credits, or restart its window when the hold releases. Found by the review of #209's
+    merge with F35.
+117. **Share one opened seed store per read-only suite (follow-up to 108).** 52 test files call
+    `CypressStore.inMemory(seedURL:)`, which opens an in-memory store and attaches the 103 MB seed,
+    and those files hold about 570 `@Test` declarations (counted 2026-11-13). Many tests open their
+    own store. On CI's 3-core runner that work competes for the same cooperative pool as every other
+    test, which is the load that starved the map waits in item 108. A suite that only reads could
+    open the store once and share it. Measure the unit job's time before and after.
+    Two related leftovers from #214's review: `CityDownloadTests`' time limit was raised from one
+    minute to three, not investigated, and is still exposed to the same starvation; and other waits
+    still run against a wall clock (`AlmanacLocationTransitionTests.waitUntil`,
+    `OutboxWifiOnlyTests`' 10 s `waitUntilBlocked`, `PhotoIdentityTests`' one-minute suite limit).
+118. **Move pin sits in a wide empty band on the profile (TestFlight, build 87, 2026-11-13).** The
+    owner's note: "Terrible spacing here". #209 padded the link by a whole tap target (44 pt) above
+    and below, so it sat about 62 pt from its neighbors, center to center. **DONE in #216:** a
+    30 pt gap keeps the centers at least 44 pt apart at every text size (about 47.7 pt at the
+    default size), and `MovePinUITests` measures both distances.
+119. **"Say what species you think this is" and "Report that there is no tree here" overlap.** On
+    the profile of a tree with no species, the two links are about 18 pt apart, center to center,
+    so their 44 pt hit areas overlap and a tap meant for one can reach the other. This predates
+    #216 and #216 does not make it worse. Seen in the owner's build 87 screenshot.
+120. **`addReadingLink`'s comment overstates the hit-area overhang.** `TreeProfileView.swift`
+    (around line 988) says `cypressHitArea` overhangs a 13 pt label by about 17 pt. The background
+    is a centered 44 pt minimum height, so the overhang is about 14 pt at the default text size.
+121. **Two unit tests that failed on CI and passed on the next run, neither explained.** (a) `MapSuggestionTests`'
     "choosing a suggestion narrows the map to that one species and puts its name in the field" failed
     after 105 s with two issues (`MapSuggestionTests.swift:265` and `:268`), on the unit job of the
     build-once PR's run 36665812582. That PR changes no app or test source. (b) The day before, on
@@ -1845,8 +2087,8 @@ into this section in the round that finds it, and nowhere else. Each item stands
     search narrowed to" and "zooming in on the recenter's second step keeps the narrowing too" failed
     in the same area. Both are map-narrowing tests, which is the only thing the two sightings share.
     A green re-run proves a failure was intermittent, never why, so this is a flake-watch entry
-    until one recurs with a cause (item 75 is its UI-side neighbor).
-86. **What is left of the CI speedup (#199, #201).** (a) `unit` could use `ui-build`'s products too and
+    until one recurs with a cause (item 75 is its UI-side neighbor; item 108 has since fixed the `MapSearchTests` waits).
+122. **What is left of the CI speedup (#199, #201).** (a) `unit` could use `ui-build`'s products too and
     save about 7 more minutes a run, but only if warning certification moves to `ui-build`'s fresh
     build log: the owner's call, since `unit` is where the zero-warning line is certified today.
     (b) The shards could boot their simulators while `ui-build` runs; `prepare` is 2 to 3.5 minutes per
@@ -1855,7 +2097,7 @@ into this section in the round that finds it, and nowhere else. Each item stands
     pace. (d) The account's concurrent macOS runner cap is untouched: on run 36635369200 three shards
     waited 32, 36 and 74 minutes for a runner, and no workflow change fixes that. (e) The build artifact
     is kept one day, so re-running one shard later than that needs a re-run of all jobs.
-87. **Gaps the review of #199 and #201 found and accepted.** (a) `web.yml` groups its pull-request
+123. **Gaps the review of #199 and #201 found and accepted.** (a) `web.yml` groups its pull-request
     runs by head branch alone (`web-<head_ref>`, cancel on), so two pull requests from one head branch
     against different bases that both touch `web/` cancel each other's web run; `testflight.yml` and
     `server.yml` were given the base as well. (b) A fork pull request whose head branch name equals an
@@ -1866,7 +2108,6 @@ into this section in the round that finds it, and nowhere else. Each item stands
     `** TEST EXECUTE SUCCEEDED **` can come from `test-without-building`, still ends VERIFY-OK. Reachable
     only by hand-editing a log or running a pre-fix script, which CLAUDE.md already treats as unknown
     provenance.
-
 
 **Retire the format-1 manifest — DONE, 2026-08-23.** The owner overrode the trigger the day after
 setting it: rather than firing at the publish *after* New York, format 1 retired immediately. Full

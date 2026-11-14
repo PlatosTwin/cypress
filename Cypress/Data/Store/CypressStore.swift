@@ -223,10 +223,16 @@ public final class CypressStore: Sendable {
     /// Reads a value from the `app_state` key/value table.
     public func appState(_ key: AppStateKey) async throws -> String? {
         try await queue.read { connection in
-            let statement = try connection.cachedStatement("SELECT value FROM app_state WHERE key = :key")
-            _ = try statement.bind(key.rawValue, forName: ":key")
-            return try statement.fetchOne { try $0.string("value") }
+            try Self.appState(key, connection: connection)
         }
+    }
+
+    /// The same read on a connection the caller already holds. `OutboxQueue` reads the wi-fi
+    /// preference this way: it owns the database queue but not this actor.
+    public static func appState(_ key: AppStateKey, connection: SQLiteConnection) throws -> String? {
+        let statement = try connection.cachedStatement("SELECT value FROM app_state WHERE key = :key")
+        _ = try statement.bind(key.rawValue, forName: ":key")
+        return try statement.fetchOne { try $0.string("value") }
     }
 
     public func setAppState(_ key: AppStateKey, to value: String) async throws {

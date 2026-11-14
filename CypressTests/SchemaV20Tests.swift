@@ -135,6 +135,18 @@ struct SchemaV20Tests {
         return store
     }
 
+    private static func setRead(_ ids: [UUID], _ connection: SQLiteConnection) throws -> [UUID] {
+        let statement = try connection.prepare("""
+            SELECT * FROM community_trees
+             WHERE id COLLATE NOCASE IN (SELECT value FROM json_each(:ids))
+            """)
+        defer { statement.finalize() }
+        _ = try statement.bind(
+            "[\(ids.map { "\"\($0.uuidString)\"" }.joined(separator: ","))]", forName: ":ids"
+        )
+        return try statement.fetchAll(CommunityTreeStore.decode).map(\.id)
+    }
+
     /// Everything the five readers v20 moves answer, as comparable values.
     ///
     /// Ids and not whole models: a model's equality would drag in every column and turn a collation
@@ -152,8 +164,13 @@ struct SchemaV20Tests {
                 chain: try assertions.chain(treeID: assertionTree, connection: connection).map(\.id),
                 current: try assertions.current(treeID: assertionTree, connection: connection)?.id,
                 one: try community.tree(id: trees[0], connection: connection)?.id,
-                many: try community.trees(ids: trees, connection: connection)
-                    .keys.sorted { $0.uuidString < $1.uuidString },
+                // The set read v20 recollated, as it was spelled before v23 moved it to
+                // `CommunityLayer` (which reads `community_tree_cache`, a table this v19/v20
+                // database does not have). Inlined so the one statement shape this migration
+                // is about — `id COLLATE NOCASE IN (SELECT value FROM json_each(:ids))` — is
+                // still asked of a database at this version.
+                many: try Self.setRead(trees, connection)
+                    .sorted { $0.uuidString < $1.uuidString },
                 exists: try trees.map { try community.exists(id: $0, connection: connection) }
             )
         }

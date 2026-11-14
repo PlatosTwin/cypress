@@ -25,7 +25,7 @@ import Foundation
 import Testing
 @testable import Cypress
 
-@Suite("The Needs care toast (#247)")
+@Suite("The Needs care toast (#247)", .timeLimit(.minutes(5)))
 struct MapNeedsCareToastTests {
 
     // MARK: - Which state
@@ -221,7 +221,7 @@ struct MapNeedsCareToastTests {
         // not be up: an empty map that nobody narrowed is `MapInventoryNotice`'s state, not this one.
         await api.answer(with: .pins(PinAnswer([])))
         model.cameraDidChange(bounds: Self.box, zoom: 18)
-        try await Self.waitUntil { model.hasSettled }
+        await TestWait.settle(model) { model.hasSettled }
         #expect(
             !model.needsCareToastIsShowing,
             "the toast was posted over a map nobody had narrowed (R41, task #165)"
@@ -229,11 +229,11 @@ struct MapNeedsCareToastTests {
 
         // The press.
         model.filter = .needsCare
-        try await Self.waitUntil { model.needsCareToastIsShowing }
+        await TestWait.settle(model) { model.needsCareToastIsShowing }
 
         // "as long as it dismisses quick and doesn't pollute the map permanently" — the owner's own
         // condition, as an assertion. Nothing is pressed; the toast leaves on its own.
-        try await Self.waitUntil { !model.needsCareToastIsShowing }
+        await TestWait.settle(model) { !model.needsCareToastIsShowing }
 
         // **The re-arm rule.** One pan later, over ground that is just as empty and with the chip
         // still on, and nothing is posted: the toast is the answer to the press, not a running
@@ -242,7 +242,7 @@ struct MapNeedsCareToastTests {
         // still 0, which is the state the gate reads.
         await api.answer(with: Self.secondEmptyAnswer)
         model.cameraDidChange(bounds: Self.boxNorth, zoom: 18)
-        try await Self.waitUntil { model.content == Self.secondEmptyAnswer }
+        await TestWait.settle(model) { model.content == Self.secondEmptyAnswer }
         #expect(
             !model.needsCareToastIsShowing,
             """
@@ -266,9 +266,9 @@ struct MapNeedsCareToastTests {
 
         await api.answer(with: .pins(PinAnswer([])))
         model.cameraDidChange(bounds: Self.box, zoom: 18)
-        try await Self.waitUntil { model.hasSettled }
+        await TestWait.settle(model) { model.hasSettled }
         model.filter = .needsCare
-        try await Self.waitUntil { model.needsCareToastIsShowing }
+        await TestWait.settle(model) { model.needsCareToastIsShowing }
 
         model.filter = .all
         #expect(
@@ -286,20 +286,20 @@ struct MapNeedsCareToastTests {
         let model = MapModel(api: api, needsCareToastDuration: .seconds(30))
 
         // The opening read is deliberately a *different* value from the one the press gets back.
-        // The first draft answered both with the badges, so `waitUntil { content == badges }` was
+        // The first draft answered both with the badges, so the wait for `content == badges` was
         // already true before the press was made and the assertion ran against the un-pressed
         // model — a test that could not fail. Caught by its own red-proof (`return true` in the
         // gate left it green), which is the whole reason CLAUDE.md asks for one.
         await api.answer(with: .pins(PinAnswer([])))
         model.cameraDidChange(bounds: Self.box, zoom: 18)
-        try await Self.waitUntil { model.hasSettled }
+        await TestWait.settle(model) { model.hasSettled }
 
         let badges = MapContent.clusters([
             TreeCluster(id: "z18:1:1", coordinate: Self.center, count: 27)
         ])
         await api.answer(with: badges)
         model.filter = .needsCare
-        try await Self.waitUntil { model.content == badges }
+        await TestWait.settle(model) { model.content == badges }
         #expect(
             !model.needsCareToastIsShowing,
             "a map drawing 1 badge for 27 trees was told that no trees need care"
@@ -333,12 +333,12 @@ struct MapNeedsCareToastTests {
 
         await api.answer(with: .pins(PinAnswer([])))
         model.cameraDidChange(bounds: Self.box, zoom: 18)
-        try await Self.waitUntil { model.hasSettled }
+        await TestWait.settle(model) { model.hasSettled }
 
         // 1 · The press, whose read throws.
         await api.failNextRead()
         model.filter = .needsCare
-        try await Self.waitUntil { model.loadFailure != nil }
+        await TestWait.settle(model) { model.loadFailure != nil }
         #expect(
             !model.needsCareToastIsShowing,
             """
@@ -354,7 +354,7 @@ struct MapNeedsCareToastTests {
         // one.
         await api.answer(with: Self.secondEmptyAnswer)
         model.cameraDidChange(bounds: Self.boxNorth, zoom: 18)
-        try await Self.waitUntil { model.content == Self.secondEmptyAnswer }
+        await TestWait.settle(model) { model.content == Self.secondEmptyAnswer }
         #expect(
             !model.needsCareToastIsShowing,
             """
@@ -368,7 +368,7 @@ struct MapNeedsCareToastTests {
         // traded one defect for another.
         model.filter = .all
         model.filter = .needsCare
-        try await Self.waitUntil { model.needsCareToastIsShowing }
+        await TestWait.settle(model) { model.needsCareToastIsShowing }
         #expect(
             model.needsCareToastIsShowing,
             "disarming on a failed read left the chip unable to answer its next press"
@@ -394,26 +394,6 @@ struct MapNeedsCareToastTests {
     /// the read having landed rather than on a sleep. `markerCount` is 0 either way — the pins are
     /// what the map draws, and there are none.
     private static let secondEmptyAnswer = MapContent.pins(PinAnswer([], matchesInView: 3))
-
-    /// Polls rather than sleeping a fixed span, and shares `TestWait.ceiling` with every other map
-    /// suite: a fake API removes the I/O, not the scheduler, and CI's runners have starved a
-    /// five-second wait on this exact shape of test before (`MapEmptyInventoryTests.waitUntil`).
-    private static func waitUntil(
-        timeout: Duration = TestWait.ceiling,
-        sourceLocation: SourceLocation = #_sourceLocation,
-        _ condition: @MainActor () -> Bool
-    ) async throws {
-        let started = ContinuousClock.now
-        let deadline = started + timeout
-        while ContinuousClock.now < deadline {
-            if await condition() { return }
-            try await Task.sleep(for: .milliseconds(20))
-        }
-        let settled = await condition()
-        TestWait.timedOut(
-            after: started.duration(to: .now), sourceLocation: sourceLocation, { settled }
-        )
-    }
 }
 
 /// A `CypressAPI` that answers `mapContent` with whatever it was last handed, so an empty

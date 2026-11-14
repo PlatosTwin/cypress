@@ -155,6 +155,10 @@ struct ScreenEntranceTests {
             // RULINGS R79 part 2. No mock; the owner ruled the entrance on 2026-09-10 — the
             // record-defect text actions, not the quad row's Report, which stays screen 06's door.
             return "03 · the record-defect action on a city record (ruled, R79)"
+        case .movePin:
+            // The owner's Move pin control of 2026-11-12, an exception to constraint 21. One door,
+            // and only for a tree the reader added (`TreeProfile.canMovePin`).
+            return "03 · the Move pin action under 'Show me where this is', on a tree you added (ruled 2026-11-12)"
         case .almanac:
             // Still the Journal tab, and now one segment of it rather than the whole of it. The
             // wording keeps "Journal tab" because that is what `theSixFormerlyUnreachableRoutes`
