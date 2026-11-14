@@ -105,6 +105,7 @@ struct OutboxOfflinePillTests {
         #expect(rig.path.connectedNow() == nil)
 
         for _ in 0..<20 { await Task.yield() }
+        #expect(rig.state.isOffline == false)
         #expect(rig.pill == "1 waiting")
 
         // The first reading arrives, and it is what turns the clause on.
@@ -132,7 +133,8 @@ struct OutboxOfflinePillTests {
         #expect(rig.pill == "3 waiting")
 
         rig.path.set(connected: false)
-        await Self.settle { rig.pill == "3 waiting · offline" }
+        await Self.settle { rig.state.isOffline }
+        #expect(rig.state.isOffline)
         #expect(rig.pill == "3 waiting · offline")
 
         rig.path.set(connected: true)
