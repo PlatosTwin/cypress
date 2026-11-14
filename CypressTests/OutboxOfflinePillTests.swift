@@ -13,6 +13,7 @@ import Testing
 @Suite("Outbox pill offline clause")
 struct OutboxOfflinePillTests {
 
+    @MainActor
     private struct Rig {
         let state: OutboxViewState
         let path: OutboxTestSupport.ManualNetworkPath
