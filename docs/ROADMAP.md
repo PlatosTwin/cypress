@@ -2075,9 +2075,9 @@ into this section in the round that finds it, and nowhere else. Each item stands
     "Simulators" is on the owner's Mac (checked with `xcrun simctl list devices`, 2026-11-13). This
     round's agents made their own. Update the list, or say how an agent makes its device. On 2026-11-14 the Mac
     has only iPhone 17-family devices on iOS 27.2 (17, 17 Pro, 17 Pro Max, 17e); the local
-    Xcode 27 check above used the iPhone 17 Pro, the model CI uses. Which of them is the owner's
+    Xcode 27 check in item 112 used the iPhone 17 Pro, the model CI uses. Which of them is the owner's
     own device, and which four agents may use, is the owner's to say in CLAUDE.md.
-112. ~~**Owner action: local test runs hang on this Mac.**~~ `xcodebuild test` stops with "test runner
+112. ~~**Owner action: local test runs hang on this Mac.** `xcodebuild test` stops with "test runner
     hung before establishing connection" and "DTServiceHubClient failed to bless service hub". The
     usual fix is `sudo xcodebuild -runFirstLaunch`, which needs the owner's password. Until then,
     CI is the only test evidence.
@@ -2088,12 +2088,11 @@ into this section in the round that finds it, and nowhere else. Each item stands
     com.apple.private.amfi.version-restriction entitlement version". The Mac is on macOS 27.2 with
     Xcode 26.6, and an iOS 18.6 simulator hangs the same way as iOS 26.5. That reads as an Xcode
     that this macOS no longer accepts, so a newer Xcode is the likely fix (not verified; the owner's
-    action). A local run still proves that everything compiles and gives a warning count.
+    action). A local run still proves that everything compiles and gives a warning count.~~
     **DONE 2026-11-14: the owner installed Xcode 27.2 (build 27B52) and selected it.** A local
     `Tools/run_tests.sh` run on the iPhone 17 Pro (iOS 27.2 runtime) built 594 Swift files and
     ended `VERIFY-OK: ✔ Test run with 6 tests in 1 suite passed` (`RenderSettleTests`), with no
     hang. Local runs are test evidence again.
-
 113. ~~**F36 follow-up: thumbnails do not retry a failed read.** #206 made the photo viewer retry;
     a thumbnail's `load()` still keeps its first failure for the session.~~
     **DONE in the overnight round of 2026-11-14 (`claude/overnight-bug-fixes-8154ea`).** `PhotoImageStore.load` reads a failed photograph again when a screen shows it
