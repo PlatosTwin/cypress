@@ -180,7 +180,7 @@ struct MapSuggestionTests {
 
         model.cameraDidChange(bounds: Self.bounds, zoom: 16)
         model.searchText = "cypress"
-        try await Self.waitUntil { !model.suggestions.rows.isEmpty }
+        await TestWait.settle(model) { !model.suggestions.rows.isEmpty }
 
         let rows = model.suggestions.rows
         #expect(rows.count >= 2, "“cypress” offered \(rows.count) suggestions")
@@ -210,7 +210,7 @@ struct MapSuggestionTests {
 
         model.cameraDidChange(bounds: Self.bounds, zoom: 16)
         model.searchText = "zzzznotatree"
-        try await Self.waitUntil { model.search.isActive }
+        await TestWait.settle(model) { model.search.isActive }
 
         #expect(model.suggestions == .off)
         #expect(
@@ -231,7 +231,7 @@ struct MapSuggestionTests {
 
         model.cameraDidChange(bounds: Self.bounds, zoom: 16)
         model.searchText = "a"
-        try await Self.waitUntil { !model.suggestions.rows.isEmpty }
+        await TestWait.settle(model) { !model.suggestions.rows.isEmpty }
 
         guard case let .listing(listing) = model.suggestions else {
             Issue.record("“a” produced \(model.suggestions)")
@@ -262,7 +262,7 @@ struct MapSuggestionTests {
 
         model.cameraDidChange(bounds: Self.bounds, zoom: 16)
         model.searchText = "cypress"
-        try await Self.waitUntil { !model.suggestions.rows.isEmpty }
+        await TestWait.settle(model) { !model.suggestions.rows.isEmpty }
 
         guard case let .narrowed(before) = model.search else {
             Issue.record("“cypress” left the model at \(model.search)")
@@ -312,14 +312,14 @@ struct MapSuggestionTests {
 
         model.cameraDidChange(bounds: Self.bounds, zoom: 16)
         model.searchText = "cypress"
-        try await Self.waitUntil { !model.suggestions.rows.isEmpty }
+        await TestWait.settle(model) { !model.suggestions.rows.isEmpty }
         let chosen = try #require(model.suggestions.rows.first)
         model.chooseSuggestion(chosen)
         try #require(model.chosenSpecies != nil)
 
         model.searchText = "cypre"
         #expect(model.chosenSpecies == nil, "the map is still pinned to a species the field no longer names")
-        try await Self.waitUntil { !model.suggestions.rows.isEmpty }
+        await TestWait.settle(model) { !model.suggestions.rows.isEmpty }
         #expect(!model.suggestions.rows.isEmpty, "typing after a choice never re-opened the list")
     }
 
@@ -333,29 +333,10 @@ struct MapSuggestionTests {
 
         model.cameraDidChange(bounds: Self.bounds, zoom: 16)
         model.searchText = "cypress"
-        try await Self.waitUntil { !model.suggestions.rows.isEmpty }
+        await TestWait.settle(model) { !model.suggestions.rows.isEmpty }
 
         model.searchText = ""
         #expect(model.suggestions == .off, "clearing the field left the dropdown open")
         #expect(model.chosenSpecies == nil)
-    }
-
-    /// `MapSearchTests`' waiter, for the same reason: the debounces are tuned for a thumb, and a test
-    /// that pinned them would fail the day they were retuned.
-    @MainActor
-    private static func waitUntil(
-        _ condition: () -> Bool,
-        timeout: Duration = TestWait.ceiling,
-        sourceLocation: SourceLocation = #_sourceLocation
-    ) async throws {
-        let started = ContinuousClock.now
-        let deadline = started + timeout
-        while ContinuousClock.now < deadline {
-            if condition() { return }
-            try await Task.sleep(for: .milliseconds(50))
-        }
-        TestWait.timedOut(
-            after: started.duration(to: .now), sourceLocation: sourceLocation, condition
-        )
     }
 }
