@@ -361,52 +361,141 @@ extension DeepLinkHarness {
     /// Scoped to what is *hittable*, for the same reason E116's version is: an element behind a cover
     /// or scrolled off the bottom is in the hierarchy without being reachable, and holding it to the
     /// same standard would report failures a user cannot encounter.
+    ///
+    /// **The labels are read from one snapshot of the tree, and only an unlabeled control is asked
+    /// whether it is hittable.** The version this replaces asked `exists`, `isHittable` and `label`
+    /// of every control, one query each. Screens 09, 10 and 18 open over the map, whose pinned camera
+    /// (`DebugMapCamera`) puts about 150 pin buttons in the tree behind the cover, so that loop made
+    /// several hundred round trips, each slower than the one before: about two minutes per test in
+    /// `DeepLinkVoiceOverTests`. The rule is the same. A labeled control passes whether or not it is
+    /// hittable, so its hittability never decided anything; an unlabeled one fails only when it is
+    /// hittable, and that is still asked of it live, with `isHittableWithoutRaising`.
+    ///
+    /// **What the vacuity control now counts.** `reachable` is the number of controls found hittable:
+    /// every unlabeled one that failed above, plus at most one labeled one, which
+    /// `firstReachableElement` looks for by label (newest part of the tree first, where a cover
+    /// sits) and stops at. Zero still means no control on the screen was reachable, which is a
+    /// screen that had not finished loading, not a clean one.
     func assertEveryControlIsLabeled(
         _ app: XCUIApplication,
         screen: String,
         file: StaticString = #filePath,
         line: UInt = #line
     ) {
-        let controls: [(String, XCUIElementQuery)] = [
-            ("button", app.buttons),
-            ("text field", app.textFields),
-            ("search field", app.searchFields),
-            ("secure field", app.secureTextFields),
-            ("switch", app.switches),
-            ("slider", app.sliders),
-            ("link", app.links),
+        let controls: [(kind: String, type: XCUIElement.ElementType)] = [
+            ("button", .button),
+            ("text field", .textField),
+            ("search field", .searchField),
+            ("secure field", .secureTextField),
+            ("switch", .switch),
+            ("slider", .slider),
+            ("link", .link),
         ]
-        // Read once, not once per element: `app.frame` is a query, and this walks every control in
-        // the app across seven element types. See `isHittableWithoutRaising(onScreen:)`.
+        guard let tree = treeSnapshot(app, screen: screen, file: file, line: line) else { return }
+        let found = Self.snapshotElements(tree, ofTypes: Set(controls.map(\.type)))
+        // Read once, not once per element: `app.frame` is a query. See
+        // `isHittableWithoutRaising(onScreen:)`.
         let appFrame = app.frame
-        var checked = 0
-        for (kind, query) in controls {
-            for index in 0..<query.count {
-                let element = query.element(boundBy: index)
-                // **`isHittableWithoutRaising`, never the raw property, and this is the call site
-                // that proves why** (`UIWait.swift`). This walks `app.buttons` — every button in the
-                // app, not just the screen under test — and screens 09, 10 and 18 are presented
-                // *over* the map tab root, so screen 01's annotations are still in the tree behind
-                // them. One placed where XCUITest can compute no activation point does not answer
-                // `false` to `isHittable`; it raises, and the raise is the test failure. That is
-                // `DeepLinkVoiceOverTests.testPinAdjust` on the run task #71 was written from.
+        var reachable = 0
+        for (kind, type) in controls {
+            // The raw labels, so the live query below matches exactly what the snapshot read. A
+            // label of only whitespace counts as no label, as it did before.
+            let blank = Set(found.filter { $0.type == type && Self.isBlank($0.label) }.map(\.label))
+            guard !blank.isEmpty else { continue }
+            let unlabeled = app.descendants(matching: type)
+                .matching(NSPredicate(format: "label IN %@", Array(blank)))
+                .allElementsBoundByAccessibilityElement
+            for element in unlabeled {
+                // **`isHittableWithoutRaising`, never the raw property** (`UIWait.swift`). Screens
+                // 09, 10 and 18 are presented *over* the map tab root, so screen 01's annotations
+                // are still in the tree behind them. One placed where XCUITest can compute no
+                // activation point does not answer `false` to `isHittable`; it raises, and the raise
+                // is the test failure. That is `DeepLinkVoiceOverTests.testPinAdjust` on the run
+                // task #71 was written from.
                 guard element.exists, element.isHittableWithoutRaising(onScreen: appFrame) else { continue }
-                checked += 1
-                XCTAssertFalse(
-                    element.label.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+                reachable += 1
+                XCTFail(
                     "\(screen): a \(kind) at \(element.frame) has no accessibility label, so an "
                         + "assistive technology announces it as its type and nothing else",
                     file: file, line: line
                 )
             }
         }
+        if reachable == 0, firstReachableElement(app, among: found, onScreen: appFrame) != nil {
+            reachable = 1
+        }
         // A screen with no reachable control at all is not a screen this test read — it is a screen
         // that had not finished loading. Every one of these has at least a Back or a close.
         XCTAssertGreaterThan(
-            checked, 0,
+            reachable, 0,
             "\(screen): no interactive control was reachable, so nothing was actually checked",
             file: file, line: line
         )
+    }
+
+    /// The whole element tree, read in one round trip. `nil`, after a failure that says so, when
+    /// XCUITest cannot produce it.
+    func treeSnapshot(
+        _ app: XCUIApplication,
+        screen: String,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) -> XCUIElementSnapshot? {
+        do {
+            return try app.snapshot()
+        } catch {
+            XCTFail(
+                "\(screen): the element tree could not be read in one snapshot: \(error)",
+                file: file, line: line
+            )
+            return nil
+        }
+    }
+
+    /// Every element of the given types under `root`, depth first in the order the tree declares
+    /// them, as plain values. Reading a snapshot costs no query: it is already in this process.
+    static func snapshotElements(
+        _ root: XCUIElementSnapshot,
+        ofTypes types: Set<XCUIElement.ElementType>
+    ) -> [(type: XCUIElement.ElementType, label: String, frame: CGRect)] {
+        var result: [(type: XCUIElement.ElementType, label: String, frame: CGRect)] = []
+        var stack: [XCUIElementSnapshot] = [root]
+        while let node = stack.popLast() {
+            if types.contains(node.elementType) {
+                result.append((node.elementType, node.label, node.frame))
+            }
+            // Reversed, so the stack pops the first child first and the order stays the tree's.
+            stack.append(contentsOf: node.children.reversed())
+        }
+        return result
+    }
+
+    static func isBlank(_ label: String) -> Bool {
+        label.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    /// The first live element that is hittable, looked up by the type and label of each snapshot
+    /// entry, from the end of the tree backwards. A cover or a pushed screen is added to the tree
+    /// after the screen under it, so its elements are usually found within the first few labels.
+    /// Each distinct `(type, label)` is asked once. `nil` when none is hittable.
+    func firstReachableElement(
+        _ app: XCUIApplication,
+        among elements: [(type: XCUIElement.ElementType, label: String, frame: CGRect)],
+        onScreen appFrame: CGRect
+    ) -> XCUIElement? {
+        var asked = Set<String>()
+        for entry in elements.reversed() {
+            guard asked.insert("\(entry.type.rawValue)|\(entry.label)").inserted else { continue }
+            let matches = app.descendants(matching: entry.type)
+                .matching(NSPredicate(format: "label == %@", entry.label))
+                .allElementsBoundByAccessibilityElement
+            if let hit = matches.first(where: {
+                $0.exists && $0.isHittableWithoutRaising(onScreen: appFrame)
+            }) {
+                return hit
+            }
+        }
+        return nil
     }
 
     /// Depth-first `(kind, label)` pairs, in the order the element tree declares them.
