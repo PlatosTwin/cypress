@@ -27,8 +27,9 @@
 //  2. **It writes a 2×2 contact sheet per screen**, so the four appearances of one screen are one
 //     image and the comparison is a glance rather than four file-opens.
 //
-//  Output goes to `CYPRESS_SHOT_DIR` if set, otherwise a temporary directory. Paths are printed.
-//  The one spelling that sets it is `export TEST_RUNNER_CYPRESS_SHOT_DIR=<dir>` in the shell,
+//  Output goes to `CYPRESS_SHOT_DIR` when it is set, and paths are printed. When it is not set
+//  (every CI run), each screen is still rendered and still judged by `ShotBlankGuard`, but no PNG
+//  is encoded, no file is written and no contact sheet is built. The one spelling that sets it is `export TEST_RUNNER_CYPRESS_SHOT_DIR=<dir>` in the shell,
 //  before `Tools/run_tests.sh` — the same spelling for this target and for CypressUITests, argued
 //  once in that script's header. Written as an `xcodebuild` argument it silently does nothing.
 //
@@ -51,10 +52,24 @@ struct ScreenSweepShots {
     /// argument is evaluated at the call site rather than inside the isolated body.
     nonisolated static let height: CGFloat = 852
 
-    static var outputDirectory: URL {
-        let base = ProcessInfo.processInfo.environment["CYPRESS_SHOT_DIR"]
-            .map { URL(fileURLWithPath: $0) }
-            ?? FileManager.default.temporaryDirectory.appendingPathComponent("cypress-sweep")
+    /// The directory an operator chose, or `nil` when nobody is going to look.
+    ///
+    /// With `nil` the harness still renders and still runs `ShotBlankGuard` on the pixels, but it
+    /// encodes no PNG, writes no file and builds no contact sheet. CI never uploads these files
+    /// (it keeps only `unit.log` and `unit.xcresult`), and the encoding and the sheets were most
+    /// of the sweep's main-thread time.
+    nonisolated static var shotDirectory: URL? {
+        guard let path = ProcessInfo.processInfo.environment["CYPRESS_SHOT_DIR"] else { return nil }
+        let base = URL(fileURLWithPath: path)
+        try? FileManager.default.createDirectory(at: base, withIntermediateDirectories: true)
+        return base
+    }
+
+    /// Where a file would go: the operator's directory, or a temporary one. Printed by the
+    /// suites that photograph, and used by tests that write on purpose.
+    nonisolated static var outputDirectory: URL {
+        if let chosen = shotDirectory { return chosen }
+        let base = FileManager.default.temporaryDirectory.appendingPathComponent("cypress-sweep")
         try? FileManager.default.createDirectory(at: base, withIntermediateDirectories: true)
         return base
     }
@@ -79,11 +94,14 @@ struct ScreenSweepShots {
     ///   screen whose subject is below the fold — a `ScrollView` rendered off-screen cannot be
     ///   scrolled, so the only way to photograph the bottom of screen 03 is to give it a window with
     ///   room for all of it (ERRATA E145). It is not a device size and is not meant to look like one.
+    /// - Parameter directory: where the PNG goes. `nil` (the default when `CYPRESS_SHOT_DIR` is not
+    ///   set) renders and judges the capture but writes nothing.
     static func capture(
         _ name: String,
         size: DynamicTypeSize,
         scheme: ColorScheme,
         viewportHeight: CGFloat = height,
+        writingTo directory: URL? = shotDirectory,
         @ViewBuilder _ content: () -> some View
     ) async -> UIImage? {
         let host = UIHostingController(
@@ -106,12 +124,8 @@ struct ScreenSweepShots {
 
         // `await`, not `RunLoop.run(until:)` — a run-loop spin does not drain the cooperative
         // executor a `.task` is suspended on, so every screen that loads asynchronously would be
-        // captured in its `ProgressView` state.
-        for _ in 0..<8 {
-            try? await Task.sleep(for: .milliseconds(120))
-            host.view.setNeedsLayout()
-            host.view.layoutIfNeeded()
-        }
+        // captured in its `ProgressView` state. `RenderSettle` says when the view stopped changing.
+        await RenderSettle.settle(host.view, label: name)
 
         let image = UIGraphicsImageRenderer(bounds: frame).image { _ in
             host.view.drawHierarchy(in: frame, afterScreenUpdates: true)
@@ -123,11 +137,12 @@ struct ScreenSweepShots {
             print("BLANK CAPTURE \(name) — \(Int(width))×\(Int(viewportHeight)) — \(reason)")
             return nil
         }
+        guard let directory else { return image }
         guard let data = image.pngData() else {
             print("BLANK CAPTURE \(name) — pngData() returned nil")
             return nil
         }
-        guard ShotBlankGuard.write(data, to: outputDirectory.appendingPathComponent("\(name).png")) else {
+        guard ShotBlankGuard.write(data, to: directory.appendingPathComponent("\(name).png")) else {
             return nil
         }
         return image
@@ -141,7 +156,7 @@ struct ScreenSweepShots {
 
     /// Lays four captures out 2×2 under their labels and writes one PNG.
     static func contactSheet(_ name: String, _ shots: [(label: String, image: UIImage)]) {
-        guard !shots.isEmpty else { return }
+        guard !shots.isEmpty, let directory = shotDirectory else { return }
         let caption: CGFloat = 26
         let gap: CGFloat = 8
         let columns = 2
@@ -177,7 +192,7 @@ struct ScreenSweepShots {
             print("SHEET FAILED \(name) — pngData() returned nil")
             return
         }
-        let url = outputDirectory.appendingPathComponent("\(name)-SHEET.png")
+        let url = directory.appendingPathComponent("\(name)-SHEET.png")
         guard ShotBlankGuard.write(data, to: url) else { return }
         print("SHEET \(url.path)")
     }
@@ -228,7 +243,7 @@ struct ScreenSweepShots {
 
     @Test("01–19, plus the two tab roots, in four appearances each")
     func everyScreen() async throws {
-        print("SWEEP DIR \(Self.outputDirectory.path)")
+        print("SWEEP DIR \(Self.shotDirectory?.path ?? "not set: each capture is judged, nothing is written")")
 
         // ── 02. Presented as a `fullScreenCover` (RootView `.identify`), so no NavigationStack. ──
         #expect(await Self.sweep("02-identify") { VisitPreviewFixtures.identify() })
@@ -505,7 +520,7 @@ struct ScreenSweepShots {
     /// absent and the land-context line must still be there, stated rather than inferred.
     @Test("the city-record section, five states, in four appearances each")
     func cityRecordStates() async throws {
-        print("SWEEP DIR \(Self.outputDirectory.path)")
+        print("SWEEP DIR \(Self.shotDirectory?.path ?? "not set: each capture is judged, nothing is written")")
         let states: [(String, TreeProfile)] = [
             ("c01-city-record-full-fuf", TreeProfileSeedFixtures.fullCityRecord),
             ("c02-city-record-bare", TreeProfileSeedFixtures.bareCityRecord),

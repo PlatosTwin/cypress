@@ -24,8 +24,9 @@ import UIKit
 /// rendered heights are printed beside it, because that is the number a reviewer wants before
 /// opening anything.
 ///
-/// Output goes to `CYPRESS_SHOT_DIR` if set, otherwise the temporary directory; the path of each
-/// file is printed so a reviewer can open them. Set it with
+/// Output goes to `CYPRESS_SHOT_DIR` when it is set, and the path of each file is printed so a
+/// reviewer can open them. When it is not set, each screen is rendered and judged but no file is
+/// written. Set it with
 /// `export TEST_RUNNER_CYPRESS_SHOT_DIR=<dir>` in the shell before `Tools/run_tests.sh` —
 /// `ScreenSweepShots` says the same thing and `Tools/run_tests.sh`'s header argues it.
 @MainActor
@@ -39,10 +40,19 @@ struct DynamicTypeScreenshotTests {
         ("ax5", .accessibility5),
     ]
 
-    static var outputDirectory: URL {
-        let base = ProcessInfo.processInfo.environment["CYPRESS_SHOT_DIR"]
-            .map { URL(fileURLWithPath: $0) }
-            ?? FileManager.default.temporaryDirectory.appendingPathComponent("cypress-dynamic-type")
+    /// The directory an operator chose, or `nil`. With `nil`, `render` still draws and still runs
+    /// the blank guard, but encodes and writes nothing — `ScreenSweepShots.shotDirectory` says why.
+    nonisolated static var shotDirectory: URL? {
+        guard let path = ProcessInfo.processInfo.environment["CYPRESS_SHOT_DIR"] else { return nil }
+        let base = URL(fileURLWithPath: path)
+        try? FileManager.default.createDirectory(at: base, withIntermediateDirectories: true)
+        return base
+    }
+
+    /// Where a file would go: the operator's directory, or a temporary one.
+    nonisolated static var outputDirectory: URL {
+        if let chosen = shotDirectory { return chosen }
+        let base = FileManager.default.temporaryDirectory.appendingPathComponent("cypress-dynamic-type")
         try? FileManager.default.createDirectory(at: base, withIntermediateDirectories: true)
         return base
     }
@@ -69,6 +79,7 @@ struct DynamicTypeScreenshotTests {
         _ name: String,
         _ size: DynamicTypeSize,
         scheme: ColorScheme = .light,
+        writingTo directory: URL? = shotDirectory,
         @ViewBuilder _ content: () -> some View
     ) async -> CGSize? {
         let host = UIHostingController(
@@ -91,12 +102,9 @@ struct DynamicTypeScreenshotTests {
         // `await`, not `RunLoop.run(until:)`. Screen 03 loads its profile through the API actor,
         // and a run-loop spin does not drain the cooperative executor the `.task` is suspended on —
         // so every capture of 03 came back as a viewport containing one spinner, which is a real
-        // state but not the one being audited. Awaiting yields the main actor properly.
-        for _ in 0..<8 {
-            try? await Task.sleep(for: .milliseconds(120))
-            host.view.setNeedsLayout()
-            host.view.layoutIfNeeded()
-        }
+        // state but not the one being audited. Awaiting yields the main actor properly, and
+        // `RenderSettle` says when the view stopped changing.
+        await RenderSettle.settle(host.view, label: name)
 
         let image = UIGraphicsImageRenderer(bounds: frame).image { _ in
             host.view.drawHierarchy(in: frame, afterScreenUpdates: true)
@@ -111,11 +119,12 @@ struct DynamicTypeScreenshotTests {
             print("BLANK CAPTURE \(name) — \(reason)")
             return nil
         }
+        guard let directory else { return image.size }
         guard let data = image.pngData() else {
             print("BLANK CAPTURE \(name) — pngData() returned nil")
             return nil
         }
-        let url = outputDirectory.appendingPathComponent("\(name).png")
+        let url = directory.appendingPathComponent("\(name).png")
         guard ShotBlankGuard.write(data, to: url) else { return nil }
         print("SHOT \(url.path) \(Int(image.size.width))x\(Int(image.size.height))")
         return image.size

@@ -140,7 +140,11 @@ struct ShotBlankGuardTests {
         let name = "guard-probe-sweep-blank"
         let url = ScreenSweepShots.outputDirectory.appendingPathComponent("\(name).png")
         try? FileManager.default.removeItem(at: url)
-        let image = await ScreenSweepShots.capture(name, size: .large, scheme: .light) {
+        // An explicit directory, so "writes nothing" is checked on a harness that would write.
+        // Without `CYPRESS_SHOT_DIR` the harness writes nothing at all, and the check is empty.
+        let image = await ScreenSweepShots.capture(
+            name, size: .large, scheme: .light, writingTo: ScreenSweepShots.outputDirectory
+        ) {
             Color.clear
         }
         #expect(image == nil, "a one-color capture came back as an image")
@@ -153,7 +157,9 @@ struct ShotBlankGuardTests {
         let name = "guard-probe-render-blank"
         let url = DynamicTypeScreenshotTests.outputDirectory.appendingPathComponent("\(name).png")
         try? FileManager.default.removeItem(at: url)
-        let rendered = await DynamicTypeScreenshotTests.render(name, .large) {
+        let rendered = await DynamicTypeScreenshotTests.render(
+            name, .large, writingTo: DynamicTypeScreenshotTests.outputDirectory
+        ) {
             Color.clear
         }
         #expect(rendered == nil, "a one-color render came back as a size")
@@ -166,7 +172,11 @@ struct ShotBlankGuardTests {
     @Test("ScreenSweepShots.capture still accepts a view with content")
     func sweepHarnessStillPassesContent() async {
         let name = "guard-probe-sweep-content"
-        let image = await ScreenSweepShots.capture(name, size: .large, scheme: .light) {
+        let url = ScreenSweepShots.outputDirectory.appendingPathComponent("\(name).png")
+        try? FileManager.default.removeItem(at: url)
+        let image = await ScreenSweepShots.capture(
+            name, size: .large, scheme: .light, writingTo: ScreenSweepShots.outputDirectory
+        ) {
             VStack(spacing: 0) {
                 ForEach(0..<16, id: \.self) { row in
                     Color(white: Double(row) / 16).frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -174,6 +184,9 @@ struct ShotBlankGuardTests {
             }
         }
         #expect(image != nil, "a 16-band view was rejected as blank")
+        // The control for the two "writes nothing" checks above: given the same directory, an
+        // accepted capture does land there.
+        #expect(FileManager.default.fileExists(atPath: url.path), "an accepted capture was not written")
     }
 }
 #endif

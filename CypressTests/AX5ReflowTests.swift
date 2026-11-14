@@ -150,11 +150,12 @@ struct AX5ReflowTests {
             window.isHidden = true
             window.rootViewController = nil
         }
-        for _ in 0..<settleIterations {
-            try? await Task.sleep(for: .milliseconds(120))
-            host.view.setNeedsLayout()
-            host.view.layoutIfNeeded()
-        }
+        // The budget is what the old loop slept: `settleIterations` × 120 ms.
+        await RenderSettle.settle(
+            host.view,
+            label: "ax5Size \(type(of: content))",
+            budget: .milliseconds(120 * settleIterations)
+        )
         let insets = host.view.safeAreaInsets
         let measured = host.sizeThatFits(in: CGSize(width: width, height: .greatestFiniteMagnitude))
         return CGSize(

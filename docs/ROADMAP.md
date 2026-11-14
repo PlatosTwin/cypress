@@ -2079,6 +2079,17 @@ into this section in the round that finds it, and nowhere else. Each item stands
 120. **`addReadingLink`'s comment overstates the hit-area overhang.** `TreeProfileView.swift`
     (around line 988) says `cypressHitArea` overhangs a 13 pt label by about 17 pt. The background
     is a centered 44 pt minimum height, so the overhang is about 14 pt at the default text size.
+121. ~~**The screen-photo tests are most of the unit job's time (2026-11-13).** On main run
+    43543728441, 2,134 tests took 283 s, and the last 218 s was about 35 `@MainActor` render
+    tests. `ScreenSweepShots` alone: `everyScreen` 278 s, `coldStates` 259 s, `cityRecordStates`
+    173 s, `afterTheSave` 150 s. Each capture slept a fixed 0.96 s, then encoded and wrote a PNG and
+    a contact sheet that CI never uploads.~~
+    **DONE by `test/faster-screen-captures`:** `RenderSettle` replaces the fixed sleeps in
+    `ScreenSweepShots`, `DynamicTypeScreenshotTests` and `AX5ReflowTests`. It returns when the
+    layer tree has not changed for three 40 ms passes, no spinner is visible and 160 ms have
+    passed, and never waits longer than the old loop. Without `CYPRESS_SHOT_DIR`, the harnesses
+    still draw each screen and run the blank guard, but encode and write nothing.
+    After: AFTER_PLACEHOLDER
 
 
 **Retire the format-1 manifest — DONE, 2026-08-23.** The owner overrode the trigger the day after
