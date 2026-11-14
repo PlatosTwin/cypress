@@ -397,5 +397,11 @@ extension OutboxTestSupport {
         public func connectedChanges() -> AsyncStream<Bool> {
             connection.changes()
         }
+
+        /// How many listeners follow `connectedChanges()`. A test reads it to know a follower has
+        /// subscribed, and so has also read `connectedNow()`.
+        public var connectedListenerCount: Int {
+            connection.listenerCount
+        }
     }
 }

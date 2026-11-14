@@ -422,9 +422,10 @@ public final class OutboxViewState: Observable {
     }
 
     private var storedIsOffline = false
-    /// True only when the network path source has read the path and found no satisfied path. False
-    /// before the first reading, and false on cellular whatever the wi-fi toggle says: `offline` is
-    /// a statement about now, and the app does not make it without a reading (ERRATA E81, E???).
+    /// True only when the network path source has read the path and found no path at all
+    /// (`.unsatisfied`). False before the first reading, and false on cellular whatever the wi-fi
+    /// toggle says: `offline` is a statement about now, and the app does not make it without a
+    /// reading. This is the clause ERRATA E81 dropped, drawn now that a source can say it.
     ///
     /// Never derived from a row's failure sentence. "No connection." records the last attempt, not
     /// the present, which is the untrue label E81 refused.

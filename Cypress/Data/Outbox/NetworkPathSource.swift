@@ -32,12 +32,16 @@ public protocol NetworkPathSource: Sendable {
     /// answered still hears it.
     func unmeteredChanges() -> AsyncStream<Bool>
 
-    /// Whether the phone has any usable path right now (`NWPath.status == .satisfied`), or nil
-    /// before the first reading. Screen 17's header pill reads this to say `offline` (ERRATA E???).
+    /// Whether the phone may have a usable path right now, or nil before the first reading. Screen
+    /// 17's header pill reads this to add the `offline` clause that ERRATA E81 dropped.
     ///
-    /// **Not the same question as `isUnmetered`.** A phone on cellular is connected and metered.
-    /// "Offline" means no satisfied path at all, so a metered connection with the wi-fi toggle on is
-    /// never offline.
+    /// False only for `NWPath.Status.unsatisfied`: no path at all. `.requiresConnection` counts as
+    /// connected, because a new connection may bring that path up (VPN On Demand with an idle
+    /// tunnel, some cellular cases), and the next drain may succeed. Calling that `offline` would be
+    /// the untrue label E81 refused.
+    ///
+    /// **Not the same question as `isUnmetered`.** A phone on cellular is connected and metered, so
+    /// a metered connection with the wi-fi toggle on is never offline.
     ///
     /// Never waits, and never guesses: nil means nothing has been read, and a caller that would
     /// claim `offline` must not claim it from nil.
@@ -102,6 +106,13 @@ public final class NetworkPathState: @unchecked Sendable {
 
     /// The latest reading, or nil when there has been none. Does not wait.
     public var latest: Bool? { currentValue() }
+
+    /// How many change streams are open. A test reads it to know a listener has subscribed.
+    public var listenerCount: Int {
+        lock.lock()
+        defer { lock.unlock() }
+        return listeners.count
+    }
 
     private func currentValue() -> Bool? {
         lock.lock()
@@ -168,10 +179,15 @@ public final class SystemNetworkPath: NetworkPathSource, @unchecked Sendable {
         path.status == .satisfied && !path.isExpensive && !path.isConstrained
     }
 
-    /// Connected means satisfied, on any interface and at any price. The opposite is what screen
-    /// 17 calls `offline`.
     static func isConnected(_ path: NWPath) -> Bool {
-        path.status == .satisfied
+        isConnected(path.status)
+    }
+
+    /// The definition, in one place, and on the status alone so a test can check every case
+    /// (`NWPath` itself cannot be built in a test). Only `.unsatisfied` is what screen 17 calls
+    /// `offline`. `.requiresConnection` is connected: a new connection may bring the path up.
+    static func isConnected(_ status: NWPath.Status) -> Bool {
+        status != .unsatisfied
     }
 
     public func isUnmetered() async -> Bool {

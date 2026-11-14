@@ -1,14 +1,18 @@
 import Foundation
+import Network
 import Testing
 @testable import Cypress
 
-/// Screen 17's header pill and its `· offline` clause (ROADMAP 110, ERRATA E81 and E???).
+/// Screen 17's header pill and its `· offline` clause (ROADMAP 110).
 ///
-/// E81 dropped the mock's `3 waiting · offline` to `3 waiting` because nothing in the app knew
-/// whether it was offline. `NetworkPathSource` now says whether any path is satisfied, and the pill
-/// draws the clause only from that reading. Each test drives the real chain: a real `OutboxQueue`
-/// with waiting rows, a real `OutboxViewState` following a fake path, and the presentation the
-/// screen draws from both.
+/// ERRATA E81 dropped the mock's `3 waiting · offline` to `3 waiting` because nothing in the app
+/// knew whether it was offline. `NetworkPathSource` now says whether the phone has any path, and the
+/// pill draws the clause only from that reading. Most tests drive the real chain: a real
+/// `OutboxQueue` with waiting rows, a real `OutboxViewState` following a fake path, and the
+/// presentation the screen draws from both.
+///
+/// Not covered here: the two lines in `OutboxView` that pass `isOffline` and start
+/// `followConnection()`. The UI suite has no way to put a waiting row in the outbox.
 @MainActor
 @Suite("Outbox pill offline clause")
 struct OutboxOfflinePillTests {
@@ -55,24 +59,35 @@ struct OutboxOfflinePillTests {
         let state = OutboxViewState(queue: queue, store: store, networkPath: path)
         await state.refresh()
         let follower = Task { await state.followConnection() }
+        // The follower subscribes and reads the current value with no suspension between, so once
+        // its listener exists it has also taken the first reading.
+        await settle { path.connectedListenerCount == 1 }
         return Rig(state: state, path: path, follower: follower)
     }
 
-    /// Waits, boundedly, for the follower to catch up with a reading.
+    /// Lets the follower run, with no clock. The follower runs on the main actor and the fake path
+    /// hands each reading to its stream at once, so a fixed number of yields is enough; a count, not
+    /// a wall clock, bounds the wait.
     private static func settle(_ condition: () -> Bool) async {
-        for _ in 0..<300 {
+        for _ in 0..<1_000 {
             if condition() { return }
-            try? await Task.sleep(for: .milliseconds(10))
+            await Task.yield()
         }
     }
 
-    @Test("waiting rows and no satisfied path draw the mock's pill: `1 waiting · offline`")
+    @Test("only an unsatisfied path is offline; requiresConnection may still connect")
+    func statusMapping() {
+        #expect(SystemNetworkPath.isConnected(NWPath.Status.unsatisfied) == false)
+        #expect(SystemNetworkPath.isConnected(NWPath.Status.satisfied) == true)
+        #expect(SystemNetworkPath.isConnected(NWPath.Status.requiresConnection) == true)
+    }
+
+    @Test("waiting rows and no path at all draw the mock's pill: `1 waiting · offline`")
     func offlineDrawsTheClause() async throws {
         let rig = try await Self.rig(waiting: 1, unmetered: false, connected: false)
         defer { rig.follower.cancel() }
         #expect(rig.state.snapshot.waitingCount == 1)
 
-        await Self.settle { rig.state.isOffline }
         #expect(rig.state.isOffline)
         #expect(rig.pill == "1 waiting · offline")
     }
@@ -80,7 +95,7 @@ struct OutboxOfflinePillTests {
     /// The second argument is a phone on cellular. The wi-fi toggle holds its photographs back, and
     /// the phone is still connected, so it is not offline.
     @Test(
-        "a satisfied path draws `N waiting` with no clause, on wi-fi or on cellular",
+        "a connected path draws `N waiting` with no clause, on wi-fi or on cellular",
         arguments: [true, false]
     )
     func connectedDrawsNoClause(unmetered: Bool) async throws {
@@ -103,8 +118,9 @@ struct OutboxOfflinePillTests {
         let rig = try await Self.rig(waiting: 1, unmetered: false, connected: nil)
         defer { rig.follower.cancel() }
         #expect(rig.path.connectedNow() == nil)
+        // The follower ran: it subscribed, and so it has read the missing reading too.
+        #expect(rig.path.connectedListenerCount == 1)
 
-        for _ in 0..<20 { await Task.yield() }
         #expect(rig.state.isOffline == false)
         #expect(rig.pill == "1 waiting")
 
@@ -119,7 +135,6 @@ struct OutboxOfflinePillTests {
         let rig = try await Self.rig(waiting: 0, unmetered: false, connected: false)
         defer { rig.follower.cancel() }
 
-        await Self.settle { rig.state.isOffline }
         #expect(rig.state.isOffline, "the reading arrived, so this is the offline case")
         #expect(rig.state.snapshot.waitingCount == 0)
         #expect(rig.pill == nil)
@@ -129,7 +144,6 @@ struct OutboxOfflinePillTests {
     func pathChangeUpdatesThePill() async throws {
         let rig = try await Self.rig(waiting: 3, unmetered: true, connected: true)
         defer { rig.follower.cancel() }
-        await Self.settle { rig.pill != nil }
         #expect(rig.pill == "3 waiting")
 
         rig.path.set(connected: false)
@@ -140,6 +154,33 @@ struct OutboxOfflinePillTests {
         rig.path.set(connected: true)
         await Self.settle { rig.pill == "3 waiting" }
         #expect(rig.pill == "3 waiting")
+    }
+
+    @Test("DataLayer.boot hands its network path to screen 17's view state")
+    func bootWiresThePathToTheScreen() async throws {
+        let directory = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("cypress-110-boot-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        // Removed after the layer is released, so the database is not unlinked under an open
+        // handle (the hazard `DataLayerWiringTests.databaseURL()` describes).
+        defer { try? FileManager.default.removeItem(at: directory) }
+        try await Self.checkBootWiring(directory: directory)
+    }
+
+    /// The layer lives only inside this call, so it is gone before the caller removes its folder.
+    private static func checkBootWiring(directory: URL) async throws {
+        let path = OutboxTestSupport.ManualNetworkPath(unmetered: false, connected: false)
+        let data = try await DataLayer.boot(
+            databaseURL: directory.appendingPathComponent("cypress.sqlite"),
+            seedURL: nil,
+            credentials: InMemoryCredentialStore(),
+            networkPath: path
+        )
+        let state = data.makeOutboxViewState()
+        let follower = Task { await state.followConnection() }
+        defer { follower.cancel() }
+        await settle { state.isOffline }
+        #expect(state.isOffline, "the shipped screen was not given the layer's network path")
     }
 
     @Test("a pinned path with no connection reads as not connected and not unmetered")

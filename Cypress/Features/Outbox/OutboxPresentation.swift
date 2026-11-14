@@ -130,8 +130,8 @@ struct OutboxPresentation {
     ///
     /// **The mock's second clause is drawn only from a reading of now.** ERRATA E81 dropped
     /// `· offline` because nothing in the app knew whether it was offline. `NetworkPathSource` now
-    /// says whether any path is satisfied (ERRATA E???), and `isOffline` is true only after it read
-    /// the path and found none. Before the first reading, and on cellular with the wi-fi toggle on,
+    /// says whether the phone has any path, and `isOffline` is true only after it read the path and
+    /// found none (`.unsatisfied`). Before the first reading, and on cellular with the wi-fi toggle on,
     /// the pill says `3 waiting` and stops. A failure sentence reading "No connection." is still
     /// never the source: it records the last attempt, not the present, and printing `offline` beside
     /// a live connection would be the same class of untrue label as "sent to the city"

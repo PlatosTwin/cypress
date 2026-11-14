@@ -14,13 +14,17 @@ clause because nothing in the app knew whether it was offline, and a failure sen
 **What changed.** F35 (#208) added `NetworkPathSource`, one `NWPathMonitor` for the process. It
 answered only "is the path unmetered", for the wi-fi toggle. That answer cannot say offline: a phone
 on cellular is metered and connected. The source now also reports `connectedNow()` and
-`connectedChanges()`, read from the same monitor as `NWPath.status == .satisfied`.
+`connectedChanges()`, read from the same monitor. Connected is false only when
+`NWPath.status == .unsatisfied`.
 
 **What "offline" means.** The pill reads `N waiting · offline` only when rows are waiting **and** the
-source has read the path **and** found no satisfied path. Otherwise it reads `N waiting`:
+source has read the path **and** found its status `.unsatisfied`. Otherwise it reads `N waiting`:
 
 - Before the first reading arrives, there is no claim. `connectedNow()` is nil and the pill has no
   clause.
+- `.requiresConnection` is not offline. Apple defines it as a path that is not active now but that
+  a new connection may bring up (VPN On Demand with an idle tunnel, some cellular cases), so the
+  next drain may succeed.
 - A phone on cellular with "Sync photos on wifi only" on is connected. It is not offline.
 - A row's failure sentence is never the source.
 - At zero waiting there is still no pill (ARCHITECTURE §5.6).

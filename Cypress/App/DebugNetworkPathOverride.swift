@@ -17,8 +17,8 @@
 //  whoever launched the process can set it, and a Release build does not contain it.
 //
 //  **A typo must not fall back to the real connection quietly** (`DebugLocationOverride`'s rule).
-//  An unrecognized value stops the launch with a message that names the variable and the two words
-//  it accepts.
+//  An unrecognized value stops the launch with a message that names the variable and the three
+//  words it accepts.
 //
 
 #if DEBUG
