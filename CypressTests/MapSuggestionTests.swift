@@ -16,7 +16,7 @@ import Testing
 ///
 /// The seed-backed tests are last and are the ones that would catch a change in the catalog itself;
 /// the value tests above them need no database and pin the arithmetic.
-@Suite("Map search suggestions")
+@Suite("Map search suggestions", .timeLimit(.minutes(5)))
 struct MapSuggestionTests {
 
     private static let deviceID = UUID(uuidString: "D0000000-0000-4000-8000-0000000000E2")!

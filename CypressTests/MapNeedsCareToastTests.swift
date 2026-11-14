@@ -25,7 +25,7 @@ import Foundation
 import Testing
 @testable import Cypress
 
-@Suite("The Needs care toast (#247)")
+@Suite("The Needs care toast (#247)", .timeLimit(.minutes(5)))
 struct MapNeedsCareToastTests {
 
     // MARK: - Which state

@@ -311,7 +311,7 @@ struct MapRecenterTests {
 /// leaving the query in the field. The reader would be looking at a map that no longer matched what
 /// they typed and nothing on screen would say so.
 @MainActor
-@Suite("Recentering through an active search")
+@Suite("Recentering through an active search", .timeLimit(.minutes(5)))
 struct MapRecenterSearchTests {
 
     private static func viewport(_ model: MapModel) throws -> MapViewport {

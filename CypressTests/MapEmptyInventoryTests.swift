@@ -18,7 +18,7 @@ import SwiftUI
 import Testing
 @testable import Cypress
 
-@Suite("The empty-inventory notice (#190)")
+@Suite("The empty-inventory notice (#190)", .timeLimit(.minutes(5)))
 struct MapEmptyInventoryTests {
 
     // MARK: - The four gates

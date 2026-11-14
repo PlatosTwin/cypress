@@ -26,8 +26,10 @@ import Testing
 /// this file, and every failure names the line that was waiting.
 ///
 /// WHAT IS STILL NOT PROVED HERE. A task that never finishes (a fake API that never answers) makes
-/// `settle` wait forever, the same as any `await`. No map suite has such a fake today. The suite's
-/// own time limit, if it has one, is then what reports it.
+/// `settle` wait forever, the same as any `await`. No map suite has such a fake today. Each of the
+/// five suites that call `settle` carries `.timeLimit(.minutes(5))`, so a real hang fails that test
+/// in minutes rather than running the unit job to its own timeout. Five minutes is about three times
+/// the longest starved wait seen in CI (102 s, run 43495993786), so only a hang reaches it.
 enum TestWait {
 
     /// How many await-and-check rounds ``settle(_:rounds:sourceLocation:until:)`` runs before it

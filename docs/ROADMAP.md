@@ -2063,6 +2063,10 @@ into this section in the round that finds it, and nowhere else. Each item stands
     own store. On CI's 3-core runner that work competes for the same cooperative pool as every other
     test, which is the load that starved the map waits in item 108. A suite that only reads could
     open the store once and share it. Measure the unit job's time before and after.
+    Two related leftovers from #214's review: `CityDownloadTests`' time limit was raised from one
+    minute to three, not investigated, and is still exposed to the same starvation; and other waits
+    still run against a wall clock (`AlmanacLocationTransitionTests.waitUntil`,
+    `OutboxWifiOnlyTests`' 10 s `waitUntilBlocked`, `PhotoIdentityTests`' one-minute suite limit).
 
 
 **Retire the format-1 manifest — DONE, 2026-08-23.** The owner overrode the trigger the day after

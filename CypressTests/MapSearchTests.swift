@@ -17,7 +17,7 @@ import Testing
 /// a match, and six matches sharing a cell come back as at most one. The fix is that the predicate
 /// goes into the cell query too — so the count that decides whether to thin is the count of matches —
 /// and `narrowedViewportIsExactlyTheSeed` is the assertion that it worked.
-@Suite("Map species search")
+@Suite("Map species search", .timeLimit(.minutes(5)))
 struct MapSearchTests {
 
     private static let deviceID = UUID(uuidString: "D0000000-0000-4000-8000-0000000000E1")!
