@@ -567,14 +567,15 @@ struct TreeProfileView: View {
     /// The owner's Move pin control (2026-11-12), under `showWhere`, which is the other control
     /// about where the tree is. Drawn only for a tree the reader added (`offersMovePin`).
     ///
-    /// Built like `showWhere`, with `TreeProfileMetrics.movePinGap` above and below it, for
-    /// `addReadingLink`'s reason: `cypressHitArea` is a background that overhangs a 13 pt label by
-    /// about 14 pt, so two such links closer than 44 pt center to center steal each other's taps.
+    /// Built like `showWhere`, and spaced like every other link in this column: the identity block's
+    /// own `latinTop` spacing and nothing more.
     ///
-    /// **Not a whole tap target on each side.** Build 87 shipped with `minTapTarget` here, which put
-    /// this link about 62 pt from each neighbor, center to center, in a column where every other
-    /// link sits against the next. The owner's TestFlight note on that screen was "Terrible spacing
-    /// here". The rule needs 44 pt between centers, not 44 pt of empty space between the words.
+    /// **No extra space around it (the owner's ruling, 2026-11-14).** Build 87 padded it by 44 pt and
+    /// build 88 by 30 pt, to keep 44 pt between its center and a neighbor's so the hit areas could
+    /// not overlap. On the phone that read as a band of empty space in a column where the links
+    /// beside it sit about 18 pt apart, and the owner's TestFlight notes on both builds said so. The
+    /// owner chose to match the column. Its hit area overlaps its neighbors' as theirs already
+    /// overlap each other's, which ROADMAP 119 tracks for the whole column.
     @ViewBuilder
     private func movePin(_ presentation: TreeProfilePresentation) -> some View {
         if presentation.offersMovePin {
@@ -589,10 +590,6 @@ struct TreeProfileView: View {
             }
             .buttonStyle(.plain)
             .cypressHitArea()
-            // The distance between this label's center and a neighbor's is the label height, plus
-            // `latinTop`, plus this gap. See `movePinGap` for why that is at least 44 pt at every
-            // text size.
-            .padding(.vertical, TreeProfileMetrics.movePinGap)
         }
     }
 
@@ -1152,19 +1149,6 @@ enum TreeProfileMetrics {
     static let coldBlockGap: CGFloat = 14
     /// 03 §3: `margin-top:2px` on the latin line.
     static let latinTop: CGFloat = 2
-    /// Not a spec value: the space above and below `Move pin`, which no mock draws.
-    ///
-    /// Two 13 pt links one above the other have hit rects that do not overlap when their centers
-    /// are at least `minTapTarget` (44 pt) apart. Between `Move pin` and a neighbor link, that
-    /// distance is one label height (both labels are `body13Bold`), plus the identity block's
-    /// `latinTop` spacing, plus this gap. The label is about 15.7 pt tall at the default text size
-    /// (CI run 43536693607 measured build 87's 44 pt padding at 61.67 pt center to center, which is
-    /// the label height plus 2 plus 44), and about 14.5 pt at the smallest size, where `.footnote`
-    /// scales 13 pt down to 12 pt. A gap of 30 pt therefore puts the centers about 47.7 pt apart at
-    /// the default size and about 46.5 pt at the smallest. A larger text size only makes the labels
-    /// taller. 28 pt would have left only about 0.5 pt above 44 at the smallest size, too little for
-    /// a later change of typeface.
-    static let movePinGap: CGFloat = 30
     /// 14 §2: `margin:10px 16px 0`, `height:170px`.
     static let wellTop: CGFloat = 10
     static let emptyWellHeight: CGFloat = 170

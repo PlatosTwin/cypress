@@ -1063,7 +1063,16 @@ jobs:
     # the set the `testable` filter subtracts, so `ships=true` implies
     # `tests=true`, and a run whose suite was skipped can never satisfy this condition. Belt and
     # braces anyway — `needs: [unit, ui]` means GitHub skips this job outright when they skip.
-    if: github.event_name != 'pull_request' && needs.plan.outputs.ships == 'true'
+    #
+    # THE RELEASE PAUSE (the owner's decision, 2026-11-14). While the repository variable
+    # `TESTFLIGHT_RELEASE_PAUSED` is `true`, merges to main still run the suite but upload nothing,
+    # so testers are not emailed for every merge. The next run after the variable is set back to
+    # `false` (or deleted) ships everything merged meanwhile in one build. Set it with
+    # `gh variable set TESTFLIGHT_RELEASE_PAUSED --body false`. A paused merge gets no `build-N`
+    # tag, so the newest tag is still the answer to "what is in TestFlight".
+    if: >-
+      github.event_name != 'pull_request' && needs.plan.outputs.ships == 'true'
+      && vars.TESTFLIGHT_RELEASE_PAUSED != 'true'
     runs-on: macos-26
     timeout-minutes: 45
     env:

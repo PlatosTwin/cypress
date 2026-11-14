@@ -2069,13 +2069,20 @@ into this section in the round that finds it, and nowhere else. Each item stands
     `OutboxWifiOnlyTests`' 10 s `waitUntilBlocked`, `PhotoIdentityTests`' one-minute suite limit).
 118. **Move pin sits in a wide empty band on the profile (TestFlight, build 87, 2026-11-13).** The
     owner's note: "Terrible spacing here". #209 padded the link by a whole tap target (44 pt) above
-    and below, so it sat about 62 pt from its neighbors, center to center. **DONE in #216:** a
+    and below, so it sat about 62 pt from its neighbors, center to center. **Shipped in #216 (build 88), and not enough:** a
     30 pt gap keeps the centers at least 44 pt apart at every text size (about 47.7 pt at the
     default size), and `MovePinUITests` measures both distances.
+    **Not fixed by #216: build 88 still showed the band** (about 48 pt, the owner's second TestFlight
+    note, 2026-11-14). #216 kept a 44 pt tap-target rule the owner had not asked for. The owner's
+    ruling: match the column. **DONE in #224:** Move pin has no extra padding and sits about 18 pt
+    from its neighbors, like the other links; the test now checks that. It ships with the next
+    release, because releases are paused (see `TESTFLIGHT_RELEASE_PAUSED` in testflight.yml).
 119. **"Say what species you think this is" and "Report that there is no tree here" overlap.** On
     the profile of a tree with no species, the two links are about 18 pt apart, center to center,
     so their 44 pt hit areas overlap and a tap meant for one can reach the other. This predates
-    #216 and #216 does not make it worse. Seen in the owner's build 87 screenshot.
+    #216 and #216 does not make it worse. Seen in the owner's build 87 screenshot. Since #224 the
+    whole column ("Show me where this is", "Move pin", and these two) sits about 18 pt apart, so
+    every pair of neighbors in it overlaps the same way.
 120. **`addReadingLink`'s comment overstates the hit-area overhang.** `TreeProfileView.swift`
     (around line 988) says `cypressHitArea` overhangs a 13 pt label by about 17 pt. The background
     is a centered 44 pt minimum height, so the overhang is about 14 pt at the default text size.
