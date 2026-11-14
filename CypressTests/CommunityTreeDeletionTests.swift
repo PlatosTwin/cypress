@@ -49,6 +49,20 @@ struct CommunityTreeDeletionTests {
         }
     }
 
+    /// How many live visits by the installation named are on the tree.
+    private static func deviceVisits(on treeID: UUID, by device: UUID, _ store: CypressStore) async throws -> Int {
+        try await store.queue.read { connection in
+            let statement = try connection.cachedStatement("""
+                SELECT COUNT(*) AS n FROM visits
+                 WHERE tree_uuid = :tree COLLATE NOCASE AND device_id = :device COLLATE NOCASE
+                   AND user_id IS NULL AND deleted_at IS NULL
+                """)
+            _ = try statement.bind([":tree": treeID.uuidString, ":device": device.uuidString])
+            defer { _ = try? statement.reset() }
+            return try statement.fetchOne { try $0.int("n") } ?? 0
+        }
+    }
+
     // MARK: - The leaving door
 
     /// Red-proof: delete the `UPDATE community_trees` statement from `forgetCommunityTrees` — red on
@@ -177,7 +191,8 @@ struct CommunityTreeDeletionTests {
 
     /// `ROADMAP` 105(b). This installation's own unclaimed visit is on the tree. The phone's rule
     /// reads it as somebody else's and would keep the tree; the service read it as the account's
-    /// after the claim, erased it, and deleted the tree. The phone deletes the tree too.
+    /// after the claim, erased it, and deleted the tree. The phone deletes the tree too, and leaves
+    /// the device's visit where it is: it is not the account's row (`forgetCommunityTrees`).
     ///
     /// Red-proof: in `forgetCommunityTrees`, ignore `serviceTrees.deleted` — red on "the erasing
     /// door kept a tree the service deleted".
@@ -187,6 +202,7 @@ struct CommunityTreeDeletionTests {
         let api = Self.signedIn(store)
         let tree = try await Fixture.add(api)
         try await Self.deviceVisit(on: tree.id, by: Fixture.deviceID, store)
+        #expect(try await Self.deviceVisits(on: tree.id, by: Fixture.deviceID, store) == 1, "fixture: the visit did not land")
 
         let outcome = try await api.deleteAccount(
             .eraseEverything, actingOn: AccountDeletion.ServiceTreeVerdicts(deleted: [tree.id])
@@ -195,6 +211,31 @@ struct CommunityTreeDeletionTests {
         #expect(try await Self.communityTree(store, tree.id) == nil, "the erasing door kept a tree the service deleted")
         #expect(try await Fixture.chain(store, tree.id).isEmpty)
         #expect(outcome.deletedCommunityTrees == 1, "\(outcome)")
+        #expect(
+            try await Self.deviceVisits(on: tree.id, by: Fixture.deviceID, store) == 1,
+            "the deletion took this device's own visit with the tree"
+        )
+    }
+
+    /// An id in both lists is kept. The service never sends that, and for a deletion that cannot
+    /// be undone, keeping is the safe reading.
+    ///
+    /// Red-proof: in `forgetCommunityTrees`, check `deleted` before `anonymized` — red on "an id in
+    /// both lists was deleted".
+    @Test("an id the answer lists as both deleted and kept is kept", arguments: AccountDeletionChoice.allCases)
+    func anIdInBothListsIsKept(choice: AccountDeletionChoice) async throws {
+        let store = try await CypressStore.inMemory()
+        let api = Self.signedIn(store)
+        let tree = try await Fixture.add(api)
+
+        let outcome = try await api.deleteAccount(
+            choice, actingOn: AccountDeletion.ServiceTreeVerdicts(deleted: [tree.id], anonymized: [tree.id])
+        )
+
+        #expect(try await Self.communityTree(store, tree.id) != nil, "an id in both lists was deleted")
+        #expect(try await Fixture.adder(store, tree.id) == .nobody)
+        #expect(outcome.anonymizedCommunityTrees == 1, "\(outcome)")
+        #expect(outcome.deletedCommunityTrees == 0, "\(outcome)")
     }
 
     /// The control for the test above: with no answer, the same rows keep the tree, so the device's

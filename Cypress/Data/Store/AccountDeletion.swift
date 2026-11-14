@@ -789,9 +789,15 @@ public struct AccountDeletion {
     /// rows.
     ///
     /// Nothing references `community_trees(id)` by foreign key: visits and photographs name a tree
-    /// by `tree_uuid`, which may be a city row. A visit by somebody else on a deleted tree cannot
-    /// exist here, because such a tree was not built on; the account's own went in
-    /// `eraseContributions`.
+    /// by `tree_uuid`, which may be a city row. **Other rows on a deleted tree stay.** Under the
+    /// phone's own rule the erasing door deletes only a tree with no live row on it here, so nothing
+    /// is left behind. The service's answer can delete a tree that still has rows on this phone:
+    /// the account's anonymized visits and photographs on an unpublished tree under the leaving
+    /// door, this installation's own unclaimed visit in case 105(b), or a stranger's visit that
+    /// reached this phone. This method deletes none of them. They are not the account's rows to
+    /// delete (the argument `delete` makes about a device's own rows), and under the leaving door
+    /// the person asked for their records to stay. They remain on a `tree_uuid` that names no tree.
+    /// `theErasingDoorFollowsTheServicesDeletion` asserts this for the device's visit.
     private func forgetCommunityTrees(
         userID: UUID,
         choice: AccountDeletionChoice,
@@ -836,8 +842,11 @@ public struct AccountDeletion {
             let unbuilt = Set(ownRule)
             ids = all.filter { id in
                 guard let uuid = UUID(uuidString: id) else { return unbuilt.contains(id) }
-                if serviceTrees.deleted.contains(uuid) { return true }
+                // Kept before deleted: an id in both lists is kept. The service never sends that,
+                // and for a deletion that cannot be undone the safe reading of a contradiction is
+                // to keep the tree.
                 if serviceTrees.anonymized.contains(uuid) { return false }
+                if serviceTrees.deleted.contains(uuid) { return true }
                 return unbuilt.contains(id)
             }
         }
