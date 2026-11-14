@@ -666,7 +666,7 @@ public struct RemoteAPI: CypressAPI {
     /// **No route.** This is the local half of a deletion, and the service has no call for it: the
     /// rows it acts on are on the phone. `RoutedAPI.deleteAccount` calls it on its local half and
     /// never on this type. A refusal rather than the protocol's default, because that default
-    /// calls `deleteAccount` and would send `DELETE /me` a second time.
+    /// calls `deleteAccount`, which on this type sends `DELETE /me`.
     @discardableResult
     public func finishAccountDeletion(
         _ choice: AccountDeletionChoice,

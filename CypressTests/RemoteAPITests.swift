@@ -795,7 +795,7 @@ struct RemoteAPITests {
             "deleteAccountOnService",
             // The local half of a deletion: the rows it acts on are on the phone, so there is no
             // route. A refusal rather than the protocol's default, which would call
-            // `deleteAccount` and send `DELETE /me` again.
+            // `deleteAccount` and send `DELETE /me`.
             "finishAccountDeletion"
         ]
 

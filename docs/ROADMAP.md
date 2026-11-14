@@ -2166,6 +2166,10 @@ into this section in the round that finds it, and nowhere else. Each item stands
     installation's unclaimed visit, a stranger's visit). Nobody checked how the Journal draws such a
     visit. Owner question: should the phone also delete this installation's own unclaimed rows on a
     tree the service deleted? (c) The service returns the tree ids and logs none of them.
+    (d) Stale prose found by the review of the guard fix: `RemoteSurface.noRouteOnThisService`'s
+    doc in `RemoteWire.swift` lists its users and does not name `finishAccountDeletion`, and its
+    description says "yet" for an act that will never have a route; `APIConformanceGuardTests`'
+    comments give 32 and 33 as the requirement count, and the parsed count is 40.
 123. **Follow-ups, the outbox and Move pin (107, 115, 116).** (a) A species claim released by a
     `failed` add is sent and silently never applied; if the add is later retried and succeeds, the
     adder's species never reaches the service's tree. (b) An add refused with `conflict` cannot be

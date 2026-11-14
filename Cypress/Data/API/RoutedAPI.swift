@@ -613,7 +613,7 @@ public struct RoutedAPI: CypressAPI {
     /// The local half alone, for a caller that already holds the service's answer. This type's own
     /// `deleteAccount` is that caller for the `LocalAPI` under it, so this forwards to the local
     /// half and asks the service nothing. Declared here rather than left to the protocol's default,
-    /// which would call `deleteAccount` above and ask the service to delete a second time.
+    /// which would call `deleteAccount` above, and that asks the service to delete.
     @discardableResult
     public func finishAccountDeletion(
         _ choice: AccountDeletionChoice,
