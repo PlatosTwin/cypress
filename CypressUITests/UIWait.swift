@@ -34,6 +34,14 @@ extension XCTestCase {
     /// 30 seconds because the alternative to waiting is the flake this replaces: the ceiling is a
     /// liveness bound, and it costs nothing when the element is reachable — the wait returns as
     /// soon as the predicate holds.
+    ///
+    /// **One more look after the deadline, before the failure.** The predicate is evaluated by
+    /// reading the accessibility tree, and one read can take most of the wait. CI's
+    /// `AppleSignInUITests.testAFailedAuthorization…` failed "never became hittable within 30s"
+    /// on a runner where the launch took 17 s and a single accessibility read took 29 s
+    /// (23.15 s → 52.45 s in the log): the wait timed out while that read was still running, and
+    /// never asked again. `reachableAfterWait` asks once more, so a slow read costs time and not
+    /// the test. The element must still be present and hittable; only *when* it is asked changes.
     func assertReachable(
         _ element: XCUIElement,
         _ description: String,
@@ -45,7 +53,8 @@ extension XCTestCase {
             predicate: NSPredicate(format: "exists == true AND hittable == true"),
             object: element
         )
-        guard XCTWaiter.wait(for: [reachable], timeout: timeout) != .completed else { return }
+        let waited = XCTWaiter.wait(for: [reachable], timeout: timeout)
+        guard !reachableAfterWait(waited, lateCheck: { element.isReachableNow }) else { return }
 
         // Which half failed decides where to look, so the message says it rather than making the
         // reader guess from a single sentence that fits both.
@@ -110,7 +119,8 @@ extension XCTestCase {
                 predicate: NSPredicate(format: "exists == true"),
                 object: element
             )
-            if XCTWaiter.wait(for: [present], timeout: timeout) != .completed {
+            let waited = XCTWaiter.wait(for: [present], timeout: timeout)
+            if !reachableAfterWait(waited, lateCheck: { element.exists }) {
                 XCTFail(
                     "\(description) never appeared in the accessibility tree at all within "
                         + "\(Int(timeout))s",
@@ -140,6 +150,20 @@ extension XCTestCase {
         )
         return previous
     }
+}
+
+/// Whether a wait for an element succeeded, given how the waiter ended and one more look taken
+/// after it.
+///
+/// The late look runs only when the waiter did not complete. An `XCTWaiter` checks its deadline
+/// between predicate evaluations, and each evaluation is an accessibility read; when one read
+/// takes most of the timeout, the waiter gives up without evaluating the answer that read
+/// produced. One more look costs one read, and only on the path that was about to fail.
+///
+/// A free function, so `FrameFinitenessGateTests` can prove the decision with no live element:
+/// a waiter that timed out and a late look that succeeds must count as success.
+func reachableAfterWait(_ waited: XCTWaiter.Result, lateCheck: () -> Bool) -> Bool {
+    waited == .completed || lateCheck()
 }
 
 /// Whether every component of `rect` is a real, finite number.
@@ -524,6 +548,17 @@ extension XCUIElement {
     /// single named control, wrong inside a loop. See the overload above.
     func isHittableWithoutRaising(in app: XCUIApplication) -> Bool {
         isHittableWithoutRaising(onScreen: app.frame)
+    }
+
+    /// `assertReachable`'s late look: present, with a frame `isHittable` can be asked about, and
+    /// hittable. The frame is checked first because `isHittable` raises rather than answering
+    /// `false` for a frame with no finite interior (see `isHittableWithoutRaising`), and a raise
+    /// here would replace `assertReachable`'s own message with one about the frame.
+    var isReachableNow: Bool {
+        guard exists else { return false }
+        let rect = frame
+        guard isFiniteFrame(rect), rect.width > 0, rect.height > 0 else { return false }
+        return isHittable
     }
 }
 

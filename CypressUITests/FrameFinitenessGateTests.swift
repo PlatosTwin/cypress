@@ -285,4 +285,37 @@ final class FrameFinitenessGateTests: XCTestCase {
                 + "container to measure"
         )
     }
+
+    // MARK: - assertReachable's late look
+
+    /// **A wait that timed out while its last read was still running must ask once more.** This is
+    /// `reachableAfterWait`, the decision `assertReachable` and `settledFrame` make after their
+    /// waiter returns, proved here with no live element. The case is CI's
+    /// `AppleSignInUITests` failure: one accessibility read took 29 s of a 30 s wait, and the
+    /// element was hittable by the time it returned.
+    ///
+    /// Red-proof: make `reachableAfterWait` return `waited == .completed` alone — red on
+    /// "the late look was ignored".
+    func testATimedOutWaitWithAReachableLateLookSucceeds() {
+        XCTAssertTrue(
+            reachableAfterWait(.timedOut, lateCheck: { true }),
+            "the waiter timed out and the late look found the element reachable, and the late look "
+                + "was ignored — one slow accessibility read would fail the test again"
+        )
+    }
+
+    /// The late look is not a pass: an element that is still unreachable after it still fails.
+    func testATimedOutWaitWithAnUnreachableLateLookFails() {
+        XCTAssertFalse(
+            reachableAfterWait(.timedOut, lateCheck: { false }),
+            "the waiter timed out and the late look found nothing reachable, and the wait passed"
+        )
+    }
+
+    /// A completed wait costs no extra read: the late look runs only on the path to a failure.
+    func testACompletedWaitDoesNotLookAgain() {
+        var looked = false
+        XCTAssertTrue(reachableAfterWait(.completed, lateCheck: { looked = true; return false }))
+        XCTAssertFalse(looked, "a wait that completed spent another accessibility read on the late look")
+    }
 }
