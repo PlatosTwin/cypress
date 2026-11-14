@@ -2079,6 +2079,14 @@ into this section in the round that finds it, and nowhere else. Each item stands
 120. **`addReadingLink`'s comment overstates the hit-area overhang.** `TreeProfileView.swift`
     (around line 988) says `cypressHitArea` overhangs a 13 pt label by about 17 pt. The background
     is a centered 44 pt minimum height, so the overhang is about 14 pt at the default text size.
+121. **Two accessibility checks spend minutes on one-element queries (UI shards 1 and 3).**
+    `assertEveryControlIsLabeled` asked `exists`, `isHittable` and `label` of every control in the
+    app, one query each. Screens 09, 10 and 18 open over the map, so about 150 pin buttons behind
+    the cover were each walked: 135, 127 and 117 s in `DeepLinkVoiceOverTests.testPinAdjust`,
+    `testCareLog` and `testShare`. `DeepLinkSweepTests.testNothingIsAnnouncedTwice` did the same over
+    every static text (about 175 s). **DONE in the PR from `test/snapshot-label-checks`:** both read
+    the labels from one snapshot of the tree, and only an unlabeled control, or a repeated static
+    text, is checked live for hittability. The rules and their failure messages are unchanged.
 
 
 **Retire the format-1 manifest — DONE, 2026-08-23.** The owner overrode the trigger the day after

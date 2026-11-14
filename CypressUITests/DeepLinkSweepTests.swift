@@ -196,6 +196,12 @@ final class DeepLinkSweepTests: XCTestCase, DeepLinkHarness {
     /// pushed one, so until the tab root leaves the tree the enumeration can be reading the screen
     /// the app is navigating *away* from — which is what run 31347748098 recorded. See the comment
     /// at the call site for what that log shows and for what the wait still leaves open.
+    ///
+    /// **Which labels repeat is read from one snapshot of the tree; only those are walked live.**
+    /// The live walk below, with its accessibility-element binding and its settled frames, now runs
+    /// over the static texts whose label the snapshot saw at least twice, not over every static
+    /// text in the app. A label seen once cannot be heard twice, so nothing the comparison asks is
+    /// dropped. See the comment at the call site.
     func testNothingIsAnnouncedTwice() {
         continueAfterFailure = true
         defer { continueAfterFailure = false }
@@ -302,9 +308,10 @@ final class DeepLinkSweepTests: XCTestCase, DeepLinkHarness {
             // **What it counts now:** the reachable twins above, or, when there are none (the
             // usual, clean case), one reachable static text of any label, which
             // `firstReachableElement` looks for from the end of the tree and stops at.
-            let reachable = announced.count
-                + (announced.isEmpty && firstReachableElement(app, among: texts, onScreen: appFrame) != nil
-                    ? 1 : 0)
+            var reachable = announced.count
+            if reachable == 0, firstReachableElement(app, among: texts, onScreen: appFrame) != nil {
+                reachable = 1
+            }
             XCTAssertGreaterThan(
                 reachable, 0,
                 "\(screen): not one static text was reachable, so no pair was compared and this "
