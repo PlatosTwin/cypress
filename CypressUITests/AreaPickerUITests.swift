@@ -60,7 +60,7 @@ final class AreaPickerUITests: XCTestCase {
             pill.exists,
             "the almanac's header pill is not a button, so the screen offers no way to change its area"
         )
-        XCTAssertTrue(pill.isHittable, "the header pill is a button nobody can press")
+        assertReachable(pill, "the header pill, a button a reader must be able to press,")
 
         // The retired control, checked for while a control that proves the screen rendered is in
         // hand — `pill` above. An absence on its own would pass on a screen that drew nothing.
@@ -149,7 +149,7 @@ final class AreaPickerUITests: XCTestCase {
             "the City segment does not name the city it is about as a button, so it either fails to "
                 + "name it (the record carries the name) or offers no way to change it"
         )
-        XCTAssertTrue(pill.isHittable, "the City segment's header pill is a button nobody can press")
+        assertReachable(pill, "the City segment's header pill, a button a reader must be able to press,")
         XCTAssertFalse(
             app.buttons[Self.retiredChangeButton].exists,
             "the boxed “\(Self.retiredChangeButton)” button is still under the City segment's "
@@ -242,7 +242,7 @@ final class AreaPickerUITests: XCTestCase {
         // And the picker is offered here too: this reader has 41 neighborhoods to choose from and no
         // polygon of their own. It is the pill above, so what is left to say is that it is pressable
         // — and that the control it replaced did not survive on this screen either.
-        XCTAssertTrue(pill.isHittable, "the fallback's header pill is a button nobody can press")
+        assertReachable(pill, "the fallback's header pill, a button a reader must be able to press,")
         XCTAssertFalse(
             app.buttons[Self.retiredChangeButton].exists,
             "the boxed “\(Self.retiredChangeButton)” button is still on the radius fallback"

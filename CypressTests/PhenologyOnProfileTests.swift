@@ -307,7 +307,7 @@ struct PhenologyOnProfileShots {
 
     @Test("03's activity feed carrying an observation beside a note, and one on its own")
     func photograph() async {
-        print("SHOT DIR \(ScreenSweepShots.outputDirectory.path)")
+        print("SHOT DIR \(ScreenSweepShots.shotDirectory?.path ?? "not set: nothing is written")")
 
         // The feed sits below every other section on 03, so at AX5 a phone-height window
         // photographs the hero and the name and never reaches the rows this is about — the same

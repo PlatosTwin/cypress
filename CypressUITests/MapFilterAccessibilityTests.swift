@@ -408,10 +408,7 @@ final class MapFilterAccessibilityTests: XCTestCase {
         )
 
         let hidden = openDrawer(app)
-        XCTAssertTrue(
-            hidden.isHittable,
-            "“\(Self.hiddenChip)” is in the tree with the control open and nothing can activate it"
-        )
+        assertReachable(hidden, "“\(Self.hiddenChip)”, with the control open,")
         XCTAssertEqual(
             hidden.value as? String, Self.off,
             "“\(Self.hiddenChip)” announces “\(hidden.value as? String ?? "nothing")” at rest"
@@ -492,9 +489,9 @@ final class MapFilterAccessibilityTests: XCTestCase {
 
         // …and the way out is still on screen, in the row, where it can be found without knowing the
         // filter exists (R23.1 §3).
-        XCTAssertEqual(
-            revealedChip(Self.clear, app).isHittable, true,
-            "with a filter set behind a shut control there is no reachable “\(Self.clear)”"
+        assertReachable(
+            revealedChip(Self.clear, app),
+            "“\(Self.clear)”, with a filter set behind a shut control,"
         )
     }
 
@@ -518,10 +515,7 @@ final class MapFilterAccessibilityTests: XCTestCase {
                 + "out is to remember that it is there"
         )
         let chipOut = revealedChip(Self.clear, app)
-        XCTAssertTrue(
-            chipOut.isHittable,
-            "the “\(Self.clear)” chip is in the tree but nothing can activate it"
-        )
+        assertReachable(chipOut, "the “\(Self.clear)” chip")
         XCTAssertEqual(
             chipOut.value as? String, Self.off,
             "the “\(Self.clear)” chip announces “\(chipOut.value as? String ?? "nothing")”; it is "
@@ -864,10 +858,10 @@ final class MapFilterAccessibilityTests: XCTestCase {
         // interaction #166 traded the wrap for.
         for label in labels {
             let element = revealedChip(label, app)
-            XCTAssertTrue(
-                element.isHittable,
-                "at AX5 the “\(label)” chip cannot be scrolled onto the glass and pressed. Its "
-                    + "frame is \(element.frame) on a \(screen.width)×\(screen.height) screen"
+            assertReachable(
+                element,
+                "at AX5 the “\(label)” chip, scrolled onto a \(screen.width)×\(screen.height) "
+                    + "screen,"
             )
         }
 
@@ -886,15 +880,12 @@ final class MapFilterAccessibilityTests: XCTestCase {
                 "at AX5 the “\(label)” chip in the open control runs off the phone (\(box))"
             )
         }
-        XCTAssertTrue(
-            hidden.isHittable,
-            "at AX5 the chip inside the expandable control is in the tree and cannot be activated. "
-                + "Its frame is \(hidden.frame) on a \(screen.width)×\(screen.height) screen"
+        assertReachable(
+            hidden,
+            "at AX5 the chip inside the expandable control, on a "
+                + "\(screen.width)×\(screen.height) screen,"
         )
-        XCTAssertTrue(
-            year.isHittable,
-            "at AX5 the year control inside the drawer is in the tree and cannot be activated"
-        )
+        assertReachable(year, "at AX5 the year control inside the drawer")
     }
 
     /// **#165 at AX5: the matchless pill is live at the top of the ramp too**, where R31's box
@@ -908,10 +899,7 @@ final class MapFilterAccessibilityTests: XCTestCase {
             needsCare.isEnabled,
             "at AX5 “\(Self.matchlessChip)” renders disabled — R31's presentation, struck by #165"
         )
-        XCTAssertTrue(
-            needsCare.isHittable,
-            "at AX5 “\(Self.matchlessChip)” cannot be scrolled onto the glass and pressed"
-        )
+        assertReachable(needsCare, "at AX5 “\(Self.matchlessChip)”, scrolled onto the glass,")
         needsCare.tap()
         XCTAssertTrue(
             wait { (needsCare.value as? String) == Self.on },
@@ -979,15 +967,10 @@ final class MapFilterAccessibilityTests: XCTestCase {
             "the suggestion list did not push the “\(Self.clear)” chip down "
                 + "(\(before.clear) → \(chip(Self.clear, app).frame.minY))"
         )
-        XCTAssertTrue(
-            yours.isHittable,
-            "with the list open the “\(Self.alwaysOnToggle)” chip is in the tree and cannot be "
-                + "activated"
-        )
-        XCTAssertTrue(
-            revealedChip(Self.clear, app).isHittable,
-            "with the list open the “\(Self.clear)” chip cannot be scrolled onto the glass and "
-                + "activated"
+        assertReachable(yours, "with the list open, the “\(Self.alwaysOnToggle)” chip")
+        assertReachable(
+            revealedChip(Self.clear, app),
+            "with the list open, the “\(Self.clear)” chip, scrolled onto the glass,"
         )
 
         // **The row's own order** — the owner's three, the control, the way out (#145). Since
