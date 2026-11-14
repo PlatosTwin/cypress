@@ -574,8 +574,12 @@ struct TreeProfileView: View {
     /// build 88 by 30 pt, to keep 44 pt between its center and a neighbor's so the hit areas could
     /// not overlap. On the phone that read as a band of empty space in a column where the links
     /// beside it sit about 18 pt apart, and the owner's TestFlight notes on both builds said so. The
-    /// owner chose to match the column. Its hit area overlaps its neighbors' as theirs already
-    /// overlap each other's, which ROADMAP 119 tracks for the whole column.
+    /// owner chose to match the column.
+    ///
+    /// **Its tap area stops at the midpoint above it** (ROADMAP 119), like every link under it in
+    /// this column: see `columnLinkReachAbove`. The links sit closer than 44 pt center to center, and
+    /// a full 44 pt area reached up over most of the label above, so a tap on `Show me where this
+    /// is` opened this link instead.
     @ViewBuilder
     private func movePin(_ presentation: TreeProfilePresentation) -> some View {
         if presentation.offersMovePin {
@@ -589,7 +593,7 @@ struct TreeProfileView: View {
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .cypressHitArea()
+            .cypressHitArea(reachingAbove: TreeProfileMetrics.columnLinkReachAbove)
         }
     }
 
@@ -613,7 +617,7 @@ struct TreeProfileView: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .contentShape(Rectangle())
             }
-            .cypressHitArea()
+            .cypressHitArea(reachingAbove: TreeProfileMetrics.columnLinkReachAbove)
         }
         speciesCorrection(presentation)
         if let failure = model.speciesClaimFailure {
@@ -751,6 +755,10 @@ struct TreeProfileView: View {
         }
     }
 
+    /// A text link in the identity block's column, under the species line. Its tap area stops at the
+    /// midpoint above it, for `columnLinkReachAbove`'s reason: what sits above it is often another
+    /// link, closer than 44 pt. Where it is a sentence instead, the area above is smaller than it was,
+    /// and only over words that do nothing when tapped.
     private func recordLinkAction(_ label: String, _ act: @escaping () -> Void) -> some View {
         Button(action: act) {
             Text(label)
@@ -759,7 +767,7 @@ struct TreeProfileView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .contentShape(Rectangle())
         }
-        .cypressHitArea()
+        .cypressHitArea(reachingAbove: TreeProfileMetrics.columnLinkReachAbove)
     }
 
     // MARK: - 7 · Regulars row (C26, A8, D1)
@@ -1149,6 +1157,11 @@ enum TreeProfileMetrics {
     static let coldBlockGap: CGFloat = 14
     /// 03 §3: `margin-top:2px` on the latin line.
     static let latinTop: CGFloat = 2
+    /// Not a spec value, and nothing is drawn with it: how far above its own label the tap area of a
+    /// link in the identity block's column reaches. Half of `latinTop`, the column's spacing, so a
+    /// link's tap area starts at the midpoint between its label and the one above it (ROADMAP 119,
+    /// `cypressHitArea(_:reachingAbove:)`).
+    static let columnLinkReachAbove: CGFloat = latinTop / 2
     /// 14 §2: `margin:10px 16px 0`, `height:170px`.
     static let wellTop: CGFloat = 10
     static let emptyWellHeight: CGFloat = 170
