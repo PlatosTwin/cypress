@@ -374,7 +374,12 @@ public actor LocalAPI: CypressAPI {
             let observations = try contributions.observations(treeID: id, connection: connection)
 
             let adder = addedHere ? try communityTrees.adder(treeID: id, connection: connection) : nil
-            let canMovePin = adder?.isOwned(by: attribution) ?? false
+            // The adder test, and ROADMAP 107's: a tree the service never received (R77) is
+            // answered `not_found`, so its move is not offered. C2's `added_by_you` replaces both.
+            let isAdder = adder?.isOwned(by: attribution) ?? false
+            let canMovePin = isAdder
+                ? try communityTrees.mayHaveReachedService(treeID: id, connection: connection)
+                : false
 
             return TreeProfile(
                 tree: tree,
@@ -455,9 +460,11 @@ public actor LocalAPI: CypressAPI {
                 ),
                 // Set above, beside the overwrite it describes, so the two cannot be changed apart.
                 statusProvenance: statusProvenance,
-                // `correctLocation`'s own test, read in the same transaction as the tree: a tree
-                // this phone added (a cached or city row is never movable from here), and an adder
-                // who is the reader. A withdrawn tree never reaches this line (it threw above).
+                // `correctLocation`'s adder test plus ROADMAP 107's, read in the same transaction
+                // as the tree: a tree this phone added (a cached or city row is never movable from
+                // here), an adder who is the reader, and a tree the service may hold
+                // (`mayHaveReachedService`, which `correctLocation` does not apply). A withdrawn
+                // tree never reaches this line (it threw above).
                 canMovePin: canMovePin
             )
         }
@@ -4063,6 +4070,18 @@ public actor LocalAPI: CypressAPI {
     public func deleteAccount(
         _ choice: AccountDeletionChoice = .default
     ) async throws -> AccountDeletion.Outcome {
+        try await finishAccountDeletion(choice, actingOn: nil)
+    }
+
+    /// The local half of `DELETE /me`, acting on the service's answer about the community trees the
+    /// account added (`ROADMAP` 104 and 105). `RoutedAPI.deleteAccount` passes the answer after the
+    /// service accepted the deletion; nil keeps the phone's own rule. See
+    /// `AccountDeletion.forgetCommunityTrees`.
+    @discardableResult
+    public func finishAccountDeletion(
+        _ choice: AccountDeletionChoice,
+        actingOn serviceTrees: AccountDeletion.ServiceTreeVerdicts?
+    ) async throws -> AccountDeletion.Outcome {
         guard let account = userID else { throw APIError.unauthorized }
         let moment = now()
 
@@ -4088,7 +4107,8 @@ public actor LocalAPI: CypressAPI {
 
         let outcome = try await store.queue.write { connection in
             try AccountDeletion().delete(
-                userID: account, choice: choice, at: moment, connection: connection
+                userID: account, choice: choice, at: moment, serviceTrees: serviceTrees,
+                connection: connection
             )
         }
         userID = nil

@@ -79,12 +79,41 @@ func (s *Server) deleteMe(w http.ResponseWriter, r *http.Request, who caller) er
 		return apierr.Wrap(apierr.ServerError, "Something went wrong on our end.", err)
 	}
 
-	writeJSON(w, s.Log, http.StatusOK, map[string]any{
+	writeJSON(w, s.Log, http.StatusOK, deletionBody(request.Choice, report))
+	return nil
+}
+
+// deletionBody is `DELETE /me`'s answer. `server/testdata/delete_me.json` pins it, and the phone's
+// `GoldenWireFixtureTests` decodes that same file.
+//
+// ── `community_trees`: what this deletion did to each tree the account added ─────────────────────
+//
+// `deleted` lists the trees removed and tombstoned; `anonymized` lists the trees kept with no adder.
+// The phone acts on these lists instead of deciding for itself (`ROADMAP` 104 and 105), because two
+// facts it needs are held only here: whether a tree was ever published (decision 12 deletes an
+// unpublished tree under both doors), and every row anybody else has put on the tree (decision 6).
+//
+// Both lists are always present, `[]` when empty, never `null`. A phone tells this service from
+// one deployed before the field existed by the key's absence, and on an older service it keeps its
+// own rule. Older phones ignore the key, because a Swift `Decodable` skips keys it does not name.
+func deletionBody(choice string, report store.DeletionReport) map[string]any {
+	return map[string]any{
 		"deleted":       true,
-		"choice":        request.Choice,
+		"choice":        choice,
 		"contributions": report.Contributions,
 		"photos":        report.Photos,
 		"tombstones":    report.Tombstones,
-	})
-	return nil
+		"community_trees": map[string]any{
+			"deleted":    nonNil(report.TreesDeleted),
+			"anonymized": nonNil(report.TreesAnonymized),
+		},
+	}
+}
+
+// nonNil turns a nil slice into an empty one, so it encodes as `[]`.
+func nonNil(ids []uuid.UUID) []uuid.UUID {
+	if ids == nil {
+		return []uuid.UUID{}
+	}
+	return ids
 }

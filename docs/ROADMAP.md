@@ -1758,13 +1758,19 @@ into this section in the round that finds it, and nowhere else. Each item stands
     removal happened. (c) Also from that re-review, cosmetic and unproved: `RoutedAPI` reads the
     phone's withdrawal evidence after the remote fetch, so a withdrawal the drain answers during a
     refresh can leave that copy deletable for one refresh; read the evidence before the fetch.
-77. **iOS 26 does not draw a `confirmationDialog`'s cancel button.** Found by #185 (its take-back
+77. ~~**iOS 26 does not draw a `confirmationDialog`'s cancel button.** Found by #185 (its take-back
     question failed on CI's iOS 26 shard and became an `.alert`). Seven sites still use a
     `confirmationDialog`: `GrowthHistoryView:45`, `CheckInView:94`, `AccountDeletionSheet:88`,
     `TreePhotosView:129`, `PhotoViewerView:227`, and `ModerationReviewList:50` and `:61`. On iOS 26
     each one's cancel action is likely missing and only a tap outside dismisses it; no test taps any
     of those cancel buttons, so nothing goes red. Needs an iOS 26 runtime to confirm; the fix is
-    #185's (an alert with the same strings) plus a test per site that taps the cancel.
+    #185's (an alert with the same strings) plus a test per site that taps the cancel.~~
+    **DONE in the overnight round of 2026-11-14 (`claude/overnight-bug-fixes-8154ea`).** All seven sites are alerts with the same strings, roles and actions.
+    `DialogCancelUITests` presses the cancel at six of them. `AccountDeletionSheet`'s alert has no UI
+    test, because no deep link signs in (see the follow-up below). The premise was never seen on a
+    local simulator: the round's red-proof run on CI restores the six tested dialogs and is the record
+    of whether each one's cancel was really missing on iOS 26. One correction: CI has no iOS 18 UI
+    shard; every UI shard runs on `macos-26`.
 78. ~~**#185 verifier's leftovers on the dispute screen's 15 s wait (ruling 11).** (a) A test gap:
     removing the line in `DataDisputeModel` that records the error count at the ask leaves
     "…an older one does not" green; a reading that still carries the old count after the ask would
@@ -1924,7 +1930,7 @@ into this section in the round that finds it, and nowhere else. Each item stands
     screen" question the 2026-09-09 section left open, so F4 now waits only on the period vocabulary.
 97. **Chip numbers 85-87 collide.** `feat/community-trees-core` (C1) and PR #201
     (`ci/build-once-for-ui-shards`) each add their own chips 85-87, and main now uses 85-93 for
-    D.C. Whoever merges either branch renumbers its chips past the highest on main. C1 (`feat/community-trees-c1`) renumbered its chips to 104-106, and #201 renumbered its chips to 121-123, and the 2026-11-14 merge train moved them to 126-128.
+    D.C. Whoever merges either branch renumbers its chips past the highest on main. C1 (`feat/community-trees-c1`) renumbered its chips to 104-106, and #201 renumbered its chips to 121-123, and the 2026-11-14 merge train moved them to 134-136.
 98. **DONE by #208: the queue now decides with an `NWPathMonitor` source, and waiting photos upload when wi-fi returns.** ~~**P0: the "Sync photos on wifi only" switch does nothing (F35, 2026-09-30).**~~ A tester saw
     photos upload over cellular. Every feature writer and `OutboxViewState.retry`/`retryAll` call
     `OutboxQueue.drain()`, whose `photoUploadsAllowed` defaults to `true`; the only call that passes
@@ -1951,6 +1957,13 @@ into this section in the round that finds it, and nowhere else. Each item stands
     relative paths in `addTree` (after C1 merges, since C1 edits those lines).
 101. **A white band under the tab bar (F34, 2026-09-30).** About 60 pt, after browsing the
     Journal's City and Neighborhood tabs. Unreproduced; same visual family as F8. P2.
+    **Investigated 2026-11-14, still unreproduced, no code changed:**
+    `docs/investigations/f34-white-band.md`. Two corrections from the screenshot (measured by the
+    round's agent, not re-measured since): the band is about 48 pt, and it is on My Grove > Trees,
+    after the tester left the Journal. Grove, Journal and You ignore only the `.container` bottom
+    inset, the code shape F8 corrected on the camera screens; a paint-only fix would turn the band
+    cream and leave the bar floating, so none was made. The note lists what to capture next time, and
+    the probe UI test to write once local UI tests run again (item 112).
 102. ~~**F37 (2026-10-31) is a second report of F31(a), moving a pin.**~~ **Answered by C1's Move pin
     control for trees the reader added** (owner decision 2026-11-12). C3 still owns the rest of F31.
 103. **`PhotoDeletionReachabilityTests.testTheHeroPhotographReachesADeleteThatWorks` failed once on
@@ -1971,11 +1984,11 @@ into this section in the round that finds it, and nowhere else. Each item stands
       on a loaded runner, or a push the stack did not draw. The test now waits for the pill to be
       reachable before tapping it, and on failure it reports whether a second tap works, which
       separates the two. Keep this open until a recurrence says which, or a few dozen green runs.
-    **Still open after `test/flake-classes` (item 124).** That branch makes every positive
+    **Still open after `test/flake-classes` (item 132).** That branch makes every positive
     hittability claim in the UI suite wait, which is the first failure's class. It does not touch
     the second failure, a tap that changed nothing; that part stays open as described above.
 
-104. **C2 item: the phone's leaving door anonymizes trees the service deletes (decision 12).** From
+104. ~~**C2 item: the phone's leaving door anonymizes trees the service deletes (decision 12).** From
     community-trees C1. Decision 12 of 2026-09-28 deletes an *unpublished* tree under both deletion
     doors, `leaveRecords` included. Publication is the service's fact (decisions 7 and 10: it turns
     on the license the account held when the tree went live), and C1's phone does not hold it, so
@@ -1986,8 +1999,14 @@ into this section in the round that finds it, and nowhere else. Each item stands
     table), so C2 has to decide how a phone learns an authored tree was deleted for it — most
     likely by reading the service's answer to the account's own trees at sign-out or on the next
     tile — and then delete the local row and its chain. Until then the gap is visible only to the
-    deleted account's own phone.
-105. **C2 item: the erasing door's local "built on" test is the phone's view of the tree.** From
+    deleted account's own phone.~~
+    **DONE in code by the overnight round of 2026-11-14 (`claude/overnight-bug-fixes-8154ea`), for 104 and 105 together; live only after the service is redeployed (owner
+    action).** `DELETE /me` now answers with `community_trees: {deleted, anonymized}`, the ids of the
+    trees the account added, and the phone acts on that answer: a tree the service deleted is deleted
+    here with its chain under either door, a tree it kept is kept and anonymized, and an id in both
+    lists is kept. Against the service as deployed today the key is absent and the phone does exactly
+    what it did before. No migration on either side. Tile sync (the rest of C2) was not needed.
+105. ~~**C2 item: the erasing door's local "built on" test is the phone's view of the tree.** From
     community-trees C1. Decision 6 keeps a tree the erasing account added if another identity has
     built on it; the service decides that from all the rows it holds, and
     `AccountDeletion.forgetCommunityTrees` decides it from this phone's `visits`, `observations`,
@@ -1997,7 +2016,10 @@ into this section in the round that finds it, and nowhere else. Each item stands
     next sync-down would bring it back as somebody else's tree. (b) A row by this same
     installation but not yet claimed (device-owned) counts locally as "somebody else"; the service
     reads it as the account's after the claim. C2 should make the service's answer the one the
-    phone acts on, or at least reconcile the two after the deletion lands.
+    phone acts on, or at least reconcile the two after the deletion lands.~~
+    **DONE with 104, same change.** Both edges are covered by the service's per-tree answer. What is
+    left is in the follow-ups below: a tree this device added before it was claimed, and the rows
+    that stay on a tree the phone deletes.
 106. **Owner question: deletion copy for the new erasing-door behavior (decision 6).** From
     community-trees C1. The erasing door now deletes a tree the account added unless somebody else
     has built on it, and the owner's decision 6 says "deletion copy must say so".
@@ -2008,7 +2030,7 @@ into this section in the round that finds it, and nowhere else. Each item stands
     somebody else has built on it, keeps it anonymized), and the confirmation screen's count line
     if it should report trees.
 
-107. **Move pin is offered on trees the service never received (R77), and on trees whose adder the
+107. ~~**Move pin is offered on trees the service never received (R77), and on trees whose adder the
     backfill guessed.** From #209's review (F1) and the owner's ruling of 2026-11-13. A tree added
     before the sync path existed was never queued, so v23 gives it this installation's current owner
     and the profile offers Move pin; the service has no such tree and answers the move with a
@@ -2021,7 +2043,13 @@ into this section in the round that finds it, and nowhere else. Each item stands
     guess; C2's `added_by_you` from `GET /trees/{id}` is the real answer, and should replace the local
     adder test once it lands. Owner call: build the cheap rule in C2, or wait for `added_by_you`.
     **Owner, 2026-11-13: not an issue today**, because every tree added so far was added by the
-    owner. Revisit before other people add trees.
+    owner. Revisit before other people add trees.~~
+    **The cheap rule is built, in the overnight round of 2026-11-14 (`claude/overnight-bug-fixes-8154ea`)** (the owner put this item on that round's list).
+    `CommunityTreeStore.mayHaveReachedService`: when the tree's `add_tree` row exists, its state
+    decides (offered unless the add `failed`); when no row exists, the tree's `created_at` must be on
+    or after `firstQueuedAddsAt`, 2026-08-21 18:54:57 UTC, the commit `build-43` points at (the first
+    build that contains #s34). It hides only the offer. It does not fix a pruned row with a wrong
+    adder guess; C2's `added_by_you` still replaces it.
 108. ~~**Test wait limits now trip on many CI runs (2026-11-13).** In one day: three `MapSearchTests`
     timed out at `TestWait.ceiling` (90 s, each failed after 102 s) on #208's run 43495993786;
     `MapRecenterTests` on a main run; `CityDownloadTests`' 60 s time limit on #207; and
@@ -2035,10 +2063,14 @@ into this section in the round that finds it, and nowhere else. Each item stands
     The deeper cause, pool contention from per-test seed stores, is item 117.
 109. ~~**`PhotoBrowserReachabilityTests` asserts on a one-shot `isHittable`** (lines 60 and 133). That
     is the race that #210 fixed in `PhotoDeletionReachabilityTests` (item 103). Move both asserts to
-    `UIWait.assertReachable`.~~ **DONE by `test/flake-classes`** (item 124), with 19 more sites of
+    `UIWait.assertReachable`.~~ **DONE by `test/flake-classes`** (item 132), with 19 more sites of
     the same shape, and a gate that refuses new ones.
-110. **E81's "offline" state for the outbox pill can now be built.** #208 added `NetworkPathSource`
-    (`NWPathMonitor`), the source E81 said was missing. Out of scope for F35, logged here.
+110. ~~**E81's "offline" state for the outbox pill can now be built.** #208 added `NetworkPathSource`
+    (`NWPathMonitor`), the source E81 said was missing. Out of scope for F35, logged here.~~
+    **DONE in the overnight round of 2026-11-14 (`claude/overnight-bug-fixes-8154ea`).** Screen 17's pill reads `N waiting · offline` when rows are waiting and
+    `NWPath.status` is `.unsatisfied` right now; cellular and `.requiresConnection` are not offline,
+    and nothing is claimed before the first reading. The erratum that amends E81 is in
+    `docs/errata-pending/outbox-pill-offline.md`. No UI test reads the pill (follow-up below).
 111. **The agent simulators in CLAUDE.md no longer exist.** None of the four UDIDs listed under
     "Simulators" is on the owner's Mac (checked with `xcrun simctl list devices`, 2026-11-13). This
     round's agents made their own. Update the list, or say how an agent makes its device.
@@ -2046,21 +2078,49 @@ into this section in the round that finds it, and nowhere else. Each item stands
     hung before establishing connection" and "DTServiceHubClient failed to bless service hub". The
     usual fix is `sudo xcodebuild -runFirstLaunch`, which needs the owner's password. Until then,
     CI is the only test evidence.
-113. **F36 follow-up: thumbnails do not retry a failed read.** #206 made the photo viewer retry;
-    a thumbnail's `load()` still keeps its first failure for the session.
-114. **F38 follow-ups (#207).** The ring reads the location once, when the tab opens, and does not
+    **Cause found 2026-11-14, and it is probably not first-launch.** `xcodebuild
+    -checkFirstLaunchStatus` exits 0. The system log at the moment of the hang (`/usr/bin/log show`)
+    has the kernel refusing Xcode's host helper: "mac_vnode_check_signature: …/DTServiceHub: code
+    signature validation failed fatally … com.apple.DTServiceHub disallowed without correct
+    com.apple.private.amfi.version-restriction entitlement version". The Mac is on macOS 27.2 with
+    Xcode 26.6, and an iOS 18.6 simulator hangs the same way as iOS 26.5. That reads as an Xcode
+    that this macOS no longer accepts, so a newer Xcode is the likely fix (not verified; the owner's
+    action). A local run still proves that everything compiles and gives a warning count.
+113. ~~**F36 follow-up: thumbnails do not retry a failed read.** #206 made the photo viewer retry;
+    a thumbnail's `load()` still keeps its first failure for the session.~~
+    **DONE in the overnight round of 2026-11-14 (`claude/overnight-bug-fixes-8154ea`).** `PhotoImageStore.load` reads a failed photograph again when a screen shows it
+    again, at most once a second and up to 4 failed reads per photograph per session; a read
+    cancelled because its screen went away is not counted; a deleted photograph is never read again;
+    and a successful viewer read fills the thumbnail behind it. The 1 s and the 4 are the round's own
+    picks.
+114. ~~**F38 follow-ups (#207).** The ring reads the location once, when the tab opens, and does not
     follow the reader while the tab stays open. It does not check how old the fix is. Two reads that
-    overlap can finish out of order, and the older one can win.
-115. **C1 follow-up: other community kinds can reach the service before their tree's add.** #209
+    overlap can finish out of order, and the older one can win.~~
+    **DONE in the overnight round of 2026-11-14 (`claude/overnight-bug-fixes-8154ea`).** The ring reads again when the reader moves 100 m or more while My Grove is
+    showing (not while another screen covers it); a fix that was more than 60 s old when the phone
+    delivered it does not place the ring; and the newest read always wins. The 100 m and the 60 s are
+    the round's own picks. Owed on the physical phone: what CoreLocation delivers after
+    `startUpdatingLocation` and after a return from the background when the reader has not moved
+    (follow-up below).
+115. ~~**C1 follow-up: other community kinds can reach the service before their tree's add.** #209
     holds a pin move until its tree's add is sent. A species claim, a report or a photo vote on a
     tree whose add is in backoff can still arrive first, and the service answers `not_found`, which
-    is terminal. Hold them the same way, or make the answer retryable.
-116. **C1 follow-up: a pin move's time held behind its tree's add counts toward its 48 h window.**
+    is terminal. Hold them the same way, or make the answer retryable.~~
+    **DONE in the overnight round of 2026-11-14 (`claude/overnight-bug-fixes-8154ea`), with the premise corrected.** Only a pin move is refused with `not_found`. A
+    species claim or correction that arrives before its tree is recorded and never applied, a silent
+    loss; reports, dismissals, photo votes, redirects and disputes are recorded with no tree lookup.
+    So `species_claim` and `species_correction` now wait behind their tree's add like
+    `location_correction` (`OutboxItem.Kind.waitsForItsTreeAdd`), and the other kinds do not. The
+    table is in `docs/errata-pending/c1-followups.md`.
+116. ~~**C1 follow-up: a pin move's time held behind its tree's add counts toward its 48 h window.**
     The held move has no reason on its row, so the F35 credit (`OutboxStore.window`) does not
     leave the held time out. If the add is in backoff for 47 h and then sends, the released move
     has about 1 h left, and one transient failure expires it. Give the held move a hold reason that
     `window` credits, or restart its window when the hold releases. Found by the review of #209's
-    merge with F35.
+    merge with F35.~~
+    **DONE in the overnight round of 2026-11-14 (`claude/overnight-bug-fixes-8154ea`), by a third design:** each drain pass credits the time a held row has waited
+    (`OutboxStore.creditHeldBehindAdd`) and restamps the row, so no reason string and no schema
+    change were needed. It covers all three held kinds.
 117. **Share one opened seed store per read-only suite (follow-up to 108).** 52 test files call
     `CypressStore.inMemory(seedURL:)`, which opens an in-memory store and attaches the 103 MB seed,
     and those files hold about 570 `@Test` declarations (counted 2026-11-13). Many tests open their
@@ -2081,20 +2141,82 @@ into this section in the round that finds it, and nowhere else. Each item stands
     ruling: match the column. **DONE in #224:** Move pin has no extra padding and sits about 18 pt
     from its neighbors, like the other links; the test now checks that. It ships with the next
     release, because releases are paused (see `TESTFLIGHT_RELEASE_PAUSED` in testflight.yml).
-119. **"Say what species you think this is" and "Report that there is no tree here" overlap.** On
+119. ~~**"Say what species you think this is" and "Report that there is no tree here" overlap.** On
     the profile of a tree with no species, the two links are about 18 pt apart, center to center,
     so their 44 pt hit areas overlap and a tap meant for one can reach the other. This predates
-    #216 and #216 does not make it worse. Seen in the owner's build 87 screenshot. Since #224 the
+    #216 and #216 does not make it worse. Seen in the owner's build 87 screenshot.~~
+    **DONE in the overnight round of 2026-11-14 (`claude/overnight-bug-fixes-8154ea`), with nothing
+    visible changed.** The links stay where they are. Each link in the identity column that can sit
+    under another link now takes taps only from the midpoint of the gap above it
+    (`cypressHitArea(_:reachingAbove:)`), so the upper link keeps its own words; below and to the
+    sides nothing changed, and links that sit under a sentence keep the full area.
+    `ProfileLinkColumnUITests` taps 2 pt either side of each midpoint and checks the column's pitch
+    against itself. Nobody has watched a tap land: which link an overlapped tap reached before the
+    fix was worked out from geometry and from what #139 saw, and the round's red-proof run on CI is
+    the first observation. Since #224 the
     whole column ("Show me where this is", "Move pin", and these two) sits about 18 pt apart, so
     every pair of neighbors in it overlaps the same way.
 120. **`addReadingLink`'s comment overstates the hit-area overhang.** `TreeProfileView.swift`
     (around line 988) says `cypressHitArea` overhangs a 13 pt label by about 17 pt. The background
     is a centered 44 pt minimum height, so the overhang is about 14 pt at the default text size.
-121. **DONE in `test/pin-nudge-waits`: the pin-adjust UI test lost a tap.** Main run 43551707747
+121. **Owner action: redeploy `cypress-sync` so items 104 and 105 take effect.** The phone acts on
+    `DELETE /me`'s `community_trees` answer only when the service sends it. Merging server code
+    deploys nothing.
+122. **Follow-ups from the 2026-11-14 overnight round, account deletion (104, 105).** (a) A tree
+    this device added before it was claimed is device-owned on the phone and the account's on the
+    service; the phone keeps it even when the answer names it, so it can keep a pin the service
+    deleted. (b) When the phone deletes a tree on the service's answer, other rows stay on a
+    `tree_uuid` that names no tree (the account's anonymized visits under the leaving door, this
+    installation's unclaimed visit, a stranger's visit). Nobody checked how the Journal draws such a
+    visit. Owner question: should the phone also delete this installation's own unclaimed rows on a
+    tree the service deleted? (c) The service returns the tree ids and logs none of them.
+    (d) Stale prose found by the review of the guard fix: `RemoteSurface.noRouteOnThisService`'s
+    doc in `RemoteWire.swift` lists its users and does not name `finishAccountDeletion`, and its
+    description says "yet" for an act that will never have a route; `APIConformanceGuardTests`'
+    comments give 32 and 33 as the requirement count, and the parsed count is 40.
+123. **Follow-ups, the outbox and Move pin (107, 115, 116).** (a) A species claim released by a
+    `failed` add is sent and silently never applied; if the add is later retried and succeeds, the
+    adder's species never reaches the service's tree. (b) An add refused with `conflict` cannot be
+    repaired by moving the pin, because the add's payload keeps the old coordinate. (c) A tree added
+    after 2026-08-21 18:54:57 UTC on a phone still running build 42 is still offered Move pin.
+    (d) `heldBehindAddSQL` runs `json_extract` over every pending row on each drain pass; fine at
+    today's queue sizes. (e) Owner question: should reports, photo votes and disputes also wait for
+    their tree's add, in case C2 starts applying them to the tree? Today the service is order-safe
+    for them, so they do not wait.
+124. **Follow-ups, the My Grove ring (114).** (a) Owed on the physical phone: what CoreLocation
+    delivers after `startUpdatingLocation` and after a return from the background when the reader has
+    not moved 5 m. If no fresh fix arrives, the ring stays on the most-visited area until the reader
+    moves; before the round it used the cached fix. (b) The age rule measures age on arrival, so a fix
+    that was fresh before the app went to the background is still used on return until a new one
+    arrives. (c) Nothing tests the view's `onChange` wiring; the tests call `followLocation()`
+    directly. (d) Screen 12 (Almanac) never checks a fix's age and polls every 500 ms; it could reuse
+    `MapLocationProvider.fixTiming` and the observation pattern. (e) An older read that paints after
+    the newest read failed can leave the ring on the wrong place until the reader moves 100 m; it
+    needs a 100 m walk out and back inside one local read.
+125. **Follow-ups, photographs (113).** (a) A thumbnail that stays on screen never retries by
+    itself; it recovers when its screen appears again or when the viewer opens it. (b) After 4 failed
+    reads a photograph stays a placeholder for the session unless the viewer reads it. A phone offline
+    for a while can get there. (c) `try?` throws away the failure type; `notFound` and a network
+    error could be told apart. (d) `PhotoImageStore.isMissing` has no production caller.
+126. **The UI suite cannot leave a row waiting in the outbox.** With the network gate off a row is
+    applied and finishes at once, so no UI test can read screen 17's pill, with or without `· offline`
+    (item 110), and `OutboxView`'s two wiring lines are untested. Needs a DEBUG seam that seeds a
+    waiting row (`CYPRESS_NETWORK_PATH=offline` already exists). `OutboxPreviews` and
+    `ScreenSweepShots` have no offline variant of the pill either.
+127. **`AccountDeletionSheet`'s alert has no UI test (item 77).** The delete row draws only for a
+    signed-in account and no deep link signs in. A `Standalone` deep-link case that presents the
+    sheet would let a test tap `Go back`.
+128. **Say in CLAUDE.md how an agent writes in its own worktree.** In a session that runs in an
+    isolated worktree, the Write and Edit tools refuse a subagent's assigned worktree ("belongs to a
+    different worktree") until the agent calls `EnterWorktree` with that path. On 2026-11-14 five of
+    eight authors wrote files through the shell instead, some after the refusal. "Working in a
+    worktree (agents)" should name the tool and forbid the shell route. (CLAUDE.md is the owner's;
+    this round did not edit it.)
+129. **DONE in `test/pin-nudge-waits`: the pin-adjust UI test lost a tap.** Main run 43551707747
     (ui shard 1) failed `DeepLinkVoiceOverTests.testThePinSaysWhenItHasGoneAsFarAsItGoes`: fifteen
     north nudges sent back to back left the pin at 70 m, not 75. The same lost second tap failed
     `MovePinUITests` on run 43536693607. Both tests now wait for each nudge to land.
-122. **Two accessibility checks spend minutes on one-element queries (UI shards 1 and 3).**
+130. **Two accessibility checks spend minutes on one-element queries (UI shards 1 and 3).**
     `assertEveryControlIsLabeled` asked `exists`, `isHittable` and `label` of every control in the
     app, one query each. Screens 09, 10 and 18 open over the map, so about 150 pin buttons behind
     the cover were each walked: 135, 127 and 117 s in `DeepLinkVoiceOverTests.testPinAdjust`,
@@ -2102,7 +2224,7 @@ into this section in the round that finds it, and nowhere else. Each item stands
     every static text (about 175 s). **DONE in the PR from `test/snapshot-label-checks`:** both read
     the labels from one snapshot of the tree, and only an unlabeled control, or a repeated static
     text, is checked live for hittability. The rules and their failure messages are unchanged.
-123. ~~**The screen-photo tests are most of the unit job's time (2026-11-13).** On main run
+131. ~~**The screen-photo tests are most of the unit job's time (2026-11-13).** On main run
     43543728441, 2,134 tests took 283 s, and the last 218 s was about 35 `@MainActor` render
     tests. `ScreenSweepShots` alone: `everyScreen` 278 s, `coldStates` 259 s, `cityRecordStates`
     173 s, `afterTheSave` 150 s. Each capture slept a fixed 0.96 s, then encoded and wrote a PNG and
@@ -2115,7 +2237,7 @@ into this section in the round that finds it, and nowhere else. Each item stands
     guard on 02 waits for its shortlist query to answer. Without `CYPRESS_SHOT_DIR`, the harnesses
     still draw each screen and run the blank guard, but encode and write nothing. After: measured
     on #220's final CI run; see the PR body.
-124. ~~**Three classes of flake from a catalog of 70 CI runs (2026-10-23 to 2026-11-14).**~~
+132. ~~**Three classes of flake from a catalog of 70 CI runs (2026-10-23 to 2026-11-14).**~~
     **DONE by `test/flake-classes`:**
     (a) `UIWait.assertReachable` gave up when one accessibility read took most of its 30 s
     (`AppleSignInUITests`: launch 17 s, one read 29 s). It now looks once more after the deadline,
@@ -2128,11 +2250,11 @@ into this section in the round that finds it, and nowhere else. Each item stands
     one millisecond could read back head first
     (`LocationCorrectionTests.theAdderMovesThePin`, main run 43543728441). It now follows the
     `superseded_by` links from the root.
-125. **`SpeciesAssertionStore.chain` has the same tie-break as item 124(c).** It sorts by
+133. **`SpeciesAssertionStore.chain` has the same tie-break as item 132(c).** It sorts by
     `created_at, id`, so two assertions on one tree inside one millisecond can read back in either
     order. Follow its `superseded_by` links the same way. Found by `test/flake-classes`, not changed
     there.
-126. **Two unit tests that failed on CI and passed on the next run, neither explained.** (a) `MapSuggestionTests`'
+134. **Two unit tests that failed on CI and passed on the next run, neither explained.** (a) `MapSuggestionTests`'
     "choosing a suggestion narrows the map to that one species and puts its name in the field" failed
     after 105 s with two issues (`MapSuggestionTests.swift:265` and `:268`), on the unit job of the
     build-once PR's run 36665812582. That PR changes no app or test source. (b) The day before, on
@@ -2141,11 +2263,11 @@ into this section in the round that finds it, and nowhere else. Each item stands
     in the same area. Both are map-narrowing tests, which is the only thing the two sightings share.
     A green re-run proves a failure was intermittent, never why, so this is a flake-watch entry
     until one recurs with a cause (item 75 is its UI-side neighbor; item 108 has since fixed the `MapSearchTests` waits).
-127. **What is left of the CI speedup (#199, #201).** (a) `unit` could use `ui-build`'s products too and
+135. **What is left of the CI speedup (#199, #201).** (a) `unit` could use `ui-build`'s products too and
     save about 7 more minutes a run, but only if warning certification moves to `ui-build`'s fresh
     build log: the owner's call, since `unit` is where the zero-warning line is certified today.
     (b) The shards could boot their simulators while `ui-build` runs; `prepare` is 2 to 3.5 minutes per
-    shard and is now the largest cost that is not tests. Partly done by item 129: each job now boots
+    shard and is now the largest cost that is not tests. Partly done by item 137: each job now boots
     in the background, which hides the boot behind `unit`'s build but only about 30 s of it in a shard.
     Starting the shards before `ui-build` ends would hide the rest, at the cost of runners held idle
     under the five-job cap. (c) Item 2 (rebalance the shards) is worth
@@ -2153,7 +2275,7 @@ into this section in the round that finds it, and nowhere else. Each item stands
     pace. (d) The account's concurrent macOS runner cap is untouched: on run 36635369200 three shards
     waited 32, 36 and 74 minutes for a runner, and no workflow change fixes that. (e) The build artifact
     is kept one day, so re-running one shard later than that needs a re-run of all jobs.
-128. **Gaps the review of #199 and #201 found and accepted.** (a) `web.yml` groups its pull-request
+136. **Gaps the review of #199 and #201 found and accepted.** (a) `web.yml` groups its pull-request
     runs by head branch alone (`web-<head_ref>`, cancel on), so two pull requests from one head branch
     against different bases that both touch `web/` cancel each other's web run; `testflight.yml` and
     `server.yml` were given the base as well. (b) A fork pull request whose head branch name equals an
@@ -2164,7 +2286,7 @@ into this section in the round that finds it, and nowhere else. Each item stands
     `** TEST EXECUTE SUCCEEDED **` can come from `test-without-building`, still ends VERIFY-OK. Reachable
     only by hand-editing a log or running a pre-fix script, which CLAUDE.md already treats as unknown
     provenance.
-129. **DONE by #201: CI asks for fewer macOS runner-minutes.** Measured over 14 runs: the account runs
+137. **DONE by #201: CI asks for fewer macOS runner-minutes.** Measured over 14 runs: the account runs
     at most five macOS jobs at once and each TestFlight run asked for five, so overlapping runs waited
     20 to 70 minutes for runners; each job built the app itself; and pushes to main used about a
     quarter of the runner-minutes re-running the suite the pull request had just passed. #201 builds
@@ -2174,7 +2296,7 @@ into this section in the round that finds it, and nowhere else. Each item stands
     on its pull request (decision `tested-on-pr`, CLAUDE.md's fifth string; `release` still runs). No
     billed or self-hosted runners (owner, 2026-11-13). The first live use of the main-push skip is the
     merge of #201 itself.
-130. **Two UI flakes from 2026-11-14, neither caused by the PR it hit.** (a) `MapSuggestionUITests`
+138. **Two UI flakes from 2026-11-14, neither caused by the PR it hit.** (a) `MapSuggestionUITests`
     could not give the search field keyboard focus, twice in one day: `testLeavingTheKeyboardClosesTheList`
     on #222's `ui (4)` (run 43558780976) and `testTypingDropsRowsCarryingBothNames` on #224's `ui (4)`
     (run 43561537245), both "Failed to synthesize event: Neither element nor any descendant has

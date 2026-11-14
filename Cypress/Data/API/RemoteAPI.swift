@@ -660,6 +660,29 @@ public struct RemoteAPI: CypressAPI {
     ///   injected — see that property for why an empty array is not an acceptable substitute.
     @discardableResult
     public func deleteAccount(_ choice: AccountDeletionChoice) async throws -> AccountDeletion.Outcome {
+        try await deleteAccountOnService(choice).outcome
+    }
+
+    /// **No route.** This is the local half of a deletion, and the service has no call for it: the
+    /// rows it acts on are on the phone. `RoutedAPI.deleteAccount` calls it on its local half and
+    /// never on this type. A refusal rather than the protocol's default, because that default
+    /// calls `deleteAccount`, which on this type sends `DELETE /me`.
+    @discardableResult
+    public func finishAccountDeletion(
+        _ choice: AccountDeletionChoice,
+        actingOn serviceTrees: AccountDeletion.ServiceTreeVerdicts?
+    ) async throws -> AccountDeletion.Outcome {
+        throw RemoteSurface.noRouteOnThisService
+    }
+
+    /// `DELETE /me`, returning the service's answer about the community trees the account added
+    /// beside the outcome (`ROADMAP` 104 and 105). `trees` is nil when the answer carried none: a
+    /// service deployed before the field, or a value this build cannot read (`DeleteAccountResponse`).
+    /// `RoutedAPI.deleteAccount` hands `trees` to the local half. Everything `deleteAccount(_:)`
+    /// says above holds here too.
+    func deleteAccountOnService(
+        _ choice: AccountDeletionChoice
+    ) async throws -> (outcome: AccountDeletion.Outcome, trees: AccountDeletion.ServiceTreeVerdicts?) {
         guard let pendingOutboxKeys else { throw RemoteSurface.communityHalfOnly }
         let pending = try await pendingOutboxKeys()
 
@@ -682,7 +705,7 @@ public struct RemoteAPI: CypressAPI {
             outcome.deletedContributions = response.contributions
             outcome.deletedPhotos = response.photos
         }
-        return outcome
+        return (outcome, response.communityTrees)
     }
 
     /// **Class D — device-only, never remote** (spec §3.1).
