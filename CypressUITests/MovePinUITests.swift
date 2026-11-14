@@ -94,7 +94,71 @@ final class MovePinUITests: XCTestCase, DeepLinkHarness {
         )
     }
 
-    // MARK: - 2 · Not on a city tree
+    // MARK: - 2 · Where the link sits on the profile
+
+    /// The owner's TestFlight note on build 87 (2026-11-13): "Terrible spacing here", on a profile
+    /// where `Move pin` floated about 62 pt from the links above and below it, center to center,
+    /// while the other links in the column sat against each other.
+    ///
+    /// Two bounds, both on the distance between label centers. **At least 44 pt**, because each link
+    /// has a 44 pt hit rect centered on its words, and closer than that one link takes taps meant
+    /// for the other (`AddReadingReachabilityTests`). **At most 52 pt** (44 plus the 8 pt row gap),
+    /// because anything more is the empty band the owner reported. Build 87's 62 pt fails the
+    /// second bound by 10 pt; the fix draws about 46.5 pt.
+    func testMovePinSitsOneTapTargetFromTheLinksBesideIt() {
+        let app = launch("movePin")
+
+        let action = app.buttons[Copy.action]
+        guard action.waitForExistence(timeout: 60) else {
+            XCTFail(
+                deepLinkFailure(app).map { "movePin: \($0)" }
+                    ?? "movePin: the profile of a tree this phone just added drew no '\(Copy.action)'"
+            )
+            return
+        }
+        let showWhere = app.buttons[Copy.showWhere]
+        XCTAssertTrue(showWhere.waitForExistence(timeout: 10), "the profile drew no '\(Copy.showWhere)' above Move pin")
+
+        let move = action.frame
+        let above = showWhere.frame
+        XCTAssertGreaterThan(move.height, 0, "Move pin has no frame to measure")
+        XCTAssertLessThan(above.maxY, move.minY, "'\(Copy.showWhere)' is not above Move pin")
+        assertPitch(from: above, to: move, "'\(Copy.showWhere)' to Move pin")
+
+        // The next control down the same column, whichever the profile offers this tree: the
+        // nearest button below Move pin whose left edge lines up with it.
+        let below = app.buttons.allElementsBoundByIndex
+            .map(\.frame)
+            .filter { $0.minY > move.maxY && abs($0.minX - move.minX) < 1 && $0.height > 0 }
+            .min { $0.minY < $1.minY }
+        guard let below else {
+            XCTFail("no link sits under Move pin in its column, so the gap below it was not measured")
+            return
+        }
+        assertPitch(from: move, to: below, "Move pin to the link under it")
+    }
+
+    private func assertPitch(
+        from upper: CGRect, to lower: CGRect, _ what: String,
+        file: StaticString = #filePath, line: UInt = #line
+    ) {
+        let tapTarget: CGFloat = 44
+        let rowGap: CGFloat = 8
+        let pitch = lower.midY - upper.midY
+        XCTAssertGreaterThanOrEqual(
+            pitch, tapTarget,
+            "\(what): the label centers are \(pitch) pt apart, so their 44 pt hit rects overlap",
+            file: file, line: line
+        )
+        XCTAssertLessThanOrEqual(
+            pitch, tapTarget + rowGap,
+            "\(what): the label centers are \(pitch) pt apart, which leaves an empty band around "
+                + "Move pin (build 87's spacing)",
+            file: file, line: line
+        )
+    }
+
+    // MARK: - 3 · Not on a city tree
 
     func testACityTreeOffersNoMovePin() {
         let app = launch("treeProfile")
