@@ -2155,9 +2155,12 @@ into this section in the round that finds it, and nowhere else. Each item stands
 120. **`addReadingLink`'s comment overstates the hit-area overhang.** `TreeProfileView.swift`
     (around line 988) says `cypressHitArea` overhangs a 13 pt label by about 17 pt. The background
     is a centered 44 pt minimum height, so the overhang is about 14 pt at the default text size.
-121. **Owner action: redeploy `cypress-sync` so items 104 and 105 take effect.** The phone acts on
+121. ~~**Owner action: redeploy `cypress-sync` so items 104 and 105 take effect.** The phone acts on
     `DELETE /me`'s `community_trees` answer only when the service sends it. Merging server code
-    deploys nothing.
+    deploys nothing.~~ **DONE 2026-11-14.** `cypress-sync` release v14 booted at 22:25 UTC with
+    `git_sha` `0b67bd6e` (read from `GET /health` and from the boot log), at server schema 7, with
+    no migration. Nobody has called `DELETE /me` against it since; the evidence for the new field
+    is the Go suite, green on that commit.
 122. **Follow-ups from the 2026-11-14 overnight round, account deletion (104, 105).** (a) A tree
     this device added before it was claimed is device-owned on the phone and the account's on the
     service; the phone keeps it even when the answer names it, so it can keep a pin the service
@@ -2176,9 +2179,10 @@ into this section in the round that finds it, and nowhere else. Each item stands
     repaired by moving the pin, because the add's payload keeps the old coordinate. (c) A tree added
     after 2026-08-21 18:54:57 UTC on a phone still running build 42 is still offered Move pin.
     (d) `heldBehindAddSQL` runs `json_extract` over every pending row on each drain pass; fine at
-    today's queue sizes. (e) Owner question: should reports, photo votes and disputes also wait for
+    today's queue sizes. (e) ~~Owner question: should reports, photo votes and disputes also wait for
     their tree's add, in case C2 starts applying them to the tree? Today the service is order-safe
-    for them, so they do not wait.
+    for them, so they do not wait.~~ **Decided by the owner, 2026-11-14: leave as is.** Only pin
+    moves and species rows wait. Reopen it if C2 makes the service apply those kinds to the tree.
 124. **Follow-ups, the My Grove ring (114).** (a) Owed on the physical phone: what CoreLocation
     delivers after `startUpdatingLocation` and after a return from the background when the reader has
     not moved 5 m. If no fresh fix arrives, the ring stays on the most-visited area until the reader
