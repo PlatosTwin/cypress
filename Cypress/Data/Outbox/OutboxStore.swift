@@ -412,20 +412,79 @@ public struct OutboxStore {
         _ = try statement.reset()
     }
 
-    /// Where a row's 48 h window moves to once the time it has spent held for wi-fi is left out.
+    /// Where a row's 48 h window moves to once the time it has spent held is left out.
     ///
-    /// **The one formula, for the drain and for every other write.** A row's reason says it is
-    /// held (`OutboxFailureReason.isAwaitingWifi`), and its `updated_at` says since when, because
-    /// the hold's `reschedule` stamped it. The window moves forward by `now - updated_at`. Anything
-    /// else returns the window unchanged.
+    /// **The one formula, for the drain and for every other write.** A row is held when its reason
+    /// says it waits for wi-fi (`OutboxFailureReason.isAwaitingWifi`), or when it waits behind its
+    /// tree's add (`heldBehindAdd`, the `heldBehindAddSQL` predicate read at `now`). Its
+    /// `updated_at` says since when: the wi-fi hold's `reschedule` stamps it, and
+    /// `creditHeldBehindAdd` stamps it at the start of every pass for a row held behind an add.
+    /// The window moves forward by `now - updated_at`, once, whichever hold applies. Anything else
+    /// returns the window unchanged.
     public static func window(
         _ window: Date,
         leavingOutHoldSince updatedAt: Date,
         lastError: String?,
+        heldBehindAdd: Bool = false,
         now: Date
     ) -> Date {
-        guard OutboxFailureReason.isAwaitingWifi(lastError) else { return window }
+        guard heldBehindAdd || OutboxFailureReason.isAwaitingWifi(lastError) else { return window }
         return window.addingTimeInterval(max(0, now.timeIntervalSince(updatedAt)))
+    }
+
+    /// True for a row that waits while the same tree's `add_tree` has not reached the service
+    /// (review of #209, F2; ROADMAP 115). Written against the table name `outbox`, so it can sit in
+    /// any statement over that table.
+    ///
+    /// The kinds are `OutboxItem.Kind.waitsForItsTreeAdd`, interpolated for `kindList`'s reason. The
+    /// add holds while it is still trying to reach the service (`pending` or `uploading`, and not
+    /// `remote_sent`). A `failed` add holds nothing: it is not sent again unless the volunteer
+    /// retries it, so holding behind it would leave the row pending forever with no reason shown.
+    /// A pruned add row holds nothing, because a pruned row was `done`. The tree is matched on the
+    /// payloads' `treeID`, which every kind carries.
+    static let heldBehindAddSQL = """
+        (outbox.kind IN (\(OutboxItem.Kind.allCases.filter(\.waitsForItsTreeAdd)
+            .map { "'\($0.rawValue)'" }.joined(separator: ",")))
+         AND EXISTS (
+             SELECT 1 FROM outbox AS addition
+              WHERE addition.kind = 'add_tree'
+                AND addition.state IN ('pending', 'uploading')
+                AND addition.remote_sent = 0
+                AND upper(json_extract(addition.payload, '$.treeID'))
+                    = upper(json_extract(outbox.payload, '$.treeID'))
+         ))
+        """
+
+    /// Leaves out of each held row's 48 h window the time it has waited behind its tree's add, and
+    /// restamps `updated_at` so the next pass counts from here (ROADMAP 116).
+    ///
+    /// The drain calls this at the start of every pass, before it reads the due rows. A held row is
+    /// never in a pass, so nothing else banks its wait: without this, an add in backoff for 47 h
+    /// released its move with about 1 h left, and one transient failure expired the move. The
+    /// add is still unsent when this runs, so the row was held for the whole span being credited.
+    ///
+    /// No reason is written on the row. Screen 17 draws a pending row's reason, and the hold has no
+    /// sentence of its own; the predicate says the row is held at the moment it is asked.
+    ///
+    /// - Returns: how many rows were credited.
+    @discardableResult
+    public func creditHeldBehindAdd(at date: Date, connection: SQLiteConnection) throws -> Int {
+        let held = try connection.cachedStatement(
+            "SELECT id FROM outbox WHERE state = 'pending' AND \(Self.heldBehindAddSQL)"
+        )
+        let ids = try held.fetchAll { try $0.uuid("id") }
+        _ = try held.reset()
+        let stamp = try connection.cachedStatement(
+            "UPDATE outbox SET updated_at = :now WHERE id = :id"
+        )
+        for id in ids {
+            try creditHold(id, at: date, connection: connection)
+            _ = try stamp.reset()
+            _ = try stamp.bind([":now": date, ":id": id])
+            try stamp.run()
+        }
+        _ = try stamp.reset()
+        return ids.count
     }
 
     /// Banks the held time of a **pending** row before a write outside the drain moves its
@@ -438,18 +497,25 @@ public struct OutboxStore {
     /// hours" without its having tried at all (F35 review).
     ///
     /// Pending rows only: a row in a drain is `uploading`, and the drain has already banked its
-    /// hold at the start of the pass (`OutboxQueue.leavingOutWifiHold`).
+    /// hold at the start of the pass (`OutboxQueue.leavingOutWifiHold`). A row held behind its
+    /// tree's add is banked the same way (`creditHeldBehindAdd`).
     func creditHold(_ id: UUID, at date: Date, connection: SQLiteConnection) throws {
-        let read = try connection.cachedStatement(
-            "SELECT last_error, updated_at, window_started_at FROM outbox WHERE id = :id AND state = 'pending'"
-        )
+        let read = try connection.cachedStatement("""
+            SELECT last_error, updated_at, window_started_at, \(Self.heldBehindAddSQL) AS held
+              FROM outbox WHERE id = :id AND state = 'pending'
+            """)
         _ = try read.bind(id, forName: ":id")
         let row = try read.fetchOne { row in
-            (try row.stringIfPresent("last_error"), try row.date("updated_at"), try row.date("window_started_at"))
+            (
+                try row.stringIfPresent("last_error"), try row.date("updated_at"),
+                try row.date("window_started_at"), try row.bool("held")
+            )
         }
         _ = try read.reset()
         guard let row else { return }
-        let moved = Self.window(row.2, leavingOutHoldSince: row.1, lastError: row.0, now: date)
+        let moved = Self.window(
+            row.2, leavingOutHoldSince: row.1, lastError: row.0, heldBehindAdd: row.3, now: date
+        )
         guard moved != row.2 else { return }
         try setWindowStart(id, to: moved, connection: connection)
     }
@@ -526,15 +592,14 @@ public struct OutboxStore {
     /// are independent and the server dedupes on `client_uuid`, so ordering only has to be stable,
     /// not total. `ORDER BY seq` gives that.
     ///
-    /// **One exception: a pin move waits for its tree's add** (review of #209, F2). A
-    /// `location_correction` is held while the same tree's `add_tree` row is still trying to reach
-    /// the service (`pending` or `uploading`, and not `remote_sent`). A `failed` add holds nothing:
-    /// it will not be sent again unless the volunteer retries it, so holding its move would leave
-    /// the move pending forever with no reason shown. Released, the move goes and fails out loud. Without the hold, an add in backoff lets
-    /// the move go first, the service answers `not_found` for a tree it has not received, and that
-    /// answer is terminal: "add a tree offline, then fix its pin" would lose the move on the service.
-    /// The tree is matched on the payloads' `treeID`, which both kinds carry. A pruned add row holds
-    /// nothing, because a pruned row was `done`.
+    /// **One exception: a row about a tree waits for that tree's add** (review of #209, F2; ROADMAP
+    /// 115). A row of a kind in `OutboxItem.Kind.waitsForItsTreeAdd` (a pin move, a species claim
+    /// or correction) is held while the same tree's `add_tree` row is still trying to reach the
+    /// service (`heldBehindAddSQL`). Without the hold, an add in backoff lets the move go first,
+    /// the service answers `not_found` for a tree it has not received, and that answer is
+    /// terminal; a species claim that goes first is recorded and never applied to the tree. A
+    /// `failed` add holds nothing, so a released row goes and fails out loud. The time a row waits
+    /// is left out of its 48 h window (`creditHeldBehindAdd`).
     ///
     /// - Parameter excludingHeldForWifi: leave out rows held for wi-fi. The drain passes `true`
     ///   when photographs may not go. A held row's note is already applied, and sent when a sink is
@@ -554,17 +619,7 @@ public struct OutboxStore {
                  WHERE state = 'pending'
                    AND (next_attempt_at IS NULL OR next_attempt_at <= :now)
                    AND (last_error IS NULL OR last_error NOT LIKE :held)
-                   AND NOT (
-                         kind = 'location_correction'
-                         AND EXISTS (
-                             SELECT 1 FROM outbox AS addition
-                              WHERE addition.kind = 'add_tree'
-                                AND addition.state IN ('pending', 'uploading')
-                                AND addition.remote_sent = 0
-                                AND upper(json_extract(addition.payload, '$.treeID'))
-                                    = upper(json_extract(outbox.payload, '$.treeID'))
-                         )
-                       )
+                   AND NOT \(Self.heldBehindAddSQL)
                  ORDER BY seq
                  LIMIT :limit
                 """)
@@ -576,17 +631,7 @@ public struct OutboxStore {
                 SELECT * FROM outbox
                  WHERE state = 'pending'
                    AND (next_attempt_at IS NULL OR next_attempt_at <= :now)
-                   AND NOT (
-                         kind = 'location_correction'
-                         AND EXISTS (
-                             SELECT 1 FROM outbox AS addition
-                              WHERE addition.kind = 'add_tree'
-                                AND addition.state IN ('pending', 'uploading')
-                                AND addition.remote_sent = 0
-                                AND upper(json_extract(addition.payload, '$.treeID'))
-                                    = upper(json_extract(outbox.payload, '$.treeID'))
-                         )
-                       )
+                   AND NOT \(Self.heldBehindAddSQL)
                  ORDER BY seq
                  LIMIT :limit
                 """)

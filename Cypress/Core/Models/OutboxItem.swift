@@ -256,6 +256,45 @@ public struct OutboxItem: CoreEntity {
         public static func kinds(treatedAs treatment: AccountDeletionTreatment) -> [Kind] {
             allCases.filter { $0.accountDeletionTreatment == treatment }
         }
+
+        /// Whether a row of this kind waits while the same tree's `add_tree` has not reached the
+        /// service (`OutboxStore.dueItems`; review of #209, F2; ROADMAP 115).
+        ///
+        /// True for the kinds whose effect on the service needs the tree to be there already. A
+        /// `switch` with no `default`, for `accountDeletionTreatment`'s reason: a new kind cannot
+        /// compile until somebody answers this question for it.
+        public var waitsForItsTreeAdd: Bool {
+            switch self {
+            // The service refuses a move on a tree it does not hold with `not_found`, which is
+            // terminal (`store.applyLocationCorrection`).
+            case .locationCorrection:
+                return true
+            // The service never refuses these, but it applies the species to the tree only when
+            // it holds the tree (`store.materializeSpecies`). One that arrives first is recorded
+            // and changes nothing, so the adder's species never reaches the service's tree.
+            case .speciesClaim, .speciesCorrection:
+                return true
+            // The tree itself.
+            case .addTree:
+                return false
+            // These six are applied on this phone by the drain itself (they are born
+            // `local_applied = 0`). Holding one behind an add that waits for a network would keep
+            // a visit off its own tree on this phone until then. The service records each one
+            // against the tree's id and never looks the tree up, so arriving first loses nothing.
+            case .visit, .observation, .measurement, .careEvent, .favoriteToggle, .privateReminder:
+                return false
+            // Recorded by the service against the tree's id. None looks the tree up, none is
+            // refused when it is absent, and none changes the tree, so the order does not matter.
+            case .wrongSpeciesReport, .neverExistedReport, .speciesReviewDismissal,
+                 .recordReviewDismissal, .photoVote, .hazardRedirect, .dataDispute,
+                 .dataDisputeWithdrawal:
+                return false
+            // Keyed on the photograph and the reading, not the tree. The service handles either
+            // arrival order for both (`withdrawPhoto`, `measurementWasWithdrawn`).
+            case .photoWithdrawal, .measurementWithdrawal:
+                return false
+            }
+        }
     }
 
     /// `outbox.state` (BUILD-PLAN §4), verbatim. Screen 17 shows per-item state and retry.
