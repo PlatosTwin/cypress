@@ -111,7 +111,9 @@ final class MovePinUITests: XCTestCase, DeepLinkHarness {
     /// has a 44 pt hit rect centered on its words, and closer than that one link takes taps meant
     /// for the other (`AddReadingReachabilityTests`). **At most 52 pt** (44 plus the 8 pt row gap),
     /// because anything more is the empty band the owner reported. Build 87's 62 pt fails the
-    /// second bound by 10 pt; the fix draws about 46.5 pt.
+    /// second bound by 10 pt; the fix draws about 47.7 pt. The upper bound holds only at the default
+    /// text size, which is the size this test launches at: the distance is the label height plus
+    /// 32 pt, so it passes 52 pt from about the footnote style's xxxLarge size upward.
     func testMovePinSitsOneTapTargetFromTheLinksBesideIt() {
         let app = launch("movePin")
 

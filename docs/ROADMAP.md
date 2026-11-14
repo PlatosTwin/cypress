@@ -2052,11 +2052,18 @@ into this section in the round that finds it, and nowhere else. Each item stands
     has about 1 h left, and one transient failure expires it. Give the held move a hold reason that
     `window` credits, or restart its window when the hold releases. Found by the review of #209's
     merge with F35.
-117. **Move pin sits in a wide empty band on the profile (TestFlight, build 87, 2026-11-13).** The
+118. **Move pin sits in a wide empty band on the profile (TestFlight, build 87, 2026-11-13).** The
     owner's note: "Terrible spacing here". #209 padded the link by a whole tap target (44 pt) above
-    and below, so it sat about 62 pt from its neighbors, center to center. **DONE in
-    `fix/move-pin-feedback`:** a 28 pt gap keeps the centers at least 44 pt apart at every text
-    size, and `MovePinUITests` measures both distances.
+    and below, so it sat about 62 pt from its neighbors, center to center. **DONE in #216:** a
+    30 pt gap keeps the centers at least 44 pt apart at every text size (about 47.7 pt at the
+    default size), and `MovePinUITests` measures both distances.
+119. **"Say what species you think this is" and "Report that there is no tree here" overlap.** On
+    the profile of a tree with no species, the two links are about 18 pt apart, center to center,
+    so their 44 pt hit areas overlap and a tap meant for one can reach the other. This predates
+    #216 and #216 does not make it worse. Seen in the owner's build 87 screenshot.
+120. **`addReadingLink`'s comment overstates the hit-area overhang.** `TreeProfileView.swift`
+    (around line 988) says `cypressHitArea` overhangs a 13 pt label by about 17 pt. The background
+    is a centered 44 pt minimum height, so the overhang is about 14 pt at the default text size.
 
 
 **Retire the format-1 manifest — DONE, 2026-08-23.** The owner overrode the trigger the day after

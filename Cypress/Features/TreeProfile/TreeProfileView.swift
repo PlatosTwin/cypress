@@ -569,7 +569,7 @@ struct TreeProfileView: View {
     ///
     /// Built like `showWhere`, with `TreeProfileMetrics.movePinGap` above and below it, for
     /// `addReadingLink`'s reason: `cypressHitArea` is a background that overhangs a 13 pt label by
-    /// about 13 pt, so two such links closer than 44 pt center to center steal each other's taps.
+    /// about 14 pt, so two such links closer than 44 pt center to center steal each other's taps.
     ///
     /// **Not a whole tap target on each side.** Build 87 shipped with `minTapTarget` here, which put
     /// this link about 62 pt from each neighbor, center to center, in a column where every other
@@ -1157,11 +1157,14 @@ enum TreeProfileMetrics {
     /// Two 13 pt links one above the other have hit rects that do not overlap when their centers
     /// are at least `minTapTarget` (44 pt) apart. Between `Move pin` and a neighbor link, that
     /// distance is one label height (both labels are `body13Bold`), plus the identity block's
-    /// `latinTop` spacing, plus this gap. A 13 pt label is about 16.5 pt tall at the default text
-    /// size and about 15 pt at the smallest, where `.footnote` scales 13 pt down to 12 pt. A gap of
-    /// 28 pt therefore puts the centers about 46.5 pt apart at the default size and at least 45 pt
-    /// apart at the smallest, and a larger text size only makes the labels taller.
-    static let movePinGap: CGFloat = 28
+    /// `latinTop` spacing, plus this gap. The label is about 15.7 pt tall at the default text size
+    /// (CI run 43536693607 measured build 87's 44 pt padding at 61.67 pt center to center, which is
+    /// the label height plus 2 plus 44), and about 14.5 pt at the smallest size, where `.footnote`
+    /// scales 13 pt down to 12 pt. A gap of 30 pt therefore puts the centers about 47.7 pt apart at
+    /// the default size and about 46.5 pt at the smallest. A larger text size only makes the labels
+    /// taller. 28 pt would have left only about 0.5 pt above 44 at the smallest size, too little for
+    /// a later change of typeface.
+    static let movePinGap: CGFloat = 30
     /// 14 §2: `margin:10px 16px 0`, `height:170px`.
     static let wellTop: CGFloat = 10
     static let emptyWellHeight: CGFloat = 170
