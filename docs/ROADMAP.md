@@ -2155,17 +2155,41 @@ into this section in the round that finds it, and nowhere else. Each item stands
 120. **`addReadingLink`'s comment overstates the hit-area overhang.** `TreeProfileView.swift`
     (around line 988) says `cypressHitArea` overhangs a 13 pt label by about 17 pt. The background
     is a centered 44 pt minimum height, so the overhang is about 14 pt at the default text size.
-121. **Owner action: redeploy `cypress-sync` so items 104 and 105 take effect.** The phone acts on
+121. ~~**Owner action: redeploy `cypress-sync` so items 104 and 105 take effect.** The phone acts on
     `DELETE /me`'s `community_trees` answer only when the service sends it. Merging server code
-    deploys nothing.
+    deploys nothing.~~ **DONE 2026-11-14.** `cypress-sync` release v14 booted at 22:25 UTC with
+    `git_sha` `0b67bd6e` (read from `GET /health` and from the boot log), at server schema 7, with
+    no migration. Nobody has called `DELETE /me` against it since; the evidence for the new field
+    is the Go suite, green on that commit.
 122. **Follow-ups from the 2026-11-14 overnight round, account deletion (104, 105).** (a) A tree
     this device added before it was claimed is device-owned on the phone and the account's on the
     service; the phone keeps it even when the answer names it, so it can keep a pin the service
     deleted. (b) When the phone deletes a tree on the service's answer, other rows stay on a
     `tree_uuid` that names no tree (the account's anonymized visits under the leaving door, this
-    installation's unclaimed visit, a stranger's visit). Nobody checked how the Journal draws such a
-    visit. Owner question: should the phone also delete this installation's own unclaimed rows on a
-    tree the service deleted? (c) The service returns the tree ids and logs none of them.
+    installation's unclaimed visit, a stranger's visit). ~~Nobody checked how the Journal draws such a
+    visit.~~ **Read on 2026-11-14 (code only, nothing was run), at the owner's request before any
+    change.** Nothing crashes. `forgetCommunityTrees` deletes the tree and its `tree_locations` and
+    no other row, and no foreign key points at `community_trees`. What a reader gets: (i) **a
+    Journal row that leads nowhere.** This installation's own unclaimed visit, check-in,
+    measurement or care event on the deleted tree stays in the Journal, titled with the fallback
+    `Tree`; a tap opens the profile's "No record for this tree." with no retry, and the row cannot
+    be removed. The account's own anonymized rows are hidden from the Journal. (ii) This
+    installation's favorite and private reminder on the tree stay: `deviceContributions` on the
+    You tab counts them and My Grove hides them, and the heart cannot be removed. (iii)
+    Photographs on the tree are reachable from no screen; under the leaving door their bytes stay
+    on disk. (iv) The CSV export lists the tree's rows and the GeoJSON export skips them. (v) Found
+    beside it, and not caused by the deletion: `ContributionStore.contributedTreeIDs` has no
+    tombstone clause, so an account's anonymized rows still count under `Yours`. The stranger's
+    visit in the sentence above may not be reachable: the only `INSERT INTO visits` is this
+    phone's own, and the test builds that row with raw SQL. Not settled by reading: whether the
+    drain sends this installation's queued rows after sign-out, whether an anonymized nickname
+    still titles the row, what `privateReminders` draws for a reminder whose tree is gone, and
+    whether the profile's failure state shows a way back. One unit test over `journal`,
+    `grovePage`, `deviceContributions`, `mapMembership`, `privateReminders`, `exportLatest` and
+    `treeProfile` after `finishAccountDeletion` settles the first three; the screen needs a UI
+    run. **Owner question, still open, now with the facts:** should the phone also delete this
+    installation's own unclaimed rows (and the photographs' bytes) on a tree the service deleted,
+    or should the Journal only skip rows whose tree does not resolve, as My Grove does? (c) The service returns the tree ids and logs none of them.
     (d) Stale prose found by the review of the guard fix: `RemoteSurface.noRouteOnThisService`'s
     doc in `RemoteWire.swift` lists its users and does not name `finishAccountDeletion`, and its
     description says "yet" for an act that will never have a route; `APIConformanceGuardTests`'
@@ -2176,9 +2200,10 @@ into this section in the round that finds it, and nowhere else. Each item stands
     repaired by moving the pin, because the add's payload keeps the old coordinate. (c) A tree added
     after 2026-08-21 18:54:57 UTC on a phone still running build 42 is still offered Move pin.
     (d) `heldBehindAddSQL` runs `json_extract` over every pending row on each drain pass; fine at
-    today's queue sizes. (e) Owner question: should reports, photo votes and disputes also wait for
+    today's queue sizes. (e) ~~Owner question: should reports, photo votes and disputes also wait for
     their tree's add, in case C2 starts applying them to the tree? Today the service is order-safe
-    for them, so they do not wait.
+    for them, so they do not wait.~~ **Decided by the owner, 2026-11-14: leave as is.** Only pin
+    moves and species rows wait. Reopen it if C2 makes the service apply those kinds to the tree.
 124. **Follow-ups, the My Grove ring (114).** (a) Owed on the physical phone: what CoreLocation
     delivers after `startUpdatingLocation` and after a return from the background when the reader has
     not moved 5 m. If no fresh fix arrives, the ring stays on the most-visited area until the reader
