@@ -110,7 +110,9 @@ final class MovePinUITests: XCTestCase, DeepLinkHarness {
     /// Two bounds on the distance between label centers. **At most 26 pt**: one 13 pt label, the
     /// column's 2 pt spacing and some slack for rounding; build 88's 48 pt fails it by 22 pt. **At
     /// least 12 pt**, so the labels do not draw over each other. Measured on label centers, not on
-    /// frame edges, because each link's 44 pt hit area can overlap its neighbor's. Holds at the
+    /// frame edges, because a link's hit area is larger than its label and reaches past it: down by
+    /// up to 22 pt from the label's center, and up as far as the midpoint to the link above
+    /// (ROADMAP 119, `ProfileLinkColumnUITests`). Holds at the
     /// default text size, which is the size this test launches at.
     func testMovePinSitsInTheColumnLikeTheLinksBesideIt() {
         let app = launch("movePin")

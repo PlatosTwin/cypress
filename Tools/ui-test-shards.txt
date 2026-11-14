@@ -356,7 +356,14 @@
 # `MovePinUITests` (community trees C1, the owner's Move pin control of 2026-11-12): three tests, each
 # one launch. PLACED ON SHARD 2 by line count, for the reason the entry above gives.
 
+# `DialogCancelUITests` (ROADMAP 77) and `ProfileLinkColumnUITests` (ROADMAP 119), both added on
+# 2026-11-14: NEVER MEASURED. No test could run on the machine that wrote them (ROADMAP 112), so
+# neither has a time from anywhere, and their first CI run is the first number either will have.
+# `DialogCancelUITests` is six tests, each one launch: PLACED ON SHARD 1. `ProfileLinkColumnUITests`
+# is two tests, each one launch: PLACED ON SHARD 3. Both by line count, for the reason the
+# `MovePinUITests` entry above gives.
+
 DeepLinkVoiceOverTests MapCenteredStateUITests FrameFinitenessGateTests IdentifyFABReachabilityTests AppleSignInUITests SeeAllOnMapUITests DialogCancelUITests
 MapFilterAccessibilityTests AnonymizedPhotoNoticeUITests MapRecenterUITests PhotoBrowserReachabilityTests CityDisclaimerUITests AddReadingReachabilityTests MovePinUITests
-DeepLinkSweepTests PrimaryCTAReachabilityTests SheetHeightUITests AlmanacGroupTapTests StrandedPhotoHeroUITests CityCardContainmentUITests AreaPickerUITests
+DeepLinkSweepTests PrimaryCTAReachabilityTests SheetHeightUITests AlmanacGroupTapTests StrandedPhotoHeroUITests CityCardContainmentUITests AreaPickerUITests ProfileLinkColumnUITests
 SheetExitUITests MapSearchUITests MapSuggestionUITests MapPanTabSwitchUITests PhotoDeletionReachabilityTests AccessibilityTreeTests ReadingOrderAccessibilityTests RemoteGateComplaintUITests DataDisputeUITests

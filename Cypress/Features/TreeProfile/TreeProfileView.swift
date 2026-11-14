@@ -574,8 +574,12 @@ struct TreeProfileView: View {
     /// build 88 by 30 pt, to keep 44 pt between its center and a neighbor's so the hit areas could
     /// not overlap. On the phone that read as a band of empty space in a column where the links
     /// beside it sit about 18 pt apart, and the owner's TestFlight notes on both builds said so. The
-    /// owner chose to match the column. Its hit area overlaps its neighbors' as theirs already
-    /// overlap each other's, which ROADMAP 119 tracks for the whole column.
+    /// owner chose to match the column.
+    ///
+    /// **Its tap area stops at the midpoint above it** (ROADMAP 119), like every link under it in
+    /// this column: see `columnLinkReachAbove`. The links sit closer than 44 pt center to center, so
+    /// a full 44 pt area would reach up over most of the label above. Which link such a tap reaches
+    /// was worked out from the geometry and from PR #139, not watched on this screen.
     @ViewBuilder
     private func movePin(_ presentation: TreeProfilePresentation) -> some View {
         if presentation.offersMovePin {
@@ -589,7 +593,7 @@ struct TreeProfileView: View {
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .cypressHitArea()
+            .cypressHitArea(reachingAbove: TreeProfileMetrics.columnLinkReachAbove)
         }
     }
 
@@ -613,7 +617,7 @@ struct TreeProfileView: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .contentShape(Rectangle())
             }
-            .cypressHitArea()
+            .cypressHitArea(reachingAbove: TreeProfileMetrics.columnLinkReachAbove)
         }
         speciesCorrection(presentation)
         if let failure = model.speciesClaimFailure {
@@ -662,13 +666,15 @@ struct TreeProfileView: View {
                 .cypressBody135(color: CypressColor.textMuted)
                 .fixedSize(horizontal: false, vertical: true)
             if canResolve {
-                recordLinkAction(TreeProfileCopy.withdrawRecordAction) {
+                // Both under a sentence, never under a link: `recordReported`, then
+                // `withdrawRecordNotice`.
+                recordLinkAction(TreeProfileCopy.withdrawRecordAction, belowALink: false) {
                     Task { await model.withdrawRecord(flagID: flagID) }
                 }
                 Text(TreeProfileCopy.withdrawRecordNotice)
                     .cypressBody135(color: CypressColor.textMuted)
                     .fixedSize(horizontal: false, vertical: true)
-                recordLinkAction(TreeProfileCopy.keepRecordAction) {
+                recordLinkAction(TreeProfileCopy.keepRecordAction, belowALink: false) {
                     Task { await model.keepRecord(flagID: flagID) }
                 }
             }
@@ -705,8 +711,9 @@ struct TreeProfileView: View {
             Text(TreeProfileCopy.dataDisputeRaised)
                 .cypressBody135(color: CypressColor.textMuted)
                 .fixedSize(horizontal: false, vertical: true)
-            // Asks first — the dialog on `body` is what withdraws.
-            recordLinkAction(TreeProfileCopy.withdrawDataDisputeAction) {
+            // Asks first — the dialog on `body` is what withdraws. Under the `dataDisputeRaised`
+            // sentence, never under a link.
+            recordLinkAction(TreeProfileCopy.withdrawDataDisputeAction, belowALink: false) {
                 model.pendingDataDisputeWithdrawal = disputeID
             }
         }
@@ -743,7 +750,10 @@ struct TreeProfileView: View {
                 .cypressBody135(color: CypressColor.textMuted)
                 .fixedSize(horizontal: false, vertical: true)
             if canResolve {
-                recordLinkAction(TreeProfileCopy.correctSpeciesAction) { model.beginCorrectingSpecies() }
+                // Under the `speciesReported` sentence, never under a link.
+                recordLinkAction(TreeProfileCopy.correctSpeciesAction, belowALink: false) {
+                    model.beginCorrectingSpecies()
+                }
                 recordLinkAction(TreeProfileCopy.keepSpeciesAction) {
                     Task { await model.keepSpecies(flagID: flagID) }
                 }
@@ -751,15 +761,30 @@ struct TreeProfileView: View {
         }
     }
 
-    private func recordLinkAction(_ label: String, _ act: @escaping () -> Void) -> some View {
-        Button(action: act) {
+    /// A text link in the identity block's column, under the species line.
+    ///
+    /// - Parameter belowALink: whether another link can sit directly above this one. Where one can,
+    ///   the tap area stops at the midpoint above it (`columnLinkReachAbove`, ROADMAP 119). Where the
+    ///   view above is always a sentence, the call site passes `false` and the link keeps the full
+    ///   `cypressHitArea()`, as it had before.
+    @ViewBuilder
+    private func recordLinkAction(
+        _ label: String,
+        belowALink: Bool = true,
+        _ act: @escaping () -> Void
+    ) -> some View {
+        let link = Button(action: act) {
             Text(label)
                 .font(CypressFont.body13Bold)
                 .foregroundStyle(CypressColor.ctaFill)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .contentShape(Rectangle())
         }
-        .cypressHitArea()
+        if belowALink {
+            link.cypressHitArea(reachingAbove: TreeProfileMetrics.columnLinkReachAbove)
+        } else {
+            link.cypressHitArea()
+        }
     }
 
     // MARK: - 7 · Regulars row (C26, A8, D1)
@@ -1149,6 +1174,11 @@ enum TreeProfileMetrics {
     static let coldBlockGap: CGFloat = 14
     /// 03 §3: `margin-top:2px` on the latin line.
     static let latinTop: CGFloat = 2
+    /// Not a spec value, and nothing is drawn with it: how far above its own label the tap area of a
+    /// link in the identity block's column reaches. Half of `latinTop`, the column's spacing, so a
+    /// link's tap area starts at the midpoint between its label and the one above it (ROADMAP 119,
+    /// `cypressHitArea(_:reachingAbove:)`).
+    static let columnLinkReachAbove: CGFloat = latinTop / 2
     /// 14 §2: `margin:10px 16px 0`, `height:170px`.
     static let wellTop: CGFloat = 10
     static let emptyWellHeight: CGFloat = 170
