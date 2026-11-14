@@ -300,10 +300,10 @@ type DeletionReport struct {
 	Contributions int
 	Photos        int
 	Tombstones    int
-	// TreesAnonymized and TreesDeleted are the community trees the account added, by door (decision
-	// 6); see `deleteAccountTrees`.
-	TreesAnonymized int
-	TreesDeleted    int
+	// TreesAnonymized and TreesDeleted are the ids of the community trees the account added, by
+	// what this deletion did to each (decisions 6 and 12); see `deleteAccountTrees`. Never nil.
+	TreesAnonymized []uuid.UUID
+	TreesDeleted    []uuid.UUID
 }
 
 // UnrevokedAppleToken is a token whose revocation has not yet succeeded.
@@ -334,7 +334,7 @@ func (s *Store) DeleteAccount(
 	pendingKeys []uuid.UUID,
 	unrevoked UnrevokedAppleToken,
 ) (DeletionReport, error) {
-	var report DeletionReport
+	report := DeletionReport{TreesAnonymized: []uuid.UUID{}, TreesDeleted: []uuid.UUID{}}
 	err := s.Tx(ctx, func(tx pgx.Tx) error {
 		now := s.now()
 
