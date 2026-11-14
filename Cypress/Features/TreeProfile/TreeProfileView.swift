@@ -592,7 +592,7 @@ struct TreeProfileView: View {
             // The distance between this label's center and a neighbor's is the label height, plus
             // `latinTop`, plus this gap. See `movePinGap` for why that is at least 44 pt at every
             // text size.
-            .padding(.vertical, TreeProfileMetrics.movePinGap)
+            .padding(.vertical, CypressSpacing.minTapTarget)
         }
     }
 
