@@ -577,9 +577,9 @@ struct TreeProfileView: View {
     /// owner chose to match the column.
     ///
     /// **Its tap area stops at the midpoint above it** (ROADMAP 119), like every link under it in
-    /// this column: see `columnLinkReachAbove`. The links sit closer than 44 pt center to center, and
-    /// a full 44 pt area reached up over most of the label above, so a tap on `Show me where this
-    /// is` opened this link instead.
+    /// this column: see `columnLinkReachAbove`. The links sit closer than 44 pt center to center, so
+    /// a full 44 pt area would reach up over most of the label above. Which link such a tap reaches
+    /// was worked out from the geometry and from PR #139, not watched on this screen.
     @ViewBuilder
     private func movePin(_ presentation: TreeProfilePresentation) -> some View {
         if presentation.offersMovePin {
@@ -666,13 +666,15 @@ struct TreeProfileView: View {
                 .cypressBody135(color: CypressColor.textMuted)
                 .fixedSize(horizontal: false, vertical: true)
             if canResolve {
-                recordLinkAction(TreeProfileCopy.withdrawRecordAction) {
+                // Both under a sentence, never under a link: `recordReported`, then
+                // `withdrawRecordNotice`.
+                recordLinkAction(TreeProfileCopy.withdrawRecordAction, belowALink: false) {
                     Task { await model.withdrawRecord(flagID: flagID) }
                 }
                 Text(TreeProfileCopy.withdrawRecordNotice)
                     .cypressBody135(color: CypressColor.textMuted)
                     .fixedSize(horizontal: false, vertical: true)
-                recordLinkAction(TreeProfileCopy.keepRecordAction) {
+                recordLinkAction(TreeProfileCopy.keepRecordAction, belowALink: false) {
                     Task { await model.keepRecord(flagID: flagID) }
                 }
             }
@@ -709,8 +711,9 @@ struct TreeProfileView: View {
             Text(TreeProfileCopy.dataDisputeRaised)
                 .cypressBody135(color: CypressColor.textMuted)
                 .fixedSize(horizontal: false, vertical: true)
-            // Asks first — the dialog on `body` is what withdraws.
-            recordLinkAction(TreeProfileCopy.withdrawDataDisputeAction) {
+            // Asks first — the dialog on `body` is what withdraws. Under the `dataDisputeRaised`
+            // sentence, never under a link.
+            recordLinkAction(TreeProfileCopy.withdrawDataDisputeAction, belowALink: false) {
                 model.pendingDataDisputeWithdrawal = disputeID
             }
         }
@@ -747,7 +750,10 @@ struct TreeProfileView: View {
                 .cypressBody135(color: CypressColor.textMuted)
                 .fixedSize(horizontal: false, vertical: true)
             if canResolve {
-                recordLinkAction(TreeProfileCopy.correctSpeciesAction) { model.beginCorrectingSpecies() }
+                // Under the `speciesReported` sentence, never under a link.
+                recordLinkAction(TreeProfileCopy.correctSpeciesAction, belowALink: false) {
+                    model.beginCorrectingSpecies()
+                }
                 recordLinkAction(TreeProfileCopy.keepSpeciesAction) {
                     Task { await model.keepSpecies(flagID: flagID) }
                 }
@@ -755,19 +761,30 @@ struct TreeProfileView: View {
         }
     }
 
-    /// A text link in the identity block's column, under the species line. Its tap area stops at the
-    /// midpoint above it, for `columnLinkReachAbove`'s reason: what sits above it is often another
-    /// link, closer than 44 pt. Where it is a sentence instead, the area above is smaller than it was,
-    /// and only over words that do nothing when tapped.
-    private func recordLinkAction(_ label: String, _ act: @escaping () -> Void) -> some View {
-        Button(action: act) {
+    /// A text link in the identity block's column, under the species line.
+    ///
+    /// - Parameter belowALink: whether another link can sit directly above this one. Where one can,
+    ///   the tap area stops at the midpoint above it (`columnLinkReachAbove`, ROADMAP 119). Where the
+    ///   view above is always a sentence, the call site passes `false` and the link keeps the full
+    ///   `cypressHitArea()`, as it had before.
+    @ViewBuilder
+    private func recordLinkAction(
+        _ label: String,
+        belowALink: Bool = true,
+        _ act: @escaping () -> Void
+    ) -> some View {
+        let link = Button(action: act) {
             Text(label)
                 .font(CypressFont.body13Bold)
                 .foregroundStyle(CypressColor.ctaFill)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .contentShape(Rectangle())
         }
-        .cypressHitArea(reachingAbove: TreeProfileMetrics.columnLinkReachAbove)
+        if belowALink {
+            link.cypressHitArea(reachingAbove: TreeProfileMetrics.columnLinkReachAbove)
+        } else {
+            link.cypressHitArea()
+        }
     }
 
     // MARK: - 7 · Regulars row (C26, A8, D1)

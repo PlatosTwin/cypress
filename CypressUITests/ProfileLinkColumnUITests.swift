@@ -63,7 +63,7 @@ final class ProfileLinkColumnUITests: XCTestCase, DeepLinkHarness {
     /// test follows the layout wherever it is. `Report` writes a flag on the record and its link then
     /// goes away, so the one tap that may press it is the last tap of the run.
     func testATapOnEitherSideOfTheMidpointOpensThatLinkAndNotItsNeighbor() {
-        let app = launch("profileLinks")
+        let app = launchColumn()
         guard arriveAtColumn(app) else { return }
 
         for index in 0..<(Self.column.count - 1) {
@@ -98,7 +98,7 @@ final class ProfileLinkColumnUITests: XCTestCase, DeepLinkHarness {
     /// padded one link to keep its tap area clear of a neighbor's makes one pitch larger than the
     /// rest, which is what builds 87 and 88 did to `Move pin`.
     func testTheLinksSitOneEvenPitchApart() {
-        let app = launch("profileLinks")
+        let app = launchColumn()
         guard arriveAtColumn(app) else { return }
 
         let frames = Self.column.map { settledFrame(app.buttons[$0], "'\($0)'") }
@@ -123,6 +123,25 @@ final class ProfileLinkColumnUITests: XCTestCase, DeepLinkHarness {
     // MARK: - Helpers
 
     private enum Side { case upper, lower }
+
+    /// `MapLayout.defaultCenter` with a 6 m fix, spelled out because a UI test cannot import the app
+    /// target. `DataDisputeUITests.goodFix` is the same value.
+    private static let fix = "37.7596,-122.4269,6"
+
+    /// Opens the profile with the location pinned, the way `DataDisputeUITests.launch(fix:)` does.
+    ///
+    /// **Pinned because this test taps by coordinate.** On a simulator whose location was never
+    /// answered, the system's location prompt can come up over the profile, and a coordinate tap
+    /// then lands on the prompt instead of the link it was aimed at. Seen by hand on a fresh slot
+    /// simulator, with the app launched without `CYPRESS_LOCATION`.
+    private func launchColumn() -> XCUIApplication {
+        let app = XCUIApplication()
+        app.launchEnvironment[Self.deepLinkScreenKey] = "profileLinks"
+        app.launchEnvironment["CYPRESS_LOCATION"] = Self.fix
+        DebugMapCamera.pin(app)
+        app.launch()
+        return app
+    }
 
     /// Waits for every link in the column to be on screen and reachable.
     private func arriveAtColumn(_ app: XCUIApplication) -> Bool {

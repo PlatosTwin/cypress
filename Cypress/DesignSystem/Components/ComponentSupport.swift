@@ -67,13 +67,14 @@ extension View {
     /// that above the control it reaches only `above` points past the control's own top edge.
     ///
     /// **Why the top is cut and the bottom is not.** The hit area is a background, so it never enters
-    /// layout, and of two overlapping hit areas in a stack the later view's wins the tap. Two 13 pt
-    /// text links one above the other, closer than `size` center to center, overlap: the lower link's
-    /// rect reaches up over most of the upper link's own label, so a tap on the upper words opened
-    /// the lower link (ROADMAP 119). With the lower link's rect cut at half the spacing above it, it
-    /// starts at the midpoint between the two labels. The upper link's full rect still reaches down
-    /// past that midpoint, but the lower link is the later view and wins there, so the boundary
-    /// between the two is the midpoint. Below the control, and to the sides, the area is the same as
+    /// layout. PR #139 saw, on `addReadingLink` (a `.plain` button), that where two such areas overlap
+    /// in a stack the later view wins the tap. Two 13 pt text links one above the other, closer than
+    /// `size` center to center, overlap: the lower link's rect reaches up over most of the upper
+    /// link's own label (ROADMAP 119). This variant is built on what #139 saw; for the tree profile's
+    /// column it was worked out from geometry, not watched. With the lower link's rect cut at half the
+    /// spacing above it, it starts at the midpoint between the two labels. The upper link's full rect
+    /// still reaches down past that midpoint, and if the later view wins there, the boundary between
+    /// the two is the midpoint. Below the control, and to the sides, the area is the same as
     /// `cypressHitArea(_:)`'s.
     ///
     /// Nothing is laid out differently: the control keeps its size and position at every text size.
