@@ -35,6 +35,7 @@
 //
 
 #if DEBUG
+import Foundation
 import QuartzCore
 import UIKit
 
@@ -78,6 +79,10 @@ enum RenderSettle {
         var previous: Int?
         var repeats = 0
         var passes = 0
+        // RED-PROOF ONLY: return after zero passes.
+        if ProcessInfo.processInfo.environment["CYPRESS_REDPROOF_NEVER_SET"] == nil {
+            return Outcome(passes: 0, reachedBudget: false, spinnerVisible: false)
+        }
         while true {
             try? await Task.sleep(for: interval)
             view.setNeedsLayout()
