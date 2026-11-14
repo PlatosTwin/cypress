@@ -20,8 +20,12 @@
 //      `ProgressView` while their `.task` waits);
 //   3. the layer tree's signature was the same for `stablePasses` passes in a row;
 //   4. the caller's `ready` condition holds, when it gave one.
-//  Whatever happens, it returns once `budget` has passed. The default budget is the old loop's
-//  0.96 s, so a view that never settles waits as long as it did before, and not longer.
+//  The floor counts only after its time over `interval` in passes (`minimumPasses`), and the
+//  budget only after the old loop's 8 passes (`legacyPasses`), because one yield on a starved
+//  runner can take many seconds.
+//  Whatever happens, it returns once `budget` has passed and the old loop's 8 passes have run.
+//  The default budget is the old loop's 0.96 s, so a view that never settles waits as long as it
+//  did before, and not longer.
 //
 //  ── Why the spinner check is there ────────────────────────────────────────────────────────
 //  A screen whose `.task` is waiting on an actor shows the same spinner pass after pass, so the
@@ -64,6 +68,12 @@ enum RenderSettle {
 
     /// The old loop's total: 8 × 120 ms.
     static let legacyBudget: Duration = .milliseconds(960)
+
+    /// The old loop's pass count. The budget ends the wait only after this many passes as well
+    /// as `budget`'s time, so a starved runner still lays the view out as often as the old loop
+    /// did. PR #220's first CI run (unit job, 2026-11-14) showed why: one 40 ms sleep took about
+    /// 68 s on a starved main actor, and a time-only budget gave up after a single pass.
+    static let legacyPasses = 8
 
     struct Outcome: Equatable {
         /// Layout passes run.
@@ -112,7 +122,7 @@ enum RenderSettle {
             let spinner = hasVisibleSpinner(view)
             let elapsed = clock.now - start
 
-            if elapsed >= floor, !spinner, repeats >= stablePasses, isReady {
+            if elapsed >= floor, passes >= minimumPasses(for: floor), !spinner, repeats >= stablePasses, isReady {
                 return Outcome(passes: passes, reachedBudget: false, spinnerVisible: false)
             }
             if elapsed >= budget {
@@ -120,6 +130,13 @@ enum RenderSettle {
                 return Outcome(passes: passes, reachedBudget: true, spinnerVisible: spinner)
             }
         }
+    }
+
+    /// The passes the floor needs before its time counts: the floor's time over `interval`,
+    /// capped at the old loop's `legacyPasses`. Wall time alone is not enough, because on a
+    /// starved runner one yield can take many seconds. The budget needs `legacyPasses` itself.
+    static func minimumPasses(for duration: Duration) -> Int {
+        min(legacyPasses, Int((duration / interval).rounded(.up)))
     }
 
     /// A hash of what a draw reads from the layer tree: each layer's class, geometry, transform,
