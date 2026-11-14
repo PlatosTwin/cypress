@@ -6,9 +6,9 @@ import Testing
 ///
 /// A tree added before the sync path existed (R77) was never queued. Migration v23 gives it this
 /// installation's owner as its adder, so the adder test alone offered Move pin, and the service
-/// answered the move with a terminal `not_found`. The rule: offer the move only when the tree's
-/// `add_tree` row is still in the outbox, or the tree was added on or after
-/// `CommunityTreeStore.firstQueuedAddsAt`. One test per branch.
+/// answered the move with a terminal `not_found`. The rule: when the tree's `add_tree` row still
+/// exists, offer the move unless that row is `failed`; when no row exists, offer it only for a tree
+/// added on or after `CommunityTreeStore.firstQueuedAddsAt`. One test per branch.
 @Suite("Community trees · Move pin is offered only for a tree the service may hold")
 struct MovePinOfferTests {
 
@@ -33,8 +33,8 @@ struct MovePinOfferTests {
 
     /// Branch 1: the add row is still queued, so the tree was queued whatever its date says.
     ///
-    /// Red-proof: drop the `addRowQueued ||` arm of `CommunityTreeStore.mayHaveReachedService` —
-    /// red on "a tree whose add row is still queued is not offered Move pin".
+    /// Red-proof: make `CommunityTreeStore.mayHaveReachedService` ignore the row and use the date
+    /// alone — red on "a tree whose add row is still queued is not offered Move pin".
     @Test("a tree whose add row is still in the outbox is offered Move pin, even with an old date")
     func aQueuedAddIsOffered() async throws {
         let (store, api, tree) = try await Self.addTree(at: Self.beforeQueuing)
@@ -71,5 +71,29 @@ struct MovePinOfferTests {
         #expect(adder == .device(Fixture.deviceID), "fixture: the reader is not the adder: \(String(describing: adder))")
         let profile = try await api.treeProfile(id: tree.id)
         #expect(!profile.canMovePin, "a tree the service never received is offered Move pin")
+    }
+
+    /// Branch 4: the add row exists and is `failed`, as a `conflict` refusal or the 48 h cap leaves
+    /// it. The service does not hold the tree, whatever the tree's date. Checked on both sides of
+    /// the cutoff, because the date must not rescue a failed add.
+    ///
+    /// Red on the first version of this rule, which counted any add row as queued: red on "a tree
+    /// whose add failed is offered Move pin (added …)".
+    @Test("a tree whose add row failed is not offered Move pin, on either side of the cutoff",
+          arguments: [
+              CommunityTreeStore.firstQueuedAddsAt.addingTimeInterval(-30 * 24 * 60 * 60),
+              CommunityTreeStore.firstQueuedAddsAt.addingTimeInterval(30 * 24 * 60 * 60)
+          ])
+    func aFailedAddIsNotOffered(_ added: Date) async throws {
+        let (store, api, tree) = try await Self.addTree(at: added)
+        try await store.queue.write { connection in
+            try connection.execute("UPDATE outbox SET state = 'failed' WHERE kind = 'add_tree'")
+        }
+        let states = try await store.queue.read { try OutboxStore().allItems(connection: $0) }
+            .filter { $0.item.kind == .addTree }.map(\.item.state)
+        #expect(states == [.failed], "fixture: the add row is \(states), not one failed row")
+
+        let profile = try await api.treeProfile(id: tree.id)
+        #expect(!profile.canMovePin, "a tree whose add failed is offered Move pin (added \(added))")
     }
 }

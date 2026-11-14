@@ -268,23 +268,32 @@ public struct CommunityTreeStore {
     /// Where it comes from: #s34 (commit `6ae2f4f9`) is the first commit that writes an `add_tree`
     /// outbox row. The first build tag that contains it is `build-43`, a lightweight tag on the merge
     /// commit of PR #103 (`ac4d8cbd`), whose committer date is this moment. `build-42` does not
-    /// contain #s34. The date is the tag's and not the commit's (2026-08-21 15:52:35 UTC): a tree
-    /// added on build 42 or older was never queued, and between the commit and the merge only those
-    /// builds existed, so the later date is the one that leaves out every tree no build queued.
+    /// contain #s34. A lightweight tag carries no date of its own, so the date used is the committer
+    /// date of the merge commit `build-43` points at, not the #s34 commit's own date (2026-08-21
+    /// 15:52:35 UTC): a tree added on build 42 or older was never queued, and between the commit
+    /// and the merge only those builds existed, so the later date is the one that leaves out every
+    /// tree no build queued.
     public static let firstQueuedAddsAt = Date(timeIntervalSince1970: 1_787_338_497)
 
     /// Whether the service may hold this tree, so that an act on it is not answered `not_found`
     /// (ROADMAP 107).
     ///
-    /// Yes when the tree's `add_tree` row is still in the outbox, in any state, or when the tree was
-    /// added on or after `firstQueuedAddsAt`. No for a tree added before the sync path existed (R77),
-    /// which was never queued and which the service has never received.
+    /// **When the tree's `add_tree` row still exists, its state decides.** Yes unless it is
+    /// `failed`: a failed add was refused for good (`conflict` within 10 m of another tree, say) or
+    /// gave up at the 48 h cap, so the service does not hold the tree, and the row is never pruned
+    /// (`pruneCompleted` deletes only `done` rows). A pending or uploading add is still on its way,
+    /// and the move waits behind it (`OutboxStore.dueItems`).
+    ///
+    /// **When no row exists, the date decides**: yes for a tree added on or after
+    /// `firstQueuedAddsAt`, whose add was sent and pruned; no for a tree added before the sync path
+    /// existed (R77), which was never queued and which the service has never received.
     ///
     /// This is a cheap local guess. It cannot see a tree added after that date on a build that did
     /// not queue adds yet, and it cannot fix a pruned add row whose adder the v23 backfill guessed.
     /// The service's `added_by_you` on `GET /trees/{id}` (C2) answers both, and replaces this test.
-    public static func mayHaveReachedService(createdAt: Date, addRowQueued: Bool) -> Bool {
-        addRowQueued || createdAt >= firstQueuedAddsAt
+    public static func mayHaveReachedService(createdAt: Date, addRowState: OutboxItem.State?) -> Bool {
+        if let addRowState { return addRowState != .failed }
+        return createdAt >= firstQueuedAddsAt
     }
 
     /// `mayHaveReachedService` for a tree this phone added, read from its row and the outbox. False
@@ -299,14 +308,16 @@ public struct CommunityTreeStore {
         guard let createdAt else { return false }
 
         let queued = try connection.cachedStatement("""
-            SELECT 1 AS present FROM outbox
+            SELECT state FROM outbox
              WHERE kind = 'add_tree'
                AND upper(json_extract(payload, '$.treeID')) = upper(:id)
+             ORDER BY seq DESC
+             LIMIT 1
             """)
         _ = try queued.bind(treeID.uuidString, forName: ":id")
-        let addRowQueued = try queued.fetchOne { _ in true } ?? false
+        let addRowState = try queued.fetchOne { try $0.value("state", OutboxItem.State.self) }
         _ = try queued.reset()
-        return Self.mayHaveReachedService(createdAt: createdAt, addRowQueued: addRowQueued)
+        return Self.mayHaveReachedService(createdAt: createdAt, addRowState: addRowState)
     }
 
     public func tree(id: UUID, connection: SQLiteConnection) throws -> Tree? {
