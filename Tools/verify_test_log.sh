@@ -222,12 +222,43 @@ STAMP_CONCURRENCY=$(grep -m1 '^CYPRESS-RUN: concurrent-xcodebuilds ' "$LOG" \
                       | sed 's/^CYPRESS-RUN: concurrent-xcodebuilds //')
 [ -n "$STAMP_CONCURRENCY" ] && note "concurrent xcodebuilds at start: ${STAMP_CONCURRENCY}"
 
-# Compile evidence (E203). Reported always; load-bearing only in --warnings mode.
+# Compile evidence (E203). Reported always; load-bearing in --warnings mode, and for a log that
+# tested prebuilt products (below).
 COMPILE_TASKS=$(grep -c '^[[:space:]]*SwiftCompile ' "$LOG")
 note "SwiftCompile tasks=${COMPILE_TASKS}"
 
+# A log that tested products somebody else built (CI's UI shards since the build-once round:
+# `run_tests.sh … -xctestrun <file>` runs `test-without-building`). Zero compile tasks is then the
+# expected reading, not a warning sign, and two things follow from it:
+#   * it can never certify a warning count — refused in --warnings mode below, by name, so the
+#     message says why instead of reading like a reused DerivedData;
+#   * a compile task in it is a contradiction: the log says it built nothing and something built.
+#     Whatever it tested, it was not only the products its header names, so it is refused.
+PREBUILT=0
+if grep -q '^CYPRESS-RUN: action test-without-building' "$LOG"; then
+  PREBUILT=1
+  note "tested prebuilt products (test-without-building) — this log compiled nothing by design and certifies no warnings"
+  grep -E '^CYPRESS-RUN: products (file|built-commit|built-by|tree|provenance)' "$LOG" \
+    | sed 's/^CYPRESS-RUN: products /VERIFY-NOTE: products /'
+  # The one way past run_tests.sh's provenance refusal, repeated in its own words so a green
+  # verdict over unchecked products cannot read like a checked one.
+  grep -q '^CYPRESS-RUN: products provenance UNKNOWN — ACCEPTED by CYPRESS_ACCEPT_UNPROVENANCED_PRODUCTS=1' "$LOG" && \
+    note "PRODUCTS UNCHECKED — CYPRESS_ACCEPT_UNPROVENANCED_PRODUCTS=1 was set, so nothing tied these products to this commit; this verdict is about whatever they were built from"
+  [ "$COMPILE_TASKS" -eq 0 ] \
+    || fail "the header says test-without-building, and the log holds ${COMPILE_TASKS} SwiftCompile tasks. A run of prebuilt products compiles nothing, so this log did not test only the products it names."
+fi
+
+# The invocation's terminal marker. `xcodebuild test` ends `** TEST SUCCEEDED **` / `** TEST
+# FAILED **`; `xcodebuild test-without-building` ends `** TEST EXECUTE SUCCEEDED **` / `** TEST
+# EXECUTE FAILED **` instead — the build-once round's first CI run (36655506475, ui (3)) executed
+# 27 tests with 0 failures and was refused here as "no terminal result marker", because only the
+# first pair was known. Both pairs mean the same thing and are read the same way everywhere below.
+# `** TEST BUILD SUCCEEDED **` (build-for-testing) is deliberately NOT one: nothing ran.
+TERMINAL_MARKER='\*\* TEST (EXECUTE )?(SUCCEEDED|FAILED) \*\*'
+FAILED_MARKER='\*\* TEST (EXECUTE )?FAILED \*\*'
+
 HAS_TEST_MARKER=0
-grep -qE '\*\* TEST (SUCCEEDED|FAILED) \*\*|Test run with [0-9]+ tests? .*(passed|failed)' "$LOG" && HAS_TEST_MARKER=1
+grep -qE "$TERMINAL_MARKER"'|Test run with [0-9]+ tests? .*(passed|failed)' "$LOG" && HAS_TEST_MARKER=1
 
 # Did an XCTest phase (CypressUITests, or any XCTest target) actually start? Swift Testing's
 # XCTest bridge never emits this line shape for its own specimens — only genuine XCTest suites
@@ -237,6 +268,9 @@ HAS_XCTEST_PHASE=0
 grep -qE "^Test Case '-\[" "$LOG" && HAS_XCTEST_PHASE=1
 
 if [ "$WARNINGS_MODE" = 1 ]; then
+  if [ "$PREBUILT" = 1 ]; then
+    fail "cannot certify a warning count from a log that tested prebuilt products (test-without-building): it compiled nothing by design (E203). Certify from the fresh build that compiles — in CI, the unit job."
+  fi
   # A build that compiled nothing cannot have reported a warning. Refuse to certify from it.
   if [ "$COMPILE_TASKS" -eq 0 ]; then
     fail "cannot certify a warning count: the log has 0 SwiftCompile tasks (E203). A reused DerivedData recompiles nothing and reports nothing — build into a fresh directory."
@@ -297,8 +331,8 @@ fi
 # XCTest suite mid-test and no `** TEST SUCCEEDED **`/`FAILED` anywhere in the file. A Swift
 # Testing pass earlier in the same log is not evidence about a phase that came after it.
 if [ "$HAS_XCTEST_PHASE" = 1 ]; then
-  grep -qE '\*\* TEST (SUCCEEDED|FAILED) \*\*' "$LOG" || \
-    fail "an XCTest phase started (Test Case lines present) but the log has neither ** TEST SUCCEEDED ** nor ** TEST FAILED ** — that phase is incomplete (killed/interrupted/still running), not passing"
+  grep -qE "$TERMINAL_MARKER" "$LOG" || \
+    fail "an XCTest phase started (Test Case lines present) but the log has neither ** TEST [EXECUTE ]SUCCEEDED ** nor ** TEST [EXECUTE ]FAILED ** — that phase is incomplete (killed/interrupted/still running), not passing"
 fi
 
 # ── An environment refusal is not a red, and it is not a pass either (roadmap item (d)) ──────
@@ -428,10 +462,10 @@ if [ -n "$FAILURE_LINES" ]; then
   fi
 fi
 
-if grep -q '\*\* TEST FAILED \*\*' "$LOG"; then
+if grep -qE "$FAILED_MARKER" "$LOG"; then
   echo "VERIFY-FAIL-DETAIL: what failed, from $LOG —" >&2
   print_test_failures
-  fail "** TEST FAILED ** present"
+  fail "$(grep -oE "$FAILED_MARKER" "$LOG" | tail -1) present"
 fi
 
 # A real pass line: Swift Testing's count is the only meaningful unit-test line —

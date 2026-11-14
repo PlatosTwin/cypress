@@ -1924,7 +1924,7 @@ into this section in the round that finds it, and nowhere else. Each item stands
     screen" question the 2026-09-09 section left open, so F4 now waits only on the period vocabulary.
 97. **Chip numbers 85-87 collide.** `feat/community-trees-core` (C1) and PR #201
     (`ci/build-once-for-ui-shards`) each add their own chips 85-87, and main now uses 85-93 for
-    D.C. Whoever merges either branch renumbers its chips past the highest on main. C1 (`feat/community-trees-c1`) renumbered its chips to 104-106.
+    D.C. Whoever merges either branch renumbers its chips past the highest on main. C1 (`feat/community-trees-c1`) renumbered its chips to 104-106, and #201 renumbered its chips to 121-123.
 98. **DONE by #208: the queue now decides with an `NWPathMonitor` source, and waiting photos upload when wi-fi returns.** ~~**P0: the "Sync photos on wifi only" switch does nothing (F35, 2026-09-30).**~~ A tester saw
     photos upload over cellular. Every feature writer and `OutboxViewState.retry`/`retryAll` call
     `OutboxQueue.drain()`, whose `photoUploadsAllowed` defaults to `true`; the only call that passes
@@ -2079,7 +2079,48 @@ into this section in the round that finds it, and nowhere else. Each item stands
 120. **`addReadingLink`'s comment overstates the hit-area overhang.** `TreeProfileView.swift`
     (around line 988) says `cypressHitArea` overhangs a 13 pt label by about 17 pt. The background
     is a centered 44 pt minimum height, so the overhang is about 14 pt at the default text size.
-
+121. **Two unit tests that failed on CI and passed on the next run, neither explained.** (a) `MapSuggestionTests`'
+    "choosing a suggestion narrows the map to that one species and puts its name in the field" failed
+    after 105 s with two issues (`MapSuggestionTests.swift:265` and `:268`), on the unit job of the
+    build-once PR's run 36665812582. That PR changes no app or test source. (b) The day before, on
+    another PR's run 36609447255, `MapRecenterTests`' "moving the camera keeps the species the
+    search narrowed to" and "zooming in on the recenter's second step keeps the narrowing too" failed
+    in the same area. Both are map-narrowing tests, which is the only thing the two sightings share.
+    A green re-run proves a failure was intermittent, never why, so this is a flake-watch entry
+    until one recurs with a cause (item 75 is its UI-side neighbor; item 108 has since fixed the `MapSearchTests` waits).
+122. **What is left of the CI speedup (#199, #201).** (a) `unit` could use `ui-build`'s products too and
+    save about 7 more minutes a run, but only if warning certification moves to `ui-build`'s fresh
+    build log: the owner's call, since `unit` is where the zero-warning line is certified today.
+    (b) The shards could boot their simulators while `ui-build` runs; `prepare` is 2 to 3.5 minutes per
+    shard and is now the largest cost that is not tests. Partly done by item 124: each job now boots
+    in the background, which hides the boot behind `unit`'s build but only about 30 s of it in a shard.
+    Starting the shards before `ui-build` ends would hide the rest, at the cost of runners held idle
+    under the five-job cap. (c) Item 2 (rebalance the shards) is worth
+    doing now: shard time is almost all test time, and `ui (1)` at about 18 minutes of tests sets the
+    pace. (d) The account's concurrent macOS runner cap is untouched: on run 36635369200 three shards
+    waited 32, 36 and 74 minutes for a runner, and no workflow change fixes that. (e) The build artifact
+    is kept one day, so re-running one shard later than that needs a re-run of all jobs.
+123. **Gaps the review of #199 and #201 found and accepted.** (a) `web.yml` groups its pull-request
+    runs by head branch alone (`web-<head_ref>`, cancel on), so two pull requests from one head branch
+    against different bases that both touch `web/` cancel each other's web run; `testflight.yml` and
+    `server.yml` were given the base as well. (b) A fork pull request whose head branch name equals an
+    in-repo branch's, against the same base, shares its run group and can cancel it. (c) `Tools/run_tests.sh`'s
+    DerivedData collision key compares path spellings, not directories: a relative, `..` or symlinked
+    spelling of the same directory is not caught. (d) `verify_test_log.sh` trusts a prebuilt log's header
+    completely: a log with no `CYPRESS-RUN: products` lines, or with a `** TEST SUCCEEDED **` where only
+    `** TEST EXECUTE SUCCEEDED **` can come from `test-without-building`, still ends VERIFY-OK. Reachable
+    only by hand-editing a log or running a pre-fix script, which CLAUDE.md already treats as unknown
+    provenance.
+124. **DONE by #201: CI asks for fewer macOS runner-minutes.** Measured over 14 runs: the account runs
+    at most five macOS jobs at once and each TestFlight run asked for five, so overlapping runs waited
+    20 to 70 minutes for runners; each job built the app itself; and pushes to main used about a
+    quarter of the runner-minutes re-running the suite the pull request had just passed. #201 builds
+    once for the UI shards (`ui-build`), boots each job's simulator in the background while it builds
+    (`unit` now builds with `build-for-testing`, certifies warnings from that fresh build, then tests
+    the products), and skips `unit`, `ui-build` and `ui` on a push to main whose tree already passed
+    on its pull request (decision `tested-on-pr`, CLAUDE.md's fifth string; `release` still runs). No
+    billed or self-hosted runners (owner, 2026-11-13). The first live use of the main-push skip is the
+    merge of #201 itself.
 
 **Retire the format-1 manifest — DONE, 2026-08-23.** The owner overrode the trigger the day after
 setting it: rather than firing at the publish *after* New York, format 1 retired immediately. Full

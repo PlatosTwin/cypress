@@ -4,9 +4,11 @@
 # (docs/investigations/repeat-failures-postmortem.md), so every job judges its log with
 # Tools/verify_test_log.sh and believes nothing else -- not an exit code, not a step that
 # "succeeded". The two lines that count are `Test run with N tests passed` (Swift Testing) and
-# `Executed N tests, with 0 failures` + `** TEST SUCCEEDED **` (XCTest).
+# `Executed N tests, with 0 failures` + `** TEST SUCCEEDED **` (XCTest) -- or, for the UI shards,
+# which run test-without-building, `** TEST EXECUTE SUCCEEDED **`. `** TEST BUILD SUCCEEDED **`
+# (ui-build's build-for-testing) is not a test result: nothing ran.
 #
-# SHAPE, and why it is four jobs rather than one. Measured on run 30846300488: the whole thing took
+# SHAPE, and why it is five jobs rather than one. Measured on run 30846300488: the whole thing took
 # 50 minutes, of which the UI suite was 28.4 and everything else 21.6. One runner running one job
 # could only ever be as fast as the sum. So the UI suite is split across runners -- separate
 # machines, not separate simulators on one machine. That distinction is the whole design: a
@@ -14,12 +16,24 @@
 # this suite's waits (#202). Cloning simulators onto one box would buy parallelism by re-creating
 # the exact failure we just spent an evening diagnosing.
 #
-#   plan     ~10s   reads Tools/ui-test-shards.txt and decides how many UI jobs there are
-#   unit     ~14m   the 1137-test Swift Testing suite, plus the zero-warning certification
-#   ui       ~24m   N parallel jobs, one shard each; the longest shard sets the pace
-#   release  ~10m   archive, upload, expire, tag -- only after unit AND every ui shard is green
+#   plan     ~10s   reads Tools/ui-test-shards.txt, decides what runs, and on a push to main asks
+#                   whether the pull request already passed the suite on this exact tree
+#   unit    ~19m    builds its own fresh copy (build-for-testing) while its simulator boots,
+#                   certifies the zero-warning line from that build, then runs the 2,134-test
+#                   Swift Testing suite against it (test-without-building)
+#   ui-build ~4m    builds the app and test bundles once (build-for-testing) for every shard
+#   ui     ~12-22m  N parallel jobs after ui-build, one shard each, testing ui-build's products
+#                   (test-without-building); the longest shard sets the pace
+#   release  ~10m   archive, upload, expire, tag -- only after unit AND every ui shard is green,
+#                   or after plan proved the pull request's green run tested this same tree
 #
-# ~34 minutes wall clock for ~60 minutes of runner time, which is free on a public repo.
+# Measured on run 40006144625 (PR #201, before the background boot): ui-build 4.7 min; the shards
+# 12-24 min each, of which prepare (almost all of it the simulator boot) was 2-3.5 min; unit 21 min,
+# of which prepare was 3.8 min. Started together, the run needs about 30 minutes and about 110
+# runner-minutes. The account runs at most five macOS jobs at once and one run asks for five, so
+# when runs overlap, the wait for a runner costs more than the run. That is why a push to main
+# whose tree already passed on its pull request no longer runs the suite a second time (`reuse`
+# in plan, decision tested-on-pr), and why each job boots its simulator in the background.
 #
 # THE FLOOR IS ONE CLASS. DeepLinkVoiceOverTests is 851.7s by itself -- 50% of the UI suite -- so
 # no arrangement of whole classes gets below ~14 minutes. Splitting further means splitting by test
@@ -191,11 +205,21 @@ jobs:
   plan:
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    # `reuse` reads pull requests and another run's artifact; nothing in plan writes.
+    permissions:
+      contents: read
+      actions: read
+      pull-requests: read
     outputs:
       shards: ${{ steps.read.outputs.shards }}
       ships: ${{ steps.scope.outputs.ships }}
-      tests: ${{ steps.scope.outputs.tests }}
-      decision: ${{ steps.scope.outputs.decision }}
+      # `tests` and `decision` come from `reuse`, which passes scope's answer through unchanged
+      # except on a push whose tree is proved tested. If `reuse` dies, both are empty, and `gate`
+      # refuses an empty value.
+      tests: ${{ steps.reuse.outputs.tests }}
+      decision: ${{ steps.reuse.outputs.decision }}
+      tested-by: ${{ steps.reuse.outputs.tested-by }}
+      tree: ${{ steps.reuse.outputs.tree }}
       server: ${{ steps.server.outputs.run }}
       notes: ${{ steps.notes.outputs.state }}
     steps:
@@ -270,9 +294,10 @@ jobs:
       # They are different questions with a strict containment between them, and writing them as
       # one derivation rather than two literals is the point. `NO_ARCHIVE` extends `DOC_ONLY`;
       # nothing can be in the doc set without also being in the no-build set, so `ships=true`
-      # always implies `tests=true` and the release job can never be reached by a run whose suite
-      # did not execute. Two separate literals is exactly the shape that drifted within a day and
-      # produced #215.
+      # always implies `tests=true` here in scope. (The `reuse` step after scope may turn `tests`
+      # off for a push whose exact tree already passed on its pull request; the release job's own
+      # condition names that case.) Two separate literals is exactly the shape that drifted within
+      # a day and produced #215.
       # ── Moved out of the script below, deliberately ─────────────────────────────────
       # GitHub refuses a `run:` block longer than 21,000 characters when it holds an expression,
       # and it refuses it as a WORKFLOW FILE ISSUE: the whole file fails validation, no job runs and
@@ -499,7 +524,7 @@ jobs:
           # The containment that makes `ships=true` imply `tests=true` still holds with four sets:
           # `NO_ARCHIVE` interpolates `$SERVER_ONLY`, `$WEB_ONLY` and `$DOC_ONLY`, which is exactly
           # the union this line subtracts. So nothing can be buildable without also being testable,
-          # and the `release` job can never be reached by a run whose suite did not execute. The two
+          # and the `release` job can never be reached by a tree whose suite did not pass. The two
           # carve-backs only ever ADD paths to `testable`, so they cannot break that.
           #
           # One line, however long, for `DeployPathsAgreeTests`: it reads the FIRST line starting
@@ -594,6 +619,65 @@ jobs:
           else
             echo "ships=true" >> "$GITHUB_OUTPUT"
             echo "shipping — these can affect the app:"; echo "$buildable" | sed 's/^/  /'
+          fi
+
+      # ── Prove the tested-tree check can say no, before anything trusts it ─────────────
+      # Runs on every event, so a pull request that breaks the check is red before it can merge,
+      # rather than on main after it. The first test is the calibration (a proved tree IS reused);
+      # every other test changes one fact of it and expects "run the suite".
+      - name: Test the tested-tree check
+        run: python3 .github/scripts/test_pr_tested_tree.py
+
+      # ── A push to main whose tree already passed on its pull request ──────────────────
+      # The FIFTH decision, `tested-on-pr`. Measured over 14 runs: pushes to main used about a
+      # quarter of the runner-minutes, re-running the suite the pull request's own run had just
+      # passed. The ruleset requires a pull request to be up to date and pull requests are squash
+      # merged, so the commit main receives has the same TREE as the merge commit the pull request's
+      # run tested. Same tree, same bytes, this workflow included.
+      #
+      # So on a push, when scope says the suite would run, `.github/scripts/pr_tested_tree.py` looks
+      # for the record `gate` writes on a pull request after every test job succeeded, and skips
+      # unit, ui-build and ui ONLY when that record names this push's tree, the pull request's last
+      # head and its own run. Every doubt, an API error included, runs the suite; the script's
+      # docstring lists them and its tests pin them. `ships` is untouched: `release` still runs
+      # when the push ships, and `gate` checks that the skip was for this reason.
+      #
+      # Pull requests and workflow_dispatch pass scope's answer through unchanged. This step ALWAYS
+      # writes `tests` and `decision`, because the job's outputs read them from here.
+      - id: reuse
+        env:
+          SCOPE_TESTS: ${{ steps.scope.outputs.tests }}
+          SCOPE_DECISION: ${{ steps.scope.outputs.decision }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          tree="$(git rev-parse "${GITHUB_SHA}^{tree}")"
+          echo "tree=$tree" >> "$GITHUB_OUTPUT"
+          echo "this run's commit $GITHUB_SHA has tree $tree"
+          if [ "$GITHUB_EVENT_NAME" != "push" ] || [ "$SCOPE_TESTS" != "true" ]; then
+            echo "tests=$SCOPE_TESTS" >> "$GITHUB_OUTPUT"
+            echo "decision=$SCOPE_DECISION" >> "$GITHUB_OUTPUT"
+            echo "tested-by=" >> "$GITHUB_OUTPUT"
+            echo "not a push that would run the suite ($GITHUB_EVENT_NAME, tests=$SCOPE_TESTS): scope's decision stands"
+            exit 0
+          fi
+          answer="$RUNNER_TEMP/reuse.txt"
+          rm -f "$answer"
+          python3 .github/scripts/pr_tested_tree.py --repo "$GITHUB_REPOSITORY" \
+            --sha "$GITHUB_SHA" --tree "$tree" --output "$answer" || true
+          reuse="$(sed -n 's/^reuse=//p' "$answer" 2>/dev/null | head -1 || true)"
+          pr="$(sed -n 's/^pr=//p' "$answer" 2>/dev/null | head -1 || true)"
+          pr_run="$(sed -n 's/^pr-run=//p' "$answer" 2>/dev/null | head -1 || true)"
+          if [ "$reuse" = "true" ] && [ -n "$pr" ] && [ -n "$pr_run" ]; then
+            echo "tests=false" >> "$GITHUB_OUTPUT"
+            echo "decision=tested-on-pr" >> "$GITHUB_OUTPUT"
+            echo "tested-by=PR #$pr, run $pr_run" >> "$GITHUB_OUTPUT"
+            echo "::notice::this tree already passed the suite on its pull request (PR #$pr, TestFlight run $pr_run tested tree $tree, which is this push's tree). The unit, ui-build and ui jobs are skipped deliberately; release still runs if this push ships, and the gate job checks that the suite was skipped for this reason. Read run $pr_run for the test results."
+          else
+            echo "tests=$SCOPE_TESTS" >> "$GITHUB_OUTPUT"
+            echo "decision=$SCOPE_DECISION" >> "$GITHUB_OUTPUT"
+            echo "tested-by=" >> "$GITHUB_OUTPUT"
+            echo "no proof that this tree passed on its pull request, so the suite runs"
           fi
 
       # ── Does this pull request owe the Go suite a run? ────────────────────────────────
@@ -758,23 +842,58 @@ jobs:
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
+      # The simulator boots in the background while this job builds (2 to 3.5 minutes of boot,
+      # measured on run 40006144625, used to come before the build). So the build is its own
+      # step, build-for-testing, and the suite then runs test-without-building against it.
       - uses: ./.github/actions/prepare
         id: prep
+        with:
+          boot-simulator: background
 
-      - name: Run the unit suite, and judge the log rather than the exit code
+      # This job's OWN fresh build, not ui-build's products. Whether unit may test ui-build's
+      # products and certify warnings from ui-build's log is an open owner decision (ROADMAP 122a).
+      - uses: ./.github/actions/build-for-testing
+        id: build
+        with:
+          udid: ${{ steps.prep.outputs.udid }}
+          simulator: ${{ steps.prep.outputs.simulator }}
+          runtime: ${{ steps.prep.outputs.runtime }}
+          log: ${{ runner.temp }}/unit-build.log
+          derived-data: ${{ runner.temp }}/dd
+
+      # Certified here and nowhere else, from the build log of the fresh DerivedData above, which
+      # is what makes the count mean anything (E203). verify_test_log.sh certifies a build log
+      # under VERIFY-WARNINGS-OK and refuses one that compiled nothing. The test log below can
+      # never certify warnings: it ran prebuilt products and compiled nothing, by design.
+      - name: Certify the zero-warning line
         run: |
           set -euo pipefail
-          Tools/run_tests.sh "${{ steps.prep.outputs.udid }}" "$RUNNER_TEMP/unit.log" \
-            -only-testing:CypressTests \
-            -resultBundlePath "$RUNNER_TEMP/unit.xcresult" \
-            -derivedDataPath "$RUNNER_TEMP/dd"
-          Tools/verify_test_log.sh "$RUNNER_TEMP/unit.log"
+          out="$(Tools/verify_test_log.sh --warnings "$RUNNER_TEMP/unit-build.log")"
+          printf '%s\n' "$out"
+          printf '%s\n' "$out" | grep -q '^VERIFY-WARNINGS-OK: 0 source warnings' \
+            || { echo "::error::the build log did not certify zero source warnings"; exit 1; }
 
-      # Certified here and nowhere else. A fresh DerivedData is what makes the count mean
-      # anything (E203) and this job is the one that builds into one; the UI shards would each
-      # re-certify the same number from the same source for no added confidence.
-      - name: Certify the zero-warning line
-        run: Tools/verify_test_log.sh --warnings "$RUNNER_TEMP/unit.log"
+      - uses: ./.github/actions/await-simulator
+        with:
+          udid: ${{ steps.prep.outputs.udid }}
+
+      - name: Run the unit suite, and judge the log rather than the exit code
+        env:
+          XCTESTRUN: ${{ steps.build.outputs.xctestrun }}
+        run: |
+          set -euo pipefail
+          [ -n "$XCTESTRUN" ] || { echo "::error::the build published no xctestrun"; exit 1; }
+          Tools/run_tests.sh "${{ steps.prep.outputs.udid }}" "$RUNNER_TEMP/unit.log" \
+            -xctestrun "$XCTESTRUN" \
+            -only-testing:CypressTests \
+            -resultBundlePath "$RUNNER_TEMP/unit.xcresult"
+          Tools/verify_test_log.sh "$RUNNER_TEMP/unit.log"
+          grep -q '^CYPRESS-RUN: action test-without-building' "$RUNNER_TEMP/unit.log" \
+            || { echo "::error::the unit suite did not run test-without-building against this job's build"; exit 1; }
+          # The Swift Testing pass line, read here as well as by the verifier, so this step's log
+          # shows the count a reader is told to look for.
+          grep -aE 'Test run with [0-9]+ tests in [0-9]+ suites? passed' "$RUNNER_TEMP/unit.log" \
+            || { echo "::error::no Swift Testing pass line in the unit log"; exit 1; }
 
       # `retention-days` is stated rather than left at the repository default of 90 (task #71).
       # Thirty days for the text logs and not fourteen: an errata entry cites the run it was
@@ -783,12 +902,14 @@ jobs:
       # falls short of the two-month-old log somebody mistakes for a fresh one — which the
       # CYPRESS-RUN header is the real defence against. The 110 MB result bundles below keep the
       # shorter life, because size is the thing worth rationing.
-      - name: Keep the log, whatever happened
+      - name: Keep the logs, whatever happened
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: unit-log
-          path: ${{ runner.temp }}/unit.log
+          path: |
+            ${{ runner.temp }}/unit.log
+            ${{ runner.temp }}/unit-build.log
           if-no-files-found: warn
           retention-days: 30
 
@@ -806,9 +927,98 @@ jobs:
           if-no-files-found: ignore
           retention-days: 14
 
-  # ── The UI suite, one shard per runner ────────────────────────────────────────────────
-  ui:
+  # ── Build the app and both test bundles ONCE, for every UI shard ──────────────────────
+  # Until 2026-09-29 each shard compiled everything itself before running its slice: in run
+  # 36635369200 all four shards and the unit job each ran the same 540 SwiftCompile tasks, and in
+  # ui (3) the build took ~520 s of a 1273 s step whose tests took 686 s. Four copies of one build,
+  # on an account with a small concurrent-macOS cap where ui (2) and ui (3) then queued 32 and 36
+  # minutes for a runner. So one job runs `xcodebuild build-for-testing`, and the shards download
+  # what it made and run `test-without-building` (Tools/run_tests.sh -xctestrun).
+  #
+  # **Its own job, not a step of `unit`, and not in place of unit's build.** `needs:` is
+  # job-granular: products built inside `unit` would reach the shards only when the whole unit
+  # suite had finished, ~6 minutes of tests later. And `unit` keeps its own fresh build because
+  # it is where warnings are certified (its comment above, and E203) — moving that onto shared products would
+  # change what the certification rests on, which this round does not do.
+  #
+  # **The trade-off, stated rather than hidden.** This puts one job in series before any shard
+  # starts. Measured on its first run (36655506475): 186 s in all — 13 s of prepare with no boot,
+  # 151 s for all 549 SwiftCompile tasks, 10 s to pack 259 MB into 74 MB, 2 s to upload. The same
+  # build took 5-9 minutes inside each shard's `xcodebuild test` on main (run 36651464367, header
+  # to first test), on a three-core runner sharing its CPU with a booted simulator. That shard's
+  # own gap fell from 421 s to 89 s. So the series step costs ~3 minutes and each shard gives back
+  # 3-8, and the build no longer runs four times over.
+  #
+  # **Built for a concrete simulator, never `generic/platform=iOS Simulator`.** A generic
+  # destination builds every simulator architecture, doubling the compile; a concrete one builds
+  # the runner's. `prepare` chooses it from the same candidate list the shards boot from, and does
+  # not boot it — a build needs a destination, not a running device.
+  #
+  # **Products are refused unless they are this run's.** The artifact name carries the commit, the
+  # provenance file inside it carries commit, run, Xcode, architecture and runtime, and each shard
+  # checks all of it (below, and in Tools/run_tests.sh) before a test runs.
+  ui-build:
     needs: plan
+    if: needs.plan.outputs.tests == 'true'
+    runs-on: macos-26
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/prepare
+        id: prep
+        with:
+          boot-simulator: "false"
+          select-simulator: "true"
+
+      # The build and its provenance file live in ./.github/actions/build-for-testing, shared
+      # with unit, so the checks Tools/run_tests.sh relies on exist in one copy.
+      - uses: ./.github/actions/build-for-testing
+        id: build
+        with:
+          udid: ${{ steps.prep.outputs.udid }}
+          simulator: ${{ steps.prep.outputs.simulator }}
+          runtime: ${{ steps.prep.outputs.runtime }}
+          log: ${{ runner.temp }}/ui-build.log
+          derived-data: ${{ runner.temp }}/dd
+
+      # A tarball because an artifact does not keep the executable bit, and an app whose binary
+      # lost it does not launch. Compressed here, so the upload below does not compress again.
+      - name: Pack the products
+        env:
+          PRODUCTS: ${{ steps.build.outputs.products }}
+        run: |
+          set -euo pipefail
+          [ -f "$PRODUCTS/cypress-products-provenance.txt" ] || { echo "::error::the build left no provenance file in $PRODUCTS"; exit 1; }
+          tar -czf "$RUNNER_TEMP/ui-products.tar.gz" -C "$PRODUCTS" .
+          ls -l "$RUNNER_TEMP/ui-products.tar.gz"
+
+      # Named for the commit, so a shard can only ever fetch the products of the commit it checked
+      # out. One day's retention: the shards read it within the hour and nothing else does.
+      - name: Hand the products to the shards
+        uses: actions/upload-artifact@v4
+        with:
+          name: ui-products-${{ github.sha }}
+          path: ${{ runner.temp }}/ui-products.tar.gz
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 1
+          overwrite: true
+
+      - name: Keep the build log, whatever happened
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ui-build-log
+          path: ${{ runner.temp }}/ui-build.log
+          if-no-files-found: warn
+          retention-days: 30
+          overwrite: true
+
+  # ── The UI suite, one shard per runner ────────────────────────────────────────────────
+  # `needs: ui-build`, so a failed or skipped build skips every shard, and the gate job refuses a
+  # skipped shard when plan said the suite runs. A shard never falls back to building for itself.
+  ui:
+    needs: [plan, ui-build]
     if: needs.plan.outputs.tests == 'true'
     runs-on: macos-26
     timeout-minutes: 60
@@ -820,10 +1030,62 @@ jobs:
         shard: ${{ fromJSON(needs.plan.outputs.shards) }}
     steps:
       - uses: actions/checkout@v4
+      # The boot overlaps the seed fetch and the products' download and unpack below, about 30 s
+      # of the 2 to 3.5 minutes it takes; await-simulator waits out the rest before the tests.
       - uses: ./.github/actions/prepare
         id: prep
+        with:
+          boot-simulator: background
+
+      # From this run only: no run-id is given, so nothing from another run can be fetched. A
+      # missing artifact fails this step, and the shard with it; it is never a skip.
+      # A single-shard re-run (attempt 2) reuses attempt 1's artifact. That is accepted: same run,
+      # same commit, and everything else is re-checked below. After the 1-day retention the
+      # download fails red, and the fix is re-running all jobs, which rebuilds it.
+      - name: Fetch the products ui-build made for this commit
+        uses: actions/download-artifact@v4
+        with:
+          name: ui-products-${{ github.sha }}
+          path: ${{ runner.temp }}/ui-products-download
+
+      - name: Unpack the products, and refuse any that are not this run's
+        id: products
+        env:
+          RUNTIME: ${{ steps.prep.outputs.runtime }}
+        run: |
+          set -euo pipefail
+          dir="$RUNNER_TEMP/ui-products"
+          mkdir -p "$dir"
+          tar -xzf "$RUNNER_TEMP/ui-products-download/ui-products.tar.gz" -C "$dir"
+          prov="$dir/cypress-products-provenance.txt"
+          [ -f "$prov" ] || { echo "::error::the products carry no provenance file"; exit 1; }
+          cat "$prov"
+          value() { sed -n "s/^$1=//p" "$prov" | head -1; }
+          # Commit and Xcode are checked again by Tools/run_tests.sh against this checkout; these
+          # are the facts only the workflow can see.
+          built="$(value built-commit)"
+          [ "$built" = "$GITHUB_SHA" ] || { echo "::error::these products were built from ${built:-nothing}, and this run is for $GITHUB_SHA"; exit 1; }
+          case "$(value built-by)" in
+            "run $GITHUB_RUN_ID "*) ;;
+            *) echo "::error::these products were not built by run $GITHUB_RUN_ID: $(value built-by)"; exit 1 ;;
+          esac
+          # The same image offers the same runtime; a difference means the two jobs landed on
+          # different images mid-rollout. Re-run the whole workflow rather than test across them.
+          # Empty on both sides would compare equal and say nothing, so an unknown runtime refuses.
+          [ -n "$RUNTIME" ] && [ -n "$(value runtime)" ] || { echo "::error::a simulator runtime is unknown (products: '$(value runtime)', this shard: '${RUNTIME}'), so the two machines cannot be compared"; exit 1; }
+          [ "$(value runtime)" = "$RUNTIME" ] || { echo "::error::the products were built for runtime '$(value runtime)' and this shard's simulator runs '${RUNTIME}'"; exit 1; }
+          xctestrun="$dir/$(value xctestrun)"
+          [ -f "$xctestrun" ] || { echo "::error::the provenance names $(value xctestrun), which is not in the products"; exit 1; }
+          echo "testing $xctestrun"
+          echo "xctestrun=$xctestrun" >> "$GITHUB_OUTPUT"
+
+      - uses: ./.github/actions/await-simulator
+        with:
+          udid: ${{ steps.prep.outputs.udid }}
 
       - name: Run UI shard ${{ matrix.shard }}
+        env:
+          XCTESTRUN: ${{ steps.products.outputs.xctestrun }}
         run: |
           set -euo pipefail
           line="$(grep -vE '^[[:space:]]*(#|$)' Tools/ui-test-shards.txt | sed -n "${{ matrix.shard }}p")"
@@ -851,12 +1113,19 @@ jobs:
           # everything would pass while taking 28 minutes and telling nobody why.
           [ "${#args[@]}" -ge 1 ] || { echo "::error::shard ${{ matrix.shard }} parsed to no test classes"; exit 1; }
           echo "shard ${{ matrix.shard }} runs ${#args[@]} class(es): $line"
+          [ -n "$XCTESTRUN" ] || { echo "::error::the unpack step published no xctestrun"; exit 1; }
+          # `-xctestrun` makes run_tests.sh run test-without-building against ui-build's products,
+          # after checking them against this checkout. No -derivedDataPath: nothing is built here.
           Tools/run_tests.sh "${{ steps.prep.outputs.udid }}" "$RUNNER_TEMP/ui-${{ matrix.shard }}.log" \
+            -xctestrun "$XCTESTRUN" \
             "${args[@]}" \
-            -resultBundlePath "$RUNNER_TEMP/ui-${{ matrix.shard }}.xcresult" \
-            -derivedDataPath "$RUNNER_TEMP/dd"
+            -resultBundlePath "$RUNNER_TEMP/ui-${{ matrix.shard }}.xcresult"
           Tools/verify_test_log.sh --expect-width "$GATE_SCREEN_WIDTH_PT" \
             "$RUNNER_TEMP/ui-${{ matrix.shard }}.log"
+          # And that it was the prebuilt products, not a quiet fallback to building: the verifier
+          # refuses a compile task in such a log, and this refuses a log that is not one.
+          grep -q '^CYPRESS-RUN: action test-without-building' "$RUNNER_TEMP/ui-${{ matrix.shard }}.log" \
+            || { echo "::error::shard ${{ matrix.shard }} did not run test-without-building; it built for itself"; exit 1; }
 
       - name: Keep the log, whatever happened
         if: always()
@@ -925,12 +1194,13 @@ jobs:
   # precisely when the suite went red. So it always runs, and reads the results itself.
   #
   # Since the suite can now be skipped ON PURPOSE for a prose-only, web-only or server-only change,
+  # or on a push to main whose tree already passed on its pull request (tested-on-pr),
   # this job is the only thing standing between that optimization and a check that goes green
   # without testing anything. It does not accept a skip; it accepts a skip that MATCHES plan's
   # decision. And since the Go suite runs here too (the `server` job above), it holds that job to
   # plan's `server` answer in the same way.
   gate:
-    needs: [plan, unit, ui, server]
+    needs: [plan, unit, ui-build, ui, server]
     if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -944,10 +1214,14 @@ jobs:
           decision="${{ needs.plan.outputs.decision }}"
           server_needed="${{ needs.plan.outputs.server }}"
           unit="${{ needs.unit.result }}"
+          ui_build="${{ needs.ui-build.result }}"
           ui="${{ needs.ui.result }}"
           server="${{ needs.server.result }}"
+          tested_by="${{ needs.plan.outputs.tested-by }}"
+          tree="${{ needs.plan.outputs.tree }}"
           echo "plan:   $plan_result (decision=${decision:-<none>}, tests=${tests:-<none>}, server=${server_needed:-<none>}, notes=${notes:-<none>})"
           echo "unit:   $unit"
+          echo "ui-build: $ui_build"
           echo "ui:     $ui"
           echo "server: $server"
 
@@ -969,9 +1243,18 @@ jobs:
             *) echo "::error::plan succeeded but published server='${server_needed}' — expected true or false. Nothing here knows whether the Go suite was owed a run."; exit 1 ;;
           esac
           case "$decision" in
-            suite|prose|web-only|server-only) ;;
-            *) echo "::error::plan succeeded but published decision='${decision}' — expected suite, prose, web-only or server-only"; exit 1 ;;
+            suite|prose|web-only|server-only|tested-on-pr) ;;
+            *) echo "::error::plan succeeded but published decision='${decision}' — expected suite, prose, web-only, server-only or tested-on-pr"; exit 1 ;;
           esac
+          # The fifth decision exists only on a push to main, and only with a named proof. A pull
+          # request must test its own tree: its run is what writes the proof a push later reads.
+          if [ "$decision" = "tested-on-pr" ]; then
+            [ "${{ github.event_name }}" = "push" ] \
+              || { echo "::error::plan decided tested-on-pr on a ${{ github.event_name }} event; only a push to main may reuse a pull request's run"; exit 1; }
+            [ -n "$tested_by" ] \
+              || { echo "::error::plan decided tested-on-pr but named no pull request run that tested this tree"; exit 1; }
+            echo "this tree already passed the suite on its pull request: $tested_by tested tree $tree"
+          fi
           # The decision and the tests flag are two outputs of one step; hold them to each other so
           # that neither can drift into meaning something the other does not.
           if [ "$decision" = "suite" ] && [ "$tests" != "true" ]; then
@@ -985,6 +1268,9 @@ jobs:
             # Explicit equality, not `!= failure`: a cancelled or skipped dependency is also not a
             # pass, and "did not fail" would let both through.
             [ "$unit" = "success" ] || { echo "::error::unit did not succeed ($unit)"; exit 1; }
+            # Checked by name although ui implies it: a failed build SKIPS every shard, and the
+            # line that says why should name the build, not the shards it never let start.
+            [ "$ui_build" = "success" ] || { echo "::error::ui-build did not succeed ($ui_build), so no UI shard tested anything"; exit 1; }
             [ "$ui" = "success" ] || { echo "::error::ui did not succeed ($ui)"; exit 1; }
             echo "every test job succeeded"
           else
@@ -994,6 +1280,8 @@ jobs:
             # disagree about what ran.
             [ "$unit" = "skipped" ] \
               || { echo "::error::plan said tests=false but unit is '$unit', not 'skipped'"; exit 1; }
+            [ "$ui_build" = "skipped" ] \
+              || { echo "::error::plan said tests=false but ui-build is '$ui_build', not 'skipped'"; exit 1; }
             [ "$ui" = "skipped" ] \
               || { echo "::error::plan said tests=false but ui is '$ui', not 'skipped'"; exit 1; }
             echo "plan said nothing here is exercisable by the iOS suite ($decision — see plan's notice): the suite was skipped, and skipped for that reason"
@@ -1045,12 +1333,53 @@ jobs:
           fi
           echo "release note: $notes"
 
+      # ── The proof a push to main later reads (decision tested-on-pr) ────────────────
+      # Written only here: on a pull request, after the step above passed, which it does only
+      # when plan decided suite and unit, ui-build and ui each SUCCEEDED. The tree is the tree of
+      # the merge commit this run tested. `.github/scripts/pr_tested_tree.py` accepts it for a
+      # push only when the push's tree is this tree, and the record's run and head are this run's.
+      - name: Record the tree this run tested
+        if: github.event_name == 'pull_request' && needs.plan.outputs.decision == 'suite'
+        env:
+          TREE: ${{ needs.plan.outputs.tree }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          UNIT: ${{ needs.unit.result }}
+          UI_BUILD: ${{ needs.ui-build.result }}
+          UI: ${{ needs.ui.result }}
+        run: |
+          set -euo pipefail
+          [[ "$TREE" =~ ^[0-9a-f]{40}$ ]] || { echo "::error::plan published tree='$TREE', not a full hash"; exit 1; }
+          mkdir -p "$RUNNER_TEMP/record"
+          {
+            echo "cypress-suite-passed 1"
+            echo "tree=$TREE"
+            echo "merge-commit=$GITHUB_SHA"
+            echo "head-sha=$HEAD_SHA"
+            echo "run-id=$GITHUB_RUN_ID"
+            echo "run-attempt=$GITHUB_RUN_ATTEMPT"
+            echo "decision=suite"
+            echo "unit=$UNIT"
+            echo "ui-build=$UI_BUILD"
+            echo "ui=$UI"
+          } > "$RUNNER_TEMP/record/suite-passed-tree.txt"
+          cat "$RUNNER_TEMP/record/suite-passed-tree.txt"
+
+      - name: Keep the record for the push that merges this
+        if: github.event_name == 'pull_request' && needs.plan.outputs.decision == 'suite'
+        uses: actions/upload-artifact@v4
+        with:
+          name: suite-passed-tree
+          path: ${{ runner.temp }}/record/suite-passed-tree.txt
+          if-no-files-found: error
+          retention-days: 30
+          overwrite: true
+
   # ── Archive, upload, leave exactly one testable build ─────────────────────────────────
   # `needs` both, so a red anywhere stops the upload. GitHub skips a needs-job when any dependency
   # fails, and a skipped job is not a passed job — nothing here has to re-check that the tests were
   # green, because it does not run otherwise.
   release:
-    needs: [plan, unit, ui]
+    needs: [plan, unit, ui, gate]
     # **A pull request must never ship a build.** It would take a build number, expire the build
     # the testers are on, and do it from code that has not landed on main.
     #
@@ -1058,12 +1387,30 @@ jobs:
     # argument. `needs: plan` is here for that output; the shard matrix was already depending on it
     # through `ui`.
     #
-    # Nothing extra is needed for the skipped-suite case, and that is a property of the derivation
-    # rather than luck: `NO_ARCHIVE` strictly contains `$WEB_ONLY|$DOC_ONLY`, which is exactly
-    # the set the `testable` filter subtracts, so `ships=true` implies
-    # `tests=true`, and a run whose suite was skipped can never satisfy this condition. Belt and
-    # braces anyway — `needs: [unit, ui]` means GitHub skips this job outright when they skip.
-    if: github.event_name != 'pull_request' && needs.plan.outputs.ships == 'true'
+    # **Two ways in, and both are spelled out, because `ships=true` no longer implies the suite ran
+    # in THIS run.** `NO_ARCHIVE` strictly contains the set the `testable` filter subtracts, so
+    # scope's `ships=true` still implies scope's `tests=true`. But on a push whose tree already
+    # passed on its pull request, `reuse` turns `tests` off (decision tested-on-pr) and leaves
+    # `ships` alone, and unit and ui are SKIPPED. GitHub would skip this job outright when a need
+    # is skipped, so the condition starts with `!cancelled()` and then names the only two
+    # acceptable shapes:
+    #   * decision suite: unit and ui SUCCEEDED in this run;
+    #   * decision tested-on-pr: unit and ui were SKIPPED, and plan named the pull request run
+    #     that passed this tree.
+    # Anything else, a failure, a cancel or a skip under decision suite, does not release. And
+    # `gate` must have succeeded too, so the job that checks a skip matched its reason has said so
+    # before a build number is taken.
+    if: >-
+      !cancelled()
+      && github.event_name != 'pull_request'
+      && needs.plan.result == 'success'
+      && needs.plan.outputs.ships == 'true'
+      && needs.gate.result == 'success'
+      && (
+        (needs.plan.outputs.decision == 'suite' && needs.unit.result == 'success' && needs.ui.result == 'success')
+        || (needs.plan.outputs.decision == 'tested-on-pr' && needs.plan.outputs.tested-by != ''
+            && needs.unit.result == 'skipped' && needs.ui.result == 'skipped')
+      )
     runs-on: macos-26
     timeout-minutes: 45
     env:
