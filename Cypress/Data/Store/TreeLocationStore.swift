@@ -83,9 +83,20 @@ public struct TreeLocationStore {
         return try statement.fetchOne(Self.decode)
     }
 
-    /// Every position the tree has held, oldest first. The root leads, because it is the oldest
-    /// act; a tie on `occurred_at` falls back to `created_at` and then to the id, so the order is
-    /// total.
+    /// Every position the tree has held, oldest first: the root, then each row's `superseded_by`
+    /// successor in turn, ending at the head.
+    ///
+    /// **The order comes from the links, not from the clock.** This used to be
+    /// `ORDER BY occurred_at, created_at, id`. Timestamps are stored to the millisecond, so an add
+    /// and a move inside one millisecond tie on both times, and the tie then fell to the ids, which
+    /// are random UUIDs. Half of those ties put the head first. `LocationCorrectionTests
+    /// .theAdderMovesThePin` failed that way on main (CI run 43543728441: the root read back as the
+    /// head) and passed on the next run. The `superseded_by` links are the chain's own record of
+    /// its order, so they decide it here.
+    ///
+    /// The time order is still the fallback for rows the links cannot place: a chain with no
+    /// single root, or a row no walk reaches. `orderedByLinks` keeps those rows, after the walked
+    /// ones, rather than dropping history it cannot explain.
     public func chain(treeID: UUID, connection: SQLiteConnection) throws -> [TreeLocation] {
         let statement = try connection.cachedStatement("""
             SELECT * FROM main.tree_locations
@@ -93,7 +104,31 @@ public struct TreeLocationStore {
              ORDER BY occurred_at ASC, created_at ASC, id ASC
             """)
         _ = try statement.bind([":tree": treeID])
-        return try statement.fetchAll(Self.decode)
+        return Self.orderedByLinks(try statement.fetchAll(Self.decode))
+    }
+
+    /// `rows` (in time order) reordered by their `superseded_by` links: the first row that no
+    /// other row names as its successor, then its successor, and so on until a row has none.
+    ///
+    /// Rows the walk does not reach (a second root, or a link to a row that is not here) follow in
+    /// the order they arrived, which for tied times is id order, not link order. Only the first
+    /// root is walked. The schema allows one head per tree and `supersede` stamps only the head,
+    /// so a second root should not occur. A link that loops back stops the walk, so this always
+    /// ends.
+    static func orderedByLinks(_ rows: [TreeLocation]) -> [TreeLocation] {
+        guard rows.count > 1 else { return rows }
+        let byID = Dictionary(rows.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        let successors = Set(rows.compactMap(\.supersededBy))
+        guard let root = rows.first(where: { !successors.contains($0.id) }) else { return rows }
+
+        var ordered: [TreeLocation] = []
+        var visited: Set<UUID> = []
+        var cursor: TreeLocation? = root
+        while let row = cursor, visited.insert(row.id).inserted {
+            ordered.append(row)
+            cursor = row.supersededBy.flatMap { byID[$0] }
+        }
+        return ordered + rows.filter { !visited.contains($0.id) }
     }
 
     // MARK: - Decoding
