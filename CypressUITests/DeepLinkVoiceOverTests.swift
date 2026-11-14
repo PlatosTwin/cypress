@@ -242,7 +242,7 @@ final class DeepLinkVoiceOverTests: XCTestCase, DeepLinkHarness {
     ) {
         for step in 1...times {
             north.tap()
-            let expected = "\(step * 5) m north of where you are standing."
+            let expected = "\(step * 6) m north of where you are standing."
             let landed = XCTNSPredicateExpectation(
                 predicate: NSPredicate(format: "value == %@", expected),
                 object: pin
