@@ -501,7 +501,10 @@ struct CityDownloadTests {
     /// what this pins is the decoding-and-republishing half: the promise `start` wrote onto the task
     /// is read back off it through `getAllTasks`, and the city is named again. The cross-process
     /// half is the simulator caveat recorded in the PR body.
-    @Test("a live transfer is read back off its own task and re-published", .timeLimit(.minutes(1)))
+    ///
+    /// Three minutes, not one: on #207's CI run it hit the one-minute limit under the parallel
+    /// suite's load and passed on the re-run (ROADMAP 108).
+    @Test("a live transfer is read back off its own task and re-published", .timeLimit(.minutes(3)))
     func adoptionRepublishesALiveTransfer() async throws {
         let dir = try Self.tempDir()
         let library = CityLibrary(rootURL: dir.appendingPathComponent("library"))

@@ -311,28 +311,11 @@ struct MapRecenterTests {
 /// leaving the query in the field. The reader would be looking at a map that no longer matched what
 /// they typed and nothing on screen would say so.
 @MainActor
-@Suite("Recentering through an active search")
+@Suite("Recentering through an active search", .timeLimit(.minutes(5)))
 struct MapRecenterSearchTests {
 
     private static func viewport(_ model: MapModel) throws -> MapViewport {
         try #require(model.viewport, "the model has no viewport")
-    }
-
-    /// Waits for the model to settle, the way `MapSearchTests` does.
-    private static func waitUntil(
-        _ condition: () -> Bool,
-        timeout: Duration = TestWait.ceiling,
-        sourceLocation: SourceLocation = #_sourceLocation
-    ) async throws {
-        let started = ContinuousClock.now
-        let deadline = started + timeout
-        while ContinuousClock.now < deadline {
-            if condition() { return }
-            try await Task.sleep(for: .milliseconds(50))
-        }
-        TestWait.timedOut(
-            after: started.duration(to: .now), sourceLocation: sourceLocation, condition
-        )
     }
 
     /// Drives the model exactly as a recenter does: the camera moves, `cameraDidChange` fires with a
@@ -346,11 +329,11 @@ struct MapRecenterSearchTests {
         model.cameraDidChange(bounds: Self.mission, zoom: 18)
         #expect(try Self.viewport(model).speciesIDs == nil)
 
-        // A query resolves. `searchText` debounces, so this waits for the model to settle rather
-        // than for a fixed span — `MapSearchTests.waitUntil`'s argument, and the same reason: the
-        // debounce is tuned for a thumb, and a test that pinned it would fail when it was retuned.
+        // A query resolves. `searchText` debounces, so this waits for the model's search and fetch
+        // tasks to finish rather than for a fixed span (`TestWait.settle`): the debounce is tuned
+        // for a thumb, and a test that pinned it would fail when it was retuned.
         model.searchText = "London plane"
-        try await Self.waitUntil { model.search.isActive }
+        await TestWait.settle(model) { model.search.isActive }
         let narrowed = try #require(Self.viewport(model).speciesIDs)
         #expect(narrowed == [RecordingSearchAPI.londonPlane])
 
@@ -370,7 +353,7 @@ struct MapRecenterSearchTests {
         let model = MapModel(api: api)
         model.cameraDidChange(bounds: Self.mission, zoom: 16)
         model.searchText = "London plane"
-        try await Self.waitUntil { model.search.isActive }
+        await TestWait.settle(model) { model.search.isActive }
         let narrowed = try #require(Self.viewport(model).speciesIDs)
 
         model.cameraDidChange(bounds: Self.tight, zoom: 18)
