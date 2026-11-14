@@ -135,6 +135,12 @@ struct OutboxScreen: View {
         } else {
             ScreenHeader(title: OutboxCopy.screenTitle, onBack: onBack)
         }
+        // RED-PROOF ONLY, never merged: one label said by a larger text and again by a smaller
+        // one drawn inside it.
+        ZStack {
+            Text("Red proof twin").font(.largeTitle)
+            Text("Red proof twin").font(.caption)
+        }
     }
 
     // MARK: - §2 The queue
