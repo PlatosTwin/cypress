@@ -114,17 +114,17 @@ final class GroveModel {
 
     /// How old a fix may already be when it arrives and still place the ring (ROADMAP 114).
     ///
-    /// **NOT SPECIFIED** — no source names a number, and no other screen checks a fix's age. The
-    /// fix this refuses is the one CoreLocation replays from its cache when updates start: it
-    /// arrives as if new and can be hours old (`MapLocationProvider.FixTiming`). A live fix arrives
-    /// within a second or two of being taken. Sixty seconds is far outside that, and a walker
-    /// covers about 85 m in it, a fifth of the 400 m circle the neighborhood is resolved over
-    /// (`AlmanacLimits.neighborhoodResolutionRadiusM`), so a fix this old still names the same area.
+    /// The provider's own rule, `MapLocationProvider.replayedFixAgeOnArrival`, where the number and
+    /// its reasoning live: the provider has to apply the same rule to tell the ring when a replayed
+    /// place turns fresh (`fixIsReplayed`), and two copies of one limit drift apart.
     ///
-    /// The age is measured **on arrival, not against the clock now**, because CoreLocation is
-    /// silent while the reader stands still: a reader who has sat in one café for an hour has a
-    /// capture time an hour old and a fix that is still exactly right.
-    static let ringFixMaxAgeOnArrival: TimeInterval = 60
+    /// The fix this refuses is the one CoreLocation replays from its cache when updates start. The
+    /// age is measured **on arrival, not against the clock now**, because CoreLocation is silent
+    /// while the reader stands still: a reader who has sat in one café for an hour has a capture
+    /// time an hour old and a fix that is still exactly right. The cost of that choice: a fix that
+    /// was fresh before the app went to the background is still used on return until a new one
+    /// arrives, and following corrects the ring when it does.
+    static let ringFixMaxAgeOnArrival: TimeInterval = MapLocationProvider.replayedFixAgeOnArrival
 
     /// How far the usable fix has to move from the one the ring was last read for before the ring
     /// is read again while the tab is open (ROADMAP 114).
@@ -240,16 +240,34 @@ final class GroveModel {
     @ObservationIgnored private var speciesReadsStarted = 0
     @ObservationIgnored private var speciesReadShown = 0
 
-    /// Called by `GroveView` when the shared provider publishes a new fix while the tab is
-    /// showing. Reads the ring again if the usable fix moved `ringFollowDistanceM` or more from the
-    /// one the ring was last read for, or became usable or unusable.
+    /// The ring coordinate of the read whose answer is on screen. A failed re-read hands it back to
+    /// `ringReadCoordinate`, so the next trigger has a reason to read again rather than leave an
+    /// older place on screen until the reader walks another `ringFollowDistanceM` (`readSpecies`).
+    @ObservationIgnored private var shownRingCoordinate: Coordinate?
+
+    /// Whether My Grove is the screen the reader is looking at. Written by `GroveView`'s
+    /// `onAppear` and `onDisappear`.
     ///
-    /// **Only while the tab is showing**: the trigger is `GroveView`'s `onChange`, which exists only
-    /// while the view is mounted, and `RootView.tabRoot` takes the view down on every switch away.
-    /// Nothing here polls. A failed screen is left to its retry button (ERRATA E126), and a screen
-    /// whose first read has not started is left to `load()`.
+    /// **A tab switch is not the only way off this screen.** `RootView.tabRoot` is the root of the
+    /// `NavigationStack`, so a pushed species page or tree profile leaves `GroveView` mounted, and
+    /// its `onChange` would still fire behind a screen nobody is looking at: a local read plus a
+    /// network refresh per block walked. `followLocation()` does nothing while this is false, and
+    /// the `.task` that runs `load()` again on return reads the fix where the reader then is.
+    @ObservationIgnored private(set) var isShowing = false
+
+    func screenDidAppear() { isShowing = true }
+    func screenDidDisappear() { isShowing = false }
+
+    /// Called by `GroveView` when the shared provider publishes a new fix, or its fix turns from
+    /// replayed to fresh, while My Grove is showing. Reads the ring again if the usable fix moved
+    /// `ringFollowDistanceM` or more from the one the ring was last read for, or became usable or
+    /// unusable.
+    ///
+    /// **Only while the screen is showing** (`isShowing`). Nothing here polls. A failed screen is
+    /// left to its retry button (ERRATA E126), and a screen whose first read has not started is
+    /// left to `load()`.
     func followLocation() {
-        guard phase != .failed, speciesReadsStarted > 0 else { return }
+        guard isShowing, phase != .failed, speciesReadsStarted > 0 else { return }
         let coordinate = Self.ringCoordinate(currentFix?())
         guard Self.ringHasMoved(from: ringReadCoordinate, to: coordinate) else { return }
         followRead = Task { [weak self] in
@@ -275,6 +293,13 @@ final class GroveModel {
     /// `failureBlanks` is the first read's rule: with nothing on screen, a failure is the failed
     /// state. A re-read that fails leaves the painted grove where it is (R72 ruling 1) and still
     /// starts the refresh, as `load()`'s `.loaded` arm always did.
+    ///
+    /// **A failed re-read gives back its claim on the fix.** `ringReadCoordinate` says what the
+    /// newest read was for, and `followLocation()` reads again only when the fix moves away from
+    /// it. If that read failed and the screen shows an older place, the claim is false: the reader
+    /// would see the older place until they walked another block. So the newest re-read's failure
+    /// puts `ringReadCoordinate` back to the place on screen at that moment, or nil when nothing is
+    /// on screen yet, and the next trigger at the reader's fix reads again.
     private func readSpecies(near coordinate: Coordinate?, failureBlanks: Bool) async {
         speciesReadsStarted += 1
         let generation = speciesReadsStarted
@@ -288,6 +313,7 @@ final class GroveModel {
                 speciesReadShown = generation
                 phase = .failed
             } else if generation == speciesReadsStarted {
+                ringReadCoordinate = shownRingCoordinate
                 startSpeciesRefresh(near: coordinate, generation: generation)
             }
             return
@@ -296,6 +322,7 @@ final class GroveModel {
         // has left, or an older state of the same place.
         guard generation > speciesReadShown else { return }
         speciesReadShown = generation
+        shownRingCoordinate = coordinate
         phase = .loaded(grove)
         startSpeciesRefresh(near: coordinate, generation: generation)
     }
@@ -325,7 +352,7 @@ final class GroveModel {
                   withinM: AlmanacLimits.neighborhoodResolutionRadiusM
               ),
               let timing = fix.timing,
-              timing.ageOnArrival <= ringFixMaxAgeOnArrival
+              !timing.isReplayed
         else { return nil }
         return coordinate
     }
@@ -351,6 +378,7 @@ final class GroveModel {
                   generation == self.speciesReadsStarted
             else { return }
             self.speciesReadShown = generation
+            self.shownRingCoordinate = coordinate
             self.phase = .loaded(merged)
         }
     }

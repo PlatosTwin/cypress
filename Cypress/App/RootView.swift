@@ -655,6 +655,7 @@ struct RootView: View {
             GroveView(
                 model: grove,
                 fix: location.availability,
+                fixIsReplayed: location.fixIsReplayed,
                 onOpenSpecies: { id in router.push(.species(id)) },
                 onOpenTree: { id in router.push(.treeProfile(id)) }
             )

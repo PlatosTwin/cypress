@@ -16,6 +16,7 @@
 
 import CoreLocation
 import Foundation
+import Observation
 import Testing
 @testable import Cypress
 
@@ -32,6 +33,8 @@ enum GroveFollowFixture {
     /// Two places a kilometer apart, far more than `GroveModel.ringFollowDistanceM`.
     static let placeA = Coordinate(latitude: 37.7600, longitude: -122.4900)
     static let placeB = Coordinate(latitude: 37.7600, longitude: -122.4786)
+    /// About 150 m north of A: one and a half blocks, just past `GroveModel.ringFollowDistanceM`.
+    static let placeC = Coordinate(latitude: 37.76135, longitude: -122.4900)
 
     /// A grove whose ring is named for the place it was read at, so the phase says which read won.
     static func grove(named name: String) -> GroveSpecies {
@@ -45,6 +48,7 @@ enum GroveFollowFixture {
         guard let coordinate else { return "most-visited" }
         if coordinate == placeA { return "A" }
         if coordinate == placeB { return "B" }
+        if coordinate == placeC { return "C" }
         return "elsewhere"
     }
 }
@@ -57,6 +61,7 @@ struct GroveRingFollowTests {
     static let now = F.now
     static let placeA = F.placeA
     static let placeB = F.placeB
+    static let placeC = F.placeC
     static func grove(named name: String) -> GroveSpecies { F.grove(named: name) }
     static func name(of coordinate: Coordinate?) -> String { F.name(of: coordinate) }
 
@@ -107,33 +112,55 @@ struct GroveRingFollowTests {
         func exportLatest(_ format: ExportFormat) async throws -> Data { Data() }
     }
 
-    /// Holds every species read open until the test releases it.
+    /// Holds every species read open until the test answers it.
+    ///
+    /// **A handshake, not a yield loop**, for the reason the comment on `SuspendingGroveAPI`
+    /// (`GroveTreesPagingTests`) records: how many yields a main-actor task needs to reach its
+    /// suspension depends on what the parallel suite is doing. `untilWaiting(_:)` suspends on a
+    /// continuation that `wait(at:)` resumes once the count is reached, after the read has committed
+    /// to suspending. Each test awaits it only for reads it has already seen start (`load()` called,
+    /// or `followRead` set), so every wait has a read that will end it.
     @MainActor
     final class Gate {
-        private var pending: [(Coordinate?, CheckedContinuation<GroveSpecies, Never>)] = []
+        private var pending: [(Coordinate?, CheckedContinuation<GroveSpecies, Error>)] = []
+        private var waiter: (count: Int, continuation: CheckedContinuation<Void, Never>)?
 
         var waiting: Int { pending.count }
 
-        func wait(at coordinate: Coordinate?) async -> GroveSpecies {
-            await withCheckedContinuation { continuation in
+        func wait(at coordinate: Coordinate?) async throws -> GroveSpecies {
+            try await withCheckedThrowingContinuation { continuation in
                 pending.append((coordinate, continuation))
+                if let waiter, pending.count >= waiter.count {
+                    self.waiter = nil
+                    waiter.continuation.resume()
+                }
             }
         }
 
-        func release(at coordinate: Coordinate?) {
+        /// Returns once `count` reads are suspended here.
+        func untilWaiting(_ count: Int) async {
+            if pending.count >= count { return }
+            await withCheckedContinuation { continuation in
+                waiter = (count, continuation)
+            }
+        }
+
+        private func take(at coordinate: Coordinate?) -> CheckedContinuation<GroveSpecies, Error>? {
             guard let index = pending.firstIndex(where: { $0.0 == coordinate }) else {
                 Issue.record("no read is waiting at \(GroveFollowFixture.name(of: coordinate))")
-                return
+                return nil
             }
-            let (_, continuation) = pending.remove(at: index)
-            continuation.resume(
+            return pending.remove(at: index).1
+        }
+
+        func release(at coordinate: Coordinate?) {
+            take(at: coordinate)?.resume(
                 returning: GroveFollowFixture.grove(named: GroveFollowFixture.name(of: coordinate))
             )
         }
 
-        /// Yields until `count` reads are waiting. Bounded, and no clock is read.
-        func untilWaiting(_ count: Int) async {
-            for _ in 0..<10_000 where pending.count < count { await Task.yield() }
+        func fail(at coordinate: Coordinate?) {
+            take(at: coordinate)?.resume(throwing: APIError.serverError)
         }
     }
 
@@ -142,7 +169,7 @@ struct GroveRingFollowTests {
         init(gate: Gate) { self.gate = gate }
 
         func groveSpecies(near coordinate: Coordinate?) async throws -> GroveSpecies {
-            await gate.wait(at: coordinate)
+            try await gate.wait(at: coordinate)
         }
 
         func mapContent(in viewport: MapViewport) async throws -> MapContent { .pins([]) }
@@ -168,13 +195,14 @@ struct GroveRingFollowTests {
 
     // MARK: - 1. The ring follows the reader while the tab is open
 
-    @Test("a second fix a kilometer away, arriving while the tab is open, moves the ring there")
+    @Test("a second fix a block and a half away, arriving while the tab is open, moves the ring there")
     func theRingFollowsASecondFix() async {
         let api = ByPlaceAPI()
         let box = FixBox(Self.current(Self.placeA))
         let model = GroveModel(api: api, now: { GroveFollowFixture.now }, currentFix: { box.fix })
 
         await model.load()
+        model.screenDidAppear()
         #expect(model.phase == .loaded(Self.grove(named: "A")))
 
         // A walk of 20 m is inside `ringFollowDistanceM`: the ring is not read again for it.
@@ -184,15 +212,41 @@ struct GroveRingFollowTests {
         model.followLocation()
         await model.followRead?.value
 
-        box.fix = Self.current(Self.placeB)
+        // A walk of about 150 m, a block and a half, while the tab stays open.
+        box.fix = Self.current(Self.placeC)
         model.followLocation()
         await model.followRead?.value
 
         #expect(
-            model.phase == .loaded(Self.grove(named: "B")),
-            "the reader moved a kilometer while the tab was open and the ring still says \(model.phase)"
+            model.phase == .loaded(Self.grove(named: "C")),
+            "the reader walked 150 m while the tab was open and the ring still says \(model.phase)"
         )
+        #expect(api.asked.map(Self.name(of:)) == ["A", "C"])
+    }
+
+    @Test("a fix that moves while a pushed screen covers My Grove is read on return, not before")
+    func noFollowingWhileCovered() async {
+        let api = ByPlaceAPI()
+        let box = FixBox(Self.current(Self.placeA))
+        let model = GroveModel(api: api, now: { GroveFollowFixture.now }, currentFix: { box.fix })
+        await model.load()
+        model.screenDidAppear()
+
+        // A species page is pushed over My Grove, then the reader walks a kilometer.
+        model.screenDidDisappear()
+        box.fix = Self.current(Self.placeB)
+        model.followLocation()
+        await model.followRead?.value
+        #expect(
+            api.asked.map(Self.name(of:)) == ["A"],
+            "the ring was read behind a screen that covers it: \(api.asked.map(Self.name(of:)))"
+        )
+
+        // Back on My Grove: the view's `.task` runs `load()` again, which reads where the reader is.
+        model.screenDidAppear()
+        await model.load()
         #expect(api.asked.map(Self.name(of:)) == ["A", "B"])
+        #expect(model.phase == .loaded(Self.grove(named: "B")))
     }
 
     @Test("the follow rule: a block or more, or a fix gained or lost, reads again")
@@ -242,6 +296,50 @@ struct GroveRingFollowTests {
         #expect(model.phase == .loaded(Self.grove(named: "most-visited")))
     }
 
+    /// Records that an observation fired. The `onChange` of `withObservationTracking` is `@Sendable`.
+    final class Fired: @unchecked Sendable {
+        private let lock = NSLock()
+        private var value = false
+        var didFire: Bool { lock.withLock { value } }
+        func fire() { lock.withLock { value = true } }
+    }
+
+    @Test("a replayed place confirmed by a fresh fix the provider does not republish becomes usable")
+    func aReplayedPlaceTurnsFresh() throws {
+        let manager = CLLocationManager()
+        let provider = MapLocationProvider(manager: manager, now: { GroveFollowFixture.now })
+        func deliver(_ coordinate: Coordinate, takenSecondsAgo age: TimeInterval) {
+            let location = CLLocation(
+                coordinate: CLLocationCoordinate2D(latitude: coordinate.latitude, longitude: coordinate.longitude),
+                altitude: 0,
+                horizontalAccuracy: 8,
+                verticalAccuracy: 1,
+                timestamp: GroveFollowFixture.now.addingTimeInterval(-age)
+            )
+            manager.delegate?.locationManager?(manager, didUpdateLocations: [location])
+        }
+        func ring() -> Coordinate? {
+            GroveModel.ringCoordinate(.init(availability: provider.availability, timing: provider.fixTiming))
+        }
+
+        // CoreLocation replays an hour-old fix at A: the ring cannot use it.
+        // (`aStaleFixIsNotUsed` covers the ring refusing it; this test is about the turn to fresh.)
+        deliver(Self.placeA, takenSecondsAgo: 3_600)
+        #expect(provider.fixIsReplayed)
+
+        // A fresh fix 2 m away with the same accuracy: `isWorthPublishing` drops it, so
+        // `availability` stays as it was, and only `fixIsReplayed` can tell the view.
+        let fired = Fired()
+        withObservationTracking { _ = provider.fixIsReplayed } onChange: { fired.fire() }
+        deliver(Coordinate(latitude: Self.placeA.latitude + 0.000018, longitude: Self.placeA.longitude),
+                takenSecondsAgo: 0)
+
+        #expect(provider.availability.coordinate == Self.placeA, "the fresh fix was republished; this measures the wrong path")
+        #expect(fired.didFire, "nothing observable changed when the replayed place turned fresh")
+        #expect(provider.fixIsReplayed == false)
+        #expect(ring() == Self.placeA, "a reader standing where the fix says still gets the most-visited ring")
+    }
+
     @Test("the age is the age on arrival: a fix taken long ago that arrived at once is still used")
     func ageIsMeasuredOnArrival() {
         let longAgo = Self.now.addingTimeInterval(-3_600)
@@ -271,10 +369,12 @@ struct GroveRingFollowTests {
     // MARK: - 3. The newest read wins
 
     @Test("two overlapping reads resolved in reverse order: the newer read's ring stands")
-    func theNewestReadWins() async {
+    func theNewestReadWins() async throws {
         let gate = Gate()
         let box = FixBox(Self.current(Self.placeA))
         let model = GroveModel(api: GatedAPI(gate: gate), now: { GroveFollowFixture.now }, currentFix: { box.fix })
+
+        model.screenDidAppear()
 
         // The first read, at A, is held open.
         let first = Task { await model.load() }
@@ -283,12 +383,12 @@ struct GroveRingFollowTests {
         // The reader moves to B while it is still open, and a second read starts.
         box.fix = Self.current(Self.placeB)
         model.followLocation()
+        let second = try #require(model.followRead, "the second read never started; the test cannot overlap them")
         await gate.untilWaiting(2)
-        #expect(gate.waiting == 2, "the second read never started; the test cannot overlap them")
 
         // The newer read finishes first, then the older one.
         gate.release(at: Self.placeB)
-        await model.followRead?.value
+        await second.value
         gate.release(at: Self.placeA)
         await first.value
 
@@ -296,5 +396,38 @@ struct GroveRingFollowTests {
             model.phase == .loaded(Self.grove(named: "B")),
             "the older read finished last and its ring replaced the newer one: \(model.phase)"
         )
+    }
+
+    @Test("a newer read that fails under an older one does not pin the older place on screen")
+    func aFailedNewerReadIsReadAgain() async throws {
+        let gate = Gate()
+        let box = FixBox(Self.current(Self.placeA))
+        let model = GroveModel(api: GatedAPI(gate: gate), now: { GroveFollowFixture.now }, currentFix: { box.fix })
+        model.screenDidAppear()
+
+        let first = Task { await model.load() }
+        await gate.untilWaiting(1)
+        box.fix = Self.current(Self.placeB)
+        model.followLocation()
+        let failing = try #require(model.followRead, "the read at B never started")
+        await gate.untilWaiting(2)
+
+        // The read at B fails; the read at A then paints A.
+        gate.fail(at: Self.placeB)
+        await failing.value
+        gate.release(at: Self.placeA)
+        await first.value
+        #expect(model.phase == .loaded(Self.grove(named: "A")))
+
+        // The reader is still at B. The next trigger has to read B again.
+        model.followLocation()
+        let retry = try #require(
+            model.followRead.flatMap { $0 == failing ? nil : $0 },
+            "the screen shows A, the reader is at B, and the next trigger read nothing"
+        )
+        await gate.untilWaiting(1)
+        gate.release(at: Self.placeB)
+        await retry.value
+        #expect(model.phase == .loaded(Self.grove(named: "B")))
     }
 }

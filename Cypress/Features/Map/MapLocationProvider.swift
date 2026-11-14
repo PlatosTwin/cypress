@@ -111,20 +111,40 @@ final class MapLocationProvider {
     /// fix that lies is the one CoreLocation replays from its cache when updates start: it arrives
     /// as if new and can be minutes or hours old. `receivedAt - capturedAt` tells the two apart.
     ///
-    /// Written on **every** delivered fix, also one `isWorthPublishing` drops, because a dropped fix
-    /// is within five meters of the published one and says the published place is still current.
-    /// `@ObservationIgnored` for the same reason: written at CoreLocation's own rate (24 to 42 a
-    /// second on a route, see `publishDistanceM`), an observed property would re-run every view
-    /// that reads it. A reader asks for it when `availability` changes or when it reads anyway.
+    /// Written for every published fix, and for a fix `isWorthPublishing` drops **only when that
+    /// fix is not itself a replay**. A dropped fix is within five meters of the published one, so a
+    /// fresh one says the published place is current now. A dropped replay says nothing about now,
+    /// and it does not overwrite a fresh timing.
+    ///
+    /// `@ObservationIgnored` because it is written at CoreLocation's own rate (24 to 42 a second on
+    /// a route, see `publishDistanceM`), and an observed property would re-run every view that reads
+    /// it. The one change a reader must hear about, replayed to fresh or back, is `fixIsReplayed`.
     struct FixTiming: Equatable, Sendable {
         var capturedAt: Date
         var receivedAt: Date
 
         /// How old the fix already was when it arrived.
         var ageOnArrival: TimeInterval { receivedAt.timeIntervalSince(capturedAt) }
+
+        /// Whether CoreLocation replayed this fix from its cache rather than took it now.
+        var isReplayed: Bool { ageOnArrival > MapLocationProvider.replayedFixAgeOnArrival }
     }
 
     @ObservationIgnored private(set) var fixTiming: FixTiming?
+
+    /// How old a fix may already be when it arrives and still count as taken now (ROADMAP 114).
+    ///
+    /// **NOT SPECIFIED** — no source names a number. A live fix arrives within a second or two of
+    /// being taken; a replay from CoreLocation's cache can be hours old. Sixty seconds is far
+    /// outside the first, and a walker covers about 85 m in it, a fifth of the 400 m circle a
+    /// neighborhood is resolved over (`AlmanacLimits.neighborhoodResolutionRadiusM`).
+    static let replayedFixAgeOnArrival: TimeInterval = 60
+
+    /// `fixTiming.isReplayed`, observed. Written **only when it changes**, so it costs no redraw
+    /// per fix: it is how a reader such as My Grove's ring hears that a replayed place has been
+    /// confirmed by a fresh fix that `isWorthPublishing` dropped, which leaves `availability`
+    /// unchanged. `false` when there is no fix.
+    private(set) var fixIsReplayed = false
 
     /// The clock `fixTiming.receivedAt` is read from. Injected so a test can deliver a fix of a
     /// known age without waiting.
@@ -157,8 +177,12 @@ final class MapLocationProvider {
         }
         delegate.onLocation = { [weak self] coordinate, accuracyM, accuracyIsKnown, capturedAt in
             guard let self else { return }
-            self.fixTiming = FixTiming(capturedAt: capturedAt, receivedAt: self.now())
-            self.publish(coordinate: coordinate, accuracyM: accuracyM, accuracyIsKnown: accuracyIsKnown)
+            self.receive(
+                coordinate: coordinate,
+                accuracyM: accuracyM,
+                accuracyIsKnown: accuracyIsKnown,
+                timing: FixTiming(capturedAt: capturedAt, receivedAt: self.now())
+            )
         }
         delegate.onHeading = { [weak self] heading in
             self?.publish(heading: heading)
@@ -351,6 +375,34 @@ final class MapLocationProvider {
             || abs(lastAccuracy - accuracyM) >= publishAccuracyM
     }
 
+    /// Whether `publish` will write this fix: `isWorthPublishing`, or a change in whether the radius
+    /// was stated (see `publish`).
+    private func willPublish(coordinate: Coordinate, accuracyM: Double, accuracyIsKnown: Bool) -> Bool {
+        precision.accuracyIsKnown != accuracyIsKnown
+            || Self.isWorthPublishing(coordinate: coordinate, accuracyM: accuracyM, over: availability)
+    }
+
+    /// Every fix CoreLocation delivers comes through here (ROADMAP 114).
+    ///
+    /// The timing is written **before** `availability`, so a reader woken by the `availability`
+    /// write reads the timing that belongs to that fix. A dropped fix that is itself a replay leaves
+    /// the timing alone (see `fixTiming`). `fixIsReplayed` is written only when it changes.
+    private func receive(
+        coordinate: Coordinate,
+        accuracyM: Double,
+        accuracyIsKnown: Bool,
+        timing: FixTiming
+    ) {
+        let published = willPublish(coordinate: coordinate, accuracyM: accuracyM, accuracyIsKnown: accuracyIsKnown)
+        if published || !timing.isReplayed {
+            fixTiming = timing
+            if fixIsReplayed != timing.isReplayed { fixIsReplayed = timing.isReplayed }
+        }
+        if published {
+            publish(coordinate: coordinate, accuracyM: accuracyM, accuracyIsKnown: accuracyIsKnown)
+        }
+    }
+
     /// The one place `availability` is written from a fix.
     ///
     /// A fix whose radius went from stated to unstated (or back) is published even when
@@ -360,11 +412,8 @@ final class MapLocationProvider {
     /// that belongs to that fix.
     private func publish(coordinate: Coordinate, accuracyM: Double, accuracyIsKnown: Bool) {
         let knownChanged = precision.accuracyIsKnown != accuracyIsKnown
-        guard knownChanged || Self.isWorthPublishing(
-            coordinate: coordinate,
-            accuracyM: accuracyM,
-            over: availability
-        ) else { return }
+        guard willPublish(coordinate: coordinate, accuracyM: accuracyM, accuracyIsKnown: accuracyIsKnown)
+        else { return }
         if knownChanged { precision.accuracyIsKnown = accuracyIsKnown }
         availability = .located(coordinate, accuracyM: accuracyM)
         #if DEBUG
