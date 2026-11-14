@@ -80,6 +80,7 @@ struct DynamicTypeScreenshotTests {
         _ size: DynamicTypeSize,
         scheme: ColorScheme = .light,
         writingTo directory: URL? = shotDirectory,
+        settleFloor: Duration = RenderSettle.legacyBudget,
         @ViewBuilder _ content: () -> some View
     ) async -> CGSize? {
         let host = UIHostingController(
@@ -103,8 +104,10 @@ struct DynamicTypeScreenshotTests {
         // and a run-loop spin does not drain the cooperative executor the `.task` is suspended on —
         // so every capture of 03 came back as a viewport containing one spinner, which is a real
         // state but not the one being audited. Awaiting yields the main actor properly, and
-        // `RenderSettle` says when the view stopped changing.
-        await RenderSettle.settle(host.view, label: name)
+        // `RenderSettle` says when the view stopped changing. The floor defaults to the old 0.96 s
+        // here: this harness renders 05, which fills text in after a load with no spinner, and
+        // it makes about 16 renders, so a shorter floor would save little.
+        await RenderSettle.settle(host.view, label: name, floor: settleFloor)
 
         let image = UIGraphicsImageRenderer(bounds: frame).image { _ in
             host.view.drawHierarchy(in: frame, afterScreenUpdates: true)

@@ -2087,9 +2087,11 @@ into this section in the round that finds it, and nowhere else. Each item stands
     **DONE by `test/faster-screen-captures`:** `RenderSettle` replaces the fixed sleeps in
     `ScreenSweepShots`, `DynamicTypeScreenshotTests` and `AX5ReflowTests`. It returns when the
     layer tree has not changed for three 40 ms passes, no spinner is visible and 160 ms have
-    passed, and never waits longer than the old loop. Without `CYPRESS_SHOT_DIR`, the harnesses
-    still draw each screen and run the blank guard, but encode and write nothing.
-    After: AFTER_PLACEHOLDER
+    passed, and never waits longer than the old loop. Screens that load with no spinner (02, 05,
+    06, 09, 12, 12b, 12c, 20, 21 and the e12 states) keep the old 0.96 s floor, and the AX5 width
+    guard on 02 waits for its shortlist query to answer. Without `CYPRESS_SHOT_DIR`, the harnesses
+    still draw each screen and run the blank guard, but encode and write nothing. After: measured
+    on #220's final CI run; see the PR body.
 
 
 **Retire the format-1 manifest — DONE, 2026-08-23.** The owner overrode the trigger the day after

@@ -136,7 +136,9 @@ struct AX5ReflowTests {
         of content: some View,
         width: CGFloat = phoneWidth,
         settleIterations: Int = 8,
-        size: DynamicTypeSize = .accessibility5
+        size: DynamicTypeSize = .accessibility5,
+        settleFloor: Duration = RenderSettle.defaultFloor,
+        ready: () -> Bool = { true }
     ) async -> CGSize {
         let host = UIHostingController(
             rootView: AnyView(content.environment(\.dynamicTypeSize, size))
@@ -154,7 +156,9 @@ struct AX5ReflowTests {
         await RenderSettle.settle(
             host.view,
             label: "ax5Size \(type(of: content))",
-            budget: .milliseconds(120 * settleIterations)
+            floor: settleFloor,
+            budget: .milliseconds(120 * settleIterations),
+            ready: ready
         )
         let insets = host.view.safeAreaInsets
         let measured = host.sizeThatFits(in: CGSize(width: width, height: .greatestFiniteMagnitude))
@@ -171,7 +175,24 @@ struct AX5ReflowTests {
     /// footer drew clipped at both edges. The screen must report the width it is offered.
     @Test("screen 02 (identify, populated) stays inside the phone's width at AX5")
     func identifyFitsThePhoneWidthAtAX5() async {
-        let measured = await Self.ax5Size(of: VisitPreviewFixtures.identify())
+        // Screen 02 shows a "Finding you" notice, with no spinner, until its shortlist query
+        // answers, and that notice fits the phone with or without the E196 defect. So the measure
+        // waits for the answer and the test checks that it came.
+        let api = AnsweredShortlistAPI()
+        let measured = await Self.ax5Size(
+            of: VisitIdentifyView(
+                api: api,
+                location: VisitLocationProvider(
+                    pinnedFix: .located(VisitPreviewFixtures.origin, accuracyM: 9)
+                ),
+                onPick: { _ in },
+                onAddTree: {},
+                onBack: {}
+            ),
+            settleFloor: RenderSettle.legacyBudget,
+            ready: { api.answered }
+        )
+        #expect(api.answered, "the shortlist query never answered, so this measured the 'Finding you' notice")
         #expect(
             measured.width <= Self.phoneWidth,
             "screen 02 measured \(measured.width) pt wide on a \(Self.phoneWidth) pt phone"
@@ -1458,6 +1479,53 @@ struct AX5ReflowTests {
             """
         )
     }
+}
+
+/// `VisitPreviewAPI` with one fact added: whether the shortlist query has answered. It is how
+/// `identifyFitsThePhoneWidthAtAX5` knows it measured the shortlist and not the notice before it.
+final class AnsweredShortlistAPI: CypressAPI, @unchecked Sendable {
+    private let inner = VisitPreviewAPI()
+    private let lock = NSLock()
+    private var answeredFlag = false
+
+    var answered: Bool { lock.withLock { answeredFlag } }
+
+    func treesNear(_ coordinate: Coordinate, radiusM: Double, limit: Int) async throws -> [NearbyTree] {
+        let rows = try await inner.treesNear(coordinate, radiusM: radiusM, limit: limit)
+        lock.withLock { answeredFlag = true }
+        return rows
+    }
+
+    func treeProfile(id: UUID) async throws -> TreeProfile { try await inner.treeProfile(id: id) }
+    func mapContent(in viewport: MapViewport) async throws -> Cypress.MapContent {
+        try await inner.mapContent(in: viewport)
+    }
+    func addTree(_ draft: TreeDraft) async throws -> Tree { try await inner.addTree(draft) }
+    func species(id: UUID) async throws -> Species { try await inner.species(id: id) }
+    func searchSpecies(query: String, limit: Int) async throws -> [Species] {
+        try await inner.searchSpecies(query: query, limit: limit)
+    }
+    func sync(_ items: [OutboxItem]) async throws -> [SyncResult] { try await inner.sync(items) }
+    func beginPhotoUpload(_ request: PhotoUploadRequest) async throws -> PhotoUploadTicket {
+        try await inner.beginPhotoUpload(request)
+    }
+    func uploadPhoto(at localPath: String, ticket: PhotoUploadTicket) async throws {
+        try await inner.uploadPhoto(at: localPath, ticket: ticket)
+    }
+    func grove() async throws -> [GroveEntry] { try await inner.grove() }
+    func journal(cursor: String?, limit: Int) async throws -> Page<JournalEntry> {
+        try await inner.journal(cursor: cursor, limit: limit)
+    }
+    func claimDevice(deviceUUID: UUID, userID: UUID) async throws {
+        try await inner.claimDevice(deviceUUID: deviceUUID, userID: userID)
+    }
+    func deleteAccount(_ choice: AccountDeletionChoice) async throws -> AccountDeletion.Outcome {
+        try await inner.deleteAccount(choice)
+    }
+    func logHazardRedirect(_ event: HazardRedirectEvent) async throws {
+        try await inner.logHazardRedirect(event)
+    }
+    func exportLatest(_ format: ExportFormat) async throws -> Data { try await inner.exportLatest(format) }
 }
 #endif
 

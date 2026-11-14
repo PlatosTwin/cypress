@@ -11,8 +11,9 @@
 //  before `Tools/run_tests.sh`. Two facts hold that arrangement together and neither has ever been
 //  checked:
 //
-//   1. the four writers read the SAME key — a rename in one of them makes that one silently write
-//      to a temporary directory while the other three obey;
+//   1. the four writers read the SAME key — a rename in one of them makes that one silently
+//      write nothing (the two unit-test writers) or write to a temporary directory (the two UI
+//      writers) while the other three obey;
 //   2. the name the prose tells an operator to export is the prefix followed by exactly that key —
 //      one character out and the forwarding delivers a variable nobody reads, which fails by doing
 //      nothing at all.
@@ -126,8 +127,8 @@ struct ShotDirectoryConventionTests {
                 """
                 \(path) reads \(keys.isEmpty ? "no shot key at all" : keys.description) out of its \
                 environment, not exactly [\(Self.runnerKey)]. All four shot writers have to read \
-                one key: an operator exports one name, and a writer reading a different one falls \
-                back to a temporary directory without saying so.
+                one key: an operator exports one name, and a writer reading a different one writes \
+                nothing, or writes to a temporary directory, without saying so.
                 """
             )
         }

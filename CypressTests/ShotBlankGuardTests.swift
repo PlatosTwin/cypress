@@ -174,6 +174,7 @@ struct ShotBlankGuardTests {
         let name = "guard-probe-sweep-content"
         let url = ScreenSweepShots.outputDirectory.appendingPathComponent("\(name).png")
         try? FileManager.default.removeItem(at: url)
+        defer { try? FileManager.default.removeItem(at: url) }
         let image = await ScreenSweepShots.capture(
             name, size: .large, scheme: .light, writingTo: ScreenSweepShots.outputDirectory
         ) {

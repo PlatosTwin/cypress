@@ -9,6 +9,7 @@
 //
 
 #if DEBUG
+import Combine
 import SwiftUI
 import Testing
 import UIKit
@@ -18,7 +19,7 @@ import UIKit
 struct RenderSettleTests {
 
     /// How long the late view holds its spinner. Longer than the settle's floor plus its stable
-    /// window (160 ms + 3 × 40 ms), so a settle that only watched the layer tree would return
+    /// window (`RenderSettle.defaultFloor`, 160 ms, then 3 passes of 40 ms), so a settle that only watched the layer tree would return
     /// while the spinner is still up.
     nonisolated static let delay: Duration = .milliseconds(400)
 
@@ -99,6 +100,59 @@ struct RenderSettleTests {
         view.setNeedsLayout()
         view.layoutIfNeeded()
         #expect(RenderSettle.hasVisibleSpinner(view), "no UIActivityIndicatorView found under a ProgressView")
+    }
+
+    /// What a swap shows. Changed by the hash tests between two settles of one mounted view.
+    @MainActor
+    final class Swap: ObservableObject {
+        @Published var second = false
+    }
+
+    /// One label in a fixed frame: "A", then "B". Same frame, same font, different glyph.
+    struct SwappedText: View {
+        @ObservedObject var swap: Swap
+        var body: some View {
+            Text(verbatim: swap.second ? "B" : "A")
+                .frame(width: 120, height: 60)
+        }
+    }
+
+    /// One fixed-size fill: red, then blue.
+    struct SwappedColor: View {
+        @ObservedObject var swap: Swap
+        var body: some View {
+            (swap.second ? Color.blue : Color.red)
+                .frame(width: 120, height: 60)
+        }
+    }
+
+    /// Settles `view`, flips `swap`, settles again, and returns the two signatures.
+    static func signatures(around swap: Swap, in view: UIView) async -> (before: Int, after: Int) {
+        await RenderSettle.settle(view, label: "swap-before", budget: roomyBudget)
+        let before = RenderSettle.layerSignature(view.layer)
+        swap.second = true
+        await RenderSettle.settle(view, label: "swap-after", budget: roomyBudget)
+        return (before, RenderSettle.layerSignature(view.layer))
+    }
+
+    /// A load that changes only words, at the same size, must still change the signature, or the
+    /// settle would call a screen still while its text is being filled in.
+    @Test("the layer signature changes when text changes at the same size")
+    func textSwapChangesTheSignature() async {
+        let swap = Swap()
+        let (window, view) = Self.mount(SwappedText(swap: swap))
+        defer { window.isHidden = true; window.rootViewController = nil }
+        let pair = await Self.signatures(around: swap, in: view)
+        #expect(pair.before != pair.after, "swapping \"A\" for \"B\" in a fixed frame left the signature unchanged")
+    }
+
+    @Test("the layer signature changes when a fill changes color")
+    func colorSwapChangesTheSignature() async {
+        let swap = Swap()
+        let (window, view) = Self.mount(SwappedColor(swap: swap))
+        defer { window.isHidden = true; window.rootViewController = nil }
+        let pair = await Self.signatures(around: swap, in: view)
+        #expect(pair.before != pair.after, "swapping red for blue in a fixed frame left the signature unchanged")
     }
 
     /// The other direction: a still view must settle on its own decision. If the signature changed
