@@ -748,8 +748,8 @@ final class MapModel {
             // **One read, two surfaces.** The dropdown and the narrowing are two readings of the
             // same array, so the list can never offer a species the map is not narrowed to — which
             // a second `searchSpecies` call at a second limit would eventually allow.
-            self.suggestions = MapSuggestions(matches: matches)
-            self.applySearch(MapSearch(query: query, matches: matches))
+            // RED-PROOF: the search task finishes without publishing its result.
+            _ = (self, matches)
         }
     }
 
