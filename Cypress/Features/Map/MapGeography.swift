@@ -40,6 +40,13 @@ extension BoundingBox {
             && minLongitude <= other.minLongitude && maxLongitude >= other.maxLongitude
     }
 
+    /// Whether the two boxes share any point, edges included. The map uses it to ask whether trees
+    /// a community refresh wrote for one viewport can be on the screen of another.
+    func overlaps(_ other: BoundingBox) -> Bool {
+        minLatitude <= other.maxLatitude && other.minLatitude <= maxLatitude
+            && minLongitude <= other.maxLongitude && other.minLongitude <= maxLongitude
+    }
+
     /// Grows the box by `fraction` of its own size on each axis, so a fetch covers a little more
     /// than the screen and a small pan does not immediately blank the map.
     func expanded(by fraction: Double) -> BoundingBox {

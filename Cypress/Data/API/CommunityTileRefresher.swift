@@ -13,7 +13,13 @@ import Foundation
 /// from the phone first. A viewport that touches more than `Policy.maxTiles` tiles is a zoomed-out
 /// map, and nothing is fetched for it. **A tile is asked at most once per
 /// `Policy.minimumInterval`**, whether the last attempt worked or not, so panning back and forth
-/// does not repeat requests and an offline phone does not retry on every pan.
+/// does not repeat requests for the same tiles.
+///
+/// **Passes run one at a time.** A pass that starts while another is still running waits for it
+/// to end, then decides which tiles are due. So a tile in flight is never skipped by a second pass
+/// that merely saw it marked: the second pass sees what the first one learned. If the first pass
+/// was cancelled before its request came back, that tile is not marked, and the second pass asks
+/// for it.
 ///
 /// ── What one tile's refresh does ──────────────────────────────────────────────────────────────
 ///
@@ -32,8 +38,13 @@ import Foundation
 /// - **Anything else** (offline, a timeout, a server error, a session that could not be refreshed,
 ///   a page this build cannot decode): the pass stops. Nothing is written for the tile that failed,
 ///   and the rest of the viewport waits for the next refresh. The cache keeps drawing what it holds.
+///   The failed tile counts as attempted, so the next pass skips it and asks for the next tile that
+///   is due. **An offline phone therefore sends one request per settled map** (one per pass), until
+///   every tile in view has been tried in the last `Policy.minimumInterval`; then it sends none
+///   until the interval passes.
 /// - **Cancellation** (the map moved on): the pass stops, and the tile in flight is not counted as
-///   attempted, so the next refresh asks for it.
+///   attempted, so the next refresh asks for it. A page that was written before the pass noticed
+///   the cancellation is still counted in the pass's `Outcome`, so the caller can draw it.
 ///
 /// ── What it never does ────────────────────────────────────────────────────────────────────────
 ///
@@ -49,9 +60,18 @@ public actor CommunityTileRefresher {
 
     /// The numbers the refresh runs by. The defaults are what ships.
     public struct Policy: Sendable, Equatable {
-        /// A viewport touching more tiles than this is zoomed out, and fetches nothing. Nine is a
-        /// 3 × 3 block, about 5.8 km across at San Francisco's latitude: the map at zoom 13 or
-        /// closer, where community pins are drawn one by one or in small clusters.
+        /// A viewport touching more tiles than this is zoomed out, and fetches nothing.
+        ///
+        /// Sixteen, from the owner's ruling of 2026-11-15 ("Neighborhood level": download when
+        /// about 2 km is on screen, from the first zoom that draws cluster badges). That zoom is
+        /// 15 (`MapViewport.highestClusteringZoom`). Counted with `MapZoom`'s formula, the map's
+        /// full screen and the 8 % margin `MapModel.cameraDidChange` adds, on the four agent screens
+        /// (390, 402, 420 and 440 pt wide) at the equator, 37.8° N and 64.1° N:
+        /// - zoom 15 touches 2 to 8 tiles, so every zoom-15 map fetches;
+        /// - a map a quarter step wider (zoom 14.25) touches 8 to 15, so it fetches too;
+        /// - the widest zoom-14 map touches 8 to 18, so on the two larger screens some do not;
+        /// - zoom 13 touches 32 to 50, so none fetches.
+        /// `CommunityTileTests` pins those counts against this number.
         public var maxTiles: Int
         /// How long a tile is left alone after an attempt, successful or not.
         public var minimumInterval: TimeInterval
@@ -59,7 +79,7 @@ public actor CommunityTileRefresher {
         /// this is 1,000 trees per tile per pass; the next pass continues from the stored cursor.
         public var maxPagesPerTile: Int
 
-        public init(maxTiles: Int = 9, minimumInterval: TimeInterval = 120, maxPagesPerTile: Int = 10) {
+        public init(maxTiles: Int = 16, minimumInterval: TimeInterval = 120, maxPagesPerTile: Int = 10) {
             self.maxTiles = maxTiles
             self.minimumInterval = minimumInterval
             self.maxPagesPerTile = maxPagesPerTile
@@ -98,6 +118,10 @@ public actor CommunityTileRefresher {
     private let now: @Sendable () -> Date
     private let policy: Policy
     private var lastAttempt: [CommunityTile: Date] = [:]
+    /// Whether a pass is running, and the passes waiting for it, first come first served. An actor
+    /// alone does not keep two passes apart: each `await` inside a pass lets another pass in.
+    private var passRunning = false
+    private var waitingPasses: [CheckedContinuation<Void, Never>] = []
 
     public init(
         queue: DatabaseQueue,
@@ -116,6 +140,8 @@ public actor CommunityTileRefresher {
         guard let tiles = CommunityTile.covering(bounds, limit: policy.maxTiles) else {
             return Outcome(ending: .tooManyTiles)
         }
+        await beginPass()
+        defer { endPass() }
         var outcome = Outcome()
         for tile in tiles {
             if Task.isCancelled {
@@ -126,8 +152,6 @@ public actor CommunityTileRefresher {
             if let last = lastAttempt[tile], moment.timeIntervalSince(last) < policy.minimumInterval {
                 continue
             }
-            // Recorded before the request, so a second pass that starts while this one waits on
-            // the network does not ask for the same tile again.
             lastAttempt[tile] = moment
             do {
                 try await refresh(tile, into: &outcome)
@@ -144,6 +168,24 @@ public actor CommunityTileRefresher {
             }
         }
         return outcome
+    }
+
+    /// Waits until no other pass is running. A pass that ends hands its turn straight to the next
+    /// waiting one, so a pass that arrives later cannot slip in between.
+    private func beginPass() async {
+        guard passRunning else {
+            passRunning = true
+            return
+        }
+        await withCheckedContinuation { waitingPasses.append($0) }
+    }
+
+    private func endPass() {
+        if waitingPasses.isEmpty {
+            passRunning = false
+        } else {
+            waitingPasses.removeFirst().resume()
+        }
     }
 
     /// One tile: its pages, each applied with its cursor in one transaction.

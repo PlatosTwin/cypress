@@ -138,9 +138,20 @@ public actor LocalAPI: CypressAPI {
             // here rather than in `CommunityTreeStore.inBounds` keeps the narrowing in one place per
             // layer and costs nothing: the layer holds the trees this device added and the published
             // trees of the tiles it has fetched, not an inventory.
+            //
+            // **Read whole, narrowed, and only then cut** (round C2's review). The narrowings below
+            // run in Swift, so a `LIMIT` in the statement would cut before them: with more trees in
+            // the box than `pinLimit`, the only tree of a narrowed species could be cut while
+            // trees the narrowing then threw away took its place. The pin answer is cut after the
+            // filter, by `communityPinShare`, in the statement's order (the phone's own trees
+            // first, then by id). A cluster answer is not cut at all, so each badge counts every
+            // community tree in its cell; before this, a box with more cached trees than
+            // `pinLimit` counted only the first `pinLimit` of them. The cost is one row per
+            // community tree in the box, and the cache holds only the tiles the reader has looked
+            // at closely (`CommunityTileRefresher`).
             let allAdded = try layer.inBounds(
                 viewport.bounds,
-                limit: viewport.pinLimit,
+                limit: nil,
                 connection: connection
             )
             //
@@ -172,7 +183,7 @@ public actor LocalAPI: CypressAPI {
             let bloomingSpecies: Set<UUID>? = try viewport.bloomMonth.map { month in
                 try treeQueries?.bloomingSpeciesIDs(month: month, connection: connection) ?? []
             }
-            let added = allAdded.filter { tree in
+            let narrowed = allAdded.filter { tree in
                 if let wanted = viewport.speciesIDs {
                     guard let id = tree.speciesCurrentID, wanted.contains(id) else { return false }
                 }
@@ -192,6 +203,7 @@ public actor LocalAPI: CypressAPI {
                 }
                 return true
             }
+            let added = narrowed
 
             // Local status overrides (ERRATA E124-B): a lead-confirmed removal makes a tree a
             // memorial pin even though the inventory still calls it alive. Applied to `.pins` only —
@@ -258,6 +270,9 @@ public actor LocalAPI: CypressAPI {
             // takes at most half the budget when the city layer could use the rest, and any part
             // of the budget the city layer leaves unused (`communityPinShare`). The phone's own
             // trees come first inside the share (`CommunityLayer.inBoundsSQL`).
+            //
+            // `added` is every narrowed community tree in the box, uncut, so the share is taken
+            // from the matches themselves and `matchesInView` below counts all of them.
             let communityShare = Self.communityPinShare(
                 pinLimit: viewport.pinLimit,
                 cityPins: answer.items.count,

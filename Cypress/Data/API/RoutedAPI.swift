@@ -1158,10 +1158,19 @@ public struct RoutedAPI: CypressAPI {
     /// A service photograph as the screen dates it (round C2, decision 14a).
     ///
     /// **When the service sent `captured_on`, the photograph is shown on that calendar date**, in
-    /// every reader's zone. Every surface formats `capturedAt` in the reader's zone, so the date is
-    /// carried as noon of that day in `zone`, which those formatters render as exactly that day.
+    /// every reader's zone. Every surface formats `capturedAt` in the reader's zone, so the
+    /// photograph keeps its `captured_at` when the reader's zone already prints it as that day, and
+    /// otherwise takes the nearest second of that day in `zone` (`CalendarDay.instant(nearest:in:)`).
     /// Without this, the noon-UTC instant the service sends a stranger renders as the next day at
     /// UTC+12 and beyond.
+    ///
+    /// **Why the nearest second and not a fixed noon** (round C2's review): the profile sorts its
+    /// photographs by `capturedAt`, newest first, and its hero pill reads the earliest. The service
+    /// serves a contributor their own rows at the exact `captured_at` and everyone else's at noon
+    /// UTC of the date (`server/testdata/README.md`). A fixed noon in the reader's zone moved even
+    /// the exact rows: a photograph the reader took at 10:00 on another phone sorted after one they
+    /// took at 11:00 on this phone. The nearest second moves a photograph only when the reader's
+    /// zone and `captured_on` disagree about the day, and then only to the edge of that day.
     ///
     /// **When it did not**, the photograph keeps `captured_at`, which the reader's zone formats as
     /// the shipped client always has. A UTC calendar would be wrong here: a photograph sent with no
@@ -1171,7 +1180,7 @@ public struct RoutedAPI: CypressAPI {
     /// test has run on the wire's instants. The phone's own photographs keep their real time.
     static func datedForDisplay(_ photo: Photo, capturedOn: CalendarDay?, in zone: TimeZone) -> Photo {
         guard let capturedOn else { return photo }
-        let shown = capturedOn.midday(in: zone)
+        let shown = capturedOn.instant(nearest: photo.capturedAt, in: zone)
         return Photo(
             id: photo.id,
             treeID: photo.treeID,

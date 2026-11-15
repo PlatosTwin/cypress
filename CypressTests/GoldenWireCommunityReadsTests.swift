@@ -195,6 +195,13 @@ extension GoldenWireFixtureTests {
 
     // MARK: The profile's community keys
 
+    /// The profile answer as the wire type decodes it, for the two keys `RemoteAPI` does not carry
+    /// further (`community_tree` and `is_published`; `TreeCommunityHalfResponse.communityTree`
+    /// says why).
+    static func profileResponse(_ name: String) throws -> TreeCommunityHalfResponse {
+        try RemoteCoding.decoder.decode(TreeCommunityHalfResponse.self, from: try fixture(name))
+    }
+
     /// `tree_profile_community.json`: a stranger's view of a published community tree. The tree
     /// arrives with its species, `added_by_you` is false, and the photograph's `captured_on` arrives
     /// as a calendar day beside the noon-UTC instant.
@@ -209,9 +216,11 @@ extension GoldenWireFixtureTests {
         let half = try await remote.treeCommunityHalf(id: Self.speciesTree)
 
         #expect(!half.addedByYou)
-        let tree = try #require(half.communityTree, "community_tree did not decode into Tree")
+        let wire = try Self.profileResponse("tree_profile_community.json")
+        let tree = try #require(wire.communityTree, "community_tree did not decode into Tree")
         #expect(tree.id == Self.speciesTree)
         #expect(tree.speciesCurrentID == UUID(uuidString: "7f3c1d22-5e6a-4b90-8c11-2d3e4f5a6b7c"))
+        #expect(wire.isPublished == true)
 
         let photo = try #require(UUID(uuidString: "8c1cc8a2-ded9-4bd5-ae4f-af2b0174bf01"))
         #expect(half.capturedOn[photo] == (try Self.day("2026-09-22")), "captured_on was lost: \(half.capturedOn)")
@@ -229,7 +238,9 @@ extension GoldenWireFixtureTests {
             let treeID = try #require(UUID(uuidString: id))
             let (remote, _) = try Self.remote(answering: "GET /trees/\(treeID.uuidString)", withFixture: name)
             let half = try await remote.treeCommunityHalf(id: treeID)
-            #expect(half.communityTree == nil, "\(name) decoded a tree")
+            let wire = try Self.profileResponse(name)
+            #expect(wire.communityTree == nil, "\(name) decoded a tree")
+            #expect(wire.isPublished == false, "\(name) said is_published")
             #expect(!half.addedByYou, "\(name) said added_by_you")
             #expect(half.photos.isEmpty)
             #expect(half.capturedOn.isEmpty)
@@ -246,7 +257,7 @@ extension GoldenWireFixtureTests {
         let city = try await cityRemote.treeCommunityHalf(id: cityTree)
         #expect(city.photos.count == 1)
         #expect(city.capturedOn.isEmpty, "a photograph with no captured_on gained one: \(city.capturedOn)")
-        #expect(city.communityTree == nil)
+        #expect(try Self.profileResponse("tree_profile_city.json").communityTree == nil)
 
         let ownTree = try #require(UUID(uuidString: "5a1e7c0d-0000-4000-8000-00000000f030"))
         let (remote, _) = try Self.remote(answering: "GET /trees/\(ownTree.uuidString)", withFixture: "tree_profile.json")

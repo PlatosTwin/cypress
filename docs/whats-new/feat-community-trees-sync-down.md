@@ -1,6 +1,7 @@
 # `internal:` for now, and that is a judgement a reviewer may overturn. This branch makes other
 # people's published community trees reach the phone: the map fetches them for the tiles it shows
-# at zoom 13 or closer, draws them as dashed pins, and opens their profiles. That is tester-visible.
+# from zoom 15 (the first zoom that draws cluster badges) and a little wider, draws them as dashed
+# pins, and opens their profiles. That is tester-visible.
 # It is written as internal because nobody has yet seen it work against the live service on a
 # signed-in phone: the UI suite runs with the remote gate off, and no test calls production. Once
 # the phone check in the PR body is done, replace the line below with one like:

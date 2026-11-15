@@ -67,6 +67,22 @@ public struct CalendarDay: Hashable, Sendable, Comparable, CustomStringConvertib
         return calendar.date(from: components) ?? Self.utcGregorian.date(from: components) ?? Date(timeIntervalSince1970: 0)
     }
 
+    /// The instant nearest to `instant` that `zone` renders as this day: `instant` itself when it
+    /// already falls on this day in `zone`, else the first second of the day (when `instant` is
+    /// earlier) or its last second (when it is later). A photograph dated this way prints as this
+    /// day and keeps its place among other photographs of the same day wherever it can.
+    public func instant(nearest instant: Date, in zone: TimeZone) -> Date {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = zone
+        let noon = midday(in: zone)
+        let start = calendar.startOfDay(for: noon)
+        guard let next = calendar.date(byAdding: .day, value: 1, to: start) else { return noon }
+        let last = next.addingTimeInterval(-1)
+        if instant < start { return start }
+        if instant > last { return last }
+        return instant
+    }
+
     public static func < (lhs: CalendarDay, rhs: CalendarDay) -> Bool {
         (lhs.year, lhs.month, lhs.day) < (rhs.year, rhs.month, rhs.day)
     }

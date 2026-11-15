@@ -8,8 +8,9 @@ import Foundation
 /// A community tree has one identity on both sides: `Tree.id`, minted by `addTree` and stored by the
 /// service as the tree's own id. So a tree this phone added and the same tree served back by a tile
 /// are **one tree**, and every reader that asks "what community trees are there" has to see it once
-/// — or the map draws two pins, the shortlist offers the tree twice, and the dedupe refuses a tree
-/// for being within 10 m of itself.
+/// — or the map draws two pins, the shortlist offers the tree twice, and the add screen's note
+/// names the tree as on record within 10 m of itself. (Since the owner's ruling of 2026-11-14 the
+/// note does not refuse: the add screen notes a tree within 10 m and still adds.)
 ///
 /// The schema already makes the double unstorable (two triggers, `AppSchema` v23). This type makes
 /// it unreadable as well: every statement here reads `community_trees` and then only those cache
@@ -20,7 +21,7 @@ import Foundation
 ///
 /// ── Who reads through this, and who deliberately does not ──────────────────────────────────────
 ///
-/// `mapContent`, `treesNear` (and so the add dedupe and the move dedupe), `treeProfile`,
+/// `mapContent`, `treesNear` (and so the add screen's within-10 m note), `treeProfile`,
 /// `requireTree`, the grove's row resolution, `contributedPlaces`, the review queue and the name
 /// resolver. Every *write* that acts on the record itself — a species claim or correction, a report,
 /// a record withdrawal, a moved pin — reads `CommunityTreeStore` alone, because a cached tree is
@@ -88,10 +89,12 @@ public struct CommunityLayer {
         return try statement.fetchAll(CommunityTreeStore.decode)
     }
 
-    /// **The phone's own trees come first, then other people's, each by id**, so a `LIMIT` that
-    /// bites cuts other people's trees before this phone's own (ERRATA E36: a contributor's own
-    /// pin must appear on the screen they added it from), and cuts the same ones on every read, so
-    /// a pan does not swap which of them are drawn. Both tables are small and local; the sort is
+    /// **The phone's own trees come first, then other people's, each by id**, so a caller that cuts
+    /// the rows (`LocalAPI.mapContent`, through `communityPinShare`) cuts other people's trees
+    /// before this phone's own (ERRATA E36: a contributor's own pin must appear on the screen they
+    /// added it from). The order is fixed for a fixed box, so reading the same box twice cuts the
+    /// same trees. **It does not hold across a pan**: a pan that brings in a tree with a lower id
+    /// can push out a tree that is still on screen. Both tables are small and local; the sort is
     /// over the rows in one box.
     static let inBoundsSQL = """
         SELECT \(addedColumns) FROM community_trees
@@ -107,8 +110,10 @@ public struct CommunityLayer {
          LIMIT :limit
         """
 
-    /// The proximity dedupe over the whole community layer: `CommunityTreeStore.near`'s rule — box
-    /// read unbounded, then the circle and the limit applied in exact meters — over both tables.
+    /// The nearby-tree lookup over the whole community layer: `CommunityTreeStore.near`'s rule —
+    /// box read unbounded, then the circle and the limit applied in exact meters — over both
+    /// tables. It feeds the add screen's within-10 m note, which does not refuse (the owner's
+    /// ruling of 2026-11-14).
     public func near(
         _ coordinate: Coordinate,
         radiusM: Double,

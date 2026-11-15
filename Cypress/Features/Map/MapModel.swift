@@ -63,6 +63,9 @@ final class MapModel {
     /// rather than time it, `membershipRefresh`'s reasoning.
     @ObservationIgnored private(set) var communityRefresh: Task<Void, Never>?
 
+    /// The read a community refresh asked for, or nil (`startCommunityRefresh`).
+    @ObservationIgnored private(set) var communityReread: Task<Void, Never>?
+
     init(
         api: any CypressAPI,
         calendar: Calendar = .current,
@@ -377,7 +380,7 @@ final class MapModel {
     var outstandingTasks: [Task<Void, Never>] {
         [
             searchTask, membershipTask, membershipRefresh, fetchTask, communityRefresh,
-            selectionTask, paletteNameTask, needsCareToastTask,
+            communityReread, selectionTask, paletteNameTask, needsCareToastTask,
         ].compactMap { $0 }
     }
 
@@ -665,6 +668,8 @@ final class MapModel {
 
     private func scheduleFetch(immediate: Bool) {
         fetchTask?.cancel()
+        // A re-read a community refresh asked for is about the camera before this change.
+        communityReread?.cancel()
         fetchTask = Task { [weak self] in
             // `immediate` used to mean no sleep at all, which made a pinch held across the zoom-15/16
             // boundary the one gesture in the app that could issue an unbounded number of reads: the
@@ -883,19 +888,26 @@ final class MapModel {
     /// Asks for other people's community trees in the viewport just read, and reads the map again
     /// if any arrived or left (round C2).
     ///
-    /// **One at a time, and the newest wins**: a later settle cancels the one in flight, because
-    /// it is about a viewport the camera has left. The re-read happens only if the camera is still
-    /// on the viewport that was refreshed; otherwise the read the camera already scheduled picks
-    /// the new rows up. The re-read does not start another refresh, so the two cannot loop, and
-    /// the refresher's own interval would stop a loop anyway (`CommunityTileRefresher.Policy`).
+    /// **A later settle cancels the refresh in flight**, because it is about a viewport the camera
+    /// has left. Cancelling it does not undo a page it already wrote, and the read the camera
+    /// scheduled may have run before that write. So **a refresh that changed the cache leads to one
+    /// re-read whether or not it was cancelled**, as long as the camera's viewport still overlaps
+    /// the one refreshed. Rows outside the camera wait for the next read that reaches them.
+    ///
+    /// The re-read is `communityReread`, not `fetchTask`, so it never cancels a read the camera
+    /// scheduled (that read starts the next refresh, and this one does not). A camera change
+    /// cancels the re-read like any other read (`scheduleFetch`), and the read that replaces it
+    /// sees the same rows. The re-read starts no refresh, so the two cannot loop.
     private func startCommunityRefresh(for refreshed: MapViewport) {
         guard let refreshCommunity else { return }
         communityRefresh?.cancel()
         communityRefresh = Task { [weak self] in
             let changed = await refreshCommunity(refreshed.bounds)
-            guard changed, !Task.isCancelled, let self, self.viewport == refreshed else { return }
-            self.fetchTask?.cancel()
-            self.fetchTask = Task { [weak self] in
+            guard changed, let self, let current = self.viewport,
+                  current.bounds.overlaps(refreshed.bounds)
+            else { return }
+            self.communityReread?.cancel()
+            self.communityReread = Task { [weak self] in
                 await self?.fetch(refreshingCommunity: false)
             }
         }

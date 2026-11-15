@@ -451,6 +451,8 @@ struct TreeCommunityHalfResponse: Decodable {
     let addedByYou: Bool?
 
     /// Whether the tree is published (S2). Nil from a service deployed before the key existed.
+    /// **Decoded, and carried no further**, with `communityTree` below and for its reason: the
+    /// profile shows the tree as the phone holds it, and nothing on the screen reads this flag.
     let isPublished: Bool?
 
     /// The community tree, as `Tree` in its own synthesized keys, or nil: **a city tree, an
@@ -461,6 +463,15 @@ struct TreeCommunityHalfResponse: Decodable {
     /// Decoded with `try?`, `DeleteAccountResponse.communityTrees`' reasoning: a `Tree` this build
     /// cannot read (a status the service learned later) costs this one field, never the
     /// photographs beside it.
+    ///
+    /// **Decoded, and deliberately carried no further** (`visitCount`'s pattern, round C2's
+    /// review). The profile shows the copy in the phone's cache, which can be older than this one.
+    /// Writing this copy into the cache was the other choice, and it was refused: the cache has
+    /// one writer, the tile refresher, and the tile's cursor is what orders its writes. A profile
+    /// read is not ordered against a tile page. A profile answer fetched before a tile page and
+    /// written after it would put the older tree back, and no `updatedAt` comparison can catch it,
+    /// because the service rounds dates to the day (S2). The cached copy is refreshed when the
+    /// reader's map next refreshes the tree's tile.
     let communityTree: Tree?
 
     /// **Decoded, and deliberately carried no further** — `RemoteAPI.TreeCommunityDelta` does not
