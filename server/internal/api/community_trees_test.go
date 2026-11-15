@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"slices"
 	"sync"
 	"testing"
 	"time"
@@ -272,7 +273,31 @@ func assertPublicationInvariant(t *testing.T, h *harness) {
 			"accepted license, and %d published event(s) name none (decisions 7 and 10) — the "+
 			"invariant 007's header says the code keeps", unrecorded, unlicensed)
 	}
+	assertAddedDayInvariant(t, h)
 	assertPublicRecordInvariant(t, h)
+}
+
+// assertAddedDayInvariant is the owner's decision of 2026-11-15 over the whole database: a tree's
+// `added_on` is the day it was added on the phone, never the day it went live. So it is within one
+// day (a local date's reach either side of UTC) of the UTC date of its own `added` event, held to
+// the receipt; or, when the phone's clock could not be believed, it is the receipt's UTC date. A
+// tree dated by its publication would fail this for every tree that waited more than a day.
+func assertAddedDayInvariant(t *testing.T, h *harness) {
+	t.Helper()
+	var misdated int
+	if err := h.store.Pool().QueryRow(context.Background(), `
+		SELECT count(*) FROM community_trees t
+		  JOIN community_tree_events e ON e.id = t.id AND e.tree_id = t.id AND e.kind = 'added'
+		 WHERE t.added_on <> (t.created_at AT TIME ZONE 'UTC')::date
+		   AND NOT (t.added_on BETWEEN (LEAST(e.occurred_at, t.created_at) AT TIME ZONE 'UTC')::date - 1
+		                           AND (LEAST(e.occurred_at, t.created_at) AT TIME ZONE 'UTC')::date + 1)
+	`).Scan(&misdated); err != nil {
+		t.Fatal(err)
+	}
+	if misdated != 0 {
+		t.Fatalf("%d tree(s) carry an added day that is neither their phone's day nor the receipt day "+
+			"(the owner's decision of 2026-11-15)", misdated)
+	}
 }
 
 // assertPublicRecordInvariant is decision 13 over the whole database: history starts at going live.
@@ -1306,7 +1331,8 @@ func TestHistoryStartsAtGoingLive(t *testing.T) {
 	deviceUUID := uuid.New()
 	device := h.registerDeviceToken(t, deviceUUID)
 	claimed := uuid.New()
-	mustApply(t, h.syncOne(t, device, addTreeAt(claimed, private, ctLon, time.Now().Add(-3*time.Hour))), "signed-out add")
+	addedAt := time.Now().Add(-3 * time.Hour)
+	mustApply(t, h.syncOne(t, device, addTreeAt(claimed, private, ctLon, addedAt)), "signed-out add")
 	mustApply(t, h.syncOne(t, device, correctionItem(claimed, uuid.New(), moved, ctLon, time.Now().Add(-2*time.Hour))), "a private move")
 	mustApply(t, h.syncOne(t, device, map[string]any{
 		"client_uuid": uuid.New(), "kind": "species_claim", "tree_uuid": claimed,
@@ -1330,6 +1356,13 @@ func TestHistoryStartsAtGoingLive(t *testing.T) {
 		if e.Kind == "published" && (e.AfterLat == nil || *e.AfterLat != moved) {
 			t.Fatalf("the publication says the tree stood at %v; it went public at %v", e.AfterLat, moved)
 		}
+	}
+	// The public "added" stands where the tree went public, and is dated the day the phone added
+	// it (the owner's decision of 2026-11-15): the add's own instant, not the claim's.
+	addedDay := stamp8601(dayOf(addedAt))
+	if _, served := readHistory(t, h, h.registerDeviceToken(t, uuid.New()), claimed); !slices.Equal(
+		servedDays(t, served), [][2]string{{"added", addedDay}}) {
+		t.Fatalf("a stranger's history of the claimed tree is %v, want added on %s", servedDays(t, served), addedDay)
 	}
 
 	// A public move is public, from where the public saw it.

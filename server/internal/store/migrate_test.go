@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"testing"
 )
@@ -108,9 +109,11 @@ func TestOnlyPendingMigrationsRun(t *testing.T) {
 		t.Fatalf("the failure names %q; it should name the migration it actually attempted (%03d_%s): %v",
 			err.Error(), last.Version, last.Name, err)
 	}
-	// And it must not have reached for anything earlier.
+	// And it must not have reached for anything earlier. Matched on the file's full name as
+	// `applyOne` spells it: a bare name can be a table's too, and 008's own error names the table
+	// `community_trees`, which is 007's name.
 	for _, earlier := range files[:len(files)-1] {
-		if strings.Contains(err.Error(), earlier.Name) {
+		if strings.Contains(err.Error(), fmt.Sprintf("%03d_%s.sql", earlier.Version, earlier.Name)) {
 			t.Errorf("the runner attempted %03d_%s, which was already applied", earlier.Version, earlier.Name)
 		}
 	}
