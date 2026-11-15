@@ -31,10 +31,11 @@
 //  and `POST /sync`'s ownership gate accepts a device credential for an item that names a device
 //  and no user (`server/internal/api/sync.go`).
 //
-//  **These carry no photo binaries and must not grow any.** `OutboxSendSink` has no photo method,
-//  and the one of the nine that involves a photograph on disk — `addTree` — ingests it in the same
-//  transaction that writes the row here, so by the time a drain runs there is nothing staged left
-//  to send. See the send sink's own header for the argument.
+//  **The payloads carry no photo binaries.** The one of the nine that involves a photograph on
+//  disk — `addTree` — ingests it in the same transaction that writes the row here. Since the
+//  owner's answer of 2026-11-15 ("Every tree, new and old") the add photo is sent too, as an
+//  already-applied binary row beside the item (`CommunityTreeBackfill.queueAddition`), never inside
+//  the JSON.
 //
 //  Foundation only.
 //
@@ -51,8 +52,9 @@ import Foundation
 /// names nothing in any other table, which is the two-identity defect `community_trees` in
 /// `server/migrations/001_initial.sql` records having already been fixed once.
 ///
-/// The photograph is deliberately absent. `addTree` requires one and ingests it locally in the same
-/// breath; sending binaries is the send sink's stated non-feature and its own ticket.
+/// The photograph is not in the payload. It travels as a binary row on this item (`outbox_photos`,
+/// staged by `CommunityTreeBackfill.queueAddition`), and the drain sends it after the service has
+/// accepted the add (`OutboxQueue`'s phase B3), so the begin names a tree the service holds.
 public struct TreeAddition: Codable, Hashable, Sendable {
     public let clientUUID: UUID
     /// The id the tree has on this device and will have on the service.
@@ -68,6 +70,14 @@ public struct TreeAddition: Codable, Hashable, Sendable {
     /// Nil means "they did not say" and never one of the four (`TreeDraft.landContext`).
     public let landContext: LandContext?
     public let occurredAt: Date
+    /// The phone's **local** calendar date of the add, exactly `YYYY-MM-DD`: the day everybody is
+    /// shown as the day the tree was added (the owner's decision of 2026-11-15). The service reads it
+    /// as `addedOn` and keeps it when it is within one day of `occurredAt`'s UTC date
+    /// (`store.addedDay`), so `occurredAt` must stay the instant of the add.
+    ///
+    /// Nil on a payload an earlier build queued, and synthesized `Codable` then omits the key, which
+    /// the service reads as "no stated day" and answers with the UTC date of `occurredAt`.
+    public let addedOn: String?
 
     public init(
         clientUUID: UUID,
@@ -78,7 +88,8 @@ public struct TreeAddition: Codable, Hashable, Sendable {
         placement: TreePlacement,
         speciesID: UUID? = nil,
         landContext: LandContext? = nil,
-        occurredAt: Date
+        occurredAt: Date,
+        addedOn: String? = nil
     ) {
         self.clientUUID = clientUUID
         self.treeID = treeID
@@ -89,6 +100,14 @@ public struct TreeAddition: Codable, Hashable, Sendable {
         self.speciesID = speciesID
         self.landContext = landContext
         self.occurredAt = occurredAt
+        self.addedOn = addedOn
+    }
+
+    /// `addedOn` for an add at `instant`, read in `timeZone`: the Gregorian calendar date, in the
+    /// form the service parses. The same reading `RemoteAPI.localDate` gives a photograph's
+    /// `captured_on`, so the two dates of one add can never be computed two ways.
+    public static func addedDay(of instant: Date, in timeZone: TimeZone) -> String {
+        RemoteAPI.localDate(of: instant, in: timeZone)
     }
 }
 

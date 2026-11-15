@@ -31,6 +31,17 @@ enum PhotoBinary {
         return (width: width, height: height)
     }
 
+    /// Whether the file at `path` is a JPEG the system can read.
+    ///
+    /// The service stores every photograph under `photos/<id>.jpg` and checks nothing about the
+    /// bytes, so a file that is not a JPEG would be published under a name that says it is.
+    static func isJPEG(atPath path: String) -> Bool {
+        guard let source = CGImageSourceCreateWithURL(URL(fileURLWithPath: path) as CFURL, nil),
+              let type = CGImageSourceGetType(source)
+        else { return false }
+        return (type as String) == UTType.jpeg.identifier
+    }
+
     /// Copies an image file with its metadata sidecar dropped — GPS, capture time, camera and lens
     /// identity, Maker Notes, IPTC, XMP — leaving the compressed pixels untouched.
     ///
