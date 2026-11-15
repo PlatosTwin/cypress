@@ -342,46 +342,19 @@ struct LicenseAcceptanceTests {
         #expect(rig.model.licenseAcceptanceFailed == false)
     }
 
-    // MARK: - 7. The contract with the service, read from its source
+    // MARK: - 7. The builder attaches no credential
 
-    /// The `json:` tags of a Go struct, read from source text.
-    static func jsonTags(ofStruct name: String, in source: String) -> Set<String>? {
-        guard let start = source.range(of: "type \(name) struct {") else { return nil }
-        guard let end = source.range(of: "\n}", range: start.upperBound..<source.endIndex) else { return nil }
-        let block = source[start.upperBound..<end.lowerBound]
-        let pattern = try! NSRegularExpression(pattern: #"json:"([a-z_]+)"#)
-        let text = String(block)
-        let matches = pattern.matches(in: text, range: NSRange(text.startIndex..., in: text))
-        return Set(matches.compactMap { Range($0.range(at: 1), in: text).map { String(text[$0]) } })
-    }
+    // The body's two keys are the json tags of `claimRequest` in `server/internal/api/auth.go`.
+    // `theRequest` pins them as literals. A test that read that Go file from here was tried and
+    // removed: `DeployPathsAgreeTests` requires every server file the iOS suite reads to be carved
+    // back into the workflow's run predicate, and that workflow is not this change's to edit.
 
-    @Test("the body's keys are the json tags of the service's claimRequest")
-    func bodyMatchesTheServer() throws {
-        // Calibrate the reader on a specimen whose answer is known, including a field after a
-        // comment line, before believing what it says about the real file.
-        let specimen = """
-        type specimen struct {
-        \tA string `json:"alpha"`
-        \t// a comment
-        \tB json.RawMessage `json:"beta_gamma"`
-        }
-        type other struct {
-        \tC string `json:"not_this"`
-        }
-        """
-        #expect(Self.jsonTags(ofStruct: "specimen", in: specimen) == ["alpha", "beta_gamma"])
-
-        let url = AppSourceLiterals.repositoryRoot()
-            .appendingPathComponent("server/internal/api/auth.go")
-        let source = try String(contentsOf: url, encoding: .utf8)
-        let serverKeys = try #require(Self.jsonTags(ofStruct: "claimRequest", in: source))
-
+    @Test("the request builder attaches no credential; SessionTransport owns that")
+    func builderAttachesNoCredential() throws {
         let request = try AuthClient(baseURL: ScriptedAuthHTTP.baseURL, http: OfflineSession.make())
             .licenseAcceptanceRequest(deviceUUID: Self.deviceID, version: LicenseConsent.currentVersion)
-        let httpBody = try #require(request.httpBody)
-        let body = try #require(try JSONSerialization.jsonObject(with: httpBody) as? [String: Any])
-        #expect(Set(body.keys) == serverKeys, "the phone's body and the service's claimRequest disagree")
+        #expect(request.httpMethod == "POST")
         #expect(request.value(forHTTPHeaderField: "Authorization") == nil,
-                "the builder attached a credential; SessionTransport owns that")
+                "the builder attached a credential")
     }
 }

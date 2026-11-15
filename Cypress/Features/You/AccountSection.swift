@@ -4,9 +4,9 @@
 //
 //  The You tab's account block: whether there is one, the way out of it, and the way to delete it
 //  (ERRATA E131), and, for an account that declined the license at sign-in, a way to agree later
-//  (the owner's decision of 2026-11-15). Presentation only — a finished state and four callbacks, no `LocalAPI` and no
-//  `async` — so every state photographs and previews with static data, the split
-//  `ModerationReviewList` and `AccountAskScreen` use.
+//  (the owner's decision of 2026-11-15). Presentation only — a finished state and four callbacks,
+//  no `LocalAPI` and no `async` — so every state photographs and previews with static data, the
+//  split `ModerationReviewList` and `AccountAskScreen` use.
 //
 //  ── The one rule this block is most likely to break, and the round it broke in ─────────────
 //  ARCHITECTURE §5.4 and DECISIONS constraint 3: the app never says it did a thing it did not do.
