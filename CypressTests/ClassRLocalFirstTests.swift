@@ -159,7 +159,13 @@ struct ClassRLocalFirstTests {
         #expect(try await routed.treeProfile(id: Self.treeID).photos.items.count == 1)
         let merged = try await routed.refreshedTreeProfile(id: Self.treeID)
         #expect(merged.photos.items.count == 2, "the scripted community half never reached the merge")
-        #expect(transport.calls.count == 1)
+        // One profile read. Since round C2 a community tree's refresh also asks for its history
+        // (`RoutedAPI.history(of:from:)`), so the count is by route; the fixture's tree is a
+        // community tree, and the history route is the only other one the merge may call.
+        let paths = transport.calls.map(\.path)
+        #expect(paths.filter { $0 == "/trees/\(Self.treeID.uuidString)" }.count == 1)
+        #expect(paths.allSatisfy { $0 == "/trees/\(Self.treeID.uuidString)" || $0 == "/trees/\(Self.treeID.uuidString)/history" },
+                "the merge called a route it has no business with: \(paths)")
         #expect(await log.outcome(of: .treeProfile) == .live)
     }
 

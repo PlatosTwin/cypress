@@ -4,8 +4,7 @@ import Foundation
 ///
 /// Round C1 built the cache (`CommunityTreeCacheStore`) and made the map, the shortlist and the
 /// profile read it. This is what writes it, so another person's published tree reaches this phone.
-/// The design and its reasons are recorded in `docs/rulings-pending/community-trees-sync-down.md`;
-/// this header states what the code does.
+/// This header states what the code does and why.
 ///
 /// ── When it runs ──────────────────────────────────────────────────────────────────────────────
 ///
