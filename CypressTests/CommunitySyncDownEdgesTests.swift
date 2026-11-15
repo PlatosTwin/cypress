@@ -184,6 +184,59 @@ struct CommunityCancelledRefreshMapTests {
         guard case let .pins(after) = model.content else { Issue.record("clusters"); return }
         #expect(after.items.contains { $0.id == arrived }, "the tree a cancelled refresh wrote never reached the map")
     }
+
+    /// The second review's steps, with the real refresher behind a real map. Screen V1 (the west of
+    /// tile 14/2616/6333) starts pass 1, whose request is on the wire. The reader pans to V2, the
+    /// east of the **same tile**, which does not overlap V1. V2's read runs, starts pass 2 (which
+    /// waits) and cancels pass 1. Pass 1's response comes back and writes a tree inside V2. Pass 2
+    /// then skips the tile pass 1 marked. The map must still draw the tree.
+    ///
+    /// Red-proof: put back the guard `current.bounds.overlaps(refreshed.bounds)` in
+    /// `startCommunityRefresh` — red on "the tree is cached and on V2's screen, and the map does
+    /// not draw it".
+    @Test("a tree a refresh wrote for the same tile is drawn on a screen that does not overlap the refreshed one")
+    func sameTileOtherScreen() async throws {
+        let store = try await CypressStore.inMemory()
+        let api = LocalAPI(store: store, deviceID: UUID())
+        let gate = FetchGate()
+        let spot = Coordinate(latitude: 37.7605, longitude: -122.5015)
+        let tree = CommunityRefresherTests.tree(at: spot)
+        let page = CommunityRefresherTests.page([tree], cursor: "c1")
+        let refresher = CommunityTileRefresher(queue: store.queue) { _, _ in
+            await gate.wait()
+            return page
+        }
+        let model = MapModel(api: api, refreshCommunity: { bounds in
+            await refresher.refresh(covering: bounds).changedCache
+        })
+        let v1 = BoundingBox(minLatitude: 37.7600, maxLatitude: 37.7610, minLongitude: -122.5150, maxLongitude: -122.5140)
+        let v2 = BoundingBox(minLatitude: 37.7600, maxLatitude: 37.7610, minLongitude: -122.5020, maxLongitude: -122.5010)
+        #expect(CommunityTile.covering(v1.expanded(by: 0.08), limit: 16)?.map(\.path) == ["14/2616/6333"], "calibration: V1's tile")
+        #expect(CommunityTile.covering(v2.expanded(by: 0.08), limit: 16)?.map(\.path) == ["14/2616/6333"], "calibration: V2's tile")
+        #expect(v1.expanded(by: 0.08).maxLongitude < v2.expanded(by: 0.08).minLongitude, "calibration: the two screens overlap")
+
+        model.cameraDidChange(bounds: v1, zoom: 18)
+        try await pollC2 { await gate.entered >= 1 }
+        #expect(await gate.entered == 1, "calibration: pass 1 never reached the fetch")
+        model.cameraDidChange(bounds: v2, zoom: 18)
+        // V2's read lands, and starts pass 2, which waits behind pass 1.
+        try await pollC2 { model.viewport?.bounds.contains(spot) == true && !model.isLoading && model.hasSettled }
+        try await Task.sleep(nanoseconds: 300_000_000)
+        guard case let .pins(before) = model.content else { Issue.record("clusters"); return }
+        #expect(!before.items.contains { $0.id == tree.id }, "calibration: the tree was drawn before it was written")
+
+        await gate.open()
+        try await pollC2 { (try? await CommunityRefresherTests.cached(store)[tree.id]) != nil }
+        #expect(try await CommunityRefresherTests.cached(store)[tree.id] != nil, "calibration: pass 1 never wrote")
+        try await pollC2 {
+            guard case let .pins(pins) = model.content else { return false }
+            return pins.items.contains { $0.id == tree.id }
+        }
+        guard case let .pins(after) = model.content else { Issue.record("clusters"); return }
+        #expect(await gate.entered == 1, "pass 2 asked again for the tile pass 1 fetched")
+        #expect(after.items.contains { $0.id == tree.id },
+                "the tree is cached and on V2's screen, and the map does not draw it")
+    }
 }
 
 // MARK: - Offline
@@ -377,8 +430,9 @@ struct CommunityNarrowBeforeCutTests {
 
     /// The narrowing runs before the budget cuts anything.
     ///
-    /// Red-proof: pass `limit: viewport.pinLimit` to `layer.inBounds` in `LocalAPI.mapContent` —
-    /// red on "the only tree of the narrowed species is in view but not drawn".
+    /// Red-proof: delete `\(cachedNarrowing)` from `CommunityLayer.narrowedArms`, so the statement
+    /// cuts before anything narrows — red on "the only tree of the narrowed species is in view but
+    /// not drawn".
     @Test("a narrowed map draws a matching community tree even when the box holds more than the budget")
     func narrowingRunsBeforeTheCut() async throws {
         let (_, api) = try await Self.seeded()
@@ -392,7 +446,8 @@ struct CommunityNarrowBeforeCutTests {
 
     /// A cluster badge counts every community tree in its cell, not the first `pinLimit` of them.
     ///
-    /// Red-proof: the same break — red on "the badges counted 4 of 7".
+    /// Red-proof: read the cells from `SELECT * FROM (…narrowedArms…) LIMIT 4` in
+    /// `CommunityLayer.cellsSQL` — red on "the badges counted 4 of 7".
     @Test("a cluster badge counts every community tree, past the pin budget")
     func clustersCountEveryTree() async throws {
         let (_, api) = try await Self.seeded()
@@ -402,6 +457,36 @@ struct CommunityNarrowBeforeCutTests {
 
         let counted = clusters.map(\.count).reduce(0, +)
         #expect(counted == 7, "the badges counted \(counted) of 7")
+    }
+
+    /// A narrowed cluster answer counts only the matches, and counts them in the engine.
+    ///
+    /// Red-proof: delete `\(cachedNarrowing)` from `CommunityLayer.narrowedArms` — red on "the
+    /// badges counted 7 trees under a species that matches 1".
+    @Test("a narrowed cluster badge counts only the matching community trees")
+    func narrowedClustersCountMatches() async throws {
+        let (_, api) = try await Self.seeded()
+        let viewport = MapViewport(bounds: CommunityRefresherTests.box, zoom: 14, pinLimit: 4, speciesIDs: [Self.rare])
+
+        guard case let .clusters(clusters) = try await api.mapContent(in: viewport) else { Issue.record("pins at zoom 14"); return }
+
+        let counted = clusters.map(\.count).reduce(0, +)
+        #expect(counted == 1, "the badges counted \(counted) trees under a species that matches 1")
+    }
+
+    /// The pin answer says how many community trees matched, not how many the cut kept.
+    ///
+    /// Red-proof: count the decoded rows instead of `COUNT(*) OVER ()` in `CommunityLayer.pins` —
+    /// red on "matchesInView counted the kept pins, not the matches".
+    @Test("a cut pin answer reports every community match in view")
+    func matchesCountPastTheCut() async throws {
+        let (_, api) = try await Self.seeded()
+        let viewport = MapViewport(bounds: CommunityRefresherTests.box, zoom: 17, pinLimit: 4)
+
+        guard case let .pins(answer) = try await api.mapContent(in: viewport) else { Issue.record("clusters"); return }
+
+        #expect(answer.items.count == 4)
+        #expect(answer.matchesInView == 7, "matchesInView counted the kept pins, not the matches: \(String(describing: answer.matchesInView))")
     }
 
     /// The community layer's own order, without the budget: the phone's own trees first, then by

@@ -2404,6 +2404,28 @@ into this section in the round that finds it, and nowhere else. Each item stands
     for the round. (b) The comments in migration 001 (lines ~37, 205 and 226), 002 (~21) and 007
     (~139) still describe the 10 m dedupe or its resolution sheet. Decide whether applied
     migrations' comments are corrected in place or left as the record of their day.
+142. **UI tests leave community trees in the app's database, and they break another test on a
+    reused simulator.** Found in round C2 (2026-11-15). `ProfileLinkColumnUITests` has two tests, and
+    each launches `CYPRESS_SCREEN=profileLinks`, which adds one community tree in a line of slots
+    running west from 37.769, −122.530 (`DebugDeepLink.profileLinksSpot`). So each run of the class
+    leaves two added trees in the ocean off Ocean Beach, and the add-a-tree and Move pin harness cases
+    add more nearby. They count as the reader's own, so after two runs
+    `SeeAllOnMapUITests.testTheLinkCentersTheMapOnTheCityWhereTheReaderHasTheMostTrees` aims the
+    "Yours" camera at them and fails with "the map opened narrowed to “Yours” and drew no tree at
+    all". Seen on this branch with four such trees in the database (the camera settled on the newest,
+    37.769, −122.53102), and on main `bd8a35af` too, in the second C2 reviewer's control run. CI is
+    unaffected, because each CI run starts from a fresh simulator. `xcrun simctl uninstall <udid>
+    app.cypress.Cypress` fixes a device: the same tree passed 23 of 23 map and profile UI tests after
+    it. The fix belongs in the harness: fresh state for that test, or a "Yours" camera fit that leaves
+    harness trees out.
+143. **`CameraZoomPinchTests` fails on main on this Mac's toolchain.** "05 and 09's camera hands the
+    pinch its own controller, armed, on its viewfinder" fails at `CameraZoomPinchTests.swift:162`,
+    "Expectation failed: Self.stateModel(of: view, label: "_camera")": a `Mirror` lookup of
+    `_camera` on `ContributionCameraView`, which is SwiftUI's internal state storage. Seen with
+    Xcode 27.2 and the iOS 26.5 simulator runtime. Round C2 saw it on its own branch in every full
+    run; the orchestrator reports that four agents saw it on four simulators on 2026-11-15, on main
+    itself among them. It is reported to pass on CI; this round did not check a CI log. Until it is fixed, every local full unit run ends `VERIFY-FAIL` with exactly this
+    one issue, so read the failing test's name before treating a local red as anything else.
 
 
 **Retire the format-1 manifest — DONE, 2026-08-23.** The owner overrode the trigger the day after

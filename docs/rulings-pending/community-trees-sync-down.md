@@ -40,11 +40,31 @@ The widest zoom-15 map is 1.5 to 1.7 km across in San Francisco, 1.9 to 2.1 km a
 
 **Why 16 and not 9.** Nine already covered every zoom-15 map (8 tiles at most), so the as-built
 number met "the first zoom that shows cluster badges" on its own. The owner did not choose the
-as-built option, though, and 16 is the number the chosen option names. With 16, every map from zoom
-14.25 in fetches, which is 2.5 to 2.8 km across in San Francisco and matches "about 2 km". A number
-high enough for every zoom-14 map (18) would also take zoom-13 maps just wider than zoom 14.0, and
-was not offered. `CommunityFetchZoomTests` pins the table's rows for zoom 15.0, 14.25 and 13.0 against the
-number in `Policy`.
+as-built option, though, and 16 is the number the chosen option names. A number high enough for
+every zoom-14 map (18) would also take zoom-13 maps just wider than zoom 14.0, and was not offered.
+
+**How wide a map fetches with 16, in full** (San Francisco, the four screens, every placement of
+the map across a tile; the widths are the screen's, before the 8 % margin):
+- **Every placement fetches** for a map up to about **3.1 km** wide: zoom 13.92 on the 390 pt
+  screen, 13.97 on 402, 14.04 on 420 and 14.10 on 440.
+- **Some placements fetch** up to about **3.8 km** wide (zoom 13.63 to 13.81, by screen); whether
+  one does depends on where the tile edges fall.
+- **No placement fetches** below zoom 13.63 to 13.81.
+
+So "about 2 km" in the chosen option understates what was built: the download starts at zoom 15 and
+reaches maps about 3 km wide, roughly twice the width of the widest zoom-15 map. The second review
+measured the same range independently (3.06 to 3.09 km and 3.83 to 3.86 km).
+
+**What 16 means for requests, a fact the option's wording did not carry.** "Each tile at most once
+every 2 minutes" holds for attempts that finish, successful or not. A pass cancelled while its
+request is in flight does not count as an attempt, so a reader who keeps panning before answers
+come back can send one request per settle for the same tile. A refused cursor adds one request (the
+fresh snapshot) beyond a pass's 10 pages. And a pass waits behind any pass still running (the next
+entry), so passes do not overlap.
+
+`CommunityFetchZoomTests` pins three facts against the number in `Policy`: every zoom-15.0 map and
+every zoom-14.25 map touches no more tiles than the limit, and every zoom-13.0 map touches more. It
+does not pin the ranges in the table or the zoom-14.0 row.
 
 ### R??? — The refresher runs when the map settles, for the tiles the viewport touches
 
@@ -53,23 +73,35 @@ number in `Policy`.
 - **Trigger.** `MapModel` starts a refresh after each settled read of the map (the 200 ms camera
   debounce already decides when a read happens). The map paints from the phone first, and the
   refresh runs behind it. A later settle cancels the refresh in flight.
-- **The re-read.** If a refresh changed the cache, the map reads again, once, **whether or not the
-  refresh was cancelled**, as long as the camera's viewport still overlaps the viewport refreshed.
-  Cancelling a refresh cannot undo a page it already wrote, and the read the camera scheduled may
-  have run before that write. The re-read starts no refresh, so the two cannot loop. A camera change
+- **The re-read.** If a refresh changed the cache, the map reads what the camera shows now, once,
+  **whether or not the refresh was cancelled, and wherever the camera is.** Cancelling a refresh
+  cannot undo a page it already wrote, and the read the camera scheduled may have run before that
+  write. There is no test of where the camera is, because the refresher writes whole zoom-14 tiles,
+  about 2.4 km across: a tree written for one screen can be on a later screen that does not overlap
+  it (the second review's finding). Comparing against the refreshed tiles' bounds would also work;
+  it was not chosen because it is a second geometry rule to keep right, and an unneeded re-read
+  costs one map read and happens only after the cache changed. The re-read starts no refresh, so the two cannot loop. A camera change
   cancels the re-read like any other read, and the read that replaces it sees the same rows.
 - **One pass at a time.** A pass that starts while another is running waits for it to end, then
   decides which tiles are due. A tile in flight is therefore never skipped by a second pass that only
   saw it marked. If the first pass was cancelled before its request came back, the tile is not
   marked, and the second pass asks for it.
+  - **Known limit:** because passes queue, a pass stuck in a wait that cancellation does not stop
+    delays every later pass. One such wait is `AppSession`'s shared credential-minting task during a
+    phone's first registration (`AppSession.mintingInFlight`). For a stalled connection the delay
+    ends at the 15-second request timeout (`AuthClient.requestTimeout`). That timeout is an idle
+    timeout, not a deadline: it restarts whenever a byte arrives, so a slow answer that keeps
+    trickling can hold the queue longer.
 - **Which tiles.** The zoom-14 tiles (`CommunityTile`, the service's only zoom) that the read's
   viewport touches, and only when there are 16 or fewer (the owner's ruling above). A wider map
   fetches nothing; the reader zooms in to get the trees, and the cache keeps drawing what it holds.
-- **How often.** A tile is asked at most once every **120 seconds**, counted from the last attempt,
-  successful or not. Panning back and forth over the same tiles does not repeat requests. A refresh
-  cancelled before its request came back does not count as an attempt.
+- **How often.** A tile is asked at most once every **120 seconds**, counted from the last attempt
+  that finished, successful or not. Panning back and forth over the same tiles does not repeat
+  requests once they have answered. A refresh cancelled before its request came back does not count
+  as an attempt, so a reader who keeps panning before answers arrive can send one request per
+  settle for the same tile.
 - **Pages.** `has_more` is followed up to 10 pages (1,000 trees) per tile per pass; the next pass
-  continues from the stored cursor.
+  continues from the stored cursor. A refused cursor costs one more request, the fresh snapshot.
 - **No timer, no launch fetch, no foreground fetch.** The map is the only surface that draws other
   people's trees in bulk, so it is the only trigger. A profile opened from somewhere else reads what
   the cache already holds.

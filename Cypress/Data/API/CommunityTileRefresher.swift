@@ -71,7 +71,9 @@ public actor CommunityTileRefresher {
         /// - a map a quarter step wider (zoom 14.25) touches 8 to 15, so it fetches too;
         /// - the widest zoom-14 map touches 8 to 18, so on the two larger screens some do not;
         /// - zoom 13 touches 32 to 50, so none fetches.
-        /// `CommunityTileTests` pins those counts against this number.
+        /// `CommunityFetchZoomTests` pins three of those facts against this number: the most tiles
+        /// any zoom-15.0 map and any zoom-14.25 map touches is within it, and the fewest any zoom-13
+        /// map touches is above it. The ranges and the zoom-14 row are not pinned.
         public var maxTiles: Int
         /// How long a tile is left alone after an attempt, successful or not.
         public var minimumInterval: TimeInterval

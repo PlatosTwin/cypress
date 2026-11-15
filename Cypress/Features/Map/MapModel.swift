@@ -891,8 +891,13 @@ final class MapModel {
     /// **A later settle cancels the refresh in flight**, because it is about a viewport the camera
     /// has left. Cancelling it does not undo a page it already wrote, and the read the camera
     /// scheduled may have run before that write. So **a refresh that changed the cache leads to one
-    /// re-read whether or not it was cancelled**, as long as the camera's viewport still overlaps
-    /// the one refreshed. Rows outside the camera wait for the next read that reaches them.
+    /// re-read of whatever the camera shows now, whether or not it was cancelled.**
+    ///
+    /// No test of where the camera is: the refresher writes whole zoom-14 tiles, about 2.4 km
+    /// across, so a tree it wrote for one screen can be on a later screen that does not overlap it
+    /// (round C2's second review). Comparing against the refreshed tiles' own bounds would also
+    /// work, but it is a second geometry rule to keep right, and a re-read the camera did not need
+    /// costs one map read, and happens only after the cache actually changed.
     ///
     /// The re-read is `communityReread`, not `fetchTask`, so it never cancels a read the camera
     /// scheduled (that read starts the next refresh, and this one does not). A camera change
@@ -903,9 +908,7 @@ final class MapModel {
         communityRefresh?.cancel()
         communityRefresh = Task { [weak self] in
             let changed = await refreshCommunity(refreshed.bounds)
-            guard changed, let self, let current = self.viewport,
-                  current.bounds.overlaps(refreshed.bounds)
-            else { return }
+            guard changed, let self, self.viewport != nil else { return }
             self.communityReread?.cancel()
             self.communityReread = Task { [weak self] in
                 await self?.fetch(refreshingCommunity: false)
