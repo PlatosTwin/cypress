@@ -15,13 +15,20 @@ pin within 10 m of another tree is recorded like any other.
 
 **What `conflict` (409) can still mean.**
 
-- On `POST /trees`: nothing. The route answers `200` with `applied` or `duplicate`, or a
-  `validation_failed`, `unauthorized` or `server_error` envelope.
-- On `add_tree` and on `location_correction`: nothing. A move can still be refused with `forbidden`
-  (not the adder), `not_found` (a tree the caller cannot see, or one this service does not hold) or
-  `validation_failed`.
-- On `tree_withdrawal`: "other people have added to this tree, so it stays on the map" (decision 8).
-  This is now the only `conflict` the community-tree kinds return.
+- On `POST /trees`: nothing. The route answers `200` with `applied` or `duplicate`. Otherwise it
+  answers an error envelope: `rate_limited` (the `authenticated` wrapper's limiter),
+  `unauthorized` (no live session or device token), `validation_failed` (a body that cannot be
+  read, or a missing id, an off-map coordinate, or a placement or land context outside the
+  vocabulary), or `server_error`.
+- On `add_tree` and on `location_correction`: nothing. Each item still gets one of the per-item
+  results every kind can get: `forbidden` when the item names another account or device, or a
+  signed-out caller sends an item with a user id; `validation_failed`; and `server_error`.
+  `location_correction` can also be refused with `forbidden` (the caller is not the adder) or
+  `not_found` (a tree the caller cannot see, or one this service does not hold). A replay of
+  either kind is `duplicate`.
+- On `tree_withdrawal`: "Other people have added to this tree, so it stays on the map." (decision 8).
+  This is now the only `conflict` that a community-tree kind returns. The only other `conflict` in
+  the service is the device claim's "This device is already linked to another account."
 
 **The error envelope has no `detail` any more.** `detail.candidates` existed only to carry the
 proximity candidates. No route sends it, so `apierr.Error.Detail` was removed. The envelope is
@@ -33,14 +40,18 @@ left in place because the Swift suite reads it, and the phone-side round decides
 
 - A second send of the same `add_tree` item (the same `client_uuid`, for example after a lost
   response) hits the contribution dedupe and answers `duplicate`.
-- A second send of the same tree id, on either door, hits `community_trees`' primary key
-  (`ON CONFLICT (id) DO NOTHING`) or the erase tombstone and makes no second tree. On
-  `POST /trees` it answers `duplicate`.
+- An `add_tree` for the same tree id under a new `client_uuid` answers `applied`, because its
+  contribution is new, and makes no second tree: `insertCommunityTree` keys on the tree id
+  (`ON CONFLICT (id) DO NOTHING`) and checks the erase tombstone.
+- A second `POST /trees` with the same tree id makes no second tree, for the same reason, and
+  answers `duplicate`.
 - A tree sent again under a **new** tree id is a second tree. Before 2026-11-14 the 10 m rule
   refused it; now nothing does. The phone mints the tree id once per add, so this happens only if a
   person adds the same tree twice, which the owner's ruling accepts.
 
 **Old phones.** An installed build still refuses on the phone (`LocalAPI.addTree`,
-`LocalAPI.correctLocation`) before it queues anything, so it is stricter than the service and
-never sends something the service now treats differently. Such a build still decodes a
-`ProximityConflict` if it gets one; it will no longer get one.
+`LocalAPI.correctLocation`) before it queues anything, but it checks only the trees in its own
+local data: the city file and the community trees it has fetched. It can therefore send an add, or
+a move, within 10 m of a community tree it has never fetched. The old service refused that with
+`conflict`; the new service applies it. That is the outcome the owner's ruling intends. Such a
+build still decodes a `ProximityConflict`; it will no longer receive one.
