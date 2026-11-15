@@ -384,9 +384,10 @@ var ErrHistoryNotFound = errors.New("no community tree history for this viewer")
 // asked would be two contracts under one name. So the adder's own **unpublished** tree has a
 // history with no events in it.
 //
-// Newest first is `occurred_at` (the act's own time — a late correction sorts where it happened,
-// not where it arrived), then `recorded_at`, then the id, so two events on one day keep a stable
-// order on the wire even though the wire's dates are truncated to the day.
+// Newest first is the instant the public learned of the act, `GREATEST(occurred_at, published_at)`
+// (the act's own time, floored at going live), then `recorded_at`, then the id, so two events on
+// one day keep a stable order on the wire even though the wire's dates are truncated to the day.
+// The served day of each row is set out in the query's comment below.
 func (s *Store) CommunityTreeHistory(ctx context.Context, id uuid.UUID, viewer Owner, kinds []string, limit int) ([]HistoryEvent, bool, error) {
 	visibility, tree, err := communityTreeFor(ctx, s.pool, id, viewer)
 	if err != nil {
