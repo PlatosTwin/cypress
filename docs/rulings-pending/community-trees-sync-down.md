@@ -56,8 +56,8 @@ reaches maps about 3 km wide, roughly twice the width of the widest zoom-15 map.
 measured the same range independently (3.06 to 3.09 km and 3.83 to 3.86 km).
 
 **What 16 means for requests, a fact the option's wording did not carry.** "Each tile at most once
-every 2 minutes" holds for attempts that finish, successful or not. A pass cancelled while its
-request is in flight does not count as an attempt, so a reader who keeps panning before answers
+every 2 minutes" is counted from the start of each attempt that is not cancelled, successful or
+not. A pass cancelled while its request is in flight clears that start, so a reader who keeps panning before answers
 come back can send one request per settle for the same tile. A refused cursor adds one request (the
 fresh snapshot) beyond a pass's 10 pages. And a pass waits behind any pass still running (the next
 entry), so passes do not overlap.
@@ -95,11 +95,10 @@ does not pin the ranges in the table or the zoom-14.0 row.
 - **Which tiles.** The zoom-14 tiles (`CommunityTile`, the service's only zoom) that the read's
   viewport touches, and only when there are 16 or fewer (the owner's ruling above). A wider map
   fetches nothing; the reader zooms in to get the trees, and the cache keeps drawing what it holds.
-- **How often.** A tile is asked at most once every **120 seconds**, counted from the last attempt
-  that finished, successful or not. Panning back and forth over the same tiles does not repeat
-  requests once they have answered. A refresh cancelled before its request came back does not count
-  as an attempt, so a reader who keeps panning before answers arrive can send one request per
-  settle for the same tile.
+- **How often.** A tile is asked at most once every **120 seconds**, counted from the start of the
+  last attempt that was not cancelled, successful or not. Panning back and forth over the same tiles
+  does not repeat those requests. A cancelled attempt clears its stamp, so a reader who keeps
+  panning before answers arrive can send one request per settle for the same tile.
 - **Pages.** `has_more` is followed up to 10 pages (1,000 trees) per tile per pass; the next pass
   continues from the stored cursor. A refused cursor costs one more request, the fresh snapshot.
 - **No timer, no launch fetch, no foreground fetch.** The map is the only surface that draws other

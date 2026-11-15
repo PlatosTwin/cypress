@@ -12,8 +12,8 @@ import Foundation
 /// `MapModel` calls it after each read of the map; it never blocks that read, and the map paints
 /// from the phone first. A viewport that touches more than `Policy.maxTiles` tiles is a zoomed-out
 /// map, and nothing is fetched for it. **A tile is asked at most once per
-/// `Policy.minimumInterval`**, whether the last attempt worked or not, so panning back and forth
-/// does not repeat requests for the same tiles.
+/// `Policy.minimumInterval`**, counted from the start of the last attempt that was not cancelled,
+/// whether it worked or not, so panning back and forth does not repeat requests for the same tiles.
 ///
 /// **Passes run one at a time.** A pass that starts while another is still running waits for it
 /// to end, then decides which tiles are due. So a tile in flight is never skipped by a second pass
@@ -75,7 +75,8 @@ public actor CommunityTileRefresher {
         /// any zoom-15.0 map and any zoom-14.25 map touches is within it, and the fewest any zoom-13
         /// map touches is above it. The ranges and the zoom-14 row are not pinned.
         public var maxTiles: Int
-        /// How long a tile is left alone after an attempt, successful or not.
+        /// How long a tile is left alone after an attempt starts, successful or not. A cancelled
+        /// attempt does not count.
         public var minimumInterval: TimeInterval
         /// The most pages one tile is followed through in one pass. A page is up to 100 trees, so
         /// this is 1,000 trees per tile per pass; the next pass continues from the stored cursor.
