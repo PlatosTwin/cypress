@@ -946,9 +946,9 @@ func TestTakedownRequiresTheOperatorCredential(t *testing.T) {
 
 // ── A tree beside another tree is a second tree (the owner's ruling of 2026-11-14) ─────────────
 
-// TestATreeFiveMetresFromAnotherIsAdded: `POST /trees` no longer refuses a tree because another is
+// TestATreeFiveMetersFromAnotherIsAdded: `POST /trees` no longer refuses a tree because another is
 // recorded within 10 m. The owner: "sometimes they will be close together and that's fine".
-func TestATreeFiveMetresFromAnotherIsAdded(t *testing.T) {
+func TestATreeFiveMetersFromAnotherIsAdded(t *testing.T) {
 	h := newHarness(t)
 	deviceToken := h.registerDeviceToken(t, uuid.New())
 

@@ -255,7 +255,7 @@ func TestAddTreeDisagreeingWithItselfIsRefused(t *testing.T) {
 }
 
 // TestAddTreeThroughSyncAcceptsATreeBesideAnother is the owner's ruling of 2026-11-14 on the
-// `add_tree` door: a tree two metres from another is a second tree, not a `conflict`.
+// `add_tree` door: a tree two meters from another is a second tree, not a `conflict`.
 func TestAddTreeThroughSyncAcceptsATreeBesideAnother(t *testing.T) {
 	h := newHarness(t)
 	deviceToken := h.registerDeviceToken(t, uuid.New())
@@ -265,7 +265,7 @@ func TestAddTreeThroughSyncAcceptsATreeBesideAnother(t *testing.T) {
 		t.Fatalf("the first tree = %q, want applied", result.Status)
 	}
 
-	// Two metres away, which the retired 10 m rule refused.
+	// Two meters away, which the retired 10 m rule refused.
 	second := uuid.New()
 	result := h.syncOne(t, deviceToken, addTreeItem(second, 37.33822, -121.88631))
 	if result.Status != "applied" {
@@ -314,6 +314,43 @@ func TestReplayingAnAddTreeIsDuplicateNotAConflictWithItself(t *testing.T) {
 	if trees != 1 || contributions != 1 {
 		t.Fatalf("trees = %d, add_tree contributions = %d after one add sent twice; want 1 and 1",
 			trees, contributions)
+	}
+}
+
+// TestASecondAddTreeForTheSameTreeUnderANewKeyMakesNoSecondTree is the other double send on the
+// `add_tree` door: the same tree id under a new `client_uuid` (an add queued twice under two keys).
+//
+// The contribution dedupe cannot see it, because the key is new, so the second item answers
+// `applied`: its contribution row is recorded. The tree is not inserted again, because
+// `insertCommunityTree` keys on the tree id (`ON CONFLICT (id) DO NOTHING`). With the 10 m rule
+// gone, that is the only thing standing between this sequence and a second tree.
+func TestASecondAddTreeForTheSameTreeUnderANewKeyMakesNoSecondTree(t *testing.T) {
+	h := newHarness(t)
+	deviceToken := h.registerDeviceToken(t, uuid.New())
+	tree := uuid.New()
+
+	first := addTreeItem(tree, 37.3382, -121.8863)
+	if result := h.syncOne(t, deviceToken, first); result.Status != "applied" {
+		t.Fatalf("the first add_tree = %q (%s), want applied", result.Status, codeOf(result.Error))
+	}
+	second := addTreeItem(tree, 37.3382, -121.8863)
+	if second["client_uuid"] == first["client_uuid"] {
+		t.Fatal("fixture: the two items share a key; this test needs two")
+	}
+	if result := h.syncOne(t, deviceToken, second); result.Status != "applied" {
+		t.Fatalf("the second add_tree under a new key = %q (%s), want applied — a new key is a new "+
+			"contribution, and the tree insert under it is a no-op", result.Status, codeOf(result.Error))
+	}
+
+	var forTree, total int
+	if err := h.store.Pool().QueryRow(context.Background(), `
+		SELECT count(*) FILTER (WHERE id = $1), count(*) FROM community_trees
+	`, tree).Scan(&forTree, &total); err != nil {
+		t.Fatal(err)
+	}
+	if forTree != 1 || total != 1 {
+		t.Fatalf("rows for the tree = %d, rows in community_trees = %d after one tree sent under two "+
+			"keys; want 1 and 1", forTree, total)
 	}
 }
 
