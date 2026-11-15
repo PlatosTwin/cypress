@@ -89,13 +89,13 @@ public struct CommunityLayer {
         return try statement.fetchAll(CommunityTreeStore.decode)
     }
 
-    /// **The phone's own trees come first, then other people's, each by id**, so a caller that cuts
-    /// the rows (`LocalAPI.mapContent`, through `communityPinShare`) cuts other people's trees
-    /// before this phone's own (ERRATA E36: a contributor's own pin must appear on the screen they
-    /// added it from). The order is fixed for a fixed box, so reading the same box twice cuts the
-    /// same trees. **It does not hold across a pan**: a pan that brings in a tree with a lower id
-    /// can push out a tree that is still on screen. Both tables are small and local; the sort is
-    /// over the rows in one box.
+    /// **The phone's own trees come first, then other people's, each by id**, so a `limit` cuts
+    /// other people's trees before this phone's own (ERRATA E36: a contributor's own pin must appear
+    /// on the screen they added it from). `pinsSQL`, the map's read, keeps the same order after its
+    /// narrowing. The order is fixed for a fixed box, so reading the same box twice cuts the same
+    /// trees. **It does not hold across a pan**: a pan that brings in a tree with a lower id can push
+    /// out a tree that is still on screen. Both tables are small and local; the sort is over the
+    /// rows in one box.
     static let inBoundsSQL = """
         SELECT \(addedColumns) FROM community_trees
          WHERE lat BETWEEN :minLat AND :maxLat
