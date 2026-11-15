@@ -186,6 +186,32 @@ func TestNoPrivateActIsDatedBeforeTheTreeWentLive(t *testing.T) {
 	}
 }
 
+// TestNoRowIsDatedBeforeTheAddedRow is the east-of-UTC case. A phone in Sydney adds a tree at 09:00
+// on 10-15 local time (22:00 UTC on 10-14), signed in, so it goes live at once, and moves it an hour
+// later (23:00 UTC on 10-14). The phone's day for both is 10-15. The add is served on 10-15; the
+// move, whose UTC day is 10-14, is served no earlier than the add, so the history never lists a
+// row dated before the "added" row below it.
+func TestNoRowIsDatedBeforeTheAddedRow(t *testing.T) {
+	h := newHarness(t)
+	added, moved := goldenTime("2026-10-14T22:00:00Z"), goldenTime("2026-10-14T23:00:00Z")
+	adder := signInAs(t, h, "ct.addedday.east", nil, accepted())
+	tree := uuid.New()
+	atClock(h, added, func() {
+		mustApply(t, h.syncOne(t, adder.AccessToken, addTreeWithDay(tree, added, `"2026-10-15"`)), "add")
+	})
+	atClock(h, moved, func() {
+		mustApply(t, h.syncOne(t, adder.AccessToken, correctionItem(tree, uuid.New(), north(40), ctLon, moved)), "move")
+	})
+	_, history := readHistory(t, h, h.registerDeviceToken(t, uuid.New()), tree)
+	want := [][2]string{
+		{"location_corrected", "2026-10-15T00:00:00Z"},
+		{"added", "2026-10-15T00:00:00Z"},
+	}
+	if got := servedDays(t, history); !slices.Equal(got, want) {
+		t.Fatalf("the public history is %v, want %v: newest first, and nothing dated before the add", got, want)
+	}
+}
+
 // TestTheAddedDayRevealsNoPrivatePositionOrAct is decision 13's position half, which the decision
 // of 2026-11-15 left alone. A signed-out phone adds a tree at P0 on 10-14, moves it to P1 and names
 // it on 10-15, all received while the tree is private, and its account claims it on 10-20. The

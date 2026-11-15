@@ -1331,7 +1331,8 @@ func TestHistoryStartsAtGoingLive(t *testing.T) {
 	deviceUUID := uuid.New()
 	device := h.registerDeviceToken(t, deviceUUID)
 	claimed := uuid.New()
-	addedAt := time.Now().Add(-3 * time.Hour)
+	// More than a day before the claim, so the add's UTC day is never the claim's.
+	addedAt := time.Now().Add(-27 * time.Hour)
 	mustApply(t, h.syncOne(t, device, addTreeAt(claimed, private, ctLon, addedAt)), "signed-out add")
 	mustApply(t, h.syncOne(t, device, correctionItem(claimed, uuid.New(), moved, ctLon, time.Now().Add(-2*time.Hour))), "a private move")
 	mustApply(t, h.syncOne(t, device, map[string]any{
