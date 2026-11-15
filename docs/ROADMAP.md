@@ -719,6 +719,19 @@ or redeploy would change that (chip 12: merging server work changes nothing in p
   is shown as that calendar date, and when it is absent the reader falls back to `captured_at` in
   their own zone**; the phone's cursor, not a cached tree's `updatedAt`, decides what changed; and
   the adder's own trees win the merge.
+  **Built in `feat/community-trees-sync-down`, in review; no migration.** `RemoteAPI` has
+  `communityTile` and `treeHistory` (delta accessors, not `CypressAPI` requirements), and
+  `treeCommunityHalf` carries `added_by_you`, `community_tree` and `captured_on`. The golden tests
+  decode every new `server/testdata` file through them. `CommunityTileRefresher` fills the cache
+  for the zoom-14 tiles a settled map touches (at most nine, each at most once per 120 s), wired in
+  `DataLayer` behind the remote gate, and the map reads again when the cache changed.
+  `refreshedTreeProfile` adopts the service's `added_by_you` when it says yes, carries the history
+  (`TreeProfile.communityHistory`, dates as `CalendarDay`), and shows a service photograph on its
+  `captured_on`. The community layer takes at most half the pin budget when the city layer can use
+  the rest, the phone's own trees first. The design decisions are in
+  `docs/rulings-pending/community-trees-sync-down.md`. **Left:** seeing it work on a signed-in
+  phone against the live service (no test calls production, and the UI suite runs with the gate
+  off); drawing the history and `addedByYou` (C3); and the C3 DEBUG seam that seeds the cache.
 - **C3 — the UI (`feat/community-trees-ui`). The owner answered every question on 2026-11-14; not
   built; merges last, and strikes F31.** The answers, with each chosen string word for word, are in
   `docs/rulings-pending/community-trees-c3-answers.md`. In short. *Move the pin*: no distance limit,
