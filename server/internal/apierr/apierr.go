@@ -38,8 +38,8 @@ var All = []Code{
 
 // Retryable mirrors `APIError.retryable` exactly: only transient, server-side conditions.
 //
-// `conflict` is deliberately not retryable — `POST /trees`' proximity dedupe returns it with a
-// candidate list only the person can resolve, and re-sending would not change the answer.
+// `conflict` is deliberately not retryable — a tree withdrawal after somebody else has built on the
+// tree returns it, and re-sending would not change the answer.
 func (c Code) Retryable() bool {
 	switch c {
 	case RateLimited, ServerError:
@@ -76,16 +76,10 @@ func (c Code) Status() int {
 	}
 }
 
-// Error carries a code, the sentence a person may see, and optional structured detail.
-//
-// Detail exists for exactly one case today — `conflict` from the 10 m proximity dedupe, which must
-// carry the candidate list `ProximityConflict` is built to receive. It is a sibling of `error` in
-// the body rather than a member of it, because `APIError.Envelope`'s nested container decodes
-// `code`, `message` and `retryable` and would have to change to admit a fourth key.
+// Error carries a code and the sentence a person may see.
 type Error struct {
 	Code    Code
 	Message string
-	Detail  any
 	// Cause is logged and never serialized. A database error's text is not a person's business.
 	Cause error
 }
@@ -111,8 +105,7 @@ func Wrap(code Code, message string, cause error) *Error {
 
 // envelope is the wire shape, verbatim: `{error: {code, message, retryable}}`.
 type envelope struct {
-	Error  envelopeBody `json:"error"`
-	Detail any          `json:"detail,omitempty"`
+	Error envelopeBody `json:"error"`
 }
 
 type envelopeBody struct {
@@ -144,7 +137,6 @@ func Write(w http.ResponseWriter, log *slog.Logger, err error) {
 			Message:   apiErr.Message,
 			Retryable: apiErr.Code.Retryable(),
 		},
-		Detail: apiErr.Detail,
 	}
 
 	w.Header().Set("Content-Type", "application/json")

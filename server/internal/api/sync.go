@@ -541,8 +541,8 @@ var disputeTreeSources = map[string]bool{"city_import": true, "community": true}
 //     materialize** (the community-trees round, `007_community_trees.sql`, client `AppSchema` v23).
 //     The first is the adder moving a community tree's pin (decision 5): a new row on the tree's
 //     location chain, and a refusal the client must be able to act on — `forbidden` for anybody but
-//     the adder on a tree they can see, `conflict` within 10 m of another tree the caller can see,
-//     `not_found` for a tree this service does not hold **or one the caller cannot see** (no
+//     the adder on a tree they can see, `not_found` for a tree this service does not hold **or one
+//     the caller cannot see** (no
 //     existence oracle: a stranger's act on a withdrawn, taken-down, unpublished or erased tree is
 //     answered as the same act on an unknown id). The second is the adder withdrawing the tree for everyone while
 //     nobody else has built on it (decision 8), `conflict` otherwise. `species_claim` and
@@ -702,18 +702,14 @@ func (s *Server) applyOne(r *http.Request, raw json.RawMessage, who caller, owne
 		}
 	}
 
-	// ── `add_tree` is the one kind that materializes, and the one that can be refused ──────────
+	// ── `add_tree` materializes a community tree ────────────────────────────────────────────────
 	//
-	// The key is looked up **first**, exactly as `POST /trees` does it and for the same reason
-	// stated there: the dedupe is "10 m, any species", so a byte-identical replay after a flap
-	// matches the row it created moments ago at zero metres, and answering `conflict` to that is a
-	// terminal failure over a success. A tree this service already holds skips the proximity query
-	// outright.
-	//
-	// A trip against **somebody else's** tree is `conflict`: non-retryable, so the item fails on the
-	// spot instead of spending 48 h on an answer only a person can give, and screen 17 shows it.
-	// The candidate list `POST /trees` returns beside the code has nowhere to travel in a per-item
-	// verdict, so this refusal is the bare code — see the round's PR for the open question.
+	// There is no proximity check. The owner ruled on 2026-11-14 that a tree may stand within 10 m
+	// of another ("sometimes they will be close together and that's fine"), so a tree beside
+	// another tree is a new tree. A second send of the same add is not caught by distance: the
+	// contribution dedupe matches its `client_uuid` and answers `duplicate`, and
+	// `store.insertCommunityTree` matches its tree id (`ON CONFLICT (id) DO NOTHING`, and the erase
+	// tombstone). Neither makes a second tree.
 	var addition *store.NewCommunityTree
 	if item.Kind == "add_tree" {
 		var payload addTreePayload
@@ -739,25 +735,6 @@ func (s *Server) applyOne(r *http.Request, raw json.RawMessage, who caller, owne
 		}
 		if payload.LocationAccuracyM != nil && !(*payload.LocationAccuracyM >= 0) {
 			return failed(apierr.ValidationFailed, "That location accuracy is not a distance.")
-		}
-
-		existing, err := s.Store.CommunityTreeExists(r.Context(), item.TreeUUID)
-		if err != nil {
-			s.Log.Error("looking up a community tree", "tree_uuid", item.TreeUUID, "cause", err)
-			return failed(apierr.ServerError, "Something went wrong on our end.")
-		}
-		if !existing {
-			// Scoped to what this caller can see (§3F): a tree somebody else has not published is
-			// not a reason to refuse this one, and refusing over it told the refused person where
-			// it was.
-			candidates, err := s.Store.TreesWithin(r.Context(), lat, lon, store.ProximityDedupeRadiusM, owner)
-			if err != nil {
-				s.Log.Error("running the proximity dedupe", "tree_uuid", item.TreeUUID, "cause", err)
-				return failed(apierr.ServerError, "Something went wrong on our end.")
-			}
-			if len(candidates) > 0 {
-				return failed(apierr.Conflict, "There is already a tree recorded here.")
-			}
 		}
 
 		addition = &store.NewCommunityTree{
@@ -1044,8 +1021,6 @@ func (s *Server) applyOne(r *http.Request, raw json.RawMessage, who caller, owne
 		// once it is anonymized. The client never enqueues this for a tree it does not own, so
 		// reaching it means the two halves disagree about who added the tree.
 		return failed(apierr.Forbidden, "Only the person who added this tree can change it.")
-	case errors.Is(err, store.ErrTooCloseToAnotherTree):
-		return failed(apierr.Conflict, "There is already a tree recorded there.")
 	case errors.Is(err, store.ErrOthersBuiltOnTree):
 		// Decision 8: after somebody else has built on it, only an operator takedown removes it.
 		return failed(apierr.Conflict, "Other people have added to this tree, so it stays on the map.")
@@ -1096,7 +1071,7 @@ type addTreeRequest struct {
 //
 // There are two and there is no unstated case. `Tree.placement` is non-optional on the client, so a
 // value outside this set does not degrade — it throws the whole `Tree`, and with it the whole
-// `[NearbyTree]` and the whole `ProximityConflict`.
+// response that carries it.
 var treePlacements = map[string]bool{"gps": true, "contributor_placed": true}
 
 // defaultTreePlacement is `TreeDraft.placement`'s own default, so the default on the boundary and
@@ -1108,41 +1083,13 @@ var landContexts = map[string]bool{
 	"street": true, "city_park": true, "private_property": true, "other_public": true,
 }
 
-func candidateFrom(tree store.NearbyTree) wireNearbyTree {
-	return wireNearbyTree{
-		Tree: wireTree{
-			ID:                tree.ID,
-			Source:            "community",
-			Coordinate:        wireCoordinate{Latitude: tree.Lat, Longitude: tree.Lon},
-			Address:           tree.Address,
-			Status:            "alive",
-			SpeciesCurrentID:  tree.SpeciesID,
-			VerificationState: "unverified",
-			Placement:         tree.Placement,
-			StatedLandContext: tree.LandContext,
-			CreatedAt:         stamp(tree.CreatedAt),
-			UpdatedAt:         stamp(tree.UpdatedAt),
-		},
-		DistanceM: tree.DistanceM,
-	}
-}
-
-// addTree runs the 10 m proximity dedupe (BUILD-PLAN §6, `TreeDraft.proximityDedupeRadiusM`).
+// addTree records a community tree under the client's own id.
 //
-// ── The key is looked up first, and that ordering is the whole of it ───────────────────────────
-//
-// The dedupe is "10 m, any species", so a byte-identical retry — the flap-replay case §6.1 says
-// `duplicate` exists for — matches the row it created moments ago at zero metres. Answering
-// `conflict` there is not a near-miss: the code is non-retryable, so the item fails terminally and
-// screen 17 offers the contributor a resolution sheet listing their own submission.
-//
-// A trip against somebody *else's* tree returns `conflict` **with the candidate list**, which is why
-// the code is non-retryable in the first place: `ProximityConflict` carries the candidates so the
-// UI can show them, and the item "fails immediately instead of spending 48 h on an answer only the
-// user can give." A `conflict` with nothing in it would be a dead end wearing the same code.
-//
-// The candidates travel as a sibling of `error` in the body rather than inside it, because
-// `APIError.Envelope`'s nested container decodes exactly `code`, `message` and `retryable`.
+// It does not refuse a tree because another tree is recorded nearby. The owner ruled on 2026-11-14
+// that a tree may stand within 10 m of another, so the 10 m proximity dedupe that used to answer
+// `conflict` here is gone. The one dedupe left is the id: a second send of the same tree (the
+// flap-replay case §6.1 says `duplicate` exists for) matches the row it created and answers
+// `duplicate`, and so does an id the erase door tombstoned (`store.insertCommunityTree`).
 func (s *Server) addTree(w http.ResponseWriter, r *http.Request, who caller) error {
 	var request addTreeRequest
 	if err := decodeBody(r, &request); err != nil {
@@ -1164,32 +1111,6 @@ func (s *Server) addTree(w http.ResponseWriter, r *http.Request, who caller) err
 	}
 	if request.LandContext != nil && !landContexts[*request.LandContext] {
 		return apierr.New(apierr.ValidationFailed, "That land context is not one this service accepts.")
-	}
-
-	// Before the proximity query, not after.
-	existing, err := s.Store.CommunityTreeExists(r.Context(), request.ClientUUID)
-	if err != nil {
-		return apierr.Wrap(apierr.ServerError, "Something went wrong on our end.", err)
-	}
-	if existing {
-		writeJSON(w, s.Log, http.StatusOK, map[string]any{"id": request.ClientUUID, "status": "duplicate"})
-		return nil
-	}
-
-	// Scoped to trees the caller can see (§3F): the candidate list used to carry the positions of
-	// other devices' unpublished trees to anybody who asked about a nearby point.
-	candidates, err := s.Store.TreesWithin(r.Context(), request.Lat, request.Lon, store.ProximityDedupeRadiusM, who.owner())
-	if err != nil {
-		return apierr.Wrap(apierr.ServerError, "Something went wrong on our end.", err)
-	}
-	if len(candidates) > 0 {
-		detail := make([]wireNearbyTree, 0, len(candidates))
-		for _, candidate := range candidates {
-			detail = append(detail, candidateFrom(candidate))
-		}
-		conflict := apierr.New(apierr.Conflict, "There is already a tree recorded here.")
-		conflict.Detail = map[string]any{"candidates": detail}
-		return conflict
 	}
 
 	outcome, err := s.Store.AddTree(r.Context(), store.NewCommunityTree{
