@@ -284,7 +284,7 @@ struct CommunityAddTests {
 
         // 12.5 m from `near` (kept) and 9.5 m from `farther` (joins).
         try await Self.placePin(subject, northOf: Self.spot, meters: 12.5)
-        #expect(Set(subject.nearby.map(\.tree.id)) == [near.id, farther.id], "the note did not take the tree now within 10 m")
+        #expect(Set(subject.nearby.map(\.tree.id)) == [near.id, farther.id], "the note did not keep `near` at 12.5 m and also take `farther` at 9.5 m")
 
         // 15.1 m from `near` (dropped) and 6.9 m from `farther`.
         try await Self.placePin(subject, northOf: Self.spot, meters: 15.1)

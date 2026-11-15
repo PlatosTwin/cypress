@@ -157,6 +157,9 @@ final class AddTreeNearbyUITests: XCTestCase, DeepLinkHarness {
             "the add screen came back without its photograph"
         )
         record(app, named: "after-back")
+        let kept = app.staticTexts[Copy.landChosen]
+        scroll(app, until: kept, up: true)
+        record(app, named: "after-back-land")
         assertReachable(add, "the Add this tree button after Back")
         XCTAssertTrue(add.isEnabled, "the Add this tree button is not active after Back")
         add.tap()
