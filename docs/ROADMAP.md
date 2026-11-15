@@ -2416,7 +2416,7 @@ into this section in the round that finds it, and nowhere else. Each item stands
     add more nearby. They count as the reader's own, so after two runs
     `SeeAllOnMapUITests.testTheLinkCentersTheMapOnTheCityWhereTheReaderHasTheMostTrees` aims the
     "Yours" camera at them and fails with "the map opened narrowed to “Yours” and drew no tree at
-    all". Seen on this branch with four such trees in the database (the camera settled on the newest,
+    all". Seen on `feat/community-trees-sync-down` with four such trees in the database (the camera settled on the newest,
     37.769, −122.53102), and on main `bd8a35af` too, in the second C2 reviewer's control run. CI is
     unaffected, because each CI run starts from a fresh simulator. `xcrun simctl uninstall <udid>
     app.cypress.Cypress` fixes a device: the same tree passed 23 of 23 map and profile UI tests after

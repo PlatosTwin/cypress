@@ -206,8 +206,9 @@ public struct CommunityTreeHistory: Hashable, Sendable {
     /// What happened. **Tolerant**: the service serves an allow-list that can widen, and a kind
     /// this build does not know must not fail the whole history (`community_reads.go`).
     public enum Kind: Hashable, Sendable {
-        /// The tree went live, at the position and on the day it was published. The service
-        /// serves its `published` event under this name.
+        /// The tree was added: dated by the day its adder's phone added it (the owner's ruling of
+        /// 2026-11-15), and placed at the position it held when it went live. The service serves
+        /// its `published` event under this name.
         case added
         case locationCorrected
         case speciesNamed

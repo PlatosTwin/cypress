@@ -74,8 +74,9 @@ extension GoldenWireFixtureTests {
         #expect(named.placement == .contributorPlaced)
         #expect(named.statedLandContext == .street)
         #expect(named.address == nil)
-        // Went live on the 21st: the day, whatever zone reads it.
-        #expect(CalendarDay(utcDayOf: named.createdAt) == (try Self.day("2026-09-21")))
+        // Added on its phone on the 20th (the owner's ruling of 2026-11-15: the "added" day is the
+        // day the phone added it, not the day it went live): the day, whatever zone reads it.
+        #expect(CalendarDay(utcDayOf: named.createdAt) == (try Self.day("2026-09-20")))
 
         // Calibration of `CommunityTile` against the service's own fixture: both trees stand in the
         // tile the file names.
@@ -131,7 +132,7 @@ extension GoldenWireFixtureTests {
         #expect(history.isComplete)
         #expect(history.events.map(\.kind) == [.speciesCorrected, .locationCorrected, .added])
         #expect(history.events.map(\.day) == [
-            try Self.day("2026-09-27"), try Self.day("2026-09-26"), try Self.day("2026-09-21"),
+            try Self.day("2026-09-27"), try Self.day("2026-09-26"), try Self.day("2026-09-20"),
         ])
 
         let renamed = history.events[0]
