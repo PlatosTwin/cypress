@@ -736,8 +736,10 @@ or redeploy would change that (chip 12: merging server work changes nothing in p
   badges. The design decisions are in `docs/rulings-pending/community-trees-sync-down.md`.
   **Left:** seeing it work on a signed-in phone against the live service (no test calls
   production, and the UI suite runs with the gate off). **Revisit the cache's limit when the
-  community layer grows** (the owner's ruling: no limit for now); the map reads every community
-  tree in view on each read. **A shared link to a community tree the phone never fetched** cannot
+  community layer grows** (the owner's ruling: no limit for now). The map narrows and counts the
+  community trees in view in SQL on each read: measured on the simulator with 5,000 cached trees in
+  one box, 43 ms for pins and 1.9 ms for clusters; with 50,000, 80 ms and 23 ms (the table is in the
+  rulings file's cache-limit entry). **A shared link to a community tree the phone never fetched** cannot
   open: `LocalAPI.treeProfile` throws `notFound` for a tree in neither table before the service is
   asked. **Left for C3:** drawing the history and `addedByYou`; the DEBUG seam that seeds the cache;
   and **the cache keeps `createdAt` as an instant, so C3 must draw "Added" dates with

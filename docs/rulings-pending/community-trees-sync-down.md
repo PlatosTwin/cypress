@@ -176,8 +176,23 @@ What the rule means:
   the only tiles fetched. There is no count cap and no age limit. A tile is about 3.7 km² in San
   Francisco. A future limit must say what happens to a cached tree the reader has visited or
   favorited when its tile is evicted, because its profile would then answer "not found".
-- **What it costs on the map**, stated for the revisit: the map reads every community tree in the
-  box on every read (the next entry), so the read grows with the cached trees in view.
+- **What it costs on the map**, stated for the revisit. Every map read narrows and counts the
+  community trees in view in SQL (the next entry); a pin read decodes at most `pinLimit` (400) of
+  them, and a cluster read decodes none. Measured by the C2 author with a probe test that was not
+  committed: a Debug build on the iPhone 17 Pro Max simulator, `LocalAPI.mapContent` over one box
+  holding N cached trees, the median of 7 reads after one warm-up.
+
+  | Read | N = 5,000, before | N = 5,000, after | N = 50,000, before | N = 50,000, after |
+  |---|---|---|---|---|
+  | Pins, zoom 17 | 472 ms | 43 ms | 4,208 ms | 80 ms |
+  | Clusters, zoom 14 | 525 ms | 1.9 ms | 4,244 ms | 23 ms |
+  | Pins narrowed to a species with no match | 692 ms | 0.8 ms | 4,365 ms | 6.9 ms |
+  | Clusters narrowed to a species that is a tenth of the trees | 751 ms | 0.8 ms | 4,151 ms | 7.8 ms |
+
+  "Before" is the first review's fix (`f9a45689`), which decoded every tree in the box and narrowed
+  in Swift. "After" is the narrowing in SQL. Each read holds the one database queue for its whole
+  length, so the "before" column also blocked the refresher's writes and every other read. The pin
+  read still sorts every match in the box to cut it by id, which is what is left of its cost.
 
 ### R??? — The community layer takes at most half the map's pin budget when the city layer can use the rest
 
@@ -190,17 +205,21 @@ What the rule means:
   the odd pin goes to the city layer. At the map's budget of 400 that is 200 community pins.
 - **Unused budget is not withheld.** A park with 30 city trees and 300 added ones draws all 330
   under a budget of 400. The cap binds only where the city layer would otherwise be starved.
-- **The narrowing runs before the cut.** `LocalAPI.mapContent` reads every community tree in the
-  box, applies the map's narrowing (species, condition, year, site, membership), and only then
-  takes the share. Before the review fix the statement cut to `pinLimit` first, so a species search
-  over a box with more community trees than the budget could miss the only match.
+- **The narrowing runs before the cut, in SQL.** `LocalAPI.mapContent` resolves the map's
+  narrowing (species, `In bloom`, `Needs care`, year, site, membership) into sets, and
+  `CommunityLayer.pinsSQL` applies them in the `WHERE` of both arms, counts every match with
+  `COUNT(*) OVER ()`, then sorts and cuts to `pinLimit`; the share is taken from those rows. Before
+  the first review's fix the statement cut to `pinLimit` with no narrowing, so a species search over
+  a box with more community trees than the budget could miss the only match. Every narrowing went
+  into SQL; none had to stay in Swift.
 - **The phone's own trees come first inside the share**, then other people's, each by id
-  (`CommunityLayer.inBoundsSQL`'s `ORDER BY cached, id`). So ERRATA E36's rule holds (a contributor's
+  (`CommunityLayer.pinsSQL`'s `ORDER BY cached, id`). So ERRATA E36's rule holds (a contributor's
   own pin appears on the screen they added it from). Reading the same box twice cuts the same trees.
   A pan does not keep that promise: a pan that brings in a tree with a lower id can push out a tree
   still on screen.
-- **Clustered zooms count every tree.** A community tree adds one to its cell's badge, and since
-  the review fix every narrowed community tree in the box is counted. Before it, a box holding more
+- **Clustered zooms count every tree.** `CommunityLayer.cellsSQL` counts the narrowed community
+  trees per cell in SQL, on the grid `LocalAPI.mapContent` keys its cells with, and each cell's
+  count and mean position are added to its badge. Before the first review's fix, a box holding more
   than `pinLimit` (400) community trees counted only the first 400.
 
 `MapContentBudgetTests.communityTreesCannotOverrunTheBudget` asserted the old rule (every pin a
