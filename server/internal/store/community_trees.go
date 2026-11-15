@@ -216,6 +216,56 @@ func claimCommunityTrees(ctx context.Context, tx pgx.Tx, deviceID, userID uuid.U
 	return publishTrees(ctx, tx, published, *version, Actor{UserID: &userID, DeviceID: &deviceID}, now)
 }
 
+// ── The "added" day ─────────────────────────────────────────────────────────────────────────────
+
+// earliestAddedDay is the first day a community tree can have been added: the day this project
+// began (its first commit, 2026-07-21). No build of the app existed before it, so an earlier day is
+// a phone clock that was wrong. Migration 008's backfill spells the same date.
+var earliestAddedDay = time.Date(2026, 7, 21, 0, 0, 0, 0, time.UTC)
+
+// utcDay is midnight UTC of the instant's UTC date.
+func utcDay(t time.Time) time.Time {
+	year, month, day := t.UTC().Date()
+	return time.Date(year, month, day, 0, 0, 0, 0, time.UTC)
+}
+
+// addedDay is `community_trees.added_on`: the day other people, and the adder, are told the tree
+// was added. The owner's decision of 2026-11-15 makes it one rule for every community tree, "the
+// day the person added it on their phone", whenever it went public.
+//
+//   - `stated` is the phone's own local calendar date of the add (`addedOn`, midnight UTC of it),
+//     nil for a build that does not send one. It is believed only within one day of the instant's
+//     UTC date, because a local date never differs from the UTC date of the same instant by more
+//     (decision 14a's argument for `captured_on`). Further off, it is not this add's day, and the
+//     instant's own UTC date is used instead. The add is never refused for its date: the tree is
+//     good even when the phone's calendar is not.
+//   - Without a stated day, the day is the UTC date of `occurredAt`. The service holds no time zone
+//     for the add, so a tree added at 23:30 Pacific time (07:30 UTC the next day) shows the next
+//     day. That is what every build before the key shows.
+//   - An instant after `received` is a phone clock running fast; the add cannot have happened
+//     after the service received it, so `received` stands in for it. The result is therefore never
+//     later than one day past the receipt's UTC date, which is the receipt day in the phone's own
+//     zone (008's CHECK holds the same bound).
+//   - A day before earliestAddedDay is a phone clock that was wrong in the other direction, and
+//     there is no true day to recover. The receipt's UTC date is used: it is the latest the add can
+//     have happened, and the day the service has always shown in its place.
+func addedDay(stated *time.Time, occurredAt, received time.Time) time.Time {
+	if occurredAt.After(received) {
+		occurredAt = received
+	}
+	day := utcDay(occurredAt)
+	if stated != nil {
+		gap := utcDay(*stated).Sub(day)
+		if gap >= -24*time.Hour && gap <= 24*time.Hour {
+			day = utcDay(*stated)
+		}
+	}
+	if day.Before(earliestAddedDay) {
+		return utcDay(received)
+	}
+	return day
+}
+
 // ── Insert ──────────────────────────────────────────────────────────────────────────────────────
 
 // newTreeAct is what an insert needs beyond the tree itself.
@@ -261,11 +311,12 @@ func insertCommunityTree(ctx context.Context, tx pgx.Tx, tree NewCommunityTree, 
 	tag, err := tx.Exec(ctx, `
 		INSERT INTO community_trees
 		    (id, lat, lon, address, species_id, placement, land_context, location_accuracy_m,
-		     user_id, device_id, published_at, created_at, updated_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $12)
+		     user_id, device_id, published_at, created_at, updated_at, added_on)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $12, $13)
 		ON CONFLICT (id) DO NOTHING
 	`, tree.ID, tree.Lat, tree.Lon, tree.Address, tree.SpeciesID, tree.Placement, tree.LandContext,
-		tree.LocationAccuracyM, act.Owner.UserID, act.Owner.DeviceID, publishedAt, now)
+		tree.LocationAccuracyM, act.Owner.UserID, act.Owner.DeviceID, publishedAt, now,
+		addedDay(tree.AddedOn, act.OccurredAt, now))
 	if err != nil {
 		return false, err
 	}

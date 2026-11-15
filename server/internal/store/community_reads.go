@@ -48,11 +48,12 @@ type CommunityTreeRecord struct {
 	SpeciesID   *uuid.UUID
 	Placement   string
 	LandContext *string
-	// CreatedAt is **when this viewer may say the tree was added** (the orchestrator's V1 ruling
-	// on decision 13): the tree's own `created_at` for its adder, and `published_at` for everybody
-	// else, including the tile, which has no viewer. A tree added in March and published in
-	// September was, to a stranger, added in September; the private months are the adder's. The
-	// history's `added` event says the same day, so the two cannot disagree on one screen.
+	// CreatedAt is **the day the tree was added on its adder's phone** (`added_on`, midnight UTC of
+	// that date), for every viewer and on every read: the tile, the profile and the history's
+	// "added" row. The owner's decision of 2026-11-15 replaced the V1 ruling, which told strangers
+	// the day the tree went public and the adder the day the service received it. One day for
+	// everybody, so the three reads cannot disagree on one screen. Where the tree stood while it was
+	// private is still the adder's alone (decision 13); only the day is public.
 	CreatedAt time.Time
 	UpdatedAt time.Time
 	Published bool
@@ -74,7 +75,7 @@ func communityTreeFor(ctx context.Context, q querier, id uuid.UUID, viewer Owner
 		publishedAt *time.Time
 	)
 	err := q.QueryRow(ctx, `
-		SELECT lat, lon, address, species_id, placement, land_context, created_at, updated_at,
+		SELECT lat, lon, address, species_id, placement, land_context, added_on, updated_at,
 		       published_at, user_id, device_id, anonymized_at, deleted_at
 		  FROM community_trees WHERE id = $1
 	`, id).Scan(&tree.Lat, &tree.Lon, &tree.Address, &tree.SpeciesID, &tree.Placement,
@@ -109,10 +110,6 @@ func communityTreeFor(ctx context.Context, q querier, id uuid.UUID, viewer Owner
 	tree.AddedByViewer = authority.isAddedBy(viewer)
 	if !tree.Published && !tree.AddedByViewer {
 		return CommunityTreeHidden, nil, nil
-	}
-	if !tree.AddedByViewer {
-		// Visible and not the adder's, so published: the stranger's "added" is going live.
-		tree.CreatedAt = *publishedAt
 	}
 	return CommunityTreeVisible, &tree, nil
 }
@@ -303,7 +300,7 @@ const tileDeltaQuery = `
 	WITH` + tileInTile + `,
 	changed AS (
 	    SELECT t.id, t.updated_at AS at, t.lat, t.lon, t.species_id, t.placement, t.land_context,
-	           t.published_at AS created_at, t.deleted_at IS NULL AS live
+	           t.added_on AS created_at, t.deleted_at IS NULL AS live
 	      FROM community_trees t JOIN in_tile ON in_tile.id = t.id
 	     WHERE t.published_at IS NOT NULL
 	       AND (t.updated_at, t.id) > ($1::timestamptz, $2::uuid)
@@ -319,7 +316,7 @@ const tileDeltaQuery = `
 	SELECT id, at, lat, lon, species_id, placement, land_context, created_at, live FROM changed
 	UNION ALL
 	SELECT id, at, NULL::double precision, NULL::double precision, NULL::uuid, NULL::text, NULL::text,
-	       NULL::timestamptz, false FROM gone
+	       NULL::date, false FROM gone
 	 ORDER BY at, id
 	 LIMIT $7`
 
@@ -330,7 +327,7 @@ const tileSnapshotQuery = `
 	WITH` + tileInTile + `,
 	changed AS (
 	    SELECT t.id, t.updated_at AS at, t.lat, t.lon, t.species_id, t.placement, t.land_context,
-	           t.published_at AS created_at, t.deleted_at IS NULL AS live
+	           t.added_on AS created_at, t.deleted_at IS NULL AS live
 	      FROM community_trees t JOIN in_tile ON in_tile.id = t.id
 	     WHERE t.published_at IS NOT NULL
 	       AND (t.updated_at, t.id) > ($1::timestamptz, $2::uuid)
@@ -348,7 +345,7 @@ const tileSnapshotQuery = `
 	SELECT id, at, lat, lon, species_id, placement, land_context, created_at, live FROM changed
 	UNION ALL
 	SELECT id, at, NULL::double precision, NULL::double precision, NULL::uuid, NULL::text, NULL::text,
-	       NULL::timestamptz, false FROM gone
+	       NULL::date, false FROM gone
 	 ORDER BY at, id
 	 LIMIT $7`
 
@@ -387,9 +384,10 @@ var ErrHistoryNotFound = errors.New("no community tree history for this viewer")
 // asked would be two contracts under one name. So the adder's own **unpublished** tree has a
 // history with no events in it.
 //
-// Newest first is `occurred_at` (the act's own time — a late correction sorts where it happened,
-// not where it arrived), then `recorded_at`, then the id, so two events on one day keep a stable
-// order on the wire even though the wire's dates are truncated to the day.
+// Newest first is the instant the public learned of the act, `GREATEST(occurred_at, published_at)`
+// (the act's own time, floored at going live), then `recorded_at`, then the id, so two events on
+// one day keep a stable order on the wire even though the wire's dates are truncated to the day.
+// The served day of each row is set out in the query's comment below.
 func (s *Store) CommunityTreeHistory(ctx context.Context, id uuid.UUID, viewer Owner, kinds []string, limit int) ([]HistoryEvent, bool, error) {
 	visibility, tree, err := communityTreeFor(ctx, s.pool, id, viewer)
 	if err != nil {
@@ -398,22 +396,38 @@ func (s *Store) CommunityTreeHistory(ctx context.Context, id uuid.UUID, viewer O
 	if visibility != CommunityTreeVisible {
 		return nil, false, ErrHistoryNotFound
 	}
-	// **No public event is dated before the tree went live** (the orchestrator's L1 ruling on
-	// decision 13). An act the adder made while the tree was private — a move queued on a phone
-	// that was signed out or declining — can arrive after publication, and S1 then records it as
-	// public, because the pin really did move in public. Its `occurred_at` is still the private
-	// day, which would put a day of the tree's private life on the public record, below its own
-	// "added". So the served date is `GREATEST(occurred_at, published_at)`, and the order is by the
-	// served date too: the late act sits above "added", tied on the instant and broken by
-	// `recorded_at`, which is when the public learned of it. `GREATEST` ignores a NULL, so a tree
-	// that is not published (the adder's own, which has no public events anyway) is unchanged.
+	// **What day each row is served at.** Two rules, one for the "added" row and one for the rest.
+	//
+	//   - The `published` event, served as "added", is dated by the tree's `added_on`: the day the
+	//     adder added it on the phone (the owner's decision of 2026-11-15). Its position stays the
+	//     one the tree went public at; only the day moves back.
+	//   - Every other public event keeps the orchestrator's L1 floor: **no other public event is
+	//     dated before the tree went live.** An act the adder made while the tree was private, such
+	//     as a move or a naming queued on a phone that was signed out or declining, can arrive after
+	//     publication, and S1 then records it as public, because the pin really did move in public.
+	//     Its `occurred_at` is still a private day, and the owner's decision made the add day public,
+	//     not the days of the private acts. So it is served at `GREATEST(occurred_at, published_at)`.
+	//     It is floored at `added_on` too, so that no row is ever dated before the "added" row below
+	//     it: an add east of UTC can have an `added_on` one day past `published_at`'s UTC date.
+	//
+	// **The order is by the instant the public learned of each act**, `GREATEST(occurred_at,
+	// published_at)`, then `recorded_at`, then the id, as before. The `published` event is at
+	// exactly `published_at` and every other public event at or after it, so "added" stays the
+	// oldest row even though its served day is earlier than the instant it sorts by. Because the
+	// other rows are floored at `added_on`, the served days are still newest first.
+	//
+	// `GREATEST` ignores a NULL, so a tree that is not published (the adder's own, which has no
+	// public events anyway) is unchanged.
 	rows, err := s.pool.Query(ctx, `
-		SELECT id, kind, GREATEST(occurred_at, $4::timestamptz) AS served_at, before, after
+		SELECT id, kind,
+		       CASE WHEN kind = 'published' THEN $5::timestamptz
+		            ELSE GREATEST(occurred_at, $4::timestamptz, $5::timestamptz) END AS served_at,
+		       before, after
 		  FROM community_tree_events
 		 WHERE tree_id = $1 AND in_public_history AND kind = ANY ($2::text[])
-		 ORDER BY served_at DESC, recorded_at DESC, id DESC
+		 ORDER BY GREATEST(occurred_at, $4::timestamptz) DESC, recorded_at DESC, id DESC
 		 LIMIT $3
-	`, id, kinds, limit+1, tree.PublishedAt)
+	`, id, kinds, limit+1, tree.PublishedAt, tree.CreatedAt)
 	if err != nil {
 		return nil, false, err
 	}
