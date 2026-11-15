@@ -33,8 +33,9 @@ pin within 10 m of another tree is recorded like any other.
 **The error envelope has no `detail` any more.** `detail.candidates` existed only to carry the
 proximity candidates. No route sends it, so `apierr.Error.Detail` was removed. The envelope is
 `{"error": {"code", "message", "retryable"}}` on every route.
-`server/testdata/proximity_conflict.json` is no longer produced or checked by any Go test; it is
-left in place because the Swift suite reads it, and the phone-side round decides its fate.
+The fixture `proximity_conflict.json` under `server/testdata/` is no longer produced or checked by
+any Go test. The service round left it in place because the Swift suite read it; the phone-side
+branch (`feat/no-proximity-refusal-phone`) deletes it with the Swift test that read it.
 
 **What stops a duplicate now.** Only identity, never distance:
 
