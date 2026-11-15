@@ -122,12 +122,13 @@ conflicts with convenience, the rule wins.
   A one-minute run did not test anything, and it does not claim to.
 
 ## Simulators
-- **The plain iPhone 16 is the owner's — keep it free.** Its UDID is deliberately not written
-  here. You do not need it: never run against a device you were not assigned, and the four below
-  are the whole set an agent may use.
-  Agents use: 16 Pro `EA0AD796-3052-4EE5-A7A8-A1DE807A3653`, 16 Pro Max
-  `DE8E11AE-4375-4C3B-A296-9B60A7DF1DB3`, 16e `3A1F212D-8F3A-41F1-AF72-EC95E155A4C9`,
-  16 Plus `24D1629F-9FA8-4E3D-812E-F6BC85C9E668`.
+- **The plain iPhone 17 is the owner's — keep it free**, on every iOS version. Its UDIDs are
+  deliberately not written here. You do not need them: never run against a device you were not
+  assigned, and the four below are the whole set an agent may use. All four run iOS 26.5 and
+  differ in width (Xcode 27.2, set on 2026-11-14 after the iPhone 16 devices were gone).
+  Agents use: 17 Pro `F3892388-1BAB-4DE9-9139-6C93351F9F08` (402 pt), 17 Pro Max
+  `F12CE19E-BE9A-4DC6-8731-5EAAA9FEF54E` (440 pt), 17e `D7D2D20A-F829-448C-AEF2-06D1628CAA34`
+  (390 pt), Air `43240F18-EC20-4E7E-852B-EB8F4E2F0002` (420 pt).
 - One simulator per agent, explicitly assigned. Cap **three** concurrent `xcodebuild`s
   machine-wide — orchestrator verification runs count against the cap.
 - **A dead agent's `xcodebuild` keeps running**, and **the UI suite inherits the device's state**
