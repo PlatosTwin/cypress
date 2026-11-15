@@ -670,7 +670,7 @@ func materializeSpecies(ctx context.Context, tx pgx.Tx, kind string, s SpeciesSt
 // **Soft, through `deleted_at`, and not the erase door's delete-and-tombstone.** The event this act
 // must write lives in `community_tree_events`, which cascades from the tree — a hard delete would
 // take the record of the withdrawal away with the thing withdrawn. Every read that serves a
-// community tree already filters `deleted_at` (`TreesWithin`, `MapMembership`), and S2's tile
+// community tree already filters `deleted_at` (`communityTreeFor`, `MapMembership`), and S2's tile
 // delta reports it as withdrawn exactly as it reports a tombstone.
 //
 // Answers, in order: a tree this service never held is a success that changes nothing (its add
