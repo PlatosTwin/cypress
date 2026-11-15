@@ -41,9 +41,9 @@ type Mutation struct {
 	//
 	// Nine of them are recorded and not materialized, which is the contract five of the six older
 	// kinds already have: the `contributions` row *is* the record. A tree cannot be, because a tree
-	// has to be **findable** — `TreesWithin` is the 10 m proximity dedupe, it reads
-	// `community_trees`, and a tree that existed only as a contribution is a tree the next
-	// contributor standing under it would be invited to add again.
+	// has to be **findable** — the community tile, the tree profile and the public page all read
+	// `community_trees`, and a tree that existed only as a contribution is a tree nobody else could
+	// see, and the next contributor standing under it would be invited to add it again.
 	//
 	// Eight of those nine are recorded because this service *could not* materialize them; the ninth,
 	// `photo_withdrawal`, now materializes through `WithdrawnPhotoID` below. The difference matters

@@ -5,11 +5,8 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
-	"strconv"
 	"strings"
 	"testing"
-
-	"github.com/PlatosTwin/cypress/server/internal/store"
 )
 
 // ── The seams this round adds between the two halves, read off the Swift source ────────────────
@@ -17,7 +14,7 @@ import (
 // `TestTheDisputeTreeSourcesMatchTheSwiftVocabulary`'s pattern: the vocabulary is read from the
 // client's *text* in this repository rather than restated, because a test that declares the answer
 // it checks proves only that its author transcribed it. Nothing here compiles Swift, so each of
-// these sees a raw value or a constant renamed, added or removed — and is blind to what a built
+// these sees a raw value renamed, added or removed — and is blind to what a built
 // client actually puts on the wire, which is the Swift half of the fixture test's job (C1).
 //
 // No harness: these must not skip on a machine with no Postgres.
@@ -76,21 +73,8 @@ func TestTheOutboxKindsMatchTheSwiftVocabulary(t *testing.T) {
 	}
 }
 
-// TestTheDedupeRadiusMatchesTheSwiftConstant holds `store.ProximityDedupeRadiusM` to
-// `TreeDraft.proximityDedupeRadiusM`. They are one rule stated on two sides (BUILD-PLAN §6, "10 m,
-// any species"); F32.3 may move it, and it must move on both or the phone and the service disagree
-// about which add is a duplicate — the phone's local check passing and the service's `conflict`
-// failing the item non-retryably.
-func TestTheDedupeRadiusMatchesTheSwiftConstant(t *testing.T) {
-	swift := swiftStaticDouble(t, "../../../Cypress/Data/API/CypressAPI.swift", "proximityDedupeRadiusM")
-	if swift != store.ProximityDedupeRadiusM {
-		t.Fatalf("TreeDraft.proximityDedupeRadiusM is %v and store.ProximityDedupeRadiusM is %v", swift,
-			store.ProximityDedupeRadiusM)
-	}
-}
-
-// TestTheSwiftReadersAreCalibrated proves both readers against a specimen whose answer is known.
-// Without it the two tests above pass vacuously on readers that match nothing.
+// TestTheSwiftReadersAreCalibrated proves the reader against a specimen whose answer is known.
+// Without it the test above passes vacuously on a reader that matches nothing.
 func TestTheSwiftReadersAreCalibrated(t *testing.T) {
 	specimen := `
 public struct Other: CoreEntity {
@@ -116,11 +100,6 @@ public struct OutboxItem: CoreEntity {
 
     public let kind: Kind
 }
-
-public struct TreeDraft {
-    /// Not this one: public static let proximityDedupeRadiusM: Double = 99
-    public static let proximityDedupeRadiusM: Double = 12.5
-}
 `
 	path := filepath.Join(t.TempDir(), "specimen.swift")
 	if err := os.WriteFile(path, []byte(specimen), 0o644); err != nil {
@@ -135,9 +114,6 @@ public struct TreeDraft {
 		if got[name] != raw {
 			t.Fatalf("read %v from a specimen whose answer is %v", got, want)
 		}
-	}
-	if value := swiftStaticDouble(t, path, "proximityDedupeRadiusM"); value != 12.5 {
-		t.Fatalf("read %v from a specimen whose answer is 12.5", value)
 	}
 }
 
@@ -181,29 +157,4 @@ func swiftNestedEnumCases(t *testing.T, path, name string) map[string]string {
 	}
 	t.Fatalf("did not find `enum %s: String` inside `struct OutboxItem` in %s", name, path)
 	return nil
-}
-
-// swiftStaticDouble reads `public static let <name>: Double = <value>` from a code line (not a
-// comment) and returns the value.
-func swiftStaticDouble(t *testing.T, path, name string) float64 {
-	t.Helper()
-	source, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatalf("reading %s: %v — this guard fails rather than skipping", path, err)
-	}
-	pattern := regexp.MustCompile(fmt.Sprintf(`^\s*public static let %s: Double = ([0-9.]+)\s*$`, name))
-	var values []float64
-	for _, line := range strings.Split(string(source), "\n") {
-		if match := pattern.FindStringSubmatch(line); match != nil {
-			value, err := strconv.ParseFloat(match[1], 64)
-			if err != nil {
-				t.Fatalf("%s: %v", line, err)
-			}
-			values = append(values, value)
-		}
-	}
-	if len(values) != 1 {
-		t.Fatalf("found %d declarations of %s in %s, want exactly 1: %v", len(values), name, path, values)
-	}
-	return values[0]
 }

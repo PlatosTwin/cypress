@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"math"
 	"time"
 
 	"github.com/PlatosTwin/cypress/server/internal/uuid"
@@ -40,8 +39,8 @@ func actorOr(actor Actor, owner Owner) Actor {
 	return actor
 }
 
-// querier is what both a pool and a transaction can do, so the proximity query runs inside the
-// transaction that is about to move a pin as well as outside it for `POST /trees`.
+// querier is what both a pool and a transaction can do, so a read helper can run inside a
+// transaction as well as outside one.
 type querier interface {
 	Query(ctx context.Context, sql string, args ...any) (pgx.Rows, error)
 	QueryRow(ctx context.Context, sql string, args ...any) pgx.Row
@@ -55,9 +54,6 @@ var (
 	// ErrNotTheAdder is an act only the adder may perform, from somebody else — including from
 	// anybody at all once the tree is anonymized. `forbidden`.
 	ErrNotTheAdder = errors.New("only the tree's adder may do this")
-	// ErrTooCloseToAnotherTree is a pin moved to within 10 m of another tree the caller can see.
-	// `conflict`.
-	ErrTooCloseToAnotherTree = errors.New("another tree is recorded within the dedupe radius")
 	// ErrOthersBuiltOnTree is an adder's withdrawal of a tree somebody else has met — a live visit,
 	// observation, measurement or care event, or a photograph (decision 8, `othersHaveBuiltOn`).
 	// `conflict`: only an operator takedown removes it now.
@@ -375,59 +371,6 @@ func lockTree(ctx context.Context, tx pgx.Tx, id uuid.UUID) (treeRow, error) {
 	return row, err
 }
 
-// treesWithin is the 10 m proximity query, scoped to what the viewer can see (§3F): published trees,
-// and the viewer's own. Another device's unpublished tree was a candidate before 007 — a location
-// leak through `POST /trees`' candidate list, and a `conflict` against a tree nobody could see.
-//
-// `excluding` leaves one tree out, so a moved pin is not a duplicate of itself.
-func treesWithin(ctx context.Context, q querier, lat, lon, radiusM float64, viewer Owner, excluding *uuid.UUID) ([]NearbyTree, error) {
-	const metresPerDegreeLat = 111_320.0
-	latDelta := radiusM / metresPerDegreeLat
-	cosLat := math.Cos(lat * math.Pi / 180)
-	if cosLat < 0.01 {
-		cosLat = 0.01
-	}
-	lonDelta := radiusM / (metresPerDegreeLat * cosLat)
-
-	rows, err := q.Query(ctx, `
-		SELECT id, lat, lon, address, species_id, placement, land_context,
-		       created_at, updated_at,
-		       6371000 * 2 * asin(sqrt(
-		           power(sin(radians(lat - $1) / 2), 2) +
-		           cos(radians($1)) * cos(radians(lat)) *
-		           power(sin(radians(lon - $2) / 2), 2)
-		       )) AS distance_m
-		  FROM community_trees
-		 WHERE deleted_at IS NULL
-		   AND lat BETWEEN $1 - $3 AND $1 + $3
-		   AND lon BETWEEN $2 - $4 AND $2 + $4
-		   AND (published_at IS NOT NULL
-		        OR ($5::uuid IS NOT NULL AND user_id = $5)
-		        OR ($6::uuid IS NOT NULL AND device_id = $6))
-		   AND ($7::uuid IS NULL OR id <> $7)
-		 ORDER BY distance_m ASC
-	`, lat, lon, latDelta, lonDelta, viewer.UserID, viewer.DeviceID, excluding)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	var candidates []NearbyTree
-	for rows.Next() {
-		var tree NearbyTree
-		if err := rows.Scan(&tree.ID, &tree.Lat, &tree.Lon, &tree.Address, &tree.SpeciesID,
-			&tree.Placement, &tree.LandContext, &tree.CreatedAt, &tree.UpdatedAt,
-			&tree.DistanceM); err != nil {
-			return nil, err
-		}
-		// The box is a prefilter and admits corners beyond the radius; the haversine is the answer.
-		if tree.DistanceM <= radiusM {
-			candidates = append(candidates, tree)
-		}
-	}
-	return candidates, rows.Err()
-}
-
 // othersHaveBuiltOn reports whether any identity other than `self` has met the tree: a live
 // contribution of one of `MetSpeciesKinds`, or a live photograph. It is decision 8's condition (the
 // adder may withdraw only while this is false) and decision 6's (the erase door anonymizes rather
@@ -514,11 +457,13 @@ func scanChainRow(row pgx.Row) (*chainRow, error) {
 // supersedes; the chain is append-only).
 //
 // Ordering is §3A's: the head is the row with the greatest `(occurred_at, id)`. A correction that
-// sorts after the head becomes the head — it runs the 10 m dedupe and moves the tree's cached
-// position. One that sorts before it arrived late (the outbox in backoff), so it is spliced into
-// the chain **already superseded**, skips the dedupe (it never becomes the position anybody sees),
+// sorts after the head becomes the head and moves the tree's cached position. One that sorts before
+// it arrived late (the outbox in backoff), so it is spliced into the chain **already superseded**
 // and leaves the cache alone. Either way it writes a `location_corrected` event whose `before` is
 // the row it follows.
+//
+// A move is not refused for landing near another tree. The owner ruled on 2026-11-14 that a pin
+// "can go anywhere, and also fine to go within 10m of another tree".
 func applyLocationCorrection(ctx context.Context, tx pgx.Tx, c LocationCorrection, act newTreeAct, now time.Time) error {
 	tree, err := lockTree(ctx, tx, c.TreeID)
 	if err != nil {
@@ -574,13 +519,6 @@ func applyLocationCorrection(ctx context.Context, tx pgx.Tx, c LocationCorrectio
 
 	var before position
 	if isNewHead {
-		nearby, err := treesWithin(ctx, tx, c.Lat, c.Lon, ProximityDedupeRadiusM, act.Owner, &c.TreeID)
-		if err != nil {
-			return err
-		}
-		if len(nearby) > 0 {
-			return ErrTooCloseToAnotherTree
-		}
 		// The old head stops being one before the new row exists: the head index is not
 		// deferrable, the foreign key is.
 		if _, err := tx.Exec(ctx, `
@@ -732,7 +670,7 @@ func materializeSpecies(ctx context.Context, tx pgx.Tx, kind string, s SpeciesSt
 // **Soft, through `deleted_at`, and not the erase door's delete-and-tombstone.** The event this act
 // must write lives in `community_tree_events`, which cascades from the tree — a hard delete would
 // take the record of the withdrawal away with the thing withdrawn. Every read that serves a
-// community tree already filters `deleted_at` (`TreesWithin`, `MapMembership`), and S2's tile
+// community tree already filters `deleted_at` (`communityTreeFor`, `MapMembership`), and S2's tile
 // delta reports it as withdrawn exactly as it reports a tombstone.
 //
 // Answers, in order: a tree this service never held is a success that changes nothing (its add

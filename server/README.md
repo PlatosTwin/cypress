@@ -122,7 +122,7 @@ decodes to `server_error` rather than throwing and would look like an outage.
 | `POST /devices/claim` | The idempotent sweep that re-homes a device's unattributed rows onto an account. |
 | `DELETE /me` | Applies the client-sent `AccountDeletionChoice`, writes tombstones, calls Apple's revocation endpoint. |
 | `POST /sync` | The batch. Per-item results: `applied`, `duplicate`, `failed`. |
-| `POST /trees` | Adds a community tree; runs the 10 m proximity dedupe. |
+| `POST /trees` | Adds a community tree. A tree within 10 m of another is accepted (the owner's ruling of 2026-11-14); a second send of the same tree id answers `duplicate`. |
 | `POST /photos/begin` | Reserves the photo id, returns a presigned Tigris `PUT`. |
 | `POST /photos/{id}/received` | Closes the 72 h binary grace window. |
 | `DELETE /photos/{id}` | The contributor taking their own photograph back. |

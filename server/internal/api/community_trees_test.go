@@ -22,7 +22,7 @@ import (
 // ── Community trees (migration 007) ────────────────────────────────────────────────────────────
 //
 // Every assertion that carries a promise to *somebody else* is made as somebody else, through the
-// handler: the dedupe is asked by a stranger, the move is attempted by a stranger. The columns are
+// handler: the tree is read by a stranger, the move is attempted by a stranger. The columns are
 // read too, because the reads that serve these trees to other people are S2's and do not exist in
 // this PR — but a column alone would pass in a world where the column moved and nothing obeyed it.
 
@@ -207,31 +207,22 @@ func supersededBy(t *testing.T, h *harness, row uuid.UUID) *uuid.UUID {
 	return next
 }
 
-// postTree is `POST /trees`; it returns the status code and the candidate ids when it conflicts.
-func postTree(t *testing.T, h *harness, bearer string, tree uuid.UUID, lat, lon float64) (int, []uuid.UUID) {
+// postTree is `POST /trees`; it returns the status code.
+func postTree(t *testing.T, h *harness, bearer string, tree uuid.UUID, lat, lon float64) int {
 	t.Helper()
 	recorder := h.do(t, http.MethodPost, Prefix+"/trees", bearer, map[string]any{
 		"client_uuid": tree, "lat": lat, "lon": lon,
 	})
-	var ids []uuid.UUID
-	if recorder.Code == http.StatusConflict {
-		var body struct {
-			Detail struct {
-				Candidates []struct {
-					Tree struct {
-						ID uuid.UUID `json:"id"`
-					} `json:"tree"`
-				} `json:"candidates"`
-			} `json:"detail"`
-		}
-		if err := json.Unmarshal(recorder.Body.Bytes(), &body); err != nil {
-			t.Fatal(err)
-		}
-		for _, candidate := range body.Detail.Candidates {
-			ids = append(ids, candidate.Tree.ID)
-		}
-	}
-	return recorder.Code, ids
+	return recorder.Code
+}
+
+// seesTree reports whether `bearer` is served the community tree on `GET /trees/{id}`. It is the
+// witness for "who can see this tree" (§3F). The retired 10 m dedupe used to be that witness, through
+// its candidate list.
+func seesTree(t *testing.T, h *harness, bearer string, tree uuid.UUID) bool {
+	t.Helper()
+	profile := profileOf(t, h, bearer, tree)
+	return profile.CommunityTree != nil && profile.CommunityTree.ID == tree
 }
 
 func mustApply(t *testing.T, result syncResult, what string) {
@@ -328,7 +319,7 @@ func assertPublicRecordInvariant(t *testing.T, h *harness) {
 // ── Publication ────────────────────────────────────────────────────────────────────────────────
 
 // TestASignedInTreeIsPublishedTheMomentItLands is decision 1's first half: "a tree added while
-// signed in is visible to everyone … instantly". A stranger's dedupe is the witness.
+// signed in is visible to everyone … instantly". A stranger's read of the tree is the witness.
 func TestASignedInTreeIsPublishedTheMomentItLands(t *testing.T) {
 	h := newHarness(t)
 	account := signInAs(t, h, "ct.adder.1", nil, accepted())
@@ -345,10 +336,8 @@ func TestASignedInTreeIsPublishedTheMomentItLands(t *testing.T) {
 	}
 
 	stranger := h.registerDeviceToken(t, uuid.New())
-	code, candidates := postTree(t, h, stranger, uuid.New(), north(3), ctLon)
-	if code != http.StatusConflict || len(candidates) != 1 || candidates[0] != tree {
-		t.Fatalf("a stranger 3 m away got %d with candidates %v; the published tree should be the one "+
-			"candidate everybody sees", code, candidates)
+	if !seesTree(t, h, stranger, tree) {
+		t.Fatal("a stranger is not served the published tree; everybody should see it")
 	}
 	assertPublicationInvariant(t, h)
 }
@@ -366,8 +355,8 @@ func TestASignedOutTreeGoesLiveAtSignIn(t *testing.T) {
 		t.Fatal("control: a tree added signed out is published before anybody signed in")
 	}
 	stranger := h.registerDeviceToken(t, uuid.New())
-	if code, candidates := postTree(t, h, stranger, uuid.New(), north(40), ctLon); code != http.StatusOK {
-		t.Fatalf("fixture: a stranger's unrelated tree 40 m away was refused %d %v", code, candidates)
+	if seesTree(t, h, stranger, tree) {
+		t.Fatal("control: a stranger is served a tree added signed out before anybody signed in")
 	}
 
 	account := signInAs(t, h, "ct.adder.2", &device, accepted())
@@ -385,9 +374,8 @@ func TestASignedOutTreeGoesLiveAtSignIn(t *testing.T) {
 		t.Fatalf("the published event names %v / %v; want the account and the claimed device",
 			published[0].ActorUser, published[0].ActorDevice)
 	}
-	code, candidates := postTree(t, h, stranger, uuid.New(), north(3), ctLon)
-	if code != http.StatusConflict || len(candidates) != 1 || candidates[0] != tree {
-		t.Fatalf("after sign-in a stranger 3 m away got %d %v; the tree should now be visible", code, candidates)
+	if !seesTree(t, h, stranger, tree) {
+		t.Fatal("after sign-in a stranger is not served the tree; it should now be visible")
 	}
 	assertPublicationInvariant(t, h)
 }
@@ -418,9 +406,10 @@ func TestADeclinedLicenseKeepsTreesOffTheMapUntilItIsAccepted(t *testing.T) {
 		}
 	}
 	stranger := h.registerDeviceToken(t, uuid.New())
-	if code, candidates := postTree(t, h, stranger, uuid.New(), north(3), ctLon); code != http.StatusOK {
-		t.Fatalf("a stranger was refused %d over %v — a declined account's tree is visible to the dedupe",
-			code, candidates)
+	for name, tree := range map[string]uuid.UUID{"the claimed tree": claimed, "the signed-in tree": added} {
+		if seesTree(t, h, stranger, tree) {
+			t.Fatalf("a stranger is served %s — a declined account's tree is visible", name)
+		}
 	}
 	assertPublicationInvariant(t, h)
 
@@ -469,10 +458,8 @@ func TestALaterDeclineLeavesPublishedTreesPublished(t *testing.T) {
 		t.Fatalf("the decline wrote to the published tree's history: %+v", events)
 	}
 	stranger := h.registerDeviceToken(t, uuid.New())
-	if code, candidates := postTree(t, h, stranger, uuid.New(), north(3), ctLon); code != http.StatusConflict ||
-		len(candidates) != 1 || candidates[0] != before {
-		t.Fatalf("after the decline a stranger 3 m away got %d %v; the published tree should still be seen",
-			code, candidates)
+	if !seesTree(t, h, stranger, before) {
+		t.Fatal("after the decline a stranger is not served the published tree; it should still be seen")
 	}
 
 	mustApply(t, h.syncOne(t, again.AccessToken, addTreeAt(after, north(60), ctLon, time.Now())), "add after the decline")
@@ -650,41 +637,43 @@ func TestOnlyTheAdderMovesThePin(t *testing.T) {
 	mustApply(t, h.syncOne(t, adder, correctionItem(tree, uuid.New(), north(4), ctLon, time.Now())), "the adder's move")
 }
 
-// TestAMoveOntoAnotherVisibleTreeIsAConflict is §3A's `conflict`, scoped as §3F scopes the dedupe:
-// a published tree refuses the move, another device's unpublished tree does not.
-func TestAMoveOntoAnotherVisibleTreeIsAConflict(t *testing.T) {
+// TestAMoveBesideAnotherTreeIsApplied is the owner's ruling of 2026-11-14 on moves: a pin "can go
+// anywhere, and also fine to go within 10m of another tree". A move to 4 m from a published tree
+// and a move to 1 m from the mover's own other tree both apply and both move the pin.
+func TestAMoveBesideAnotherTreeIsApplied(t *testing.T) {
 	h := newHarness(t)
 	publisher := signInAs(t, h, "ct.publisher", nil, accepted())
 	published := uuid.New()
 	mustApply(t, h.syncOne(t, publisher.AccessToken, addTreeAt(published, ctLat, ctLon, time.Now())), "published tree")
 
-	hidden := uuid.New()
-	mustApply(t, h.syncOne(t, h.registerDeviceToken(t, uuid.New()),
-		addTreeAt(hidden, north(100), ctLon, time.Now())), "another device's unpublished tree")
-
 	mover := h.registerDeviceToken(t, uuid.New())
-	tree := uuid.New()
+	tree, own := uuid.New(), uuid.New()
 	mustApply(t, h.syncOne(t, mover, addTreeAt(tree, north(50), ctLon, time.Now().Add(-time.Hour))), "the mover's tree")
+	mustApply(t, h.syncOne(t, mover, addTreeAt(own, north(100), ctLon, time.Now().Add(-time.Hour))), "the mover's other tree")
 
-	mustFail(t, h.syncOne(t, mover, correctionItem(tree, uuid.New(), north(4), ctLon, time.Now().Add(-30*time.Minute))),
-		apierr.Conflict, "a move to 4 m from a published tree")
-	if state := stateOf(t, h, tree); state.Lat != north(50) {
-		t.Fatalf("a refused move moved the tree to %v", state.Lat)
+	beside := uuid.New()
+	mustApply(t, h.syncOne(t, mover, correctionItem(tree, beside, north(4), ctLon, time.Now().Add(-30*time.Minute))),
+		"a move to 4 m from a published tree")
+	if state := stateOf(t, h, tree); state.Lat != north(4) {
+		t.Fatalf("the applied move left the tree at %v, want %v", state.Lat, north(4))
+	}
+	if head := headOf(t, h, tree); head != beside {
+		t.Fatalf("the head is %s, want the move %s", head, beside)
 	}
 
-	mustApply(t, h.syncOne(t, mover, correctionItem(tree, uuid.New(), north(103), ctLon, time.Now())),
-		"a move to 3 m from a tree the mover cannot see")
+	mustApply(t, h.syncOne(t, mover, correctionItem(tree, uuid.New(), north(101), ctLon, time.Now())),
+		"a move to 1 m from the mover's own other tree")
+	if state := stateOf(t, h, tree); state.Lat != north(101) {
+		t.Fatalf("the second move left the tree at %v, want %v", state.Lat, north(101))
+	}
 }
 
 // TestALateOlderCorrectionLandsAlreadySuperseded is §3A's ordering: the head is the greatest
 // `(occurred_at, id)`, and a correction that arrives after a newer one is spliced in behind it —
-// already superseded, the tree's position untouched, and without the dedupe, since nobody will ever
-// be shown that position. The late one is aimed 3 m from a published tree to prove the last part.
+// already superseded, and the tree's position untouched, since nobody will ever be shown that
+// position.
 func TestALateOlderCorrectionLandsAlreadySuperseded(t *testing.T) {
 	h := newHarness(t)
-	publisher := signInAs(t, h, "ct.neighbour", nil, accepted())
-	mustApply(t, h.syncOne(t, publisher.AccessToken, addTreeAt(uuid.New(), north(200), ctLon, time.Now())), "neighbour")
-
 	adder := h.registerDeviceToken(t, uuid.New())
 	tree := uuid.New()
 	base := time.Date(2026, 9, 28, 12, 0, 0, 0, time.UTC)
@@ -889,8 +878,8 @@ func TestTheAdderWithdrawsATreeNobodyElseBuiltOn(t *testing.T) {
 		t.Fatalf("%d withdrawn events, want 1", n)
 	}
 	stranger := h.registerDeviceToken(t, uuid.New())
-	if code, candidates := postTree(t, h, stranger, uuid.New(), north(2), ctLon); code != http.StatusOK {
-		t.Fatalf("a withdrawn tree still refuses a stranger's add: %d %v", code, candidates)
+	if seesTree(t, h, stranger, tree) {
+		t.Fatal("a stranger is still served the withdrawn tree")
 	}
 	// A replay of the withdrawal under a new key is a success that changes nothing.
 	mustApply(t, h.syncOne(t, adder.AccessToken, treeWithdrawalItem(tree)), "a second withdrawal")
@@ -1148,7 +1137,7 @@ func TestAStrangersWithdrawalIsForbiddenWithNothingBuiltOn(t *testing.T) {
 	h := newHarness(t)
 	adder := signInAs(t, h, "ct.isolated.adder", nil, accepted())
 	tree := uuid.New()
-	if code, _ := postTree(t, h, adder.AccessToken, tree, ctLat, ctLon); code != http.StatusOK {
+	if code := postTree(t, h, adder.AccessToken, tree, ctLat, ctLon); code != http.StatusOK {
 		t.Fatalf("POST /trees answered %d", code)
 	}
 	if !stateOf(t, h, tree).Published {
@@ -1217,8 +1206,8 @@ func TestAWithdrawalThatArrivesBeforeItsTreeIsHonoured(t *testing.T) {
 		t.Fatalf("the add arrived after its own withdrawal and the tree is %+v; want it withdrawn", state)
 	}
 	stranger := h.registerDeviceToken(t, uuid.New())
-	if code, _ := postTree(t, h, stranger, uuid.New(), north(2), ctLon); code != http.StatusOK {
-		t.Fatalf("a tree withdrawn before it arrived refuses a stranger's add: %d", code)
+	if seesTree(t, h, stranger, tree) {
+		t.Fatal("a stranger is served a tree withdrawn before it arrived")
 	}
 	// It was never visible to anybody, so nothing may say it was ever public (review of #190, F3):
 	// no published_at (the soft-removal half of "once public"), no published event, and nothing in
@@ -1634,7 +1623,7 @@ func TestEraseEverythingDeletesATreeNobodyElseBuiltOn(t *testing.T) {
 
 	late := h.registerDeviceToken(t, uuid.New())
 	h.syncOne(t, late, addTreeAt(tree, ctLat, ctLon, time.Now()))
-	if code, _ := postTree(t, h, late, tree, ctLat, ctLon); code != http.StatusOK {
+	if code := postTree(t, h, late, tree, ctLat, ctLon); code != http.StatusOK {
 		t.Fatalf("POST /trees naming the erased id answered %d", code)
 	}
 	if stateOf(t, h, tree).Exists {
@@ -1663,30 +1652,57 @@ func TestEraseEverythingKeepsATreeOthersBuiltOnAnonymized(t *testing.T) {
 	assertPublicationInvariant(t, h)
 }
 
-// ── The dedupe's scope (§3F) ───────────────────────────────────────────────────────────────────
+// ── No proximity refusal (the owner's ruling of 2026-11-14) ────────────────────────────────────
 
-// TestTheDedupeNoLongerSeesAnotherDevicesUnpublishedTree closes the candidate leak and the refusal
-// against a tree nobody could see — through both doors, `POST /trees` and `add_tree`.
-func TestTheDedupeNoLongerSeesAnotherDevicesUnpublishedTree(t *testing.T) {
+// TestAnAddBesideAnyTreeIsAppliedThroughBothDoors: a tree within 10 m of another is added, whoever
+// can see the other tree, through both doors, `POST /trees` and `add_tree`. The cases are a tree
+// the adder can see because it is their own, one they can see because it is published, and one
+// they cannot see. The last one is the §3F leak the old candidate list had; with no refusal and no
+// candidate list there is nothing left to leak, and the answer says nothing about the other tree.
+func TestAnAddBesideAnyTreeIsAppliedThroughBothDoors(t *testing.T) {
 	h := newHarness(t)
 	owner := h.registerDeviceToken(t, uuid.New())
 	hidden := uuid.New()
-	mustApply(t, h.syncOne(t, owner, addTreeAt(hidden, ctLat, ctLon, time.Now())), "the unpublished tree")
-
-	// Its owner still sees it: the control that the query is scoping, not simply blind.
-	code, candidates := postTree(t, h, owner, uuid.New(), north(3), ctLon)
-	if code != http.StatusConflict || len(candidates) != 1 || candidates[0] != hidden {
-		t.Fatalf("the tree's own device got %d %v at 3 m; it should see its own tree", code, candidates)
-	}
-
+	mustApply(t, h.syncOne(t, owner, addTreeAt(hidden, ctLat, ctLon, time.Now())), "an unpublished tree")
+	publisher := signInAs(t, h, "ct.beside.publisher", nil, accepted())
+	published := uuid.New()
+	mustApply(t, h.syncOne(t, publisher.AccessToken, addTreeAt(published, north(20), ctLon, time.Now())),
+		"a published tree")
 	stranger := h.registerDeviceToken(t, uuid.New())
-	code, candidates = postTree(t, h, stranger, uuid.New(), north(3), ctLon)
-	if code != http.StatusOK {
-		t.Fatalf("POST /trees 3 m from another device's unpublished tree answered %d with candidates %v "+
-			"— its position leaked to a stranger", code, candidates)
+
+	for _, c := range []struct {
+		name   string
+		bearer string
+		lat    float64
+	}{
+		{"3 m from the adder's own unpublished tree", owner, north(3)},
+		{"3 m from a published tree", stranger, north(23)},
+		{"3 m from another device's unpublished tree", stranger, north(-3)},
+	} {
+		tree := uuid.New()
+		recorder := h.do(t, http.MethodPost, Prefix+"/trees", c.bearer, map[string]any{
+			"client_uuid": tree, "lat": c.lat, "lon": ctLon,
+		})
+		if recorder.Code != http.StatusOK {
+			t.Fatalf("POST /trees %s answered %d %s; a tree may stand within 10 m of another",
+				c.name, recorder.Code, recorder.Body.String())
+		}
+		if !stateOf(t, h, tree).Exists {
+			t.Fatalf("POST /trees %s answered 200 and recorded no tree", c.name)
+		}
+		for _, other := range []uuid.UUID{hidden, published} {
+			if bytes.Contains(recorder.Body.Bytes(), []byte(other.String())) {
+				t.Fatalf("POST /trees %s named another tree in its answer: %s", c.name, recorder.Body.String())
+			}
+		}
+
+		item := uuid.New()
+		mustApply(t, h.syncOne(t, c.bearer, addTreeAt(item, c.lat+1.0/111_320.0, ctLon, time.Now())),
+			"add_tree "+c.name)
+		if !stateOf(t, h, item).Exists {
+			t.Fatalf("add_tree %s answered applied and recorded no tree", c.name)
+		}
 	}
-	mustApply(t, h.syncOne(t, h.registerDeviceToken(t, uuid.New()), addTreeAt(uuid.New(), north(-3), ctLon, time.Now())),
-		"add_tree 3 m from another device's unpublished tree")
 }
 
 // ── The operator takedown ──────────────────────────────────────────────────────────────────────

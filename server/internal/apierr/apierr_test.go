@@ -113,8 +113,8 @@ func TestRetryableMatchesTheClient(t *testing.T) {
 		}
 	}
 	// `conflict` gets its own assertion because it is the one a reader is most likely to "fix":
-	// the proximity dedupe returns it with a candidate list only the person can resolve, so
-	// re-sending cannot change the answer.
+	// a tree withdrawal after somebody else has built on the tree returns it, and re-sending
+	// cannot change the answer.
 	if Conflict.Retryable() {
 		t.Error("conflict must not be retryable: re-sending would not change the answer")
 	}
