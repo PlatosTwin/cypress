@@ -179,6 +179,11 @@ struct VisitAddTreeView: View {
     /// 247 on the iPhone 16e this was reported against), which is the whole of it. The chip
     /// is a statement about the screen rather than a row of the form (it is screen 02's status row,
     /// and 02 does not scroll it either), so pinning it is what it was always describing.
+    ///
+    /// **The one exception is the "ALREADY ON RECORD" note.** The owner put it above the photo on
+    /// 2026-11-15, so when a tree is within 10 m the well starts below the note and the form under
+    /// the well is pushed down by the note's height. That is the owner's trade: the note is seen
+    /// first. With no tree within 10 m the note is not drawn and the ceiling means what it says.
     private var composer: some View {
         VStack(spacing: 0) {
             ScreenHeader(title: VisitAddTreeCopy.title, bottomInset: .wide, onBack: onBack)
@@ -206,6 +211,13 @@ struct VisitAddTreeView: View {
 
     private func composerColumn(wellWidthCeiling: CGFloat) -> some View {
         VStack(alignment: .leading, spacing: CypressSpacing.gapRows) {
+            // The top of the form, above the photo: the owner's decision of 2026-11-15, so the
+            // reader sees it without scrolling, before they can add a second copy of a tree. Drawn
+            // only when a tree is within 10 m, so with none the form starts at the photo as before.
+            if !model.nearby.isEmpty {
+                nearbyNote(model.nearby)
+            }
+
             photoWell(widthCeiling: wellWidthCeiling)
 
             wellEmptyNotice
@@ -217,10 +229,6 @@ struct VisitAddTreeView: View {
             landRow
 
             speciesRow
-
-            if !model.nearby.isEmpty {
-                nearbyNote(model.nearby)
-            }
 
             if case let .failed(message) = model.phase {
                 Text(message)

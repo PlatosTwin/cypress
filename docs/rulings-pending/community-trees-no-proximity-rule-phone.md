@@ -20,11 +20,28 @@ it changes (`.task(id: model.coordinate)`): a moving GPS fix while the pin is th
 reader placed. The answer is dropped when the position moved while it was read, and once an add is
 under way.
 
-**What the reader sees.** The same "ALREADY ON RECORD" card, in the same place in the form (after the
-species row), with the owner's two sentences and the same list of trees, each row opening its tree.
-The Add this tree button does not read the list: it stays active, and one tap adds the tree. A read
-that fails shows no note rather than an error, because the note is advice and the add does not
-depend on it.
+**What the reader sees.** The same "ALREADY ON RECORD" card, at the top of the scrolling form, above
+the photo (the owner's decision below), with the owner's two sentences and the same list of trees,
+each row opening its tree. The Add this tree button does not read the list: it stays active, and one
+tap adds the tree. A read that fails shows no note rather than an error, because the note is advice
+and the add does not depend on it.
+
+### R??? — Where the note sits: the top of the form (owner's decision, 2026-11-15)
+
+**The question**, asked with AskUserQuestion: where should the "ALREADY ON RECORD" note sit, given
+that at normal text size on an iPhone 17 Pro it is below the photo, the pin line, the land chips and
+the species line, while the Add this tree button is pinned and active.
+
+**Offered:** "Top of the form (Recommended)"; "Where it is now"; "Scroll to it".
+
+**Chosen: Top of the form.** In the owner's words: "The note moves to the top of the scrolling form,
+above the photo. The reader sees it without scrolling, before they can add a second copy of a tree.
+It shows only when a tree is within 10 m."
+
+**As built.** The card is the first thing in `VisitAddTreeView`'s scrolling form, under the header
+and the pinned GPS chip and directly above the photo. With no tree within 10 m it is not drawn, and
+the form starts at the photo exactly as before. When a tree is within 10 m, the photo and the rest of
+the form sit lower by the card's height, which is the trade the owner chose.
 
 **What did not change.** The photo requirement, the 75 m bound on the pin, and a second tap during an
 add (the button stays disabled while the add runs and after it succeeds).

@@ -226,6 +226,9 @@ enum DebugDeepLink {
         /// out at sea like the other community cases, so neither tree lands near a record another
         /// case reads. Trees accumulate there, one per tap, which is the behavior under test.
         case addTreeNearby
+        /// The same add screen on a spot at sea with nothing on record within 10 m, so the note is
+        /// not drawn and the form starts at the photo. It writes nothing.
+        case addTreeAlone
     }
 
     /// A screen the harness presents directly, because it is not on any router.
@@ -593,6 +596,19 @@ enum DebugDeepLink {
             case .pinAdjust:
                 // No record, no write, no route. See `Standalone`.
                 present(pinAdjustFix)
+            case .addTreeAlone:
+                // Writes nothing. A tree within 10 m would draw the note this case exists to show
+                // absent, so one there is reported rather than drawn over.
+                let onRecord = try await api.treesNear(
+                    addTreeAloneSpot, radiusM: TreeDraft.proximityDedupeRadiusM, limit: 1
+                )
+                guard onRecord.isEmpty else {
+                    throw Failure(
+                        screen: "addTreeAlone",
+                        reason: "a tree is on record within 10 m of the spot, so the note would draw"
+                    )
+                }
+                present(.addTree(fix: addTreeAloneSpot, accuracyM: 5))
             case .addTreeNearby:
                 // Resolved-then-added, like `.recordDefect`: the first launch adds the tree on record,
                 // and every later launch finds one there already.
@@ -644,6 +660,9 @@ enum DebugDeepLink {
     /// The seventh, ~200 m north of the sixth's line: the tree on record that `.addTreeNearby`
     /// opens the add screen 4 m away from.
     private static let addTreeNearbySpot = Coordinate(latitude: 37.7708, longitude: -122.5300)
+    /// The eighth, ~200 m north of the seventh: open water with nothing on record, where
+    /// `.addTreeAlone` opens the add screen with no note to draw.
+    private static let addTreeAloneSpot = Coordinate(latitude: 37.7726, longitude: -122.5300)
 
     /// The candidate window, **with this device's own status overrides laid over it**.
     ///
