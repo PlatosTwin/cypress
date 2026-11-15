@@ -157,8 +157,8 @@ func jsonNumber(value float64) string {
 }
 
 // TestAddTreeThroughSyncPutsTheTreeOnTheMap is the difference between recording an act and
-// materializing it. A tree recorded only as a contribution is invisible to `TreesWithin`, so the
-// next contributor standing under it would be invited to add it again.
+// materializing it. A tree recorded only as a contribution is invisible to every read of
+// `community_trees`, so nobody else would ever see it.
 func TestAddTreeThroughSyncPutsTheTreeOnTheMap(t *testing.T) {
 	h := newHarness(t)
 	deviceToken := h.registerDeviceToken(t, uuid.New())
@@ -254,12 +254,9 @@ func TestAddTreeDisagreeingWithItselfIsRefused(t *testing.T) {
 	}
 }
 
-// TestAddTreeThroughSyncStillRunsTheProximityDedupe: `/sync` must not be a back door around the
-// 10 m rule `POST /trees` enforces.
-//
-// The refusal is `conflict`, which is non-retryable — the item fails on the spot and screen 17 shows
-// it, rather than spending 48 h on an answer only a person can give.
-func TestAddTreeThroughSyncStillRunsTheProximityDedupe(t *testing.T) {
+// TestAddTreeThroughSyncAcceptsATreeBesideAnother is the owner's ruling of 2026-11-14 on the
+// `add_tree` door: a tree two metres from another is a second tree, not a `conflict`.
+func TestAddTreeThroughSyncAcceptsATreeBesideAnother(t *testing.T) {
 	h := newHarness(t)
 	deviceToken := h.registerDeviceToken(t, uuid.New())
 
@@ -268,36 +265,30 @@ func TestAddTreeThroughSyncStillRunsTheProximityDedupe(t *testing.T) {
 		t.Fatalf("the first tree = %q, want applied", result.Status)
 	}
 
-	// Two metres away, which is inside the circle.
+	// Two metres away, which the retired 10 m rule refused.
 	second := uuid.New()
 	result := h.syncOne(t, deviceToken, addTreeItem(second, 37.33822, -121.88631))
-	if result.Status != "failed" {
-		t.Fatalf("status = %q, want failed — /sync would otherwise create the duplicates "+
-			"`POST /trees` exists to refuse", result.Status)
-	}
-	if result.Error == nil || *result.Error != apierr.Conflict {
-		t.Fatalf("error = %s, want conflict", codeOf(result.Error))
-	}
-	if result.Error.Retryable() {
-		t.Fatal("conflict must not be retryable; a retry cannot change this answer")
+	if result.Status != "applied" {
+		t.Fatalf("status = %q (%s: %s), want applied — a tree may stand within 10 m of another",
+			result.Status, codeOf(result.Error), result.Message)
 	}
 
 	var rows int
 	if err := h.store.Pool().QueryRow(context.Background(),
-		`SELECT count(*) FROM community_trees WHERE id = $1`, second).Scan(&rows); err != nil {
+		`SELECT count(*) FROM community_trees WHERE id IN ($1, $2)`, first, second).Scan(&rows); err != nil {
 		t.Fatal(err)
 	}
-	if rows != 0 {
-		t.Fatal("the refused tree is on the map anyway")
+	if rows != 2 {
+		t.Fatalf("%d trees recorded, want both", rows)
 	}
 }
 
-// TestReplayingAnAddTreeIsDuplicateNotAConflictWithItself is the ordering `POST /trees` states as
-// "the key is looked up first, and that ordering is the whole of it".
+// TestReplayingAnAddTreeIsDuplicateNotAConflictWithItself is a double send on the `add_tree` door:
+// the phone sends the item, the response is lost, and the outbox sends the same item (the same
+// `client_uuid`) again.
 //
-// The dedupe is "10 m, any species", so a byte-identical replay after a flap matches the row it
-// created moments ago at zero metres. Answering `conflict` there fails the item terminally over a
-// success.
+// The 10 m proximity dedupe is gone, so distance no longer stops a second copy. The contribution
+// dedupe does: the replay answers `duplicate`, and one tree and one contribution exist.
 func TestReplayingAnAddTreeIsDuplicateNotAConflictWithItself(t *testing.T) {
 	h := newHarness(t)
 	deviceToken := h.registerDeviceToken(t, uuid.New())
@@ -311,6 +302,18 @@ func TestReplayingAnAddTreeIsDuplicateNotAConflictWithItself(t *testing.T) {
 	if second.Status != "duplicate" {
 		t.Fatalf("status = %q (%s), want duplicate — the replay matched the row it created",
 			second.Status, codeOf(second.Error))
+	}
+
+	var trees, contributions int
+	if err := h.store.Pool().QueryRow(context.Background(), `
+		SELECT (SELECT count(*) FROM community_trees),
+		       (SELECT count(*) FROM contributions WHERE kind = 'add_tree')
+	`).Scan(&trees, &contributions); err != nil {
+		t.Fatal(err)
+	}
+	if trees != 1 || contributions != 1 {
+		t.Fatalf("trees = %d, add_tree contributions = %d after one add sent twice; want 1 and 1",
+			trees, contributions)
 	}
 }
 

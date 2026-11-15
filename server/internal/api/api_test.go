@@ -190,7 +190,6 @@ type envelopeOf struct {
 		Message   string `json:"message"`
 		Retryable bool   `json:"retryable"`
 	} `json:"error"`
-	Detail map[string]any `json:"detail"`
 }
 
 func decodeEnvelope(t *testing.T, recorder *httptest.ResponseRecorder) envelopeOf {
@@ -945,9 +944,11 @@ func TestTakedownRequiresTheOperatorCredential(t *testing.T) {
 	}
 }
 
-// ── The proximity conflict carries its candidates ──────────────────────────────────────────────
+// ── A tree beside another tree is a second tree (the owner's ruling of 2026-11-14) ─────────────
 
-func TestProximityConflictCarriesTheCandidateList(t *testing.T) {
+// TestATreeFiveMetresFromAnotherIsAdded: `POST /trees` no longer refuses a tree because another is
+// recorded within 10 m. The owner: "sometimes they will be close together and that's fine".
+func TestATreeFiveMetresFromAnotherIsAdded(t *testing.T) {
 	h := newHarness(t)
 	deviceToken := h.registerDeviceToken(t, uuid.New())
 
@@ -959,24 +960,31 @@ func TestProximityConflictCarriesTheCandidateList(t *testing.T) {
 		t.Fatalf("first tree returned %d: %s", first.Code, first.Body.String())
 	}
 
+	secondID := uuid.New()
 	second := h.do(t, http.MethodPost, Prefix+"/trees", deviceToken, map[string]any{
-		"client_uuid": uuid.New(), "lat": lat + 5.0/111_320.0, "lon": lon, "address": "1 Main St",
+		"client_uuid": secondID, "lat": lat + 5.0/111_320.0, "lon": lon, "address": "1 Main St",
 	})
-	if second.Code == http.StatusOK {
-		t.Fatal("a tree 5 m from another was accepted; the 10 m dedupe did not trip")
+	if second.Code != http.StatusOK {
+		t.Fatalf("a tree 5 m from another answered %d %s; a tree may stand within 10 m of another",
+			second.Code, second.Body.String())
 	}
-
-	envelope := decodeEnvelope(t, second)
-	if envelope.Error.Code != string(apierr.Conflict) {
-		t.Fatalf("code = %q, want conflict", envelope.Error.Code)
+	var body struct {
+		ID     uuid.UUID `json:"id"`
+		Status string    `json:"status"`
 	}
-	if envelope.Error.Retryable {
-		t.Error("conflict is retryable; the item would spend 48 h on an answer only the user can give")
+	if err := json.Unmarshal(second.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
 	}
-	candidates, ok := envelope.Detail["candidates"].([]any)
-	if !ok || len(candidates) == 0 {
-		t.Fatal("the conflict carried no candidate list; ProximityConflict exists to show it, and a " +
-			"conflict with nothing in it is a dead end wearing the same code")
+	if body.Status != "applied" || body.ID != secondID {
+		t.Fatalf("the second tree = %+v, want applied under %v", body, secondID)
+	}
+	var rows int
+	if err := h.store.Pool().QueryRow(context.Background(),
+		`SELECT count(*) FROM community_trees WHERE id = $1`, secondID).Scan(&rows); err != nil {
+		t.Fatal(err)
+	}
+	if rows != 1 {
+		t.Fatalf("the second tree answered applied and %d rows hold it", rows)
 	}
 }
 
@@ -1073,12 +1081,11 @@ func TestHealthReportsTheSHA(t *testing.T) {
 
 // ── B2: a byte-identical retry of POST /trees ──────────────────────────────────────────────────
 
-// TestReplayingATreeIsDuplicateNotAConflictWithItself is the flap-replay case §6.1 exists for.
+// TestReplayingATreeIsDuplicateNotAConflictWithItself is the flap-replay case §6.1 exists for: the
+// phone sends a tree, the response is lost, and the phone sends the same body again.
 //
-// The dedupe is "10 m, any species", so a retry of the same submission matches the row it created
-// moments ago at zero metres. Answering `conflict` there is not a near-miss: the code is
-// non-retryable, so the item fails terminally and screen 17 offers the contributor a resolution
-// sheet listing their own submission.
+// The 10 m proximity dedupe is gone (the owner's ruling of 2026-11-14), so distance no longer stops
+// a second copy. The id does: the replay must answer `duplicate`, and one tree must exist.
 func TestReplayingATreeIsDuplicateNotAConflictWithItself(t *testing.T) {
 	h := newHarness(t)
 	deviceToken := h.registerDeviceToken(t, uuid.New())
@@ -1123,6 +1130,16 @@ func TestReplayingATreeIsDuplicateNotAConflictWithItself(t *testing.T) {
 	}
 	if replayBody.ID != firstBody.ID {
 		t.Errorf("the replay reported id %v, the original %v", replayBody.ID, firstBody.ID)
+	}
+	var trees int
+	if err := h.store.Pool().QueryRow(context.Background(), `
+		SELECT count(*) FROM community_trees
+		 WHERE lat BETWEEN $1 - 0.001 AND $1 + 0.001 AND lon BETWEEN $2 - 0.001 AND $2 + 0.001
+	`, lat, lon).Scan(&trees); err != nil {
+		t.Fatal(err)
+	}
+	if trees != 1 {
+		t.Fatalf("%d trees stand where one was sent twice; the replay made a second tree", trees)
 	}
 }
 
@@ -1172,115 +1189,6 @@ func TestATreeIdIsTheClientsOwnId(t *testing.T) {
 	profile := h.do(t, http.MethodGet, Prefix+"/trees/"+treeID.String(), deviceToken, nil)
 	if profile.Code != http.StatusOK {
 		t.Fatalf("the profile route returned %d for the id membership reported", profile.Code)
-	}
-}
-
-// TestProximityConflictCandidatesCarryAWholeTree is M3.
-//
-// `ProximityConflict.candidates` is `[NearbyTree]`, which wraps a whole `Tree` — a candidate list of
-// bare ids cannot build one, and a community-added tree is by definition absent from the installed
-// city file, so the phone cannot fill the gap locally either.
-func TestProximityConflictCandidatesCarryAWholeTree(t *testing.T) {
-	h := newHarness(t)
-	deviceToken := h.registerDeviceToken(t, uuid.New())
-
-	const lat, lon = 37.7601, -122.5050
-	if got := h.do(t, http.MethodPost, Prefix+"/trees", deviceToken, map[string]any{
-		"client_uuid": uuid.New(), "lat": lat, "lon": lon, "address": "1 Main St",
-	}); got.Code != http.StatusOK {
-		t.Fatalf("first tree returned %d: %s", got.Code, got.Body.String())
-	}
-
-	second := h.do(t, http.MethodPost, Prefix+"/trees", deviceToken, map[string]any{
-		"client_uuid": uuid.New(), "lat": lat + 5.0/111_320.0, "lon": lon, "address": "1 Main St",
-	})
-	if second.Code == http.StatusOK {
-		t.Fatal("a tree 5 m from another was accepted")
-	}
-
-	var body struct {
-		Detail struct {
-			// The keys are `NearbyTree`'s and `Tree`'s **synthesized Swift property names** — see
-			// internal/api/wire.go for why a snake_case body would decode `speciesCurrentID` as a
-			// silent nil rather than throwing.
-			Candidates []wireNearbyTree `json:"candidates"`
-		} `json:"detail"`
-	}
-	if err := json.Unmarshal(second.Body.Bytes(), &body); err != nil {
-		t.Fatalf("the conflict body does not decode into NearbyTree's shape: %v\n%s",
-			err, second.Body.String())
-	}
-	if len(body.Detail.Candidates) != 1 {
-		t.Fatalf("got %d candidates, want 1", len(body.Detail.Candidates))
-	}
-
-	candidate := body.Detail.Candidates[0]
-	if candidate.Tree.ID.IsNil() {
-		t.Error("the candidate carries no tree id; NearbyTree.id is tree.id")
-	}
-	if candidate.Tree.Source != "community" {
-		t.Errorf("source = %q, want community — this table holds nothing else", candidate.Tree.Source)
-	}
-	if candidate.Tree.VerificationState != "unverified" {
-		t.Errorf("verification_state = %q, want unverified — a community submission is neither a "+
-			"city row nor org-confirmed", candidate.Tree.VerificationState)
-	}
-	// **Membership, not emptiness.** The guard this replaces asked whether the string was empty,
-	// which is one way a decoder throws; the way that was actually happening was a value outside
-	// the vocabulary (`"unknown"`), on every candidate. The vocabulary is read off Tree.swift in
-	// `TestTreePlacementMatchesTheSwiftVocabulary`; here it is enough that the value is one of them.
-	declaredPlacements := swiftEnumRawValues(t, "../../../Cypress/Core/Models/Tree.swift", "TreePlacement")
-	if !slices.Contains(declaredPlacements, candidate.Tree.Placement) {
-		t.Errorf("placement = %q, which is not a TreePlacement raw value %v — Tree.placement is "+
-			"non-optional, so every candidate would fail to decode", candidate.Tree.Placement, declaredPlacements)
-	}
-	declaredStatuses := swiftEnumRawValues(t, "../../../Cypress/Core/Models/Tree.swift", "TreeStatus")
-	if !slices.Contains(declaredStatuses, candidate.Tree.Status) {
-		t.Errorf("status = %q, which is not a TreeStatus raw value %v", candidate.Tree.Status, declaredStatuses)
-	}
-	if candidate.Tree.Coordinate.Latitude == 0 || candidate.Tree.Coordinate.Longitude == 0 {
-		t.Error("the tree carries no coordinate")
-	}
-	// The keys themselves, on the bytes: `Coordinate`'s stored properties are `latitude` and
-	// `longitude`, and no key strategy turns `lat` into `latitude`.
-	// **Every key `Tree` declares, on the bytes.** A Go struct with the right tags proves the
-	// handler agrees with this test author's transcription; the point of listing them here is that
-	// the list is checked against the Swift declaration by
-	// `TestWireTreeCoversEveryTreeProperty` below, so neither side is the author's memory.
-	for _, key := range swiftStoredPropertyNames(t, "../../../Cypress/Core/Models/Tree.swift", "Tree") {
-		if !bytes.Contains(second.Body.Bytes(), []byte(`"`+key+`"`)) {
-			t.Errorf("the body does not carry %q; Tree's synthesized CodingKeys expect exactly that "+
-				"spelling, and no key strategy produces it from a snake_case body", key)
-		}
-	}
-	for _, key := range []string{`"distanceM"`, `"speciesScientificName"`, `"speciesCommonName"`, `"tell"`} {
-		if !bytes.Contains(second.Body.Bytes(), []byte(key)) {
-			t.Errorf("the body does not carry %s; NearbyTree's synthesized CodingKeys expect it", key)
-		}
-	}
-	for _, absent := range []string{`"lat"`, `"lon"`, `"distance_m"`, `"verification_state"`,
-		`"species_current_id"`, `"neighborhood_id"`, `"created_at"`} {
-		if bytes.Contains(second.Body.Bytes(), []byte(absent)) {
-			t.Errorf("the body still carries %s, which no Swift CodingKey matches — and because the "+
-				"matching property is optional it would decode as a silent nil rather than throwing", absent)
-		}
-	}
-	if candidate.DistanceM <= 0 || candidate.DistanceM > 10 {
-		t.Errorf("distance_m = %v, want a real distance inside the 10 m radius", candidate.DistanceM)
-	}
-	// Present-and-null rather than absent: the client decodes an optional, and a missing key is a
-	// different thing from a stated "we do not know".
-	if candidate.Tell != nil {
-		t.Error("a tell was invented; IDTip comes from the curated pipeline and the seed leaves it empty")
-	}
-	if candidate.SpeciesScientificName != nil || candidate.SpeciesCommonName != nil {
-		t.Error("species names were invented; this service holds no species table")
-	}
-	for _, key := range []string{"speciesScientificName", "speciesCommonName", "tell"} {
-		if !bytes.Contains(second.Body.Bytes(), []byte(`"`+key+`"`)) {
-			t.Errorf("%s is absent rather than null; the client decodes an optional, and absent is "+
-				"a different fact from stated-as-unknown", key)
-		}
 	}
 }
 
@@ -1783,10 +1691,10 @@ func TestEveryRequestCarriesADeadline(t *testing.T) {
 
 // TestPlacementRoundTripsAndDefaultsToTheDraftsDefault is the end-to-end half of B7.
 //
-// `community_trees.placement` was never written by any path, so `NearbyTree.Placement` was always
-// `""` and the handler substituted `"unknown"` — not a `TreePlacement`, on every candidate, always.
-// Writing it is the fix; reading it back through a *different* route than the one that wrote it is
-// what makes the fix visible.
+// `community_trees.placement` was once never written by any path, so a community tree's placement
+// was always `""` and the handler substituted `"unknown"` — not a `TreePlacement`, on every tree,
+// always. Writing it is the fix; reading it back through a *different* route than the one that
+// wrote it (`GET /trees/{id}`) is what makes the fix visible.
 func TestPlacementRoundTripsAndDefaultsToTheDraftsDefault(t *testing.T) {
 	for name, submitted := range map[string]any{
 		"contributor_placed": "contributor_placed",
@@ -1798,8 +1706,9 @@ func TestPlacementRoundTripsAndDefaultsToTheDraftsDefault(t *testing.T) {
 			deviceToken := h.registerDeviceToken(t, uuid.New())
 
 			const lat, lon = 37.7601, -122.5050
+			tree := uuid.New()
 			body := map[string]any{
-				"client_uuid": uuid.New(), "lat": lat, "lon": lon,
+				"client_uuid": tree, "lat": lat, "lon": lon,
 				"address": "1 Main St", "species_id": nil, "land_context": nil,
 			}
 			if submitted != nil {
@@ -1809,32 +1718,17 @@ func TestPlacementRoundTripsAndDefaultsToTheDraftsDefault(t *testing.T) {
 				t.Fatalf("add returned %d: %s", got.Code, got.Body.String())
 			}
 
-			// Read it back as a dedupe candidate, which is the only route that surfaces it.
-			second := h.do(t, http.MethodPost, Prefix+"/trees", deviceToken, map[string]any{
-				"client_uuid": uuid.New(), "lat": lat + 5.0/111_320.0, "lon": lon,
-				"address": nil, "species_id": nil, "land_context": nil,
-			})
-			if second.Code == http.StatusOK {
-				t.Fatal("the second tree did not trip the dedupe")
-			}
-
-			var envelope struct {
-				Detail struct {
-					Candidates []wireNearbyTree `json:"candidates"`
-				} `json:"detail"`
-			}
-			if err := json.Unmarshal(second.Body.Bytes(), &envelope); err != nil {
-				t.Fatal(err)
-			}
-			if len(envelope.Detail.Candidates) != 1 {
-				t.Fatalf("got %d candidates", len(envelope.Detail.Candidates))
+			// Read it back through the tree's profile, which carries the whole community `Tree`.
+			profile := profileOf(t, h, deviceToken, tree)
+			if profile.CommunityTree == nil {
+				t.Fatalf("the adder's own tree has no community_tree in its profile: %s", profile.raw)
 			}
 
 			want := defaultTreePlacement
 			if submitted != nil {
 				want = submitted.(string)
 			}
-			got := envelope.Detail.Candidates[0].Tree.Placement
+			got := profile.CommunityTree.Placement
 			if got != want {
 				t.Fatalf("placement round-tripped as %q, want %q", got, want)
 			}
@@ -1857,7 +1751,7 @@ func TestAnInvalidPlacementIsRefused(t *testing.T) {
 	})
 	if recorder.Code == http.StatusOK {
 		t.Fatal("`unknown` was accepted as a placement; it is not a TreePlacement raw value and " +
-			"Tree.placement is non-optional, so every candidate carrying it fails to decode")
+			"Tree.placement is non-optional, so every response carrying it fails to decode")
 	}
 	if code := decodeEnvelope(t, recorder).Error.Code; code != string(apierr.ValidationFailed) {
 		t.Fatalf("code = %q, want validation_failed", code)
@@ -1867,41 +1761,42 @@ func TestAnInvalidPlacementIsRefused(t *testing.T) {
 // TestTheAddressIsTheClientsAddress is N13.
 //
 // `Tree.address` is the city's street address. A person-chosen name arriving in it would render as
-// an address on the resolution sheet, and `TreeDraft` has no name field to send one from anyway.
+// an address on the tree's screen, and `TreeDraft` has no name field to send one from anyway. It is
+// read back from the adder's own profile, the one reader the address is served to.
 func TestTheAddressIsTheClientsAddress(t *testing.T) {
 	h := newHarness(t)
 	deviceToken := h.registerDeviceToken(t, uuid.New())
 	const lat, lon = 37.7601, -122.5050
 
-	h.do(t, http.MethodPost, Prefix+"/trees", deviceToken, map[string]any{
-		"client_uuid": uuid.New(), "lat": lat, "lon": lon,
+	tree := uuid.New()
+	if added := h.do(t, http.MethodPost, Prefix+"/trees", deviceToken, map[string]any{
+		"client_uuid": tree, "lat": lat, "lon": lon,
 		"address": "123 Judah St", "species_id": nil, "land_context": "street",
-	})
-	second := h.do(t, http.MethodPost, Prefix+"/trees", deviceToken, map[string]any{
-		"client_uuid": uuid.New(), "lat": lat + 5.0/111_320.0, "lon": lon,
-		"address": nil, "species_id": nil, "land_context": nil,
-	})
-
-	var envelope struct {
-		Detail struct {
-			Candidates []wireNearbyTree `json:"candidates"`
-		} `json:"detail"`
+	}); added.Code != http.StatusOK {
+		t.Fatalf("add returned %d: %s", added.Code, added.Body.String())
 	}
-	if err := json.Unmarshal(second.Body.Bytes(), &envelope); err != nil {
+
+	recorder := h.do(t, http.MethodGet, Prefix+"/trees/"+tree.String(), deviceToken, nil)
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("GET /trees/%s returned %d: %s", tree, recorder.Code, recorder.Body.String())
+	}
+	var profile struct {
+		CommunityTree *struct {
+			Address           *string `json:"address"`
+			StatedLandContext *string `json:"statedLandContext"`
+		} `json:"community_tree"`
+	}
+	if err := json.Unmarshal(recorder.Body.Bytes(), &profile); err != nil {
 		t.Fatal(err)
 	}
-	// Indexed only after checking. A bare `[0]` panics the whole package when an injection makes
-	// the list empty, which turns a red-proof's message into a stack trace and takes every other
-	// test in the binary down with it.
-	if len(envelope.Detail.Candidates) != 1 {
-		t.Fatalf("got %d candidates, want 1: %s", len(envelope.Detail.Candidates), second.Body.String())
+	if profile.CommunityTree == nil {
+		t.Fatalf("the adder's own tree has no community_tree: %s", recorder.Body.String())
 	}
-	candidate := envelope.Detail.Candidates[0]
-	if candidate.Tree.Address == nil || *candidate.Tree.Address != "123 Judah St" {
-		t.Fatalf("address = %v, want the street address the client sent", candidate.Tree.Address)
+	if profile.CommunityTree.Address == nil || *profile.CommunityTree.Address != "123 Judah St" {
+		t.Fatalf("address = %v, want the street address the client sent", profile.CommunityTree.Address)
 	}
-	if candidate.Tree.StatedLandContext == nil || *candidate.Tree.StatedLandContext != "street" {
-		t.Fatalf("statedLandContext = %v, want street", candidate.Tree.StatedLandContext)
+	if profile.CommunityTree.StatedLandContext == nil || *profile.CommunityTree.StatedLandContext != "street" {
+		t.Fatalf("statedLandContext = %v, want street", profile.CommunityTree.StatedLandContext)
 	}
 }
 
