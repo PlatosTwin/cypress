@@ -136,10 +136,7 @@ final class AddTreeNearbyUITests: XCTestCase, DeepLinkHarness {
             return
         }
         record(app, named: "note-ax5")
-        XCTAssertTrue(
-            label.isHittable,
-            "the note's label is not on screen without scrolling at the largest text size; its frame is \(label.frame)"
-        )
+        assertReachable(label, "the note's label, without scrolling, at the largest text size")
         let well = app.descendants(matching: .any)[Copy.well].firstMatch
         XCTAssertTrue(well.exists, "no photo well at the largest text size")
         XCTAssertLessThan(
@@ -159,8 +156,8 @@ final class AddTreeNearbyUITests: XCTestCase, DeepLinkHarness {
         file: StaticString = #filePath, line: UInt = #line
     ) {
         let screen = app.windows.firstMatch.frame
-        XCTAssertTrue(label.isHittable, "the note's label is not on screen without scrolling: \(label.frame)", file: file, line: line)
-        XCTAssertTrue(body.isHittable, "the note's sentences are not on screen without scrolling: \(body.frame)", file: file, line: line)
+        assertReachable(label, "the note's label, without scrolling", file: file, line: line)
+        assertReachable(body, "the note's sentences, without scrolling", file: file, line: line)
         XCTAssertGreaterThanOrEqual(body.frame.minY, screen.minY, "the note starts above the screen: \(body.frame)", file: file, line: line)
         XCTAssertLessThan(
             body.frame.maxY, add.frame.minY,

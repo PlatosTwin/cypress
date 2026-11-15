@@ -212,12 +212,19 @@ enum VisitPreviewFixtures {
     ///
     /// It exists for the same reason `camera()` does: the screen is behind a flow that needs a GPS
     /// fix, and a renderer that has none draws the `Finding you` notice instead of the screen.
+    ///
+    /// **No trees on record nearby by default.** The "ALREADY ON RECORD" note sits above the photo
+    /// (the owner's decision of 2026-11-15), and E174's ceiling is measured on the form the reader
+    /// sees with no tree within 10 m. `VisitPreviewAPI`'s own default is the shortlist's rows, which
+    /// it returns whatever radius is asked, so they would draw the note above the well. Pass rows
+    /// to draw it.
     @MainActor
     static func addTree(
-        fix: VisitLocationProvider.Fix = .located(origin, accuracyM: 5)
+        fix: VisitLocationProvider.Fix = .located(origin, accuracyM: 5),
+        nearby: [NearbyTree] = []
     ) -> VisitAddTreeView {
         VisitAddTreeView(
-            api: VisitPreviewAPI(),
+            api: VisitPreviewAPI(nearby: nearby),
             location: VisitLocationProvider(pinnedFix: fix),
             attribution: attribution,
             onAdded: { _ in },
