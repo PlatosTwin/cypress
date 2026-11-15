@@ -1371,6 +1371,14 @@ public struct TreeDraft: Hashable, Sendable {
     /// turned the refusal into a note that does not block. `DataDispute.positionResolutionRadiusM`
     /// reuses the number for a different rule.
     public static let proximityDedupeRadiusM: Double = 10
+
+    /// How far a tree already listed under that note may be before it leaves the list. The note
+    /// appears when a tree is within `proximityDedupeRadiusM`; a tree it lists stays listed until it
+    /// is more than this many meters away, and the note goes when none is left. The owner's decision
+    /// of 2026-11-15 ("Show at 10 m, hide past 15 m"): a GPS fix that drifts across 10 m no longer
+    /// makes the note appear and disappear. A listed tree can therefore show 11 to 15 m under the
+    /// words "within 10 m", which the owner accepted.
+    public static let proximityNoteKeepRadiusM: Double = 15
 }
 
 // MARK: - Photos

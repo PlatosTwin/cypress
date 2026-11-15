@@ -32,8 +32,10 @@
 //  the refusal ("sometimes they will be close together and that's fine") and kept the
 //  "ALREADY ON RECORD" card as a note that does not block. So the screen looks the trees up itself,
 //  before the tap: `nearby` is `treesNear` at `TreeDraft.proximityDedupeRadiusM` around
-//  `coordinate`, the same query and the same exact-meters circle the refusal used, read again
-//  whenever the pin's position changes. The CTA does not read it.
+//  `coordinate`, the same exact-meters circle the refusal used, read again whenever the pin's
+//  position changes. The CTA does not read it. Since the owner's decision of 2026-11-15 a tree the
+//  note already lists stays listed out to `TreeDraft.proximityNoteKeepRadiusM` (15 m), so a fix
+//  drifting across 10 m does not make the note appear and disappear; see `listed(_:keeping:)`.
 //
 //  ── The pin the reader places ─────────────────────────────────────────────────────────────
 //  The coordinate used to be `location.fix.coordinate` verbatim, and rule 2 was read as though it
@@ -141,8 +143,9 @@ final class VisitAddTreeModel {
     /// Where this tree is going down. `.gps` until the reader says otherwise.
     private(set) var placement: Placement = .gps
 
-    /// The trees on record within `TreeDraft.proximityDedupeRadiusM` of `coordinate`, nearest
-    /// first: the list under the "ALREADY ON RECORD" note. Empty draws no note.
+    /// The trees on record near `coordinate`, nearest first: the list under the "ALREADY ON RECORD"
+    /// note. Empty draws no note. A tree joins it within `TreeDraft.proximityDedupeRadiusM` and
+    /// leaves it past `TreeDraft.proximityNoteKeepRadiusM`; see `listed(_:keeping:)`.
     ///
     /// A note and never a gate (the owner's ruling of 2026-11-14): `canAdd` does not read it, so a
     /// reader who knows the tree in front of them is a different one adds it with one tap.
@@ -425,16 +428,36 @@ final class VisitAddTreeModel {
     /// The answer is dropped when the position moved while it was read, so a slow read for an old
     /// position never overwrites the list for the new one. It is dropped too once an add is under
     /// way: the screen is leaving, and the tree being added must not appear in its own note.
+    ///
+    /// The read reaches out to `TreeDraft.proximityNoteKeepRadiusM`, not to the 10 m, because a tree
+    /// already listed stays listed out to that distance (the owner's decision of 2026-11-15). Which
+    /// rows are listed is `listed(_:keeping:)`. A pin placed by hand gets the same rule from its new
+    /// position: the list it keeps from is whatever the note showed before the pin moved.
     func refreshNearby() async {
         guard let asked = coordinate else {
             nearby = []
             return
         }
         let found = (try? await api.treesNear(
-            asked, radiusM: TreeDraft.proximityDedupeRadiusM, limit: 10
+            asked, radiusM: TreeDraft.proximityNoteKeepRadiusM, limit: 10
         )) ?? []
         guard coordinate == asked, phase != .adding else { return }
-        nearby = found
+        nearby = Self.listed(found, keeping: nearby)
+    }
+
+    /// The rows the note lists, from a fresh read and the rows it listed before.
+    ///
+    /// A tree within `TreeDraft.proximityDedupeRadiusM` is listed. A tree that was already listed
+    /// stays listed out to `TreeDraft.proximityNoteKeepRadiusM`. Nothing else is listed, so a tree
+    /// first seen at 12 m does not bring the note up, and a listed tree at 12 m does not take it
+    /// down. The distances are the fresh read's, so the row shows where the tree is now. Order is the
+    /// read's: nearest first.
+    nonisolated static func listed(_ found: [NearbyTree], keeping shown: [NearbyTree]) -> [NearbyTree] {
+        let wasListed = Set(shown.map(\.id))
+        return found.filter { row in
+            row.distanceM <= TreeDraft.proximityDedupeRadiusM
+                || (wasListed.contains(row.id) && row.distanceM <= TreeDraft.proximityNoteKeepRadiusM)
+        }
     }
 
     // MARK: - The species

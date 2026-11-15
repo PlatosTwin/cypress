@@ -222,7 +222,256 @@ struct CommunityAddTests {
         if case let .failed(message) = subject.phase { Issue.record("the add reported: \(message)") }
     }
 
+    // MARK: - Show at 10 m, hide past 15 m (the owner's decision of 2026-11-15)
+
+    /// The note comes up at 10 m and a tree it lists stays listed out to 15 m, so a fix drifting
+    /// across 10 m does not flip it. Driven with pins placed by hand, which take the same rule.
+    ///
+    /// Red-proofs: make `listed(_:keeping:)` keep only rows within 10 m — red on "a listed tree at
+    /// 12 m left the note". Set `TreeDraft.proximityNoteKeepRadiusM` to 20 — red on "a listed tree
+    /// 15.1 m away is still listed".
+    @MainActor
+    @Test("the note shows at 9.9 m, keeps a listed tree at 12 m, and drops it past 15 m")
+    func theNoteHoldsOutToFifteenMeters() async throws {
+        let store = try await CypressStore.inMemory()
+        let api = LocalAPI(store: store, deviceID: Self.deviceID)
+        let tree = try await api.addTree(
+            TreeDraft(coordinate: Self.spot, photoLocalPath: try Self.stagedPhoto(), attribution: Self.attribution)
+        )
+
+        let subject = Self.model(
+            api: api, fix: .located(VisitPinAdjust.offset(Self.spot, northM: 9.9, eastM: 0), accuracyM: 6)
+        )
+        await subject.refreshNearby()
+        #expect(subject.nearby.map(\.tree.id) == [tree.id], "a tree 9.9 m away did not bring the note up")
+
+        try await Self.placePin(subject, northOf: Self.spot, meters: 12)
+        #expect(subject.nearby.map(\.tree.id) == [tree.id], "a listed tree at 12 m left the note")
+        let shown = try #require(subject.nearby.first?.distanceM)
+        #expect(abs(shown - 12) < 0.5, "the row shows \(shown) m, not where the tree is now")
+
+        try await Self.placePin(subject, northOf: Self.spot, meters: 15.1)
+        #expect(subject.nearby.isEmpty, "a listed tree 15.1 m away is still listed")
+    }
+
+    /// A tree first seen between 10 and 15 m does not join the note, even while the note is up for
+    /// another tree; it joins once it is within 10 m.
+    ///
+    /// Red-proof: make `listed(_:keeping:)` keep every row within 15 m — red on "a tree first seen
+    /// at 12.1 m joined the note".
+    @MainActor
+    @Test("a tree first seen at 12 m does not join the note, and joins once it is within 10 m")
+    func aNewTreeJoinsOnlyWithinTenMeters() async throws {
+        let store = try await CypressStore.inMemory()
+        let api = LocalAPI(store: store, deviceID: Self.deviceID)
+        let near = try await api.addTree(
+            TreeDraft(coordinate: Self.spot, photoLocalPath: try Self.stagedPhoto(), attribution: Self.attribution)
+        )
+        let farther = try await api.addTree(
+            TreeDraft(
+                coordinate: VisitPinAdjust.offset(Self.spot, northM: 22, eastM: 0),
+                photoLocalPath: try Self.stagedPhoto(),
+                attribution: Self.attribution
+            )
+        )
+
+        // 9.9 m from `near` and 12.1 m from `farther`.
+        let subject = Self.model(
+            api: api, fix: .located(VisitPinAdjust.offset(Self.spot, northM: 9.9, eastM: 0), accuracyM: 6)
+        )
+        await subject.refreshNearby()
+        #expect(subject.nearby.map(\.tree.id) == [near.id], "a tree first seen at 12.1 m joined the note")
+
+        // 12.5 m from `near` (kept) and 9.5 m from `farther` (joins).
+        try await Self.placePin(subject, northOf: Self.spot, meters: 12.5)
+        #expect(Set(subject.nearby.map(\.tree.id)) == [near.id, farther.id], "the note did not take the tree now within 10 m")
+
+        // 15.1 m from `near` (dropped) and 6.9 m from `farther`.
+        try await Self.placePin(subject, northOf: Self.spot, meters: 15.1)
+        #expect(subject.nearby.map(\.tree.id) == [farther.id])
+
+        // 16 m from `farther`: nothing is left, so the note goes.
+        try await Self.placePin(subject, northOf: Self.spot, meters: 38)
+        #expect(subject.nearby.isEmpty, "the note stayed up with no tree left in it")
+    }
+
+    /// The pure rule, at its edges, with no geometry in the way.
+    @Test("the listing rule at its edges: 10 m joins, 15 m keeps, past 15 m drops")
+    func theListingRuleAtItsEdges() throws {
+        let a = Self.row(distanceM: 10)
+        let b = Self.row(distanceM: 10.1)
+        let c = Self.row(distanceM: 15)
+        let d = Self.row(distanceM: 15.1)
+
+        #expect(VisitAddTreeModel.listed([a, b], keeping: []).map(\.id) == [a.id])
+        #expect(VisitAddTreeModel.listed([c, d], keeping: [c, d]).map(\.id) == [c.id])
+        #expect(VisitAddTreeModel.listed([], keeping: [a, c]).isEmpty, "an empty read kept the old rows")
+    }
+
+    // MARK: - The two guards in refreshNearby
+
+    /// A read for an old position that answers after the pin moved must not overwrite the list for
+    /// the new position.
+    ///
+    /// Red-proof: delete `guard coordinate == asked, phase != .adding else { return }` — red on "the
+    /// old position's answer replaced the new one".
+    @MainActor
+    @Test("a slow read for the old pin position does not overwrite the list for the new one")
+    func aStaleReadIsDropped() async throws {
+        let held = HeldReads()
+        let old = Self.spot
+        let subject = Self.model(api: HeldAPI(held: held), fix: .located(old, accuracyM: 6))
+
+        let first = Task { await subject.refreshNearby() }
+        try await held.waitForReads(1)
+
+        subject.beginPlacingPin()
+        subject.confirmPin(VisitPinAdjust.offset(old, northM: 30, eastM: 0))
+        let second = Task { await subject.refreshNearby() }
+        try await held.waitForReads(2)
+
+        let forNew = Self.row(distanceM: 3)
+        held.answer(1, with: [forNew])
+        await second.value
+        #expect(subject.nearby.map(\.id) == [forNew.id])
+
+        held.answer(0, with: [Self.row(distanceM: 4)])
+        await first.value
+        #expect(subject.nearby.map(\.id) == [forNew.id], "the old position's answer replaced the new one")
+    }
+
+    /// A read that answers after `add()` has begun must not change the note: the screen is leaving.
+    ///
+    /// Red-proof: delete the same guard — red on "the note changed after the add began".
+    @MainActor
+    @Test("a read that answers after the add began does not change the note")
+    func aReadDuringTheAddIsDropped() async throws {
+        let held = HeldReads()
+        let subject = Self.model(api: HeldAPI(held: held), fix: .located(Self.spot, accuracyM: 6))
+        subject.useLibraryImage(try Self.jpeg())
+
+        let read = Task { await subject.refreshNearby() }
+        try await held.waitForReads(1)
+
+        let adding = Task { await subject.add() }
+        try await held.waitForAdd()
+        #expect(subject.phase == .adding)
+
+        held.answer(0, with: [Self.row(distanceM: 4)])
+        await read.value
+        #expect(subject.nearby.isEmpty, "the note changed after the add began")
+
+        held.failAdd()
+        _ = await adding.value
+    }
+
     // MARK: - Fixtures
+
+    /// A row under the note, at a given distance, for the rule tests and the held reads.
+    private static func row(distanceM: Double) -> NearbyTree {
+        NearbyTree(
+            tree: Tree(
+                id: UUID(),
+                source: .community,
+                coordinate: spot,
+                status: .alive,
+                createdAt: Date(timeIntervalSince1970: 0),
+                updatedAt: Date(timeIntervalSince1970: 0)
+            ),
+            distanceM: distanceM,
+            speciesScientificName: nil,
+            speciesCommonName: nil,
+            tell: nil
+        )
+    }
+
+    /// Places the pin `meters` north of `origin` and reads the note for it, the way the view does
+    /// when the pin's position changes.
+    @MainActor
+    private static func placePin(
+        _ subject: VisitAddTreeModel, northOf origin: Coordinate, meters: Double
+    ) async throws {
+        subject.beginPlacingPin()
+        let pin = VisitPinAdjust.offset(origin, northM: meters, eastM: 0)
+        subject.confirmPin(pin)
+        try #require(subject.coordinate == pin, "the pin at \(meters) m was not placed")
+        await subject.refreshNearby()
+    }
+
+    /// Reads and adds that wait until the test answers them. A lock, because the double's methods
+    /// are nonisolated and run off the main actor.
+    private final class HeldReads: @unchecked Sendable {
+        private let lock = NSLock()
+        private var reads: [CheckedContinuation<[NearbyTree], Never>] = []
+        private var add: CheckedContinuation<Void, Error>?
+
+        func hold(_ continuation: CheckedContinuation<[NearbyTree], Never>) {
+            lock.withLock { reads.append(continuation) }
+        }
+
+        func holdAdd(_ continuation: CheckedContinuation<Void, Error>) {
+            lock.withLock { add = continuation }
+        }
+
+        func answer(_ index: Int, with rows: [NearbyTree]) {
+            let continuation = lock.withLock { reads[index] }
+            continuation.resume(returning: rows)
+        }
+
+        func failAdd() {
+            let continuation = lock.withLock { add }
+            continuation?.resume(throwing: APIError.forbidden)
+        }
+
+        /// Bounded: two seconds, then the test fails instead of hanging.
+        func waitForReads(_ count: Int) async throws {
+            for _ in 0..<400 {
+                if lock.withLock({ reads.count }) >= count { return }
+                try await Task.sleep(for: .milliseconds(5))
+            }
+            Issue.record("only \(lock.withLock { reads.count }) reads arrived, not \(count)")
+        }
+
+        func waitForAdd() async throws {
+            for _ in 0..<400 {
+                if lock.withLock({ add != nil }) { return }
+                try await Task.sleep(for: .milliseconds(5))
+            }
+            Issue.record("the add never reached the API")
+        }
+    }
+
+    /// `treesNear` and `addTree` wait for `HeldReads`; nothing else is read.
+    private struct HeldAPI: CypressAPI {
+        let held: HeldReads
+
+        func treesNear(_ c: Coordinate, radiusM: Double, limit: Int) async throws -> [NearbyTree] {
+            await withCheckedContinuation { held.hold($0) }
+        }
+
+        func addTree(_ draft: TreeDraft) async throws -> Tree {
+            try await withCheckedThrowingContinuation { held.holdAdd($0) }
+            throw APIError.forbidden
+        }
+
+        func mapContent(in viewport: MapViewport) async throws -> MapContent { .pins([]) }
+        func treeProfile(id: UUID) async throws -> TreeProfile { throw APIError.notFound }
+        func species(id: UUID) async throws -> Species { throw APIError.notFound }
+        func searchSpecies(query: String, limit: Int) async throws -> [Species] { [] }
+        func sync(_ items: [OutboxItem]) async throws -> [SyncResult] { [] }
+        func beginPhotoUpload(_ r: PhotoUploadRequest) async throws -> PhotoUploadTicket {
+            throw APIError.forbidden
+        }
+        func uploadPhoto(at localPath: String, ticket: PhotoUploadTicket) async throws {}
+        func grove() async throws -> [GroveEntry] { [] }
+        func journal(cursor: String?, limit: Int) async throws -> Page<JournalEntry> { Page(items: []) }
+        func claimDevice(deviceUUID: UUID, userID: UUID) async throws {}
+        func deleteAccount(_ choice: AccountDeletionChoice) async throws -> AccountDeletion.Outcome {
+            throw APIError.unauthorized
+        }
+        func logHazardRedirect(_ event: HazardRedirectEvent) async throws {}
+        func exportLatest(_ format: ExportFormat) async throws -> Data { Data() }
+    }
 
     /// A real 1×1 JPEG. Two bytes of a header are not enough: the model decodes the frame with
     /// `UIImage(data:)` before it accepts it, exactly as screen 04 does, and a fixture that skipped

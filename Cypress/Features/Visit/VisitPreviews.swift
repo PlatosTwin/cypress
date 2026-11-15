@@ -228,7 +228,7 @@ enum VisitPreviewFixtures {
             location: VisitLocationProvider(pinnedFix: fix),
             attribution: attribution,
             onAdded: { _ in },
-            onOpenExisting: { _ in },
+            openExisting: { _, _ in AnyView(EmptyView()) },
             onBack: {}
         )
     }

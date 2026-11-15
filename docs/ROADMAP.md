@@ -2376,8 +2376,13 @@ into this section in the round that finds it, and nowhere else. Each item stands
     whose old trees can otherwise come back as conflicts.~~ **DONE, 2026-11-15:** the phone half is
     `feat/no-proximity-refusal-phone` and the service half `feat/no-proximity-refusal-server`
     (PR 236), deployed with the owner's approval as `cypress-sync` release v15 (`bd8a35af`). The
-    owner placed the note at the top of the Add this tree form, above the photo (decision of
-    2026-11-15, `docs/rulings-pending/community-trees-no-proximity-rule-phone.md`).
+    owner placed the note at the top of the Add this tree form, above the photo, made a row of the
+    note open its tree over the add screen with the draft kept, and made the note show at 10 m and
+    hide past 15 m (three decisions of 2026-11-15,
+    `docs/rulings-pending/community-trees-no-proximity-rule-phone.md`). **Owed on the physical phone:
+    the shutter's position with a tree nearby.** A simulator has no live camera; the reviewer measured
+    "Choose a photo from this phone" at about 646 pt with a tree nearby on the 390 pt iPhone 17e, still
+    above the pinned button at about 696 pt.
 141. **The service keeps an index and migration comments that only the 10 m dedupe needed.** Found
     while building chip 140 (`feat/no-proximity-refusal-server`, 2026-11-15). (a)
     `idx_community_trees_position` (`server/migrations/001_initial.sql`, line 254) existed for the

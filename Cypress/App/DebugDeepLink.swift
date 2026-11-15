@@ -221,10 +221,10 @@ enum DebugDeepLink {
         /// 2026-11-14). A `Standalone`, for `pinAdjust`'s reason: the add screen is a step of
         /// `VisitFlowView`, not a `Route`.
         ///
-        /// It writes: it makes sure one community tree stands at `addTreeNearbySpot`, adding it the
-        /// way the app does when none does, and a tap on the button adds another. The spot is its own,
-        /// out at sea like the other community cases, so neither tree lands near a record another
-        /// case reads. Trees accumulate there, one per tap, which is the behavior under test.
+        /// It writes: each launch adds one community tree on the first free slot of its own line
+        /// (`addTreeNearbySpot`), the way `.movePin` does, so every launch finds exactly one tree near
+        /// the pin. A tap on the button adds another. The line is its own, out at sea like the other
+        /// community cases, so no tree lands near a record another case reads.
         case addTreeNearby
         /// The same add screen on a spot at sea with nothing on record within 10 m, so the note is
         /// not drawn and the form starts at the photo. It writes nothing.
@@ -610,18 +610,29 @@ enum DebugDeepLink {
                 }
                 present(.addTree(fix: addTreeAloneSpot, accuracyM: 5))
             case .addTreeNearby:
-                // Resolved-then-added, like `.recordDefect`: the first launch adds the tree on record,
-                // and every later launch finds one there already.
-                let onRecord = try await api.treesNear(
-                    addTreeNearbySpot, radiusM: TreeDraft.proximityDedupeRadiusM, limit: 1
-                )
-                if onRecord.isEmpty {
-                    _ = try await api.debugAddCommunityTree(near: addTreeNearbySpot, speciesQuery: nil)
+                // `.movePin`'s slot search, on a line of its own: the first slot with nothing within
+                // `addTreeNearbySlotCheckM` of it gets one new tree, so every launch finds exactly one
+                // tree near the pin however many earlier runs added theirs. A tap on the button adds
+                // a second tree 4 m north of the slot, which the next launch's slot is clear of.
+                var chosen: Coordinate?
+                for step in 0..<Self.addTreeNearbySlots {
+                    let slot = VisitPinAdjust.offset(
+                        Self.addTreeNearbySpot, northM: 0, eastM: -Self.addTreeNearbySlotSpacingM * Double(step)
+                    )
+                    let taken = try await api.treesNear(
+                        slot, radiusM: Self.addTreeNearbySlotCheckM, limit: 1
+                    )
+                    if taken.isEmpty {
+                        _ = try await api.debugAddCommunityTree(near: slot, speciesQuery: nil)
+                        chosen = slot
+                        break
+                    }
                 }
+                guard let chosen else { throw APIError.conflict }
                 // 4 m north of it: inside the note's 10 m circle, and far enough off that the pin is
                 // plainly a second spot rather than the same one.
                 present(.addTree(
-                    fix: VisitPinAdjust.offset(addTreeNearbySpot, northM: 4, eastM: 0), accuracyM: 5
+                    fix: VisitPinAdjust.offset(chosen, northM: 4, eastM: 0), accuracyM: 5
                 ))
             }
             return nil
@@ -657,9 +668,16 @@ enum DebugDeepLink {
     /// `.conflict` says the line is full.
     private static let profileLinksSpot = Coordinate(latitude: 37.7690, longitude: -122.5300)
     private static let profileLinksSlots = 200
-    /// The seventh, ~200 m north of the sixth's line: the tree on record that `.addTreeNearby`
-    /// opens the add screen 4 m away from.
+    /// The seventh, ~200 m north of the sixth's line, and the start of a line of slots running west,
+    /// 40 m apart: one tree per launch of `.addTreeNearby`, which opens the add screen 4 m north of
+    /// it. A slot is free when nothing is within 30 m of it. The trees a run leaves (the slot's own,
+    /// and the one a tap adds 4 m north of it) are about 40 m from the next slot, so they are outside
+    /// both that check and the note's 15 m. `AddTreeNearbyUITests` launches this case up to three
+    /// times per run, so 300 slots is about 100 runs on one simulator before `.conflict`.
     private static let addTreeNearbySpot = Coordinate(latitude: 37.7708, longitude: -122.5300)
+    private static let addTreeNearbySlotSpacingM: Double = 40
+    private static let addTreeNearbySlotCheckM: Double = 30
+    private static let addTreeNearbySlots = 300
     /// The eighth, ~200 m north of the seventh: open water with nothing on record, where
     /// `.addTreeAlone` opens the add screen with no note to draw.
     private static let addTreeAloneSpot = Coordinate(latitude: 37.7726, longitude: -122.5300)

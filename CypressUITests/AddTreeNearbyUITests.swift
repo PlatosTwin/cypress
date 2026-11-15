@@ -13,6 +13,9 @@
 //  above the photo, so it is on screen without scrolling. With no tree within 10 m
 //  (`CYPRESS_SCREEN=addTreeAlone`) it is not drawn and the form starts at the photo.
 //
+//  A row of the note opens that tree's profile over the add screen, and Back returns to the add
+//  screen with the draft kept: the owner's decision of 2026-11-15, "Keep the draft".
+//
 //  Black-box like the rest of this target: nothing imports `Cypress`, and every literal is a copy
 //  constant repeated by hand (`VisitAddTreeCopy`, `MovePinCopy`). If a string is renamed this fails,
 //  which is correct: the words a reader acts on changed.
@@ -39,6 +42,10 @@ final class AddTreeNearbyUITests: XCTestCase, DeepLinkHarness {
         static let well = "Photo of the tree you are adding"
         /// The GPS chip pinned above the form: `GPS ±5 m` on the harness's pinned fix.
         static let gpsChip = "GPS"
+        /// The land row's sentence once a chip is chosen (`VisitAddTreeCopy.land`), for City park.
+        static let landChosen = "This will be recorded as your answer that it stands in a city park."
+        static let cityPark = "City park"
+        static let back = "Back"
         /// The two sentences of the refusal the ruling removed.
         static let refused = ["Nothing was added.", "If one of these is the tree in front of you, open it."]
     }
@@ -60,8 +67,10 @@ final class AddTreeNearbyUITests: XCTestCase, DeepLinkHarness {
             let old = app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", sentence)).firstMatch
             XCTAssertFalse(old.exists, "the screen still says '\(sentence)'")
         }
-        let row = app.buttons.matching(NSPredicate(format: "label CONTAINS %@", Copy.candidate)).firstMatch
-        XCTAssertTrue(row.exists, "the note lists no tree under it")
+        // Exactly one: `.addTreeNearby` puts one tree on a fresh slot per launch, so the rows earlier
+        // runs added on this simulator are not under this pin.
+        let rows = app.buttons.matching(NSPredicate(format: "label CONTAINS %@", Copy.candidate))
+        XCTAssertEqual(rows.count, 1, "the note lists \(rows.count) trees, not the one this launch put there")
 
         // The owner's decision of 2026-11-15: on screen without scrolling, above the photo.
         let add = app.buttons[Copy.cta]
@@ -83,6 +92,79 @@ final class AddTreeNearbyUITests: XCTestCase, DeepLinkHarness {
         XCTAssertTrue(
             app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", Copy.fromGPS)).firstMatch.exists,
             "the opened profile does not say its position came from GPS"
+        )
+    }
+
+    /// The owner's decision of 2026-11-15, "Keep the draft": a row of the note opens that tree's
+    /// profile over the add screen, and Back returns to the add screen with the draft still there.
+    /// The draft is checked by the land answer, which nothing but the reader's tap sets. A photo
+    /// alone would not tell a kept draft from a rebuilt one, because a rebuilt screen is handed the
+    /// harness photograph again. Then one tap adds the tree.
+    ///
+    /// Red-proof: wire the row to `onAdded`, which is what the old `onOpenExisting` was (it closed
+    /// the flow and pushed the profile onto the app's stack) — red on "the add screen is gone".
+    func testARowOpensTheProfileOverTheDraftAndBackKeepsIt() {
+        let app = launch("addTreeNearby")
+
+        let label = app.staticTexts[Copy.label]
+        guard label.waitForExistence(timeout: 60) else {
+            XCTFail(
+                deepLinkFailure(app).map { "addTreeNearby: \($0)" }
+                    ?? "addTreeNearby: the add screen drew no '\(Copy.label)' note before any tap"
+            )
+            return
+        }
+        let rows = app.buttons.matching(NSPredicate(format: "label CONTAINS %@", Copy.candidate))
+        XCTAssertEqual(rows.count, 1, "the note lists \(rows.count) trees, not the one this launch put there")
+
+        // A piece of draft only the reader sets: the land answer.
+        let park = app.buttons[Copy.cityPark]
+        scroll(app, until: park, up: true)
+        assertReachable(park, "the City park chip")
+        park.tap()
+        let chosen = app.staticTexts[Copy.landChosen]
+        XCTAssertTrue(chosen.waitForExistence(timeout: 10), "the City park answer did not take")
+
+        let row = rows.firstMatch
+        scroll(app, until: row, up: false)
+        assertReachable(row, "the note's row")
+        row.tap()
+
+        // The profile, over the add screen: its own Move pin, and the add screen's button covered.
+        XCTAssertTrue(
+            app.buttons[Copy.movePin].waitForExistence(timeout: 30),
+            "a row of the note did not open that tree's profile"
+        )
+        record(app, named: "profile-from-note")
+        let add = app.buttons[Copy.cta]
+        XCTAssertFalse(
+            add.exists && add.isHittableWithoutRaising(onScreen: app.frame),
+            "the add screen's button is still reachable, so the profile did not open over it"
+        )
+
+        let back = hittableBack(in: app)
+        XCTAssertNotNil(back, "the profile has no Back to press")
+        back?.tap()
+
+        // The add screen, with the draft.
+        assertReachable(label, "the note on the add screen after Back (the add screen is gone)")
+        XCTAssertTrue(
+            app.staticTexts[Copy.landChosen].waitForExistence(timeout: 10),
+            "the add screen came back without the City park answer, so the draft was lost"
+        )
+        XCTAssertTrue(
+            app.descendants(matching: .any)[Copy.well].firstMatch.exists,
+            "the add screen came back without its photograph"
+        )
+        record(app, named: "after-back")
+        assertReachable(add, "the Add this tree button after Back")
+        XCTAssertTrue(add.isEnabled, "the Add this tree button is not active after Back")
+        add.tap()
+
+        XCTAssertTrue(
+            app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", Copy.fromGPS)).firstMatch
+                .waitForExistence(timeout: 30),
+            "one tap on Add this tree after Back did not open the new tree's profile"
         )
     }
 
@@ -171,6 +253,28 @@ final class AddTreeNearbyUITests: XCTestCase, DeepLinkHarness {
             "the note is not above the photo: body \(body.frame), well \(well.frame)",
             file: file, line: line
         )
+    }
+
+    /// Swipes the form until `element` can be tapped. Bounded, per this target's rule on waits;
+    /// `isHittableWithoutRaising` because this is a filter position (`HittabilityFilterGateTests`).
+    private func scroll(_ app: XCUIApplication, until element: XCUIElement, up: Bool) {
+        let screen = app.frame
+        for _ in 0..<6 {
+            if element.isHittableWithoutRaising(onScreen: screen) { return }
+            if up { app.swipeUp() } else { app.swipeDown() }
+        }
+    }
+
+    /// The Back that can be pressed. The add screen's own Back is still in the accessibility tree
+    /// under the profile's cover, so the first match is not necessarily the one on top.
+    private func hittableBack(in app: XCUIApplication) -> XCUIElement? {
+        let screen = app.frame
+        let backs = app.buttons.matching(identifier: Copy.back)
+        for index in 0..<backs.count {
+            let candidate = backs.element(boundBy: index)
+            if candidate.isHittableWithoutRaising(onScreen: screen) { return candidate }
+        }
+        return nil
     }
 
     /// A PNG of the screen, plus the same image on the result bundle — `AreaPickerUITests.record`.

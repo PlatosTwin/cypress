@@ -35,10 +35,26 @@
 import PhotosUI
 import SwiftUI
 
+/// The screen for a tree the "ALREADY ON RECORD" note lists, built by the composition root:
+/// that tree's profile, with a way back. `close` takes it off the add screen again.
+///
+/// A builder rather than an `(UUID) -> Void`, because the profile has to open **over** the add
+/// screen, and only this screen can present over itself without tearing the flow down (the owner's
+/// decision of 2026-11-15). Which profile, and how its own controls navigate, is still the
+/// composition root's: a feature does not construct another feature's screen (`AppRouter`).
+typealias ExistingTreeScreen = (_ treeID: UUID, _ close: @escaping () -> Void) -> AnyView
+
+/// The tree a row of the note opened. `Identifiable` for `fullScreenCover(item:)`.
+struct OpenedTree: Identifiable, Equatable {
+    let id: UUID
+}
+
 struct VisitAddTreeView: View {
 
     @State private var model: VisitAddTreeModel
     @State private var libraryItem: PhotosPickerItem?
+    /// The tree a row of the note opened, presented over this screen. Nil when none is open.
+    @State private var openedTree: OpenedTree?
 
     /// Read for one decision: where the empty well's sentence is drawn. See `wellEmptyNotice`.
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
@@ -49,8 +65,9 @@ struct VisitAddTreeView: View {
 
     /// The tree was created — its id, so the caller can open it.
     let onAdded: (UUID) -> Void
-    /// The reader opened one of the trees the "ALREADY ON RECORD" note lists.
-    let onOpenExisting: (UUID) -> Void
+    /// The screen for one of the trees the "ALREADY ON RECORD" note lists, which this screen
+    /// presents over itself. See `ExistingTreeScreen`.
+    let openExisting: ExistingTreeScreen
     let onBack: () -> Void
 
     #if DEBUG
@@ -64,7 +81,7 @@ struct VisitAddTreeView: View {
         location: VisitLocationProvider,
         attribution: Attribution,
         onAdded: @escaping (UUID) -> Void,
-        onOpenExisting: @escaping (UUID) -> Void,
+        openExisting: @escaping ExistingTreeScreen,
         onBack: @escaping () -> Void
     ) {
         _model = State(
@@ -72,7 +89,7 @@ struct VisitAddTreeView: View {
         )
         self.api = api
         self.onAdded = onAdded
-        self.onOpenExisting = onOpenExisting
+        self.openExisting = openExisting
         self.onBack = onBack
         #if DEBUG
         self.debugPhoto = nil
@@ -87,7 +104,7 @@ struct VisitAddTreeView: View {
         attribution: Attribution,
         debugPhoto: Data,
         onAdded: @escaping (UUID) -> Void,
-        onOpenExisting: @escaping (UUID) -> Void,
+        openExisting: @escaping ExistingTreeScreen,
         onBack: @escaping () -> Void
     ) {
         _model = State(
@@ -95,7 +112,7 @@ struct VisitAddTreeView: View {
         )
         self.api = api
         self.onAdded = onAdded
-        self.onOpenExisting = onOpenExisting
+        self.openExisting = openExisting
         self.onBack = onBack
         self.debugPhoto = debugPhoto
     }
@@ -128,7 +145,9 @@ struct VisitAddTreeView: View {
         .background(CypressColor.surfaceScreen)
         .task {
             #if DEBUG
-            if let debugPhoto { model.useLibraryImage(debugPhoto) }
+            // Once: this task runs again when a listed tree's profile closes over the screen, and
+            // the photograph the reader has then is theirs.
+            if let debugPhoto, !model.hasPhoto { model.useLibraryImage(debugPhoto) }
             #endif
             await model.load()
         }
@@ -137,6 +156,15 @@ struct VisitAddTreeView: View {
         // read for the old position when a new one arrives (`refreshNearby` drops its answer too).
         .task(id: model.coordinate) { await model.refreshNearby() }
         .onDisappear { model.stop() }
+        // A row of the note opens that tree's profile **over** this screen, not in place of it: the
+        // owner's decision of 2026-11-15 ("Keep the draft"). This view, and the model it holds in
+        // `@State`, stay where they are under the cover, so Back returns to the same photograph, pin,
+        // ground and species, and the same note. The camera stops on the way out (`onDisappear`) and
+        // starts again on the way back (`.task`), so the profile's own Visit cannot open a second
+        // camera over a live one.
+        .fullScreenCover(item: $openedTree) { opened in
+            openExisting(opened.id) { openedTree = nil }
+        }
         .onChange(of: libraryItem) { _, item in
             guard let item else { return }
             Task {
@@ -560,7 +588,7 @@ struct VisitAddTreeView: View {
                     .fixedSize(horizontal: false, vertical: true)
                 ForEach(candidates) { candidate in
                     Button {
-                        onOpenExisting(candidate.tree.id)
+                        openedTree = OpenedTree(id: candidate.tree.id)
                     } label: {
                         HStack(spacing: CypressSpacing.gapCandidates) {
                             Text(VisitAddTreeCopy.candidateName(candidate))
@@ -782,7 +810,9 @@ enum VisitAddTreeCopy {
 
     /// The note over the trees on record nearby, in the owner's words of 2026-11-14. The number is
     /// `TreeDraft.proximityDedupeRadiusM` rather than a literal, because the sentence is a claim
-    /// about the radius `VisitAddTreeModel.refreshNearby` searched.
+    /// about the radius at which a tree brings the note up. A tree already listed stays listed out
+    /// to `TreeDraft.proximityNoteKeepRadiusM`, so a row can show 11 to 15 m under these words; the
+    /// owner accepted that on 2026-11-15 to stop the note flickering.
     static let nearbyLabel = "ALREADY ON RECORD"
     static var nearbyBody: String {
         "Something is already on record within \(Int(TreeDraft.proximityDedupeRadiusM)) m of here. "

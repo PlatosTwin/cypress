@@ -225,7 +225,21 @@ final class AppRouter {
     }
 
     func present(_ route: Route) { sheet = route }
-    func pop() { if !path.isEmpty { path.removeLast() } }
+
+    /// Set only on a router that hosts screens **over** another screen, which `RootView`'s
+    /// `ExistingTreeHost` does for a tree the add screen's note lists (the owner's decision of
+    /// 2026-11-15). Popping that router's last screen calls this instead, so the host is closed as a
+    /// whole and the screen under it comes back, rather than the stack popping onto an empty root
+    /// first. Nil on the app's own router, whose `pop()` is unchanged.
+    @ObservationIgnored var closesInsteadOfPoppingLast: (() -> Void)?
+
+    func pop() {
+        if path.count == 1, let close = closesInsteadOfPoppingLast {
+            close()
+            return
+        }
+        if !path.isEmpty { path.removeLast() }
+    }
     func popToRoot() { path.removeAll() }
 
     /// Back to the map, from wherever the app is — the one **absolute** destination in this router.

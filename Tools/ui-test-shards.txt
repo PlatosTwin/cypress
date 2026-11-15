@@ -364,7 +364,7 @@
 # `MovePinUITests` entry above gives.
 
 # `AddTreeNearbyUITests` (ROADMAP 140, the owner's ruling of 2026-11-14 that a tree within 10 m of
-# another is noted, not refused): three tests, one launch each. PLACED ON SHARD 2 by line count, for the
+# another is noted, not refused): four tests, one launch each. PLACED ON SHARD 2 by line count, for the
 # reason the `MovePinUITests` entry above gives.
 
 DeepLinkVoiceOverTests MapCenteredStateUITests FrameFinitenessGateTests IdentifyFABReachabilityTests AppleSignInUITests SeeAllOnMapUITests DialogCancelUITests
