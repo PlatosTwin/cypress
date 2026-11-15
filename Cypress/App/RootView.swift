@@ -352,7 +352,9 @@ struct RootView: View {
             VisitAddTreeView(
                 api: data.api,
                 location: VisitLocationProvider(pinnedFix: .located(fix, accuracyM: accuracyM)),
-                attribution: data.local.attribution,
+                // `VisitFlowView`'s own attribution: this device, with no user, which is what the
+                // flow the composition root presents passes today.
+                attribution: Attribution(userID: nil, deviceID: data.deviceID),
                 debugPhoto: LocalAPI.debugTreePhoto,
                 onAdded: { id in
                     debugStandalone = nil

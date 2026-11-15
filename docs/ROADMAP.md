@@ -1655,8 +1655,10 @@ into this section in the round that finds it, and nowhere else. Each item stands
     #187 scoped the candidates to trees the caller may see, which closed the leak of other people's
     unpublished trees; what remains is a published tree's adder-supplied address and creation
     second, which the tile and the profile both withhold. The fix moves
-    `server/testdata/proximity_conflict.json` and its Swift test (`GoldenWireFixtureTests`) together,
-    which is why #190 left it.
+    the fixture `proximity_conflict.json` and its Swift test (`GoldenWireFixtureTests`) together,
+    which is why #190 left it. **Chip 140 (2026-11-15) removes the candidate list from the service
+    and deletes that fixture and its Swift test, which should settle this item once both halves
+    merge.**
 63. **Does a photograph's presigned `GET` give away its capture time?** A hypothesis, not
     reproduced. Object storage normally answers with `Last-Modified`, the upload time to the second,
     and for a photograph uploaded while online that is close to the capture time decision 14 hides

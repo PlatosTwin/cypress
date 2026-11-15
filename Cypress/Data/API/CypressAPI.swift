@@ -948,19 +948,14 @@ public enum MapContent: Hashable, Sendable {
 
 // MARK: - Shortlist
 
-/// A row of the what-tree-is-this shortlist (screen 02).
+/// A row of the what-tree-is-this shortlist (screen 02), and of the Add this tree screen's
+/// "ALREADY ON RECORD" note.
 ///
-/// **`Decodable` since #158 step 4, and the conformance is a contract rather than a convenience.**
-/// `POST /trees`' proximity `conflict` carries `detail.candidates` as an array of these, and it
-/// emits them in **this type's own synthesized keys** — `distanceM`, `speciesScientificName`, and a
-/// nested `Tree` spelling `speciesCurrentID` rather than `species_current_id`. That is deliberate on
-/// the service's side (`server/internal/api/wire.go`) and it only works if a plain `JSONDecoder`
-/// with no key strategy decodes this type, which is what the conformance says and what
-/// `CypressTests/GoldenWireFixtureTests` proves against `server/testdata/proximity_conflict.json`.
-///
-/// `id` is computed off `tree`, so it is not a stored property and not a coding key — which is why
-/// the fixture carries no `id` at the row level and is right not to.
-public struct NearbyTree: Hashable, Sendable, Identifiable, Decodable {
+/// **No longer `Decodable`.** It was from #158 step 4 to 2026-11-15, because the service's
+/// proximity `conflict` carried a list of these. The owner's ruling of 2026-11-14 removed that
+/// refusal on both sides, the service stopped sending the list, and nothing else decodes this type:
+/// the shortlist is answered on this phone.
+public struct NearbyTree: Hashable, Sendable, Identifiable {
     public var id: UUID { tree.id }
     public let tree: Tree
     /// Great-circle meters from the query point. Screen 02 renders this as `17 m S`.
@@ -1376,17 +1371,6 @@ public struct TreeDraft: Hashable, Sendable {
     /// turned the refusal into a note that does not block. `DataDispute.positionResolutionRadiusM`
     /// reuses the number for a different rule.
     public static let proximityDedupeRadiusM: Double = 10
-}
-
-/// The candidate list of the service's proximity `conflict` (`server/testdata/proximity_conflict.json`).
-///
-/// **Nothing in the app throws or catches this since the owner's ruling of 2026-11-14**, which
-/// removed the 10 m refusal on the phone. It stays only because `GoldenWireFixtureTests` decodes
-/// the service's conflict body into it; whether that fixture and this type go is decided with the
-/// service half of the same ruling.
-public struct ProximityConflict: Error, Sendable {
-    public let candidates: [NearbyTree]
-    public init(candidates: [NearbyTree]) { self.candidates = candidates }
 }
 
 // MARK: - Photos

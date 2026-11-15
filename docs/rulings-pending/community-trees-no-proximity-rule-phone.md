@@ -31,12 +31,15 @@ add (the button stays disabled while the add runs and after it succeeds).
 
 ### R??? — What stays of the proximity conflict on the phone
 
-Nothing in the app throws or catches `ProximityConflict` any more, and the outbox no longer maps it
-to `conflict` (its one producer was the phone's own refusal). The type, and `ProximityConflictDetail`
-in `RemoteWire.swift`, stay only because `GoldenWireFixtureTests` decodes
-`server/testdata/proximity_conflict.json` into them. Whether that fixture, the test and the two types
-go is decided after the service half (`feat/no-proximity-refusal-server`) is read: if the service no
-longer sends that body, all four can be removed together.
+Nothing. Its one producer was the phone's own refusal, and the service half
+(`feat/no-proximity-refusal-server`) no longer sends a candidate list at all; a `conflict` from the
+service now comes only from `tree_withdrawal`. So this change removes `ProximityConflict`, the
+outbox's mapping of it to `conflict`, `ProximityConflictDetail` in `RemoteWire.swift`, the two
+`GoldenWireFixtureTests` cases that decoded the service's conflict body, the fixture
+`proximity_conflict.json` under `server/testdata/` and its row in that folder's README, and
+`NearbyTree`'s `Decodable` conformance, which only that body used. A `conflict` from the service is
+still handled the general way: not retryable, the item fails at once. Builds already installed
+are not affected by any of this.
 
 ### R??? — A deep link for the screen, for the UI test
 

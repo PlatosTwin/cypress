@@ -204,6 +204,7 @@ conflict candidates of `POST /trees` and of a sync `add_tree`. It serves `addres
 `createdAt` / `updatedAt` for trees the caller did not add. S1 now scopes those candidates to
 published trees, so what leaks is a published tree's adder-supplied address and the exact second
 it was added. The tile and the profile withhold both (the rulings file).
-`server/testdata/proximity_conflict.json` carries `"address": "1 Main St"` and second-precision
-dates, and `GoldenWireFixtureTests` decodes it. The fix therefore moves that fixture and its Swift
-test together, which is why it is not folded into this read-side PR.
+The fixture `proximity_conflict.json` carried `"address": "1 Main St"` and second-precision
+dates, and `GoldenWireFixtureTests` decoded it. The fix therefore moves that fixture and its Swift
+test together, which is why it is not folded into this read-side PR. (2026-11-15: ROADMAP chip 140
+removes the candidate list from the service and deletes the fixture and its Swift test.)
