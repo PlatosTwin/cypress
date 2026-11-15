@@ -631,7 +631,10 @@ file.
      the rule chosen, for example a smaller radius, or an override that states the reader has
      checked the nearby record. **Decided by the owner on 2026-11-14: the rule stops refusing, for
      new trees and for pin moves.** See chip 140 and
-     `docs/rulings-pending/community-trees-no-proximity-rule.md`.
+     `docs/rulings-pending/community-trees-no-proximity-rule.md`. **Built on the phone in
+     `feat/no-proximity-refusal-phone`**: the add screen shows "ALREADY ON RECORD" as a note before
+     the tap and adds the tree anyway. The service half is `feat/no-proximity-refusal-server`, and
+     `cypress-sync` must be deployed before the next TestFlight release.
 
 - ~~**F33 — zoom while taking the photo on add-a-tree.**~~ Build 77, 2026-09-28, verbatim: *"Need
   ability to zoom in on photo in this view"*. The screenshot is add-a-tree's live viewfinder
@@ -2355,8 +2358,10 @@ into this section in the round that finds it, and nowhere else. Each item stands
     service keeps the phone's dates), are in `docs/rulings-pending/community-trees-old-trees.md`. Rows on a city tree are
     still under R77; the owner was not asked about them. Not built. It belongs with C2, because
     nobody else sees any community tree until C2 lands.
-140. **Stop refusing a tree that is within 10 m of another (owner's ruling, 2026-11-14).** The
-    owner, on how far a pin may move: "can go anywhere, and also fine to go within 10m of another
+140. **Stop refusing a tree that is within 10 m of another (owner's ruling, 2026-11-14).**
+    **Built: the phone half in `feat/no-proximity-refusal-phone` and the service half in
+    `feat/no-proximity-refusal-server`. Still open: `cypress-sync` must be deployed before the next
+    TestFlight release.** The owner, on how far a pin may move: "can go anywhere, and also fine to go within 10m of another
     tree. sometimes they will be close together and that's fine". Asked how far that goes, the owner
     chose pin moves and new trees. This reverses the second half of DECISIONS constraint 16 and
     answers F32, finding 3. The service refuses in three places and the phone in two; the Add this

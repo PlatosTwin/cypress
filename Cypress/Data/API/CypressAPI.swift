@@ -42,8 +42,9 @@ public protocol CypressAPI: Sendable {
     /// summary, photo timeline page 1, measurement series.
     func treeProfile(id: UUID) async throws -> TreeProfile
 
-    /// `POST /trees` — community add. Requires a photo, species optional; runs the 10 m proximity
-    /// dedupe against any species and returns `.conflict` with the candidate list when it trips.
+    /// `POST /trees` — community add. Requires a photo, species optional. A tree within 10 m of
+    /// another is added like any other (the owner's ruling of 2026-11-14): the screen shows the
+    /// trees nearby as a note through `treesNear`, and this method does not refuse on distance.
     func addTree(_ draft: TreeDraft) async throws -> Tree
 
     /// Moves a community tree's pin — the owner's decisions 2 and 5 of 2026-09-28: the move
@@ -62,8 +63,8 @@ public protocol CypressAPI: Sendable {
     ///   from the cache, or a tree this phone added whose adder is not whoever is asking, including
     ///   a tree whose adder is nobody (every tree an account deletion anonymized);
     ///   `.validationFailed` for a position off the map or a negative
-    ///   accuracy; `ProximityConflict` (`.conflict`) when the new position is within 10 m of another
-    ///   tree.
+    ///   accuracy. A new position within 10 m of another tree is not refused (the owner's ruling of
+    ///   2026-11-14).
     ///
     /// Defaulted in `LocationCorrection.swift` to `.notFound`. **Declared here and not only in an
     /// extension**, for the reason `photoData` gives below at length (ERRATA E125).
@@ -1369,12 +1370,20 @@ public struct TreeDraft: Hashable, Sendable {
         self.landContext = landContext
     }
 
-    /// "runs the proximity dedupe check (10 m, any species)" (BUILD-PLAN §6).
+    /// The radius of the Add this tree screen's "ALREADY ON RECORD" note: the trees on record
+    /// within this many meters of the pin are listed under it. It was BUILD-PLAN §6's proximity
+    /// dedupe ("10 m, any species"), which refused the add; the owner's ruling of 2026-11-14
+    /// turned the refusal into a note that does not block. `DataDispute.positionResolutionRadiusM`
+    /// reuses the number for a different rule.
     public static let proximityDedupeRadiusM: Double = 10
 }
 
-/// Thrown alongside `APIError.conflict` when the 10 m dedupe trips, so the UI can show the
-/// candidate list rather than a bare error.
+/// The candidate list of the service's proximity `conflict` (`server/testdata/proximity_conflict.json`).
+///
+/// **Nothing in the app throws or catches this since the owner's ruling of 2026-11-14**, which
+/// removed the 10 m refusal on the phone. It stays only because `GoldenWireFixtureTests` decodes
+/// the service's conflict body into it; whether that fixture and this type go is decided with the
+/// service half of the same ruling.
 public struct ProximityConflict: Error, Sendable {
     public let candidates: [NearbyTree]
     public init(candidates: [NearbyTree]) { self.candidates = candidates }

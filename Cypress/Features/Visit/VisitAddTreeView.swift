@@ -16,8 +16,10 @@
 //    control when a user action would fill it;
 //  - the two photo sources are screen 04's, in the order screen 04 puts them (live session first,
 //    photo library as BUILD-PLAN §9 M1's fallback and the only path a simulator can take);
-//  - the duplicate warning is C24, which is the component for "this needs something before it can
-//    go on", and 02's own `VisitLowAccuracyPanel` is the neighboring use of it.
+//  - the "ALREADY ON RECORD" note is C24, which is the component for "this needs something before it
+//    can go on", and 02's own `VisitLowAccuracyPanel` is the neighboring use of it. Since the owner's
+//    ruling of 2026-11-14 it is a note that does not block: it draws before the tap, and the CTA
+//    stays active under it.
 //
 //  Every decision about *whether* something draws is `VisitAddTreeModel`'s, and every string is
 //  `VisitAddTreeCopy`'s, so both halves are testable without a renderer.
@@ -47,9 +49,15 @@ struct VisitAddTreeView: View {
 
     /// The tree was created — its id, so the caller can open it.
     let onAdded: (UUID) -> Void
-    /// The dedupe found a tree already on record here and the reader chose it instead.
+    /// The reader opened one of the trees the "ALREADY ON RECORD" note lists.
     let onOpenExisting: (UUID) -> Void
     let onBack: () -> Void
+
+    #if DEBUG
+    /// A photograph the screen takes as if the reader had chosen it from the library, for the
+    /// deep-link harness (`DebugDeepLink.Screen.addTreeNearby`). Nil on every shipping path.
+    private let debugPhoto: Data?
+    #endif
 
     init(
         api: any CypressAPI,
@@ -66,7 +74,32 @@ struct VisitAddTreeView: View {
         self.onAdded = onAdded
         self.onOpenExisting = onOpenExisting
         self.onBack = onBack
+        #if DEBUG
+        self.debugPhoto = nil
+        #endif
     }
+
+    #if DEBUG
+    /// The deep-link harness's entrance: the shipping initializer, plus a photograph already chosen.
+    init(
+        api: any CypressAPI,
+        location: VisitLocationProvider,
+        attribution: Attribution,
+        debugPhoto: Data,
+        onAdded: @escaping (UUID) -> Void,
+        onOpenExisting: @escaping (UUID) -> Void,
+        onBack: @escaping () -> Void
+    ) {
+        _model = State(
+            wrappedValue: VisitAddTreeModel(api: api, location: location, attribution: attribution)
+        )
+        self.api = api
+        self.onAdded = onAdded
+        self.onOpenExisting = onOpenExisting
+        self.onBack = onBack
+        self.debugPhoto = debugPhoto
+    }
+    #endif
 
     var body: some View {
         // The pin screen replaces this one rather than covering it, and that is the same decision as
@@ -93,7 +126,16 @@ struct VisitAddTreeView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .background(CypressColor.surfaceScreen)
-        .task { await model.load() }
+        .task {
+            #if DEBUG
+            if let debugPhoto { model.useLibraryImage(debugPhoto) }
+            #endif
+            await model.load()
+        }
+        // The "ALREADY ON RECORD" note, read again whenever the pin's position changes: the first
+        // fix, a moving fix while the pin is the GPS, and a pin the reader placed. `id:` cancels the
+        // read for the old position when a new one arrives (`refreshNearby` drops its answer too).
+        .task(id: model.coordinate) { await model.refreshNearby() }
         .onDisappear { model.stop() }
         .onChange(of: libraryItem) { _, item in
             guard let item else { return }
@@ -176,8 +218,8 @@ struct VisitAddTreeView: View {
 
             speciesRow
 
-            if case let .duplicate(candidates) = model.phase {
-                duplicateWarning(candidates)
+            if !model.nearby.isEmpty {
+                nearbyNote(model.nearby)
             }
 
             if case let .failed(message) = model.phase {
@@ -492,19 +534,20 @@ struct VisitAddTreeView: View {
         }
     }
 
-    // MARK: - BUILD-PLAN §9 M2 · the duplicate-proximity warning
+    // MARK: - The trees already on record nearby
 
-    /// What `POST /trees` said, in its own words and with its own candidates.
+    /// The trees on record within 10 m of the pin, under a note that does not block (the owner's
+    /// ruling of 2026-11-14).
     ///
-    /// C24, not C14: Signal Amber is "this tree needs something" (§1.1), and a refused add with a
-    /// list of trees to choose between is precisely a thing needing attention before it goes on the
-    /// record. The rows lead to the tree the API found, because the reader's next move — "oh, that
-    /// one" — is the whole reason the endpoint returns the list instead of a bare error.
-    private func duplicateWarning(_ candidates: [NearbyTree]) -> some View {
+    /// C24, not C14: Signal Amber is "this tree needs something" (§1.1), and a tree already on
+    /// record a few meters away is a thing to look at before adding another. The rows still lead to
+    /// each tree, because the reader's next move may be "oh, that one". The CTA below stays active
+    /// either way.
+    private func nearbyNote(_ candidates: [NearbyTree]) -> some View {
         AttentionCard {
             VStack(alignment: .leading, spacing: CypressSpacing.gapRows) {
-                AttentionCard<EmptyView>.sectionLabel(VisitAddTreeCopy.duplicateLabel)
-                Text(VisitAddTreeCopy.duplicateBody)
+                AttentionCard<EmptyView>.sectionLabel(VisitAddTreeCopy.nearbyLabel)
+                Text(VisitAddTreeCopy.nearbyBody)
                     .cypressBody135(color: CypressColor.textBody)
                     .fixedSize(horizontal: false, vertical: true)
                 ForEach(candidates) { candidate in
@@ -729,12 +772,13 @@ enum VisitAddTreeCopy {
 
     static let addFailed = "This tree could not be added. Nothing was recorded."
 
-    /// BUILD-PLAN §9 M2's warning. The number is `TreeDraft.proximityDedupeRadiusM` rather than a
-    /// literal, because the sentence is a claim about the rule the API just applied.
-    static let duplicateLabel = "ALREADY ON RECORD"
-    static var duplicateBody: String {
+    /// The note over the trees on record nearby, in the owner's words of 2026-11-14. The number is
+    /// `TreeDraft.proximityDedupeRadiusM` rather than a literal, because the sentence is a claim
+    /// about the radius `VisitAddTreeModel.refreshNearby` searched.
+    static let nearbyLabel = "ALREADY ON RECORD"
+    static var nearbyBody: String {
         "Something is already on record within \(Int(TreeDraft.proximityDedupeRadiusM)) m of here. "
-            + "Nothing was added. If one of these is the tree in front of you, open it."
+            + "Add this tree only if it is a different one."
     }
 
     /// A candidate's name, by the same rule every other surface names a tree: the species common

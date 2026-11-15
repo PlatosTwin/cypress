@@ -299,9 +299,9 @@ public actor LocalAPI: CypressAPI {
             return try treeQueries.nearest(to: coordinate, radiusM: radiusM, limit: limit, connection: connection)
         }
         let added = try await store.queue.read { connection in
-            // The whole community layer, other people's cached trees included: this is the add
-            // dedupe's candidate list, and a tree somebody else published 5 m away is as much a
-            // duplicate as one this phone added (constraint 16, `AppSchema` v23).
+            // The whole community layer, other people's cached trees included: this is the list the
+            // Add this tree screen's "ALREADY ON RECORD" note draws, and a tree somebody else
+            // published 5 m away is as much on record as one this phone added (`AppSchema` v23).
             try layer.near(coordinate, radiusM: radiusM, limit: limit, connection: connection)
         }
         guard !added.isEmpty else { return Array(fromSeed.prefix(limit)) }
@@ -493,26 +493,16 @@ public actor LocalAPI: CypressAPI {
         return try queries.species(id: speciesID, connection: connection)
     }
 
-    /// `POST /trees`. Requires a photo; runs the 10 m proximity dedupe against any species.
+    /// `POST /trees`. Requires a photo.
+    ///
+    /// A tree within 10 m of another is added like any other. The owner's ruling of 2026-11-14
+    /// removed the proximity refusal ("sometimes they will be close together and that's fine"); the
+    /// Add this tree screen shows the trees on record within `TreeDraft.proximityDedupeRadiusM` as a
+    /// note before the tap, through `treesNear`, and never refuses. Two sends of one add are still
+    /// one tree: the queue and the service match them on `client_uuid` (constraint 8), not on
+    /// distance.
     public func addTree(_ draft: TreeDraft) async throws -> Tree {
         guard !draft.photoLocalPath.isEmpty else { throw APIError.validationFailed }
-
-        let candidates = try await treesNear(
-            draft.coordinate,
-            radiusM: TreeDraft.proximityDedupeRadiusM,
-            limit: 10
-        )
-        if !candidates.isEmpty {
-            // Every candidate here is inside the circle, not merely inside the box `treesNear`
-            // searched: both halves re-check the exact meters (`TreeQueries.nearest`,
-            // `CommunityTreeStore.near`). That is load-bearing — this line turns a candidate into a
-            // permanent refusal, and it used to fire out to 14.1 m on the diagonal (ERRATA E35).
-            //
-            // §6 returns `conflict` with the candidate list. `ProximityConflict` carries the list;
-            // the taxonomy code is what the outbox and the error banner read, and `conflict` is not
-            // retryable, so the item will not burn 48 h on an answer the user has to give.
-            throw ProximityConflict(candidates: candidates)
-        }
 
         // ── The one ingest this method *is* ────────────────────────────────────────────────────────
         // Every other photograph in the app becomes a record by being uploaded, and `uploadPhoto`
@@ -522,9 +512,6 @@ public actor LocalAPI: CypressAPI {
         // now, which makes this a header read that finds nothing — and it is here anyway,
         // because the column belongs to this layer and a privacy invariant that lives only in the
         // screen that happens to fill the field in is one the next screen will not know about.
-        //
-        // Deliberately after the dedupe: a photograph whose tree is a duplicate is not being ingested
-        // at all, and rewriting a file for a record that is about to be refused is work for nothing.
         try PhotoBinary.stripMetadataInPlace(atPath: draft.photoLocalPath)
 
         let moment = now()
@@ -608,9 +595,9 @@ public actor LocalAPI: CypressAPI {
     /// Moves a community tree's pin. `LocationCorrection.swift` states who may, and why.
     ///
     /// The order is the service's (`store.applyLocationCorrection`), so the phone refuses what the
-    /// service would and nothing it would not: the position's shape first, then whose the tree is,
-    /// then the 10 m dedupe against every *other* tree — the tree being moved is 0 m from its own
-    /// old position and is not its own duplicate.
+    /// service would and nothing it would not: the position's shape first, then whose the tree is.
+    /// A move may land within 10 m of another tree (the owner's ruling of 2026-11-14), so nothing
+    /// here measures the distance to other trees.
     public func correctLocation(
         treeID: UUID,
         to coordinate: Coordinate,
@@ -649,13 +636,6 @@ public actor LocalAPI: CypressAPI {
         // A tree this phone withdrew is gone, here as on the service (`tree.DeletedAt != nil`).
         guard subject.deletedAt == nil else { throw APIError.notFound }
         guard let adder, adder.isOwned(by: mine) else { throw APIError.forbidden }
-
-        let nearby = try await treesNear(
-            coordinate, radiusM: TreeDraft.proximityDedupeRadiusM, limit: 11
-        ).filter { $0.tree.id != treeID }
-        if !nearby.isEmpty {
-            throw ProximityConflict(candidates: Array(nearby.prefix(10)))
-        }
 
         let moment = now()
         // Two ids, as the wire has two (`server/testdata/sync_location_correction.json`): the chain
@@ -3519,6 +3499,12 @@ public actor LocalAPI: CypressAPI {
     }
 
     #if DEBUG
+    /// Test seam: the bytes of the photograph `debugAddCommunityTree` stages, for a harness that
+    /// hands the Add this tree screen a photograph the way its library button would. A simulator
+    /// has no camera, and the system photo picker is another process a UI test cannot drive
+    /// reliably.
+    public static var debugTreePhoto: Data { debugJPEG(hue: 0.3) }
+
     /// Test seam (ERRATA E141): a community tree with a contributor's species on it, so the deep-link
     /// harness can put the claim in front of a screenshot.
     ///

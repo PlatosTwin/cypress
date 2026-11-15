@@ -5,16 +5,15 @@ import UIKit
 
 /// The community add, from the screen that now performs it (ERRATA E127).
 ///
-/// `ProximityDedupeTests` already drives `LocalAPI.addTree` directly and proves the 10 m rule and its
-/// diagonal. This suite is about the half that did not exist: the *caller*. `addTree` shipped
-/// complete, with the dedupe in it, and nothing in the app ever called it — screen 02's "None of
-/// these? Add this tree" was drawn at full opacity and wired to dismiss the flow.
+/// `ProximityDedupeTests` already drives `LocalAPI.addTree` directly and proves the 10 m circle and
+/// its diagonal. This suite is about the half that did not exist: the *caller*. `addTree` shipped
+/// complete, and nothing in the app ever called it — screen 02's "None of these? Add this tree" was
+/// drawn at full opacity and wired to dismiss the flow.
 ///
-/// So the assertions here are all of the form "the screen and the boundary agree": the CTA is refused
-/// for exactly the reasons `addTree` would throw, and the dedupe that `addTree` performs is the one
-/// the screen reports. Nothing here re-implements a rule in order to test it — in particular the
-/// screen never pre-checks the 10 m circle, because a client-side copy of that rule is a copy that
-/// can disagree with the refusal.
+/// So the assertions here are of the form "the screen and the boundary agree": the CTA is refused
+/// for exactly the reasons `addTree` would throw. Since the owner's ruling of 2026-11-14 a tree
+/// within 10 m of another is one of neither: the screen lists the trees nearby under a note
+/// (`VisitAddTreeModel.nearby`, read through `treesNear`) and adds the tree anyway.
 @Suite("Community add")
 struct CommunityAddTests {
 
@@ -118,16 +117,19 @@ struct CommunityAddTests {
         #expect(profile.tree.speciesCurrentID == nil)
     }
 
-    // MARK: - BUILD-PLAN §9 M2 · the duplicate-proximity warning
+    // MARK: - The trees already on record nearby: a note, then still add
 
-    /// **The one the brief asked to have confirmed: the 10 m dedupe runs on the path that ships.**
+    /// **The owner's answer of 2026-11-14, on the path that ships: a note, then still add.**
     ///
     /// Driven through `VisitAddTreeModel`, not through `addTree`, because that is the difference
-    /// between "the rule exists" and "the rule is in front of the person adding a tree". The
-    /// candidates the screen shows are the API's own, so the warning cannot disagree with the refusal.
+    /// between "the API allows it" and "the person adding a tree is told and is not stopped". The
+    /// note is read before the tap, the CTA is active under it, and one tap adds the tree.
+    ///
+    /// Red-proofs: make `refreshNearby` leave `nearby` empty — red on "the note names no tree".
+    /// Make `canAdd` require `nearby.isEmpty` — red on "the note disabled the button".
     @MainActor
-    @Test("a second tree 4 m away is refused, and the screen shows the tree that refused it")
-    func theDedupeRunsOnTheShippingPath() async throws {
+    @Test("with a tree 4 m away the note lists it before the tap, the button stays active, and one tap adds")
+    func theNoteShowsAndTheAddStillHappens() async throws {
         let store = try await CypressStore.inMemory()
         let api = LocalAPI(store: store, deviceID: Self.deviceID)
 
@@ -141,24 +143,63 @@ struct CommunityAddTests {
         let subject = Self.model(api: api, fix: .located(closeBy, accuracyM: 6))
         subject.useLibraryImage(try Self.jpeg())
 
-        let id = await subject.add()
-        #expect(id == nil, "a tree was added 4 m from an existing one")
-
-        guard case let .duplicate(candidates) = subject.phase else {
-            Issue.record("the screen is in \(subject.phase) rather than showing the duplicate warning")
-            return
-        }
-        #expect(candidates.contains { $0.tree.id == first.id }, "the warning names no tree")
+        // Before the tap: the view reads the note when the pin's position is first known.
+        #expect(subject.nearby.isEmpty, "the note was filled before anything read it")
+        await subject.refreshNearby()
+        #expect(subject.nearby.map(\.tree.id) == [first.id], "the note names no tree, or the wrong ones")
         #expect(
-            candidates.allSatisfy { $0.distanceM <= TreeDraft.proximityDedupeRadiusM },
-            "the warning lists a tree the rule did not refuse for"
+            subject.nearby.allSatisfy { $0.distanceM <= TreeDraft.proximityDedupeRadiusM },
+            "the note lists a tree outside its own 10 m"
         )
-        // The sentence states the rule it just applied, and takes the number from the rule.
-        #expect(VisitAddTreeCopy.duplicateBody.contains("\(Int(TreeDraft.proximityDedupeRadiusM)) m"))
+        #expect(subject.canAdd, "the note disabled the button")
+
+        let id = try #require(await subject.add(), "a tree 4 m from another was not added")
+        #expect(id != first.id)
+        let profile = try await api.treeProfile(id: id)
+        #expect(profile.tree.coordinate.distance(to: closeBy) < 0.5)
+        if case let .failed(message) = subject.phase { Issue.record("the add reported: \(message)") }
+    }
+
+    /// The note follows the pin: a pin the reader places away from the tree on record clears it,
+    /// and the answer for an old position never lands on a new one.
+    ///
+    /// Red-proof: make the view's trigger, `refreshNearby`, read the fix instead of `coordinate` —
+    /// red on "the note did not follow the placed pin".
+    @MainActor
+    @Test("the note is read again for a placed pin, and clears when the pin leaves the circle")
+    func theNoteFollowsThePin() async throws {
+        let store = try await CypressStore.inMemory()
+        let api = LocalAPI(store: store, deviceID: Self.deviceID)
+        _ = try await api.addTree(
+            TreeDraft(coordinate: Self.spot, photoLocalPath: try Self.stagedPhoto(), attribution: Self.attribution)
+        )
+
+        let closeBy = ProximityDedupeTests.diagonal(from: Self.spot, meters: 4)
+        let subject = Self.model(api: api, fix: .located(closeBy, accuracyM: 6))
+        await subject.refreshNearby()
+        #expect(subject.nearby.count == 1)
+
+        subject.beginPlacingPin()
+        subject.confirmPin(VisitPinAdjust.offset(closeBy, northM: 30, eastM: 0))
+        await subject.refreshNearby()
+        #expect(subject.nearby.isEmpty, "the note did not follow the placed pin")
+    }
+
+    /// The owner's words of 2026-11-14, exactly, with the number taken from the radius searched.
+    @Test("the note's words are the owner's, and the refusal's sentences are gone")
+    func theNoteWords() {
+        #expect(VisitAddTreeCopy.nearbyLabel == "ALREADY ON RECORD")
+        #expect(
+            VisitAddTreeCopy.nearbyBody
+                == "Something is already on record within 10 m of here. Add this tree only if it is a different one."
+        )
+        #expect(VisitAddTreeCopy.nearbyBody.contains("\(Int(TreeDraft.proximityDedupeRadiusM)) m"))
+        #expect(!VisitAddTreeCopy.nearbyBody.contains("Nothing was added"))
+        #expect(!VisitAddTreeCopy.nearbyBody.contains("open it"))
     }
 
     @MainActor
-    @Test("a tree 12 m away is not a duplicate on this path either")
+    @Test("a tree 12 m away draws no note and adds")
     func twelveMetersAddsThroughTheScreen() async throws {
         let store = try await CypressStore.inMemory()
         let api = LocalAPI(store: store, deviceID: Self.deviceID)
@@ -172,11 +213,12 @@ struct CommunityAddTests {
         )
         subject.useLibraryImage(try Self.jpeg())
 
+        await subject.refreshNearby()
+        #expect(subject.nearby.isEmpty, "a tree 12 m away was listed under the 10 m note (E35)")
         let id = await subject.add()
         #expect(id != nil, "an honest contribution 12 m away was refused (E35)")
-        // Nothing was reported to the reader: no duplicate warning and no failure. The phase stays
-        // `.adding` on purpose — see `VisitAddTreeModel.add`.
-        if case .duplicate = subject.phase { Issue.record("12 m was reported as a duplicate") }
+        // Nothing was reported to the reader. The phase stays `.adding` on purpose — see
+        // `VisitAddTreeModel.add`.
         if case let .failed(message) = subject.phase { Issue.record("the add reported: \(message)") }
     }
 

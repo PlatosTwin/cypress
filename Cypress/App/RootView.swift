@@ -327,9 +327,9 @@ struct RootView: View {
     /// Set once `CYPRESS_CLEAR_STATUS_OVERRIDES` has actually run (ERRATA E217 "Still open"). See
     /// `openDebugDeepLink` and the overlay above.
     @State private var overridesCleared = false
-    /// A screen the harness asked for that lives on no router — today only the community add's pin
-    /// step, which is a phase of `VisitAddTreeModel` rather than a `Route`. See
-    /// `DebugDeepLink.Standalone`.
+    /// A screen the harness asked for that lives on no router — the community add and its pin step,
+    /// which are a step of `VisitFlowView` and a phase of `VisitAddTreeModel` rather than `Route`s.
+    /// See `DebugDeepLink.Standalone`.
     @State private var debugStandalone: DebugDeepLink.Standalone? = nil
 
     @ViewBuilder
@@ -344,6 +344,25 @@ struct RootView: View {
                 accuracyM: accuracyM,
                 onConfirm: { _ in debugStandalone = nil },
                 onCancel: { debugStandalone = nil }
+            )
+        case let .addTree(fix, accuracyM):
+            // The shipping screen on the shipping boundary, with the fix pinned and a photograph
+            // already chosen. Both outcomes open a tree the way `VisitFlowView` does: the one just
+            // added, or one the "ALREADY ON RECORD" note lists.
+            VisitAddTreeView(
+                api: data.api,
+                location: VisitLocationProvider(pinnedFix: .located(fix, accuracyM: accuracyM)),
+                attribution: data.local.attribution,
+                debugPhoto: LocalAPI.debugTreePhoto,
+                onAdded: { id in
+                    debugStandalone = nil
+                    router.push(.treeProfile(id))
+                },
+                onOpenExisting: { id in
+                    debugStandalone = nil
+                    router.push(.treeProfile(id))
+                },
+                onBack: { debugStandalone = nil }
             )
         }
     }

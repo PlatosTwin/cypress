@@ -2,15 +2,19 @@ import Foundation
 import Testing
 @testable import Cypress
 
-/// The 10 m add-a-tree proximity dedupe, and the corner of it that made the app refuse honest
+/// The 10 m add-a-tree proximity circle, and the corner of it that made the app refuse honest
 /// contributions: **the diagonal**.
 ///
 /// `BoundingBox(around:radiusM:)` is a square whose half-width is the radius on each axis, so it
 /// circumscribes the circle and reaches `radius·√2` at the corners — 14.1 m for a 10 m ask.
-/// `TreeQueries.nearest` never re-checked the true distance, `LocalAPI.addTree` reads a non-empty
-/// candidate list as a conflict, and `conflict` is not retryable: the outbox item went terminal
-/// immediately and the contributor was refused for good, with a real nearby tree shown as the
-/// reason (ERRATA E35).
+/// `TreeQueries.nearest` never re-checked the true distance, `LocalAPI.addTree` then read a
+/// non-empty candidate list as a conflict, and `conflict` is not retryable: the outbox item went
+/// terminal immediately and the contributor was refused for good, with a real nearby tree shown as
+/// the reason (ERRATA E35).
+///
+/// Since the owner's ruling of 2026-11-14 `addTree` refuses no tree for being near another, and the
+/// same circle draws the Add this tree screen's "ALREADY ON RECORD" note instead. A note listing a
+/// tree 12 m away would be the same defect in a milder form, so the circle is still tested here.
 ///
 /// Every case below is on the diagonal on purpose. A test written due north passes against the
 /// broken code.
@@ -72,8 +76,14 @@ struct ProximityDedupeTests {
         #expect(profile.tree.id == added.id)
     }
 
-    @Test("a tree 8 m away on the diagonal still is a duplicate")
-    func diagonalEightMetersIsAConflict() async throws {
+    /// The owner's ruling of 2026-11-14: a tree within 10 m of another is added. The tree it is
+    /// near is still inside the circle, which is what the screen's note lists.
+    ///
+    /// Red-proof: put back a refusal in `LocalAPI.addTree` when `treesNear` at
+    /// `TreeDraft.proximityDedupeRadiusM` is not empty. The second `addTree` throws, and the test
+    /// fails on that error.
+    @Test("a tree 8 m away on the diagonal is added, and the tree it is near is in the circle")
+    func diagonalEightMetersIsAdded() async throws {
         let store = try await CypressStore.inMemory()
         let api = LocalAPI(store: store, deviceID: Self.deviceID)
 
@@ -81,13 +91,17 @@ struct ProximityDedupeTests {
         let existing = try await api.addTree(Self.draft(at: first))
 
         let second = Self.diagonal(from: first, meters: 8)
-        do {
-            _ = try await api.addTree(Self.draft(at: second))
-            Issue.record("a tree 8 m from an existing one was accepted")
-        } catch let conflict as ProximityConflict {
-            #expect(conflict.candidates.map(\.tree.id) == [existing.id])
-            #expect(conflict.candidates.allSatisfy { $0.distanceM <= TreeDraft.proximityDedupeRadiusM })
-        }
+        let added = try await api.addTree(Self.draft(at: second))
+        #expect(added.id != existing.id)
+        #expect(added.coordinate == second)
+        let stored = try await api.treeProfile(id: added.id)
+        #expect(stored.tree.id == added.id, "the second tree was not stored")
+
+        let near = try await api.treesNear(
+            second, radiusM: TreeDraft.proximityDedupeRadiusM, limit: 10
+        ).filter { $0.tree.id != added.id }
+        #expect(near.map(\.tree.id) == [existing.id])
+        #expect(near.allSatisfy { $0.distanceM <= TreeDraft.proximityDedupeRadiusM })
     }
 
     @Test("the shortlist itself answers in a circle, not in a square")

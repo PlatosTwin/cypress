@@ -332,6 +332,11 @@ struct PhotoSourceResponse: Decodable {
 
 /// The `conflict` body's sibling of `error` — `{detail: {candidates: [NearbyTree]}}`.
 ///
+/// **No shipping code decodes this.** `RemoteAPI.addTree` has no route (the add travels as
+/// `add_tree` through `/sync`), and the phone stopped refusing a tree within 10 m of another on
+/// 2026-11-14. It stays for `GoldenWireFixtureTests`, which pins the service's conflict body; the
+/// service half of the same ruling decides whether that body still exists.
+///
 /// `NearbyTree` decodes directly, because the service emits it in that type's own synthesized keys.
 /// The candidates travel beside the envelope rather than inside it because `APIError.Envelope`'s
 /// nested container decodes exactly `code`, `message` and `retryable` (`sync.go`).
