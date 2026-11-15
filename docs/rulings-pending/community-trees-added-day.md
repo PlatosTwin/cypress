@@ -117,3 +117,36 @@ client may meet that it did not before: a community tree's `createdAt` can be on
 **The index.** 008 also drops `idx_community_trees_position` (001), which only the retired 10 m dedupe
 read (ROADMAP 141 (a)). The tile's position arm is served by 007's partial
 `idx_community_trees_public_position`, and `TestTheTileIndexesServeTheirQueries` still checks that.
+
+### R??? — Without the phone's day, the service keeps the UTC date (owner's ruling, 2026-11-15)
+
+**Decided by:** the owner, AskUserQuestion, 2026-11-15. This settles the question the entry above
+left for the fallback. The question:
+
+> The service now stores the day each community tree was added. For trees already on the service,
+> and for adds from builds older than the next one, it does not know the phone's time zone, so it
+> uses the UTC date. A tree added after about 4 or 5 pm in San Francisco, or 7 or 8 pm in D.C., then
+> shows the next day. Trees added with the next build show the exact day. What should the service do
+> for the others?
+
+Offered: **"Keep the UTC date (Recommended)"**; **"Estimate from where the tree is"**.
+**Chosen: "Keep the UTC date".** The fallback in `store.addedDay` and 008's backfill stay as built.
+This is decided, not open.
+
+### R??? — Known limit: 008 changes a served tile field without moving `updated_at`
+
+**Found by:** the independent review of `feat/community-tree-added-day-server`. **Ruled by:** the
+orchestrator, 2026-11-15: no change to 008.
+
+The tile delta returns only trees with `(updated_at, id)` after the cursor (`tileDeltaQuery`). 008
+changes the `createdAt` the tile serves (from `published_at` to `added_on`) and does not touch
+`updated_at`. A phone that already held a tile cache would therefore keep the old day for a tree
+that went public after the day it was added.
+
+No shipped build caches tiles: the first build that downloads them is the next one, not yet
+released. So no phone holds a stale day, **on one condition: 008 must be deployed before the first
+build that caches tiles ships.** Bumping `updated_at` in 008 was rejected, because it would make
+`updatedAt` the deploy day for those trees for no benefit.
+
+**For later migrations:** one that changes a field the tile serves must also move `updated_at` for
+the rows it changes, or phones with a cached tile will never see the change.
