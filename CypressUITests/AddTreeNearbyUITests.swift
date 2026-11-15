@@ -53,6 +53,8 @@ final class AddTreeNearbyUITests: XCTestCase, DeepLinkHarness {
         }
         let row = app.buttons.matching(NSPredicate(format: "label CONTAINS %@", Copy.candidate)).firstMatch
         XCTAssertTrue(row.exists, "the note lists no tree under it")
+        scrollIntoView(app.staticTexts[Copy.body], in: app)
+        record(app, named: "note-default")
 
         let add = app.buttons[Copy.cta]
         assertReachable(add, "the Add this tree button")
@@ -70,5 +72,70 @@ final class AddTreeNearbyUITests: XCTestCase, DeepLinkHarness {
             app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", Copy.fromGPS)).firstMatch.exists,
             "the opened profile does not say its position came from GPS"
         )
+    }
+
+    /// At the largest accessibility text size the note can be scrolled to, and the button under it
+    /// is still active and reachable. The form is a strip about 70 pt tall at this size (the pinned
+    /// header and footer take the rest), so the test scrolls to the note's label rather than to the
+    /// whole note, which is taller than the strip. Nothing is tapped, so this test adds no tree.
+    func testTheNoteAndAnActiveButtonAtTheLargestTextSize() {
+        let app = XCUIApplication()
+        app.launchEnvironment[Self.deepLinkScreenKey] = "addTreeNearby"
+        app.launchArguments += [
+            "-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXXXL"
+        ]
+        DebugMapCamera.pin(app)
+        app.launch()
+
+        let body = app.staticTexts[Copy.body]
+        guard body.waitForExistence(timeout: 60) else {
+            XCTFail(
+                deepLinkFailure(app).map { "addTreeNearby: \($0)" }
+                    ?? "addTreeNearby: no note at the largest text size"
+            )
+            return
+        }
+        let label = app.staticTexts[Copy.label]
+        scrollIntoView(label, in: app)
+        record(app, named: "note-ax5")
+        XCTAssertTrue(
+            label.isHittable,
+            "the note cannot be scrolled into view at the largest text size; its label's frame is \(label.frame)"
+        )
+
+        let add = app.buttons[Copy.cta]
+        assertReachable(add, "the Add this tree button at the largest text size")
+        XCTAssertTrue(add.isEnabled, "the note disabled the Add this tree button at the largest text size")
+    }
+
+    /// Swipes the form up until `element` can be pressed, at most thirty times.
+    ///
+    /// On the form's own scroll view, not on the app: at the largest text size the pinned header
+    /// and footer leave the form a strip about 70 pt tall, and a swipe from the middle of the
+    /// screen lands on the footer and scrolls nothing.
+    ///
+    /// A slow drag rather than a swipe, so the form moves by about its own height with no
+    /// momentum: a swipe in that strip flings the form past a short element and out the other side.
+    private func scrollIntoView(_ element: XCUIElement, in app: XCUIApplication) {
+        let form = app.scrollViews.firstMatch
+        for _ in 0..<30 where !element.isHittable {
+            let start = form.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.9))
+            let end = form.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.1))
+            start.press(forDuration: 0.1, thenDragTo: end, withVelocity: .slow, thenHoldForDuration: 0.3)
+        }
+    }
+
+    /// A PNG of the screen, plus the same image on the result bundle — `AreaPickerUITests.record`.
+    private func record(_ app: XCUIApplication, named name: String) {
+        let shot = XCUIScreen.main.screenshot()
+        let attachment = XCTAttachment(screenshot: shot)
+        attachment.name = name
+        attachment.lifetime = .keepAlways
+        add(attachment)
+
+        let directory = ProcessInfo.processInfo.environment["CYPRESS_SHOT_DIR"] ?? NSTemporaryDirectory()
+        let url = URL(fileURLWithPath: directory).appendingPathComponent("add-tree-\(name).png")
+        try? shot.pngRepresentation.write(to: url)
+        print("CYPRESS-SHOT: \(url.path)")
     }
 }
