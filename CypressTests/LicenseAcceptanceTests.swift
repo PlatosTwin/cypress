@@ -32,7 +32,8 @@ struct LicenseAcceptanceTests {
 
     /// The clock the session reads. `ScriptedAuthHTTP.session` mints a token that is live for 900 s
     /// from this instant, so a fixed clock keeps the token live whatever day the suite runs.
-    static let now = Date(timeIntervalSince1970: 1_800_000_000)
+    /// `nonisolated` because `AppSession`'s clock is a `@Sendable` closure that reads it.
+    nonisolated static let now = Date(timeIntervalSince1970: 1_800_000_000)
 
     static let agreedLine = "You agreed to share your tree records under the open database license."
     static let declinedLine = "You did not agree to share your tree records under the open database license."
