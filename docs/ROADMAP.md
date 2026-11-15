@@ -2371,14 +2371,16 @@ into this section in the round that finds it, and nowhere else. Each item stands
     `docs/rulings-pending/community-trees-no-proximity-rule.md`. Not built. It goes before chip 139,
     whose old trees can otherwise come back as conflicts.
 141. **The service keeps an index and migration comments that only the 10 m dedupe needed.** Found
-    while building chip 140 (`feat/no-proximity-refusal-server`, 2026-11-15). (a)
+    while building chip 140 (`feat/no-proximity-refusal-server`, 2026-11-15). ~~(a)
     `idx_community_trees_position` (`server/migrations/001_initial.sql`, line 254) existed for the
     dedupe's bounding box. With the dedupe gone, no query needs it: the only remaining position
     filter on `community_trees` is the tile's `published_at IS NOT NULL` arm
     (`server/internal/store/community_reads.go`), which the partial index
     `idx_community_trees_public_position` (migration 007) covers. It still costs a write on every
     add and every pin move. Dropping it needs a server migration, with one migration author named
-    for the round. (b) The comments in migration 001 (lines ~37, 205 and 226), 002 (~21) and 007
+    for the round.~~ **(a) DONE, 2026-11-15**, in `feat/community-tree-added-day-server`: migration
+    `008_community_tree_added_on.sql` drops the index, after a grep found no other position filter
+    on `community_trees`; `TestTheTileIndexesServeTheirQueries` still passes. Not deployed. (b) The comments in migration 001 (lines ~37, 205 and 226), 002 (~21) and 007
     (~139) still describe the 10 m dedupe or its resolution sheet. Decide whether applied
     migrations' comments are corrected in place or left as the record of their day.
 
