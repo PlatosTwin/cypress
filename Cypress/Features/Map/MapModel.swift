@@ -53,13 +53,24 @@ final class MapModel {
     /// for its reason: nothing draws it.
     @ObservationIgnored private(set) var membershipRefresh: Task<Void, Never>?
 
+    /// Fetches other people's community trees for a viewport into the phone's cache, and answers
+    /// whether the cache changed — or nil with the gate shut (`DataLayer.refreshCommunityTrees`,
+    /// round C2). Nil means the map draws what the phone holds, which is what every preview and
+    /// unit test that builds this model gets.
+    private let refreshCommunity: ((BoundingBox) async -> Bool)?
+
+    /// The community refresh in flight behind a settled map, or nil. Held so a test can await it
+    /// rather than time it, `membershipRefresh`'s reasoning.
+    @ObservationIgnored private(set) var communityRefresh: Task<Void, Never>?
+
     init(
         api: any CypressAPI,
         calendar: Calendar = .current,
         now: @escaping () -> Date = Date.init,
         needsCareToastDuration: Duration = MapModel.defaultNeedsCareToastDuration,
         refreshProfile: ((UUID) async -> TreeProfile?)? = nil,
-        refreshMembership: ((MapMembership) async -> Set<UUID>?)? = nil
+        refreshMembership: ((MapMembership) async -> Set<UUID>?)? = nil,
+        refreshCommunity: ((BoundingBox) async -> Bool)? = nil
     ) {
         self.api = api
         self.calendar = calendar
@@ -67,6 +78,7 @@ final class MapModel {
         self.needsCareToastDuration = needsCareToastDuration
         self.refreshProfile = refreshProfile
         self.refreshMembership = refreshMembership
+        self.refreshCommunity = refreshCommunity
     }
 
     // MARK: - State
@@ -364,7 +376,7 @@ final class MapModel {
     /// Reading it changes no state.
     var outstandingTasks: [Task<Void, Never>] {
         [
-            searchTask, membershipTask, membershipRefresh, fetchTask,
+            searchTask, membershipTask, membershipRefresh, fetchTask, communityRefresh,
             selectionTask, paletteNameTask, needsCareToastTask,
         ].compactMap { $0 }
     }
@@ -673,6 +685,12 @@ final class MapModel {
     /// and a task that ignored that would publish a viewport the camera has already left and then
     /// spend a species lookup per pin resolving it.
     func fetch() async {
+        await fetch(refreshingCommunity: true)
+    }
+
+    /// The read, and behind it the community refresh (round C2) unless this read is the one that
+    /// refresh asked for.
+    private func fetch(refreshingCommunity: Bool) async {
         guard let viewport, !Task.isCancelled else { return }
         isLoading = true
         defer { isLoading = false }
@@ -698,6 +716,8 @@ final class MapModel {
             // all of which are published above; asking it any earlier would decide this read's
             // sentence from the previous read's facts (task #247).
             noteReadFinished()
+            // Behind the painted map, never before it: other people's trees arrive a beat later.
+            if refreshingCommunity { startCommunityRefresh(for: viewport) }
         } catch let error as APIError {
             guard !Task.isCancelled else { return }
             loadFailure = error
@@ -857,6 +877,27 @@ final class MapModel {
             else { return }
             self.membershipIDs = merged
             self.refetchThroughNarrowing()
+        }
+    }
+
+    /// Asks for other people's community trees in the viewport just read, and reads the map again
+    /// if any arrived or left (round C2).
+    ///
+    /// **One at a time, and the newest wins**: a later settle cancels the one in flight, because
+    /// it is about a viewport the camera has left. The re-read happens only if the camera is still
+    /// on the viewport that was refreshed; otherwise the read the camera already scheduled picks
+    /// the new rows up. The re-read does not start another refresh, so the two cannot loop, and
+    /// the refresher's own interval would stop a loop anyway (`CommunityTileRefresher.Policy`).
+    private func startCommunityRefresh(for refreshed: MapViewport) {
+        guard let refreshCommunity else { return }
+        communityRefresh?.cancel()
+        communityRefresh = Task { [weak self] in
+            let changed = await refreshCommunity(refreshed.bounds)
+            guard changed, !Task.isCancelled, let self, self.viewport == refreshed else { return }
+            self.fetchTask?.cancel()
+            self.fetchTask = Task { [weak self] in
+                await self?.fetch(refreshingCommunity: false)
+            }
         }
     }
 

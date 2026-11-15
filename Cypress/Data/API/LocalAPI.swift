@@ -251,13 +251,27 @@ public actor LocalAPI: CypressAPI {
                     speciesID: $0.speciesCurrentID
                 )
             }
-            let seedBudget = max(viewport.pinLimit - communityPins.count, 0)
-            let kept = Array(answer.items.prefix(seedBudget)) + communityPins
+            //
+            // **And the community share is capped** (round C2). Since the cache holds other
+            // people's trees, the layer can be dense, and a reservation with no ceiling let it take
+            // the whole budget: 400 community pins in a box drew no city tree at all. The layer now
+            // takes at most half the budget when the city layer could use the rest, and any part
+            // of the budget the city layer leaves unused (`communityPinShare`). The phone's own
+            // trees come first inside the share (`CommunityLayer.inBoundsSQL`).
+            let communityShare = Self.communityPinShare(
+                pinLimit: viewport.pinLimit,
+                cityPins: answer.items.count,
+                communityPins: communityPins.count
+            )
+            let keptCommunity = Array(communityPins.prefix(communityShare))
+            let seedBudget = max(viewport.pinLimit - keptCommunity.count, 0)
+            let kept = Array(answer.items.prefix(seedBudget)) + keptCommunity
             // Reserving the community layer's space spends seed pins, and on a narrowed map those
             // are matches — so if this cut anything, the answer is a sample whether or not the grid
-            // already made it one. `PinAnswer` collapses a "sample" that dropped nothing, so an
-            // untouched answer still reports itself complete.
+            // already made it one. The cap cuts community pins the same way. `PinAnswer` collapses
+            // a "sample" that dropped nothing, so an untouched answer still reports itself complete.
             let dropped = answer.items.count - min(answer.items.count, seedBudget)
+                + communityPins.count - keptCommunity.count
             return applyingOverrides(.pins(PinAnswer(
                 kept,
                 matchesInView: answer.matchesInView.map { $0 + communityPins.count }
@@ -291,6 +305,19 @@ public actor LocalAPI: CypressAPI {
             clusters = Array(byCell.values)
             return .clusters(clusters)
         }
+    }
+
+    /// How many community pins a pin answer keeps (round C2): at most half of `pinLimit` when the
+    /// city layer could use the other half, plus whatever the city layer leaves unused.
+    ///
+    /// Half is the ROADMAP's proposal. **The half is rounded down**, so an odd budget gives the
+    /// odd pin to the city layer. A budget the city layer does not fill is not withheld: a map
+    /// over a park with 30 city trees and 300 added ones draws all 330 under a budget of 400.
+    /// `cityPins` is the city layer's answer, which `TreeQueries` has already capped at
+    /// `pinLimit`.
+    static func communityPinShare(pinLimit: Int, cityPins: Int, communityPins: Int) -> Int {
+        let ceiling = max(pinLimit / 2, pinLimit - cityPins)
+        return max(0, min(communityPins, ceiling))
     }
 
     public func treesNear(_ coordinate: Coordinate, radiusM: Double, limit: Int) async throws -> [NearbyTree] {
@@ -375,7 +402,9 @@ public actor LocalAPI: CypressAPI {
 
             let adder = addedHere ? try communityTrees.adder(treeID: id, connection: connection) : nil
             // The adder test, and ROADMAP 107's: a tree the service never received (R77) is
-            // answered `not_found`, so its move is not offered. C2's `added_by_you` replaces both.
+            // answered `not_found`, so its move is not offered. C2 carries the service's
+            // `added_by_you` on `TreeProfile.addedByYou` and leaves this gate as it is: the move is
+            // a write to this phone's own row, which a tree held only in the cache does not have.
             let isAdder = adder?.isOwned(by: attribution) ?? false
             let canMovePin = isAdder
                 ? try communityTrees.mayHaveReachedService(treeID: id, connection: connection)
@@ -465,7 +494,10 @@ public actor LocalAPI: CypressAPI {
                 // here), an adder who is the reader, and a tree the service may hold
                 // (`mayHaveReachedService`, which `correctLocation` does not apply). A withdrawn
                 // tree never reaches this line (it threw above).
-                canMovePin: canMovePin
+                canMovePin: canMovePin,
+                // The phone's half of `added_by_you`: this phone's own record says the reader added
+                // it. `RoutedAPI.refreshedTreeProfile(id:)` adopts the service's yes on top.
+                addedByYou: isAdder
             )
         }
     }

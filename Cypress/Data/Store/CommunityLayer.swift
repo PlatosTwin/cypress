@@ -88,6 +88,11 @@ public struct CommunityLayer {
         return try statement.fetchAll(CommunityTreeStore.decode)
     }
 
+    /// **The phone's own trees come first, then other people's, each by id**, so a `LIMIT` that
+    /// bites cuts other people's trees before this phone's own (ERRATA E36: a contributor's own
+    /// pin must appear on the screen they added it from), and cuts the same ones on every read, so
+    /// a pan does not swap which of them are drawn. Both tables are small and local; the sort is
+    /// over the rows in one box.
     static let inBoundsSQL = """
         SELECT \(addedColumns) FROM community_trees
          WHERE lat BETWEEN :minLat AND :maxLat
@@ -98,6 +103,7 @@ public struct CommunityLayer {
          WHERE k.lat BETWEEN :minLat AND :maxLat
            AND k.lon BETWEEN :minLon AND :maxLon
            AND \(notAddedHere)
+         ORDER BY cached, id
          LIMIT :limit
         """
 

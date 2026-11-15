@@ -1070,16 +1070,26 @@ public struct RoutedAPI: CypressAPI {
     /// for an unreachable host.
     public func refreshedTreeProfile(id: UUID) async throws -> TreeProfile {
         let mine = try await local.treeProfile(id: id)
+        // The history is asked for beside the community half, and only for a community tree: a
+        // city tree has none, and the service would answer `not_found` for it every time (round
+        // C2). A history that fails costs the history alone, never the photographs.
+        async let asked = Self.history(of: mine.tree, from: remote)
         guard let community = try? await remote.treeCommunityHalf(id: id) else {
+            _ = await asked
             // Nothing is recorded for a refresh we cancelled ourselves — `refreshedGrove()`'s note.
             if !Task.isCancelled { await log.record(.treeProfile, .fellBackToLocal) }
             return mine
         }
+        let history = await asked
 
         var photos = mine.photos.items
         let evidence = await resolvePhotoEvidence?(id) ?? .none
         let matched = Self.photoIdentityMatch(community, onThisPhone: mine.photos.items, evidence: evidence)
-        photos.append(contentsOf: matched.added)
+        // Matched on the wire's instants first, then dated for the screen: the copy test above
+        // compares capture seconds, and a display date must never take part in it.
+        photos.append(contentsOf: matched.added.map {
+            Self.datedForDisplay($0, capturedOn: community.capturedOn[$0.id], in: .current)
+        })
         // Remembered so a withdrawal of one of these can name the row the service holds — see
         // `deletePhoto(id:)`.
         await photoIdentities.remember(
@@ -1128,7 +1138,55 @@ public struct RoutedAPI: CypressAPI {
             statusProvenance: mine.statusProvenance,
             // The local answer: who added a tree is this phone's `community_trees` row, and the
             // move it gates is a local write.
-            canMovePin: mine.canMovePin
+            canMovePin: mine.canMovePin,
+            // **The adder is adopted from the service when it says yes** (round C2): a tree the
+            // reader's account added on another phone reaches this one only through the cache, and
+            // only the service can say whose it is. Its "no" never overrides this phone's yes, for
+            // `TreeProfile.addedByYou`'s reasons.
+            addedByYou: mine.addedByYou || community.addedByYou,
+            communityHistory: history
+        )
+    }
+
+    /// A community tree's history from the service, or nil: a city tree (nothing is asked), the
+    /// service's `not_found`, or a read that failed.
+    static func history(of tree: Tree, from remote: RemoteAPI) async -> CommunityTreeHistory? {
+        guard tree.source == .community else { return nil }
+        return (try? await remote.treeHistory(id: tree.id)) ?? nil
+    }
+
+    /// A service photograph as the screen dates it (round C2, decision 14a).
+    ///
+    /// **When the service sent `captured_on`, the photograph is shown on that calendar date**, in
+    /// every reader's zone. Every surface formats `capturedAt` in the reader's zone, so the date is
+    /// carried as noon of that day in `zone`, which those formatters render as exactly that day.
+    /// Without this, the noon-UTC instant the service sends a stranger renders as the next day at
+    /// UTC+12 and beyond.
+    ///
+    /// **When it did not**, the photograph keeps `captured_at`, which the reader's zone formats as
+    /// the shipped client always has. A UTC calendar would be wrong here: a photograph sent with no
+    /// date is served its exact time, and its UTC date is a day off for an evening in the Americas.
+    ///
+    /// Only the service's rows that the merge **adds** are dated this way, and only after the copy
+    /// test has run on the wire's instants. The phone's own photographs keep their real time.
+    static func datedForDisplay(_ photo: Photo, capturedOn: CalendarDay?, in zone: TimeZone) -> Photo {
+        guard let capturedOn else { return photo }
+        let shown = capturedOn.midday(in: zone)
+        return Photo(
+            id: photo.id,
+            treeID: photo.treeID,
+            visitID: photo.visitID,
+            storageKey: photo.storageKey,
+            shotType: photo.shotType,
+            moderationState: photo.moderationState,
+            blurApplied: photo.blurApplied,
+            width: photo.width,
+            height: photo.height,
+            capturedAt: shown,
+            publicCoordinate: photo.publicCoordinate,
+            createdAt: shown,
+            updatedAt: shown,
+            deletedAt: photo.deletedAt
         )
     }
 

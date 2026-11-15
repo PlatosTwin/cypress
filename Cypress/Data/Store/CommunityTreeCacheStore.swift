@@ -3,7 +3,7 @@ import Foundation
 /// Writes over `main.community_tree_cache` and `main.community_tree_cache_tiles` — other people's
 /// published community trees, as `GET /community-trees` serves them (`AppSchema` v23).
 ///
-/// This round adds the store; the round that fetches tiles (C2, the sync-down) is its caller. The
+/// Round C1 added the store; `CommunityTileRefresher` (round C2, the sync down) is its caller. The
 /// rules it implements are the service's contract, in `server/testdata/README.md`, and each is a
 /// statement here rather than a convention the caller has to remember:
 ///

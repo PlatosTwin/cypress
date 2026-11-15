@@ -125,6 +125,18 @@ public struct DataLayer: Sendable {
     /// `RoutedAPI.refreshedMapMembership(_:)`, on the same terms as the two above.
     public let refreshMapMembership: (@Sendable (MapMembership) async -> Set<UUID>?)?
 
+    /// Fills the community cache for the tiles a map viewport touches, and says whether the cache
+    /// changed — or nil when there is no service to fetch from (round C2).
+    ///
+    /// `refreshGroveSpecies`' terms exactly: nil when the gate is shut, so a `.disabled` build (every
+    /// DEBUG build, and the whole UI suite) fetches nothing and the map draws what the phone holds.
+    /// `MapModel` runs it behind each settled read of the map and reads the map again when it
+    /// answers true. The rules it runs by are `CommunityTileRefresher`'s.
+    ///
+    /// A `var` with a default for `outboxWifiWatcher`'s reason: the two suites that assemble a
+    /// layer by hand still compile. `boot` always sets it.
+    public internal(set) var refreshCommunityTrees: (@Sendable (BoundingBox) async -> Bool)? = nil
+
     /// Drains the outbox when wi-fi returns and a photograph is waiting for it (F35). The layer
     /// owns it so that a replaced layer stops listening; see `OutboxWifiWatcher`.
     ///
@@ -444,6 +456,21 @@ public struct DataLayer: Sendable {
             refreshMapMembership = { kind in try? await api.refreshedMapMembership(kind) }
         }
 
+        // ── Other people's trees, down into the cache (round C2) ───────────────────────────────
+        //
+        // Nil with the gate shut, for the four closures above's reason. The tile route takes the
+        // device credential, so this runs signed in and signed out alike: a phone that has never
+        // signed in still draws everybody's published trees (§3C). Its first request is what
+        // registers the device, which `AppSession.bootstrap()` keeps lazy; this request is behind a
+        // painted map and nothing waits for it.
+        var refreshCommunityTrees: (@Sendable (BoundingBox) async -> Bool)?
+        if access.allowsNetwork {
+            let refresher = CommunityTileRefresher(queue: store.queue) { tile, cursor in
+                try await remote.communityTile(tile, cursor: cursor)
+            }
+            refreshCommunityTrees = { bounds in await refresher.refresh(covering: bounds).changedCache }
+        }
+
         // ── Two sinks, and this is the round that wires the second (RULINGS R72 §1) ─────────────
         //
         // `apply` is the local commit: a contribution is on its tree the moment the drain runs,
@@ -492,6 +519,7 @@ public struct DataLayer: Sendable {
             refreshTreeProfile: refreshTreeProfile,
             reconcileFavorite: reconcileFavorite,
             refreshMapMembership: refreshMapMembership,
+            refreshCommunityTrees: refreshCommunityTrees,
             outboxWifiWatcher: OutboxWifiWatcher(queue: outbox, networkPath: networkPath),
             networkPath: networkPath
         )
