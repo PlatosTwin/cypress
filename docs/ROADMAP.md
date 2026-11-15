@@ -2075,12 +2075,15 @@ into this section in the round that finds it, and nowhere else. Each item stands
     `NWPath.status` is `.unsatisfied` right now; cellular and `.requiresConnection` are not offline,
     and nothing is claimed before the first reading. The erratum that amends E81 is in
     `docs/errata-pending/outbox-pill-offline.md`. No UI test reads the pill (follow-up below).
-111. **The agent simulators in CLAUDE.md no longer exist.** None of the four UDIDs listed under
+111. ~~**The agent simulators in CLAUDE.md no longer exist.** None of the four UDIDs listed under
     "Simulators" is on the owner's Mac (checked with `xcrun simctl list devices`, 2026-11-13). This
     round's agents made their own. Update the list, or say how an agent makes its device. On 2026-11-14 the Mac
     has only iPhone 17-family devices on iOS 27.2 (17, 17 Pro, 17 Pro Max, 17e); the local
     Xcode 27 check in item 112 used the iPhone 17 Pro, the model CI uses. Which of them is the owner's
-    own device, and which four agents may use, is the owner's to say in CLAUDE.md.
+    own device, and which four agents may use, is the owner's to say in CLAUDE.md.~~
+    **DONE 2026-11-15 (#235):** CLAUDE.md now keeps the plain iPhone 17 for the owner, on every iOS
+    version, and gives agents four iOS 26.5 devices of different widths: 17 Pro (402 pt), 17 Pro Max
+    (440 pt), 17e (390 pt) and Air (420 pt).
 112. ~~**Owner action: local test runs hang on this Mac.** `xcodebuild test` stops with "test runner
     hung before establishing connection" and "DTServiceHubClient failed to bless service hub". The
     usual fix is `sudo xcodebuild -runFirstLaunch`, which needs the owner's password. Until then,
@@ -2094,7 +2097,7 @@ into this section in the round that finds it, and nowhere else. Each item stands
     that this macOS no longer accepts, so a newer Xcode is the likely fix (not verified; the owner's
     action). A local run still proves that everything compiles and gives a warning count.~~
     **DONE 2026-11-14: the owner installed Xcode 27.2 (build 27B52) and selected it.** A local
-    `Tools/run_tests.sh` run on the iPhone 17 Pro (iOS 27.2 runtime) built 594 Swift files and
+    `Tools/run_tests.sh` run on the iPhone 17 Pro (iOS 26.5) built 594 Swift files and
     ended `VERIFY-OK: ✔ Test run with 6 tests in 1 suite passed` (`RenderSettleTests`), with no
     hang. Local runs are test evidence again.
 113. ~~**F36 follow-up: thumbnails do not retry a failed read.** #206 made the photo viewer retry;
