@@ -539,14 +539,16 @@ func TestAddTreeDedupesOnTheIdAndNotOnDistance(t *testing.T) {
 		t.Fatalf("the first tree sent again = %v, %v; want duplicate", outcome, err)
 	}
 
-	var rows int
-	if err := store.Pool().QueryRow(context.Background(),
-		`SELECT count(*) FROM community_trees WHERE id IN ($1, $2)`,
-		first.ID, beside.ID).Scan(&rows); err != nil {
+	// Every row, not the two ids: a second copy under another id is the defect this counts for.
+	var rows, named int
+	if err := store.Pool().QueryRow(context.Background(), `
+		SELECT count(*), count(*) FILTER (WHERE id IN ($1, $2)) FROM community_trees
+	`, first.ID, beside.ID).Scan(&rows, &named); err != nil {
 		t.Fatal(err)
 	}
-	if rows != 2 {
-		t.Fatalf("%d trees recorded, want 2: the one sent twice once, and the one beside it", rows)
+	if rows != 2 || named != 2 {
+		t.Fatalf("%d trees recorded (%d of them the two sent), want 2: the one sent twice once, "+
+			"and the one beside it", rows, named)
 	}
 }
 
