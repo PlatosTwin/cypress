@@ -2,7 +2,6 @@ package api
 
 import (
 	"context"
-	"net/http"
 	"testing"
 	"time"
 
@@ -45,9 +44,8 @@ func TestANonVersionAfterAnAcceptanceUnpublishesNothing(t *testing.T) {
 				t.Fatalf("the non-version answer wrote to the published tree's history: %+v", events)
 			}
 			stranger := h.registerDeviceToken(t, uuid.New())
-			if code, candidates := postTree(t, h, stranger, uuid.New(), north(float64(200*i)+3), ctLon); code != http.StatusConflict ||
-				len(candidates) != 1 || candidates[0] != before {
-				t.Fatalf("after the non-version answer a stranger 3 m away got %d %v; the tree should still be seen", code, candidates)
+			if !seesTree(t, h, stranger, before) {
+				t.Fatal("after the non-version answer a stranger is not served the tree; it should still be seen")
 			}
 
 			mustApply(t, h.syncOne(t, again.AccessToken, addTreeAt(after, north(float64(200*i)+60), ctLon, time.Now())), "add after")

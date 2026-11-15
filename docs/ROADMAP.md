@@ -1650,23 +1650,27 @@ into this section in the round that finds it, and nowhere else. Each item stands
     Separately, `/devices/claim` does not bind the device to the session; only `/auth/oidc` does
     (found in #187's review). Decide whether a claim should have to show something only the phone
     has. (From #182's review, F3.)
-60. **`add_tree`'s proximity check is not inside the transaction that inserts the tree.** Two adds a
+60. ~~**`add_tree`'s proximity check is not inside the transaction that inserts the tree.** Two adds a
     few metres apart, sent at the same moment, can both pass it. It predates #187, which scoped what
     the check can see and did not change when it looks; #187's review found it. Fix with a lock or a
     constraint the two inserts contend on, and red-prove the interleaving first, as item 9 asks of
-    its own race.
+    its own race.~~ **MOOT, 2026-11-15:** `feat/no-proximity-refusal-server` (chip 140) removes the
+    proximity check from `add_tree` and `POST /trees`, so there is no check left to race. Two trees
+    a few meters apart are now both meant to be recorded.
 61. **Photographs and contributions on a withdrawn or taken-down community tree stay stored, and no
     read reaches them.** #190's reads hide them, which is why nobody sees it. Nothing deletes them,
     and nothing says how long they stay. Decide a retention rule; R3's erase-door pattern is the
     nearest precedent.
-62. **A proximity conflict still shows another adder's address and the exact second a tree was
+62. ~~**A proximity conflict still shows another adder's address and the exact second a tree was
     added.** `candidateFrom` (`server/internal/api/sync.go`) builds the candidates of `POST /trees`
     and of a sync `add_tree`, and serves `address` and full-precision `createdAt` and `updatedAt`.
     #187 scoped the candidates to trees the caller may see, which closed the leak of other people's
     unpublished trees; what remains is a published tree's adder-supplied address and creation
     second, which the tile and the profile both withhold. The fix moves
     `server/testdata/proximity_conflict.json` and its Swift test (`GoldenWireFixtureTests`) together,
-    which is why #190 left it.
+    which is why #190 left it.~~ **MOOT, 2026-11-15:** `feat/no-proximity-refusal-server` (chip 140)
+    removes the proximity conflict and `candidateFrom`, so no route serves a candidate any more. The
+    fixture file stays for the phone-side round to settle.
 63. **Does a photograph's presigned `GET` give away its capture time?** A hypothesis, not
     reproduced. Object storage normally answers with `Last-Modified`, the upload time to the second,
     and for a photograph uploaded while online that is close to the capture time decision 14 hides
@@ -2379,6 +2383,17 @@ into this section in the round that finds it, and nowhere else. Each item stands
     the owner's go-ahead. The ruling and the build notes are in
     `docs/rulings-pending/community-trees-no-proximity-rule.md`. Not built. It goes before chip 139,
     whose old trees can otherwise come back as conflicts.
+141. **The service keeps an index and migration comments that only the 10 m dedupe needed.** Found
+    while building chip 140 (`feat/no-proximity-refusal-server`, 2026-11-15). (a)
+    `idx_community_trees_position` (`server/migrations/001_initial.sql`, line 254) existed for the
+    dedupe's bounding box. With the dedupe gone, no query needs it: the only remaining position
+    filter on `community_trees` is the tile's `published_at IS NOT NULL` arm
+    (`server/internal/store/community_reads.go`), which the partial index
+    `idx_community_trees_public_position` (migration 007) covers. It still costs a write on every
+    add and every pin move. Dropping it needs a server migration, with one migration author named
+    for the round. (b) The comments in migration 001 (lines ~37, 205 and 226), 002 (~21) and 007
+    (~139) still describe the 10 m dedupe or its resolution sheet. Decide whether applied
+    migrations' comments are corrected in place or left as the record of their day.
 
 
 **Retire the format-1 manifest — DONE, 2026-08-23.** The owner overrode the trigger the day after

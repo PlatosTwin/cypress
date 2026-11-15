@@ -405,65 +405,7 @@ func (s *Store) TreeCommunityHalf(ctx context.Context, treeUUID uuid.UUID, viewe
 	return TreeCommunity{Photos: photos, VisitCount: visits, Tree: tree}, nil
 }
 
-// ── `POST /trees` and the 10 m proximity dedupe ────────────────────────────────────────────────
-
-// NearbyTree is a dedupe candidate, carrying what the client's `NearbyTree` needs to be built.
-//
-// The client type wraps a whole `Tree`, not an id, so a candidate list of bare ids cannot construct
-// one — and a *community-added* tree is by definition absent from the installed city file, so the
-// phone cannot fill the gap locally either. Everything a `Tree` needs that this service actually
-// knows is therefore carried here; see `proximityCandidate` in the api package for the mapping and
-// for what is deliberately fixed rather than stored.
-type NearbyTree struct {
-	ID          uuid.UUID
-	Lat         float64
-	Lon         float64
-	Address     *string
-	SpeciesID   *uuid.UUID
-	Placement   string
-	LandContext *string
-	CreatedAt   time.Time
-	UpdatedAt   time.Time
-	DistanceM   float64
-}
-
-// ProximityDedupeRadiusM is `TreeDraft.proximityDedupeRadiusM`: 10 m, any species (BUILD-PLAN §6).
-const ProximityDedupeRadiusM = 10.0
-
-// TreesWithin returns community trees within radius metres of a point, nearest first, that the
-// viewer can see: published ones and the viewer's own (§3F, migration 007).
-//
-// A bounding-box prefilter over `idx_community_trees_position`, then a haversine — no PostGIS,
-// which R72 declines because no server-side spatial query exists under R36's local read path and
-// carrying an extension for a query nothing makes is not continuity.
-//
-// The latitude term of the box is constant; the longitude term is divided by cos(lat), which is
-// what keeps the box a box rather than a shape that narrows to nothing near the poles. Both cities
-// in the corpus are near 37°N, where the factor is ~1.25 — large enough that omitting it would
-// quietly shrink the search and let a duplicate through. The query is `treesWithin`, shared with
-// the transaction that moves a pin.
-func (s *Store) TreesWithin(ctx context.Context, lat, lon, radiusM float64, viewer Owner) ([]NearbyTree, error) {
-	return treesWithin(ctx, s.pool, lat, lon, radiusM, viewer, nil)
-}
-
-// CommunityTreeExists reports whether this exact tree has already been recorded.
-//
-// `POST /trees` calls it **before** the proximity query. Without that ordering a byte-identical
-// retry — the flap-replay case the outbox exists for — runs the 10 m dedupe against the row it
-// created moments ago, matches itself at zero metres, and comes back `conflict`. That code is
-// non-retryable, so the item fails terminally and the contributor is offered a resolution sheet
-// listing their own submission.
-//
-// A tree the erase door deleted counts as recorded: its id is in `withdrawn_community_trees`, and a
-// replay of its add is a duplicate, not a second life.
-func (s *Store) CommunityTreeExists(ctx context.Context, id uuid.UUID) (bool, error) {
-	var found bool
-	err := s.pool.QueryRow(ctx, `
-		SELECT EXISTS (SELECT 1 FROM community_trees WHERE id = $1)
-		    OR EXISTS (SELECT 1 FROM withdrawn_community_trees WHERE id = $1)
-	`, id).Scan(&found)
-	return found, err
-}
+// ── `POST /trees` ──────────────────────────────────────────────────────────────────────────────
 
 // NewCommunityTree is what `POST /trees` records.
 //
@@ -471,8 +413,7 @@ func (s *Store) CommunityTreeExists(ctx context.Context, id uuid.UUID) (bool, er
 // non-empty by construction — the handler defaults it to `TreeDraft`'s own default — because
 // `Tree.placement` is **non-optional** on the client and its raw values are frozen by `AppSchema`
 // v10's CHECK. A row that stored nothing there produced `"unknown"` on the wire, which is not a
-// `TreePlacement`, which threw the whole `Tree`, the whole `[NearbyTree]` and the whole
-// `ProximityConflict` — on every candidate, always.
+// `TreePlacement`, which threw the whole `Tree` and every response that carried it.
 type NewCommunityTree struct {
 	ID          uuid.UUID
 	Lat         float64
