@@ -141,9 +141,11 @@ struct YouTabView: View {
                 link: account.link,
                 isBusy: account.isBusy,
                 deletionFailed: account.deletionFailed,
+                licenseAcceptanceFailed: account.licenseAcceptanceFailed,
                 onSignIn: { router?.present(.accountAsk) },
                 onSignOut: { Task { await account.signOut() } },
-                onDelete: { choice in Task { await account.deleteAccount(choice) } }
+                onDelete: { choice in Task { await account.deleteAccount(choice) } },
+                onAcceptLicense: { Task { await account.acceptLicense() } }
             )
         }
     }

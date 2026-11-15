@@ -136,6 +136,13 @@ final class AccountModel {
     /// takes the whole account section with it.
     private(set) var deletionFailed = false
 
+    /// Whether the **last** attempt to agree to the license failed and changed nothing.
+    ///
+    /// `deletionFailed`'s rule: cleared at the start of every attempt, so it always describes the
+    /// attempt the person just made. A success leaves it false, and the row it is drawn under goes
+    /// away with the "did not agree" line.
+    private(set) var licenseAcceptanceFailed = false
+
     init(api: LocalAPI?, session: AppSession? = nil, router: (any CypressAPI)? = nil) {
         self.api = api
         self.session = session
@@ -213,6 +220,42 @@ final class AccountModel {
             return
         }
         try? await session?.signOut()
+        await load()
+    }
+
+    /// Agree to the license after declining it at sign-in (the owner's decision of 2026-11-15:
+    /// "Share my tree records" on the You tab). Only ever called from behind the confirmation.
+    ///
+    /// **The service first, then this phone**, the order `deleteAccount` uses and for the same
+    /// reason: the phone must never say "You agreed" about an answer the service did not record. So
+    /// a failure of the service half writes nothing here. If the service half succeeds and the local
+    /// write then fails, the service has agreed and the phone still says "did not agree", with the
+    /// failure line; a second tap sends the same acceptance, which the service records again and
+    /// which publishes nothing new, so it converges.
+    ///
+    /// **`isBusy` is set before the first `await`.** This model is on the main actor, and every
+    /// `await` lets another call run. A guard that awaited before marking itself busy would let a
+    /// second tap pass the same guard and send a second request.
+    func acceptLicense() async {
+        guard let api, let session, !isBusy,
+              isSignedIn, let link, let provider = link.provider, !link.acceptsLicense
+        else { return }
+        isBusy = true
+        licenseAcceptanceFailed = false
+        defer { isBusy = false }
+
+        do {
+            guard let account = await api.userID else { throw SessionError.noCredential }
+            try await session.acceptLicense()
+            try await api.linkAccount(
+                deviceUUID: api.deviceID,
+                userID: account,
+                provider: provider,
+                acceptsLicense: true
+            )
+        } catch {
+            licenseAcceptanceFailed = true
+        }
         await load()
     }
 
