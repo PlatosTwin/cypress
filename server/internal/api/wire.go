@@ -109,12 +109,6 @@ type wireIntRange struct {
 	UpperBound int `json:"upperBound"`
 }
 
-// wireIDTip is `IDTip` (`Cypress/Core/Models/Species.swift`).
-type wireIDTip struct {
-	Icon string `json:"icon"`
-	Text string `json:"text"`
-}
-
 // wireTree is `Tree` (`Cypress/Core/Models/Tree.swift`), every property, in declaration order.
 //
 // `Tree` is `CoreEntity, SoftDeletable`, so `id`, `createdAt`, `updatedAt` and `deletedAt` are part
@@ -151,17 +145,6 @@ type wireTree struct {
 	CreatedAt         Timestamp  `json:"createdAt"`
 	UpdatedAt         Timestamp  `json:"updatedAt"`
 	DeletedAt         *Timestamp `json:"deletedAt"`
-}
-
-// wireNearbyTree is `NearbyTree` (`Cypress/Data/API/CypressAPI.swift`).
-//
-// `id` is computed (`tree.id`) and therefore not a stored property, so it is not a coding key.
-type wireNearbyTree struct {
-	Tree                  wireTree   `json:"tree"`
-	DistanceM             float64    `json:"distanceM"`
-	SpeciesScientificName *string    `json:"speciesScientificName"`
-	SpeciesCommonName     *string    `json:"speciesCommonName"`
-	Tell                  *wireIDTip `json:"tell"`
 }
 
 // wireGroveRecord is `GroveRecord` (`Cypress/Data/API/GroveRecord.swift`).

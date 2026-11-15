@@ -514,41 +514,41 @@ func TestOperatorTakedownMovesAPhotoToRejected(t *testing.T) {
 	}
 }
 
-// ── The proximity dedupe ───────────────────────────────────────────────────────────────────────
+// ── Adding a tree: the id is the only dedupe ───────────────────────────────────────────────────
 
-func TestProximityDedupeTripsWithinTenMetres(t *testing.T) {
+// TestAddTreeDedupesOnTheIdAndNotOnDistance is the owner's ruling of 2026-11-14 at the store: a
+// tree 5 m from another is a second tree, and the same tree sent twice is still one.
+func TestAddTreeDedupesOnTheIdAndNotOnDistance(t *testing.T) {
 	store := testStore(t)
 	_, deviceID := makeDevice(t, store)
+	owner := DeviceOwner(deviceID)
 
 	// San Francisco, where the corpus is. One degree of latitude is ~111.32 km, so 5 m is ~4.5e-5°.
 	const lat, lon = 37.7601, -122.5050
-	if _, err := store.AddTree(context.Background(), NewCommunityTree{
-		ID: uuid.New(), Lat: lat, Lon: lon, Placement: "gps",
-	}, DeviceOwner(deviceID), Actor{}); err != nil {
-		t.Fatal(err)
+	first := NewCommunityTree{ID: uuid.New(), Lat: lat, Lon: lon, Placement: "gps"}
+	if outcome, err := store.AddTree(context.Background(), first, owner, Actor{}); err != nil || outcome != Applied {
+		t.Fatalf("the first tree = %v, %v; want applied", outcome, err)
 	}
 
-	fiveMetresNorth := lat + 5.0/111_320.0
-	near, err := store.TreesWithin(context.Background(), fiveMetresNorth, lon, ProximityDedupeRadiusM, DeviceOwner(deviceID))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(near) != 1 {
-		t.Fatalf("a tree 5 m away produced %d candidates, want 1", len(near))
-	}
-	if near[0].DistanceM > ProximityDedupeRadiusM {
-		t.Errorf("the candidate is %.1f m away, beyond the %.0f m radius", near[0].DistanceM, ProximityDedupeRadiusM)
+	beside := NewCommunityTree{ID: uuid.New(), Lat: lat + 5.0/111_320.0, Lon: lon, Placement: "gps"}
+	if outcome, err := store.AddTree(context.Background(), beside, owner, Actor{}); err != nil || outcome != Applied {
+		t.Fatalf("a tree 5 m from another = %v, %v; want applied", outcome, err)
 	}
 
-	// And 25 m away does not trip it, which is the half that proves the query is measuring
-	// distance rather than returning everything.
-	twentyFiveMetresNorth := lat + 25.0/111_320.0
-	far, err := store.TreesWithin(context.Background(), twentyFiveMetresNorth, lon, ProximityDedupeRadiusM, DeviceOwner(deviceID))
-	if err != nil {
+	if outcome, err := store.AddTree(context.Background(), first, owner, Actor{}); err != nil || outcome != Duplicate {
+		t.Fatalf("the first tree sent again = %v, %v; want duplicate", outcome, err)
+	}
+
+	// Every row, not the two ids: a second copy under another id is the defect this counts for.
+	var rows, named int
+	if err := store.Pool().QueryRow(context.Background(), `
+		SELECT count(*), count(*) FILTER (WHERE id IN ($1, $2)) FROM community_trees
+	`, first.ID, beside.ID).Scan(&rows, &named); err != nil {
 		t.Fatal(err)
 	}
-	if len(far) != 0 {
-		t.Fatalf("a tree 25 m away produced %d candidates, want 0", len(far))
+	if rows != 2 || named != 2 {
+		t.Fatalf("%d trees recorded (%d of them the two sent), want 2: the one sent twice once, "+
+			"and the one beside it", rows, named)
 	}
 }
 
