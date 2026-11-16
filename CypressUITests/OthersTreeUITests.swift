@@ -288,9 +288,12 @@ final class OthersTreeUITests: XCTestCase, DeepLinkHarness {
         }
     }
 
+    /// Waits for the profile's added row. Somebody else's tree reads "Added"; the reader's own tree
+    /// reads "You added this tree" (`TreeProfileCopy.historyAddedByYou`).
     private func opened(_ app: XCUIApplication, _ screen: String) -> Bool {
-        guard app.staticTexts[Copy.added].waitForExistence(timeout: 60) else {
-            XCTFail(deepLinkFailure(app).map { "\(screen): \($0)" } ?? "\(screen): the profile drew no '\(Copy.added)' row")
+        let row = screen == "ownTreeSpeciesReported" ? Copy.youAdded : Copy.added
+        guard app.staticTexts[row].waitForExistence(timeout: 60) else {
+            XCTFail(deepLinkFailure(app).map { "\(screen): \($0)" } ?? "\(screen): the profile drew no '\(row)' row")
             return false
         }
         return true
