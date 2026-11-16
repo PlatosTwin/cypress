@@ -23,7 +23,9 @@
 //  visible retry button (screen 17)". `OutboxItem.State.failed` is that terminal state and is the
 //  only one `OutboxItemSnapshot.showsRetryAffordance` admits — a row that has failed four times and
 //  is still inside the window is `pending` and still reads `waiting`, because it is still trying.
-//  The terminal row is the amber C24 card, and it is the only row with a control on it.
+//  The terminal row is the amber C24 card, and it is the only row with a control on it. One
+//  terminal row has none: a withdrawal the service refused with `conflict` keeps its reason and no
+//  button, for good (the owner's answers of 2026-11-16; `OutboxRetryPolicy.acceptsRetry`).
 //
 //  ── 3. Never "sent to the city" ──────────────────────────────────────────────────────────
 //  ARCHITECTURE §5.4. Nothing in `OutboxCopy` says an authority was told anything: `synced` here
@@ -88,9 +90,13 @@ struct OutboxPresentation {
         /// Terminal rows take C24's amber card. A row inside its retry window does not, however many
         /// times it has failed.
         var isTerminal: Bool { state != .waiting }
+        /// Whether the row's item may be retried (`OutboxRetryPolicy.acceptsRetry`).
+        var acceptsRetry: Bool = true
         /// Every terminal row gets the control (BUILD-PLAN §4 attaches it to `failed`, and the
-        /// owner's ruling 3 of 2026-08-14 keeps a refused row in that same failed row).
-        var showsRetryButton: Bool { state == .retry }
+        /// owner's ruling 3 of 2026-08-14 keeps a refused row in that same failed row), except a
+        /// withdrawal the service refused with `conflict`: the owner's answers of 2026-11-16 keep
+        /// that row with its reason and no button. It is still a terminal (amber) row.
+        var showsRetryButton: Bool { state == .retry && acceptsRetry }
     }
 
     /// One dimmed receipt in §4's `Synced earlier today`.
@@ -178,7 +184,8 @@ struct OutboxPresentation {
             timeText: detail == nil && quantity == nil ? time : OutboxCopy.metaSeparator + time,
             reason: reason(for: item),
             state: state(for: item),
-            tile: tile(for: item)
+            tile: tile(for: item),
+            acceptsRetry: OutboxRetryPolicy.acceptsRetry(kind: item.kind, errorCode: item.errorCode)
         )
     }
 

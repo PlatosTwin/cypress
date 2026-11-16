@@ -1509,7 +1509,11 @@ scrim `rgba(14,24,17,.3)`.
    **no sub-line**. When it fails for good, the tree comes back on the map. When the service refused
    it because somebody else visited or photographed the tree, the row reads
    `Other people have added to this tree, so it stays on the map.`; any other refusal reads
-   `This couldn't be sent.` (the owner's answers of 2026-11-16).
+   `This couldn't be sent.` (the owner's answers of 2026-11-16). **The row refused because others
+   added to the tree is the one failed row with no `retry`**: it keeps the amber card and its
+   reason, draws no state word, and stays in the list for good (the owner's answers of 2026-11-16,
+   "Remove Retry there" and "Row stays, reason only"). It leaves only through an account deletion
+   that erases everything. A withdrawal refused for any other reason keeps `retry`.
 3. **Wifi setting row** — `margin:10px 16px 0`, fill `#fff`, `1px #E3E8D9`, radius 14px,
    `padding:13px 15px`, `gap:12px`:
    - `Sync photos on wifi only` — 13.5px/700.

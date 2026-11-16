@@ -444,20 +444,21 @@ struct TreeWithdrawalTests {
     // MARK: - 4. The service's answer
 
     /// **The refusal path.** The service refuses with `conflict`; the tree comes back on this
-    /// phone, the row is `failed` with the owner's sentence, and the profile now draws the reason
-    /// line. The person retries; the service accepts; the tree goes again.
+    /// phone, the row is `failed` with the owner's sentence and no Retry, and the profile now draws
+    /// the reason line. A retry from any caller leaves the row as it is, so the line stays (the
+    /// owner's answers of 2026-11-16, "Remove Retry there" and "Row stays, reason only").
     ///
     /// Red-proofs, each read by its message:
     /// - remove the restore from `OutboxQueue.settle` — red on "the tree stays hidden after the
     ///   service refused";
     /// - remove the `treeStaysOnTheMap` branch in `recordFailure` — red on the row's reason, which
     ///   reads "This couldn't be sent.";
-    /// - remove `withdrawAgain` from the send settlement — red on "the accepted retry left the tree
-    ///   on the map";
     /// - make the refused-withdrawal clause of `CommunityTreeStore.othersHaveAddedTo` match nothing —
     ///   red on the profile's `treeWithdrawal == .othersHaveAddedToIt`. The phone holds no row by
-    ///   anybody else here, so the refusal alone draws the reason line (the owner's answer 7).
-    @Test("a refused withdrawal brings the tree back with the owner's reason, and an accepted retry takes it off again")
+    ///   anybody else here, so the refusal alone draws the reason line (the owner's answer 7);
+    /// - drop `AND \(Self.retryable)` from both store retries — red on "a retry moved the refused
+    ///   withdrawal" and on the profile's offer after "Retry all".
+    @Test("a refused withdrawal brings the tree back with the owner's reason and no Retry, and a retry leaves it as it is")
     func aRefusalBringsTheTreeBack() async throws {
         let store = try await CypressStore.inMemory()
         let clock = Clock()
@@ -494,24 +495,33 @@ struct TreeWithdrawalTests {
         #expect(drawn.title == "Tree withdrawn · Grandmother Cypress")
         #expect(drawn.detail == nil)
         #expect(drawn.reason == "Other people have added to this tree, so it stays on the map.")
-        #expect(drawn.showsRetryButton)
+        #expect(drawn.isTerminal)
+        #expect(!drawn.showsRetryButton, "the refused withdrawal draws Retry")
 
         // The phone now knows: the profile draws the reason line, not the control.
         #expect(try await api.treeProfile(id: tree.id).treeWithdrawal == .othersHaveAddedToIt)
 
-        // The person retries, and this time the service takes it.
-        try await queue.retry(id: row.item.id)
+        // A retry, one row or all of them, leaves the row as it is, and the line with it.
+        #expect(try await queue.retry(id: row.item.id) == false, "a retry moved the refused withdrawal")
+        #expect(try await queue.retryAllFailed() == 0, "Retry all moved the refused withdrawal")
         clock.advance(by: 60)
         _ = try await queue.drain()
-        let settled = try #require(try await Self.withdrawals(store).first)
-        #expect(settled.item.state == .done, "the retried withdrawal is \(settled.item.state)")
-        #expect(try await Self.deletedAt(store, tree.id) != nil, "the accepted retry left the tree on the map")
-        await #expect(throws: APIError.notFound) { _ = try await api.treeProfile(id: tree.id) }
+        let kept = try #require(try await Self.withdrawals(store).first)
+        #expect(kept.item.state == .failed, "the refused withdrawal is \(kept.item.state) after a retry")
+        #expect(kept.item.lastErrorCode == .conflict, "the refused withdrawal lost its code after a retry")
+        #expect(kept.item.lastError == "Other people have added to this tree, so it stays on the map.")
+        #expect(try await api.treeProfile(id: tree.id).treeWithdrawal == .othersHaveAddedToIt,
+                "the profile lost the reason line after a retry")
+        #expect(try await Self.deletedAt(store, tree.id) == nil, "a retry took the tree off the map")
     }
 
     /// Every terminal failure leaves the tree on the service, so every one brings it back, and only
-    /// `conflict` reads the owner's sentence. A retryable failure brings nothing back.
-    @Test("a forbidden withdrawal also brings the tree back, with the shared sentence; a retryable one does not")
+    /// `conflict` reads the owner's sentence. A retryable failure brings nothing back. A row refused
+    /// for another reason keeps Retry, and a retry the service accepts takes the tree off again.
+    ///
+    /// Red-proof: remove `withdrawAgain` from the send settlement — red on "the accepted retry left
+    /// the tree on the map".
+    @Test("a forbidden withdrawal also brings the tree back, with the shared sentence and Retry; a retryable one does not")
     func otherAnswers() async throws {
         let store = try await CypressStore.inMemory()
         let clock = Clock()
@@ -537,6 +547,20 @@ struct TreeWithdrawalTests {
         #expect(row.item.lastError == "This couldn't be sent.")
         // A refusal for another reason says nothing about other people's work.
         #expect(try await api.treeProfile(id: tree.id).treeWithdrawal == .available)
+
+        // It keeps Retry, and this time the service takes it (the script is spent).
+        let snapshot = try await queue.snapshot(treeNames: [:], syncPhotosOnWifiOnly: true)
+        let drawn = try #require(OutboxPresentation(snapshot: snapshot, now: clock.now).queue.first {
+            $0.id == row.item.id
+        })
+        #expect(drawn.showsRetryButton, "a withdrawal refused as forbidden lost Retry")
+        #expect(try await queue.retry(id: row.item.id), "the store refused to retry a forbidden withdrawal")
+        clock.advance(by: 60)
+        _ = try await queue.drain()
+        let settled = try #require(try await Self.withdrawals(store).first)
+        #expect(settled.item.state == .done, "the retried withdrawal is \(settled.item.state)")
+        #expect(try await Self.deletedAt(store, tree.id) != nil, "the accepted retry left the tree on the map")
+        await #expect(throws: APIError.notFound) { _ = try await api.treeProfile(id: tree.id) }
     }
 
     // MARK: - 5. The offer

@@ -14,7 +14,7 @@
 //     place of the control, below the report link that comes back in this state, and the profile
 //     does not say only the reader can see the tree.
 //  4. After the service refuses (`debugRefuseTreeWithdrawal`), the Outbox row reads
-//     `Tree withdrawn · …` with the owner's sentence.
+//     `Tree withdrawn · …` with the owner's sentence, and that row draws no Retry.
 //  5. A city tree offers no control.
 //
 //  The "Keep it" press is in `DialogCancelUITests`, with the app's other cancels.
@@ -45,6 +45,8 @@ final class WithdrawTreeUITests: XCTestCase, DeepLinkHarness {
         static let cityRecordReport = "Report a mistake in the city’s record"
         static let showWhere = "Show me where this is"
         static let outboxRowPrefix = "Tree withdrawn · "
+        /// `OutboxCopy.retryAction`, the retry control's accessibility label.
+        static let retry = "Retry"
     }
 
     /// Opens `screen` and waits for the profile's withdraw control, scrolled into reach.
@@ -172,8 +174,19 @@ final class WithdrawTreeUITests: XCTestCase, DeepLinkHarness {
             )
             return
         }
-        XCTAssertTrue(app.staticTexts[Copy.staysOnTheMap].waitForExistence(timeout: 10),
+        let reason = app.staticTexts[Copy.staysOnTheMap]
+        XCTAssertTrue(reason.waitForExistence(timeout: 10),
                       "the refused row does not carry the owner's sentence")
+        // No Retry in that row (the owner's answers of 2026-11-16, "Row stays, reason only"). The
+        // row's state word sits at the top of the row, beside its title, about 45 pt above the
+        // reason at this size; 60 pt covers it and stops short of the row above.
+        reach(reason, in: app)
+        let band = (reason.frame.minY - 60)...(reason.frame.maxY + 4)
+        let retries = app.buttons
+            .matching(NSPredicate(format: "label == %@", Copy.retry))
+            .allElementsBoundByIndex
+        XCTAssertFalse(retries.contains { band.contains($0.frame.midY) },
+                       "the refused row draws '\(Copy.retry)'")
         attachScreenshot(app, "withdraw-outbox-refused")
     }
 

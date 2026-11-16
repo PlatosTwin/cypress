@@ -403,6 +403,18 @@ public enum OutboxRetryPolicy {
         return .pending
     }
 
+    /// Whether a person may retry a `failed` item, by its kind and the code it failed with.
+    ///
+    /// Every failed item may be retried except one: a `tree_withdrawal` the service refused with
+    /// `conflict`, because other people have added to the tree. The owner's answers of 2026-11-16
+    /// ("Remove Retry there", then "Row stays, reason only"): the row stays in the Outbox with its
+    /// reason and no button, and it is also what keeps the reason line on the tree's profile
+    /// (`CommunityTreeStore.othersHaveAddedTo` reads it). `OutboxStore.retry` and `retryAllFailed`
+    /// apply the same rule in SQL; `OutboxRetryEligibilityTests` holds the two together.
+    public static func acceptsRetry(kind: OutboxItem.Kind, errorCode: APIError?) -> Bool {
+        !(kind == .treeWithdrawal && errorCode == .conflict)
+    }
+
     /// When the next attempt is due, or nil once the item is terminal.
     public static func nextAttempt(for item: OutboxItem, now: Date) -> Date? {
         guard item.state == .pending else { return nil }

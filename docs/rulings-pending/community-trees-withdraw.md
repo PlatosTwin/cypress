@@ -186,3 +186,46 @@ state in which the withdraw link is drawn.
   the withdraw link. A queued report is a local flag, so it reads the same way before it is sent.
 - A reader who did not add the tree, a signed-out reader on a tree their account added, and a city
   tree never have `.available`, so they see what they saw before.
+
+### R??? — No Retry on a withdrawal refused because others added to the tree (the owner's answers, 2026-11-16)
+
+Q: "When the service refuses a withdrawal because others added to the tree, the Outbox row shows
+the reason and a Retry button. A retry is refused again unless those other records are gone. Should
+that row keep Retry?"
+Chosen: **"Remove Retry there"**. The row shows only the reason. The tree is back on the map, and
+the profile shows the reason line where the withdraw link would be. Not chosen: "Keep Retry".
+
+Q: "You chose to remove Retry on a withdrawal the service refused because others added to the
+tree. A failed Outbox row has no other control and nothing ever removes one, so without Retry that
+row stays in the Outbox for good, showing only the reason. What should happen to that row?"
+Chosen: **"Row stays, reason only"**. The row stays in the Outbox with the reason and no button. It
+is also what keeps the reason line on the tree's profile, so that line stays correct.
+Not chosen: "Keep Retry after all"; "Add a way to clear it".
+
+**The consequence, stated plainly: that row never leaves the Outbox.** Nothing sweeps a failed
+row, and the row has no control. It leaves only through an account deletion that erases
+everything (`OutboxStore.forgetAccount`, `.eraseEverything`). While it stays, the tree's profile
+draws `Other people have added to this tree, so it stays on the map.`, because
+`CommunityTreeStore.othersHaveAddedTo` reads that row.
+
+How the branch `feat/withdraw-owner-answers` built it (the author's notes):
+
+- **One rule, in two places.** `OutboxRetryPolicy.acceptsRetry(kind:errorCode:)` refuses exactly a
+  `tree_withdrawal` whose last failure code is `conflict`. The screen reads it
+  (`OutboxPresentation.Row.showsRetryButton`, `OutboxItemSnapshot.showsRetryAffordance`), and the
+  store applies the same rule in SQL (`OutboxStore.retryable`) in `retry` and `retryAllFailed`. A
+  test checks the store against the policy for every kind and every code.
+- **The row still looks like a failed row.** It keeps the amber card and the reason, and draws no
+  state word, because on a failed row the word `retry` is the button. No new string.
+- **Every caller of retry leaves the row as it is, and none shows an error.** `OutboxStore.retry`
+  returns false, as it does for a row that is not failed. `OutboxQueue.retry` returns false and
+  notifies nobody. `OutboxViewState.retry` stops at its guard and does not drain. `retryAll` and
+  `retryAllFailed` move every other failed row and leave this one. `CommunityTreeBackfill` retries
+  only `add_tree` rows.
+- **This also keeps the reason line through a retry attempt.** A retry used to clear
+  `last_error_code`, so the profile's reason line went away while the retried row waited.
+- **A withdrawal refused for another reason keeps Retry** (`forbidden`, the 48-hour window), and a
+  retry the service accepts still takes the tree off again (`withdrawAgain`).
+- **Nothing else on screen counts this row.** The Outbox header counts only rows that are still
+  trying (`waitingCount`), the app has no "Retry all" control (`OutboxViewState.retryAll` has no
+  caller on screen), and the You tab shows no Outbox count.
