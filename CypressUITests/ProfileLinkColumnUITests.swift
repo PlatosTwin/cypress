@@ -376,7 +376,8 @@ final class ProfileLinkColumnUITests: XCTestCase, DeepLinkHarness {
         print("CYPRESS-SHOT: \(url.path)")
     }
 
-    /// `othersTreeSharing` signs in as the sharing account. `othersTree` signs out again, the way
+    /// `othersTreeSharing` and `withdrawTreeBuiltOn` sign in as the sharing account. `othersTree`
+    /// signs out again, the way
     /// `OthersTreeUITests.signTheSharerOutAfterwards` does, so no later test inherits the account.
     private func signTheSharerOutAfterwards() {
         addTeardownBlock {
