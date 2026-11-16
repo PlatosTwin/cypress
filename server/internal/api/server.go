@@ -117,6 +117,10 @@ func (s *Server) Handler() http.Handler {
 	// The same rule for the community layer this round publishes: a tree somebody else has built on
 	// can no longer be withdrawn by its adder (decision 8), so this is the only way it comes down.
 	mux.Handle("POST "+Prefix+"/operator/community-trees/{id}/take-down", s.operator(s.takeDownCommunityTree))
+	// ROADMAP 144: "The adder can correct the species, and so can the operator" (the owner's rule of
+	// 2026-11-15). A route like the takedown, not a screen (the orchestrator's choice).
+	mux.Handle("POST "+Prefix+"/operator/community-trees/{id}/species", s.operator(s.operatorSetSpecies))
+	mux.Handle("POST "+Prefix+"/operator/community-trees/{id}/species-reports/clear", s.operator(s.operatorClearSpeciesReports))
 
 	return withTimeout(s.recoverPanics(mux))
 }

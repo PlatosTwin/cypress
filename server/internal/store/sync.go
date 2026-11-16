@@ -108,9 +108,17 @@ type Mutation struct {
 	// are `applyLocationCorrection`'s.
 	LocationCorrection *LocationCorrection
 	// SpeciesStatement is set for `species_claim` and `species_correction` when the payload names the
-	// item's own tree and a species. It materializes only for a community tree's adder (R45 arm 1)
-	// and never refuses — see `materializeSpecies`.
+	// item's own tree and a species. It materializes for the adder, and since migration 009 for a
+	// sharing account's naming of an unnamed tree and for that namer's own correction. It never
+	// refuses — see `materializeSpecies`.
 	SpeciesStatement *SpeciesStatement
+	// SpeciesReport is set for `wrong_species_report` when the payload names the item's own tree. It
+	// counts only from a sharing account that is not the adder (`recordSpeciesReport`), and never
+	// refuses.
+	SpeciesReport *SpeciesReport
+	// SpeciesKeep is set for `species_review_dismissal` when the payload names the item's own tree.
+	// It clears the reported state only for the adder (`keepSpecies`), and never refuses.
+	SpeciesKeep *SpeciesKeep
 	// WithdrawnTreeID is set only for kind `tree_withdrawal`: the adder withdrawing a tree for
 	// everyone (decision 8). See `withdrawCommunityTree`.
 	WithdrawnTreeID *uuid.UUID
@@ -197,6 +205,12 @@ func (s *Store) Apply(ctx context.Context, mutation Mutation, owner Owner) (Appl
 		}
 		if mutation.SpeciesStatement != nil {
 			return materializeSpecies(ctx, tx, mutation.Kind, *mutation.SpeciesStatement, act, now)
+		}
+		if mutation.SpeciesReport != nil {
+			return recordSpeciesReport(ctx, tx, *mutation.SpeciesReport, act, now)
+		}
+		if mutation.SpeciesKeep != nil {
+			return keepSpecies(ctx, tx, *mutation.SpeciesKeep, act, now)
 		}
 		if mutation.WithdrawnTreeID != nil {
 			return withdrawCommunityTree(ctx, tx, *mutation.WithdrawnTreeID, act, now)

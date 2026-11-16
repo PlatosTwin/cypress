@@ -1,0 +1,65 @@
+{
+  "tree_uuid": "5b0c3f1e-6a2d-4e8b-9c47-1f2a3b4c5d02",
+  "events": [
+    {
+      "id": "a0d4e5f6-2222-4c2d-8e3f-000000000004",
+      "kind": "species_corrected",
+      "occurred_at": "2026-09-25T00:00:00Z",
+      "from_coordinate": null,
+      "to_coordinate": null,
+      "from_species_id": "7f3c1d22-5e6a-4b90-8c11-2d3e4f5a6b7e",
+      "to_species_id": "7f3c1d22-5e6a-4b90-8c11-2d3e4f5a6b7c",
+      "placement": null,
+      "by_you": false
+    },
+    {
+      "id": "a0d4e5f6-2222-4c2d-8e3f-000000000003",
+      "kind": "species_corrected_by_operator",
+      "occurred_at": "2026-09-24T00:00:00Z",
+      "from_coordinate": null,
+      "to_coordinate": null,
+      "from_species_id": "7f3c1d22-5e6a-4b90-8c11-2d3e4f5a6b7d",
+      "to_species_id": "7f3c1d22-5e6a-4b90-8c11-2d3e4f5a6b7e",
+      "placement": null,
+      "by_you": false
+    },
+    {
+      "id": "a0d4e5f6-2222-4c2d-8e3f-000000000002",
+      "kind": "species_corrected_by_contributor",
+      "occurred_at": "2026-09-23T00:00:00Z",
+      "from_coordinate": null,
+      "to_coordinate": null,
+      "from_species_id": "7f3c1d22-5e6a-4b90-8c11-2d3e4f5a6b7c",
+      "to_species_id": "7f3c1d22-5e6a-4b90-8c11-2d3e4f5a6b7d",
+      "placement": null,
+      "by_you": true
+    },
+    {
+      "id": "a0d4e5f6-2222-4c2d-8e3f-000000000001",
+      "kind": "species_named_by_contributor",
+      "occurred_at": "2026-09-22T00:00:00Z",
+      "from_coordinate": null,
+      "to_coordinate": null,
+      "from_species_id": null,
+      "to_species_id": "7f3c1d22-5e6a-4b90-8c11-2d3e4f5a6b7c",
+      "placement": null,
+      "by_you": true
+    },
+    {
+      "id": "a0d4e5f6-1111-4c2d-8e3f-000000000002",
+      "kind": "added",
+      "occurred_at": "2026-09-21T00:00:00Z",
+      "from_coordinate": null,
+      "to_coordinate": {
+        "latitude": 37.7605,
+        "longitude": -122.5046
+      },
+      "from_species_id": null,
+      "to_species_id": null,
+      "placement": "contributor_placed",
+      "by_you": false
+    }
+  ],
+  "complete": true
+}
+

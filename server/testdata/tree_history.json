@@ -9,7 +9,8 @@
       "to_coordinate": null,
       "from_species_id": "7f3c1d22-5e6a-4b90-8c11-2d3e4f5a6b7c",
       "to_species_id": "7f3c1d22-5e6a-4b90-8c11-2d3e4f5a6b7d",
-      "placement": null
+      "placement": null,
+      "by_you": false
     },
     {
       "id": "a0d4e5f6-1111-4c2d-8e3f-000000000003",
@@ -25,7 +26,8 @@
       },
       "from_species_id": null,
       "to_species_id": null,
-      "placement": "contributor_placed"
+      "placement": "contributor_placed",
+      "by_you": false
     },
     {
       "id": "a0d4e5f6-1111-4c2d-8e3f-000000000001",
@@ -38,7 +40,8 @@
       },
       "from_species_id": null,
       "to_species_id": null,
-      "placement": "contributor_placed"
+      "placement": "contributor_placed",
+      "by_you": false
     }
   ],
   "complete": true
