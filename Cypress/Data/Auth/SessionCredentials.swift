@@ -61,19 +61,47 @@ public struct SessionCredentials: Codable, Sendable, Hashable {
     public let expiresAt: Date
     public let refreshExpiresAt: Date
     public let userID: UUID
+    /// The account's answer to the license question, as the service stored it when it minted this
+    /// session (`license_version` in both session answers). Three states, and the difference matters:
+    ///
+    /// - `.unstated`: the key was missing. An older service sends no key, and a session stored by an
+    ///   older build has none. This says nothing about the account, and nothing is written from it.
+    /// - `.declined`: the key was `null`. The service has no known acceptance for the account. It
+    ///   cannot tell "declined" from "never asked"; every sign-in from this app sends an answer.
+    /// - `.accepted(version)`: the version the account accepted.
+    ///
+    /// **Optional in storage, on purpose** (this file's storage rule). A session stored before this
+    /// field existed is still a usable session, so it decodes as `.unstated` rather than failing,
+    /// which would sign the person out.
+    public let licenseVersion: AuthClient.LicenseAnswer
 
     public init(
         accessToken: String,
         refreshToken: String,
         expiresAt: Date,
         refreshExpiresAt: Date,
-        userID: UUID
+        userID: UUID,
+        licenseVersion: AuthClient.LicenseAnswer = .unstated
     ) {
         self.accessToken = accessToken
         self.refreshToken = refreshToken
         self.expiresAt = expiresAt
         self.refreshExpiresAt = refreshExpiresAt
         self.userID = userID
+        self.licenseVersion = licenseVersion
+    }
+
+    /// The same session with a different license answer. `AppSession.acceptLicense` stores the
+    /// agreement it just made, so a relaunch does not restore the answer this session was minted with.
+    func with(licenseVersion: AuthClient.LicenseAnswer) -> SessionCredentials {
+        SessionCredentials(
+            accessToken: accessToken,
+            refreshToken: refreshToken,
+            expiresAt: expiresAt,
+            refreshExpiresAt: refreshExpiresAt,
+            userID: userID,
+            licenseVersion: licenseVersion
+        )
     }
 
     enum CodingKeys: String, CodingKey {
@@ -82,6 +110,42 @@ public struct SessionCredentials: Codable, Sendable, Hashable {
         case expiresAt = "expires_at"
         case refreshExpiresAt = "refresh_expires_at"
         case userID = "user_id"
+        case licenseVersion = "license_version"
+    }
+
+    /// Written by hand because the synthesized coder cannot keep a missing key apart from a `null`.
+    /// The same coder reads the wire and the Keychain, so all three states survive a round trip.
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        accessToken = try container.decode(String.self, forKey: .accessToken)
+        refreshToken = try container.decode(String.self, forKey: .refreshToken)
+        expiresAt = try container.decode(Date.self, forKey: .expiresAt)
+        refreshExpiresAt = try container.decode(Date.self, forKey: .refreshExpiresAt)
+        userID = try container.decode(UUID.self, forKey: .userID)
+        if !container.contains(.licenseVersion) {
+            licenseVersion = .unstated
+        } else if try container.decodeNil(forKey: .licenseVersion) {
+            licenseVersion = .declined
+        } else {
+            licenseVersion = .accepted(try container.decode(String.self, forKey: .licenseVersion))
+        }
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(accessToken, forKey: .accessToken)
+        try container.encode(refreshToken, forKey: .refreshToken)
+        try container.encode(expiresAt, forKey: .expiresAt)
+        try container.encode(refreshExpiresAt, forKey: .refreshExpiresAt)
+        try container.encode(userID, forKey: .userID)
+        switch licenseVersion {
+        case .unstated:
+            break
+        case .declined:
+            try container.encodeNil(forKey: .licenseVersion)
+        case let .accepted(version):
+            try container.encode(version, forKey: .licenseVersion)
+        }
     }
 
     /// Whether the access token is still worth presenting at `now`.

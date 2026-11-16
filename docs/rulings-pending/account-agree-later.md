@@ -44,9 +44,38 @@ declined to share agree later. There is one now.
 
 #### What this row does not cover (facts, not rulings)
 
-- **A person who declined and then reinstalled the app.** After a reinstall the phone no longer
-  knows the answer (the restore clears it), so the "did not agree" line does not show and neither
-  does the row. That person still has no way to agree from the app.
+- **A person who declined and then reinstalled the app** (ROADMAP chip 148, branch
+  `feat/account-license-readback`). Both session answers of the service (`POST /auth/oidc` and
+  `POST /auth/refresh`) now carry the account's stored answer as `license_version`: the version
+  accepted, or `null`. The phone keeps it in the stored session and writes it back at launch, with
+  no request, and after each refresh. So after a reinstall the "did not agree" line and the row show
+  again. This needs `cypress-sync` deployed with that branch; until then the service sends no key,
+  and the phone behaves as before (no line, no row). A session stored by an older build carries no
+  answer either, so on such a phone the line and the row come back only after the first refresh.
+  - **The key can be absent from a refresh.** If the service cannot read the account's answer
+    after a refresh has rotated the session, it still sends the new tokens and leaves
+    `license_version` out, rather than failing (a failure would leave the phone with a spent
+    refresh token and sign the person out). The phone reads a missing key as "not stated" and
+    writes nothing. It never sends `null` in that case, because the phone would read `null` as "did
+    not agree" and could overwrite an agreement.
+  - **A narrow race, inferred in review and not staged in a test.** A refresh that read the
+    service's answer before an agreement committed can arrive after the person agreed. The phone
+    then stores and adopts "declined", and the You tab shows "did not agree" and the row again. The
+    next refresh carries the agreement and corrects it. A second tap on "Share" sends the same
+    agreement again, which publishes nothing new.
+  - **A failed save after agreeing.** After the service agrees, the phone re-saves its stored
+    session as "accepted". If that save fails, a relaunch before the next refresh shows "did not
+    agree" again, until the next refresh corrects it.
+- **Two behaviors the orchestrator chose for that change (2026-11-16), to be confirmed by the
+  owner.** Each is one named constant in `LocalAPI`, easy to flip.
+  1. **When the service's answer differs from the phone's stored answer, the phone shows the
+     service's** (`serviceLicenseAnswerWins`). For example, an account that agreed on one phone and
+     then declined at a sign-in on a second phone reads "did not agree" on the first phone after its
+     next refresh.
+  2. **A restored phone whose account has no acceptance on the service shows the "did not agree"
+     line and the "Share my tree records" row** (`serviceNoAcceptanceReadsAsDeclined`). The service
+     cannot tell "declined" from "never asked" (both are a `NULL` `license_version`). Every in-app
+     sign-in since 2026-08-14 sent an answer, so "never asked" is an account from before then.
 - **Re-consent when the license version changes.** `docs/RULINGS.md` names it as open ("re-consent
   when the license version moves"). This row does not settle it: an account that agreed to an older
   version reads as having agreed, so the row does not show for it.

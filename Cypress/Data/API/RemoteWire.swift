@@ -262,14 +262,18 @@ struct BeginPhotoBody: Encodable {
     }
 }
 
-/// `POST /devices/claim`.
+/// `POST /devices/claim`, as the sweep: `claimRequest` in `server/internal/api/auth.go`.
+///
+/// **The device only** (ROADMAP chip 146). The account is the session's bearer, never a body
+/// field: the service decodes with unknown fields refused, so the `user_id` this used to send made
+/// every claim `validation_failed`. And **never `license_version`**: on that route a missing key
+/// writes nothing, and a `null` would withdraw the account's consent. Agreeing to the license is a
+/// separate request (`AuthClient.LicenseAcceptanceRequest`).
 struct ClaimDeviceBody: Encodable {
     let deviceUUID: UUID
-    let userID: UUID
 
     enum CodingKeys: String, CodingKey {
         case deviceUUID = "device_uuid"
-        case userID = "user_id"
     }
 }
 

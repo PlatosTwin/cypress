@@ -136,6 +136,8 @@ decodes to `server_error` rather than throwing and would look like an outage.
 | `GET /public/trees/{id}` | **The only unauthenticated read.** The publicly visible community half of one tree — see below. |
 | `POST /operator/photos/{id}/reject` | Operator takedown. Not optional — see below. |
 
+Both session answers (`POST /auth/oidc` and `POST /auth/refresh`) carry `license_version`: the version the account has accepted, or `null` when the account has no known acceptance (it declined, was never asked, or holds a version this service does not know). So a phone can read the account's answer back after a reinstall. The key is present whenever the service read the answer. One case leaves it out: a refresh whose read failed after the session had already rotated. That refresh still delivers the new tokens, because failing it would leave the phone with a spent refresh token. A phone reads a missing key as "not stated" and writes nothing.
+
 ### `GET /public/trees/{id}` is the one route with no credential, and what it may say is a ruling
 
 > **Corrected after this round's adversarial review; the wrong sentence is quoted rather than

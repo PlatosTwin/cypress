@@ -3290,14 +3290,23 @@ public actor LocalAPI: CypressAPI {
 
     public func claimDevice(deviceUUID: UUID, userID: UUID) async throws {
         let moment = now()
+        // A claim that was not screen 15's leaves no consent record, and must not leave a stale one
+        // either (ROADMAP chip 155): a sign-out keeps the provider and the answer, so a bare claim
+        // after it would otherwise read the old account's answer as this one's. `linkAccount` and
+        // `restoreAccount` write their own answer after this returns.
+        //
+        // **One transaction for the sweep, the account and the three clears.** As separate writes, a
+        // kill after `current_user_id` and before the clears left the new account signed in with the
+        // previous account's provider and answer, which is the stale read this closes. Now they land
+        // together or not at all.
         try await store.queue.write { connection in
             try contributions.claimDevice(deviceUUID: deviceUUID, userID: userID, at: moment, connection: connection)
+            try CypressStore.setAppState(.currentUserID, to: userID.uuidString, connection: connection)
+            try CypressStore.clearAppState(.signedOutUserID, connection: connection)
+            try CypressStore.clearAppState(.accountProvider, connection: connection)
+            try CypressStore.clearAppState(.accountLicenseVersion, connection: connection)
         }
         self.userID = userID
-        try await store.setAppState(.currentUserID, to: userID.uuidString)
-        // A claim that was not screen 15's — the DEBUG deep links, a future server exchange — leaves
-        // no consent record, and must not leave a stale one either. See `linkAccount`.
-        try await store.clearAppState(.signedOutUserID)
         // The old community trees of this account that waited while it was signed out
         // (`CommunityTreeBackfill`), now that it is the one signed in.
         await afterClaim?(userID)
@@ -3360,8 +3369,10 @@ public actor LocalAPI: CypressAPI {
     /// The local half of a sign-in that already happened, for a session that outlived the database.
     ///
     /// `DataLayer.boot`'s restore arm; `SessionRestore` holds the ruling and the reasoning. It is
-    /// `claimDevice` plus the **erasure** of the three facts a restore cannot know, and that erasure
-    /// is the whole reason this is its own verb rather than a bare `claimDevice` call.
+    /// `claimDevice` plus the **erasure** of the three facts the phone cannot know after a restore,
+    /// and that erasure is the whole reason this is its own verb rather than a bare `claimDevice`
+    /// call. The license answer is then written back from the service's record; see the end of this
+    /// comment.
     ///
     /// ── Why the clear is unconditional (review of this PR, F3) ─────────────────────────────────
     ///
@@ -3383,12 +3394,75 @@ public actor LocalAPI: CypressAPI {
     ///
     /// The role is written as `.member` rather than cleared, which is `signOut()`'s spelling of the
     /// same fact and reads back identically ("absent means member").
-    public func restoreAccount(deviceUUID: UUID, userID account: UUID) async throws {
+    ///
+    /// ── The license answer is the one exception, and it comes from the service ───────────────
+    ///
+    /// The provider and the consent are cleared, then written back from `licenseAnswer`: the answer
+    /// the service sent with the stored session (`SessionCredentials.licenseVersion`), through
+    /// `adoptLicenseAnswer`. That is not the phone claiming an answer on the strength of a
+    /// reinstall; it is the service's own record, which the session carried here. A session stored
+    /// by an older build carries `.unstated`, and then nothing is written and the phone reads
+    /// `.unknown` until the first refresh (ROADMAP chip 148).
+    public func restoreAccount(
+        deviceUUID: UUID,
+        userID account: UUID,
+        licenseAnswer: AuthClient.LicenseAnswer
+    ) async throws {
         self.userRole = .member
         try await store.setAppState(.currentUserRole, to: UserRole.member.rawValue)
         try await store.clearAppState(.accountProvider)
         try await store.clearAppState(.accountLicenseVersion)
         try await claimDevice(deviceUUID: deviceUUID, userID: account)
+        try await adoptLicenseAnswer(licenseAnswer, for: account)
+    }
+
+    /// The provider written when the phone adopts the service's answer and holds none. The service
+    /// mints sessions only through Sign in with Apple (`POST /auth/oidc`), so an account it answers
+    /// for was linked through Apple. `AccountAskProvider.apple.rawValue`; `Data` cannot import the
+    /// enum (ARCHITECTURE §2), and `LicenseReadbackTests` pins the two equal.
+    static let serviceSessionProvider = "apple"
+
+    /// **The orchestrator's choice, to be confirmed by the owner (2026-11-16):** when the service's
+    /// answer differs from the answer this phone stores, the phone takes the service's. False would
+    /// make the service's answer fill only a phone that holds none (`account_provider` missing).
+    static let serviceLicenseAnswerWins = true
+
+    /// **The orchestrator's choice, to be confirmed by the owner (2026-11-16):** the service's `null`
+    /// (no known acceptance) reads on the phone as "did not agree", which draws the "did not agree"
+    /// line and the "Share my tree records" row. The service cannot tell "declined" from "never
+    /// asked"; every in-app sign-in since 2026-08-14 sent an answer. False would ignore a `null`, so
+    /// the phone keeps whatever it holds (after a reinstall, nothing: `.unknown`, no line, no row).
+    static let serviceNoAcceptanceReadsAsDeclined = true
+
+    /// Adopt the service's answer to the license question for the signed-in account (ROADMAP chip
+    /// 148). Called by `restoreAccount`, by `DataLayer.boot` with the answer stored in the Keychain,
+    /// and after each refresh through `AppSession.onLicenseAnswer`.
+    ///
+    /// Writes nothing unless `account` is the account signed in on this phone and the answer is
+    /// stated. Writes `account_provider` only when it is missing, and sets or clears
+    /// `account_license_version`. The two choices above are the only policy here.
+    public func adoptLicenseAnswer(_ answer: AuthClient.LicenseAnswer, for account: UUID) async throws {
+        guard userID == account else { return }
+        let version: String?
+        switch answer {
+        case .unstated:
+            return
+        case .declined:
+            guard Self.serviceNoAcceptanceReadsAsDeclined else { return }
+            version = nil
+        case let .accepted(accepted):
+            version = accepted
+        }
+        let provider = try await store.appState(.accountProvider)
+        if provider != nil, !Self.serviceLicenseAnswerWins { return }
+        if provider == nil {
+            try await store.setAppState(.accountProvider, to: Self.serviceSessionProvider)
+        }
+        if let version {
+            try await store.setAppState(.accountLicenseVersion, to: version)
+        } else {
+            try await store.clearAppState(.accountLicenseVersion)
+        }
     }
 
     /// What the signed-in account agreed to, read back from `app_state`.
@@ -3439,9 +3513,9 @@ public actor LocalAPI: CypressAPI {
     /// unlabeled deletion either way.
     ///
     /// The role goes with it for `deleteAccount`'s reason: a lead's authority is the account's, and
-    /// a device with nobody signed in is not a lead. The consent record stays put — it is the
-    /// account's, it is resumed with the account, and a re-link overwrites it with whatever the
-    /// person agrees to that time.
+    /// a device with nobody signed in is not a lead. The consent record stays on disk, but nothing
+    /// reads it while nobody is signed in (`accountLink()`), and the next claim clears it before any
+    /// sign-in writes its own answer (`claimDevice`, ROADMAP chip 155).
     public func signOut() async throws {
         guard let account = userID else { return }
         try await store.setAppState(.signedOutUserID, to: account.uuidString)

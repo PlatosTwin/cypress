@@ -985,8 +985,12 @@ struct RemoteAPITests {
 
     // MARK: The account
 
-    @Test("claimDevice sends both identities")
-    func claimDeviceSendsBothIdentities() async throws {
+    /// **The body is the device and nothing else** (ROADMAP chip 146). The service's `claimRequest`
+    /// refuses an unknown field, so a `user_id` here failed every claim; and a `license_version`
+    /// here would write the account's consent (a `null` withdraws it). The account travels as the
+    /// bearer.
+    @Test("claimDevice sends only the device, the one key the service's sweep reads")
+    func claimDeviceSendsOnlyTheDevice() async throws {
         let deviceUUID = UUID()
         let userID = UUID()
         let transport = ScriptedTransport()
@@ -996,8 +1000,8 @@ struct RemoteAPITests {
 
         let body = try #require(transport.call("POST /devices/claim")?.body)
         let sent = try #require(try JSONSerialization.jsonObject(with: body) as? [String: Any])
+        #expect(sent.keys.sorted() == ["device_uuid"], "the claim body carried \(sent.keys.sorted())")
         #expect(sent["device_uuid"] as? String == deviceUUID.uuidString)
-        #expect(sent["user_id"] as? String == userID.uuidString)
     }
 
     /// **`DELETE /me` refuses rather than claiming the queue is empty.**
