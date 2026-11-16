@@ -16,7 +16,10 @@ import UIKit
 /// 3. a move by another device on the same phone is not this person's row;
 /// 4. a move on a withdrawn tree is not a row, because the row opens a profile that no longer opens;
 /// 5. pages across a pin move and a visit that share one moment lose and repeat nothing;
-/// 6. the row's square is the community tree mark, and no other row's square changed.
+/// 6. the row's square is the community tree mark, and no other row's square changed;
+/// 7. a move made on this phone stays in the Journal and the export after sign-out, signed in or
+///    not when it was made, as the visits beside it do (the owner's decision of 2026-11-16); and a
+///    keep-records account deletion takes the account's moves off this phone's Journal.
 @Suite("Journal · a pin move")
 struct PinMoveJournalTests {
 
@@ -236,6 +239,132 @@ struct PinMoveJournalTests {
                 paged.map(\.id) == all.map(\.id),
                 "at \(limit) a page the read is \(paged.map(\.kind)), the whole read \(all.map(\.kind))"
             )
+        }
+    }
+
+    // MARK: - 7. Sign-in and sign-out (the owner's decision of 2026-11-16, ROADMAP chip 152)
+
+    static let accountID = UUID(uuidString: "0E000000-0000-4000-8000-0000000C3C03")!
+
+    /// A visit written as `apply` writes one, under the attribution the phone has right now.
+    static func visit(_ store: CypressStore, _ tree: Tree, as attribution: Attribution, at moment: Date) async throws {
+        try await store.queue.write { connection in
+            try ContributionStore().insert(
+                Visit(treeID: tree.id, attribution: attribution, capturedAt: moment),
+                connection: connection
+            )
+        }
+    }
+
+    /// The reviewer's probe. Signed out: add a tree, move it, visit it. Signed in: move it and
+    /// visit it again. Then sign out. The Journal holds both moves and both visits.
+    ///
+    /// On main this read 0 moves: sign-in gives both moves to the account and clears their
+    /// `device_id`, while the visits keep theirs.
+    static func signInAndOut() async throws -> (LocalAPI, Tree) {
+        let store = try await CypressStore.inMemory()
+        let clock = OutboxTestSupport.Clock(Self.start)
+        let api = LocalAPI(store: store, deviceID: Self.deviceID, now: clock.closure)
+
+        let tree = try await Self.add(api, device: Self.deviceID, at: Self.offshore)
+        clock.advance(by: 60)
+        try await Self.move(api, tree, meters: 30)
+        clock.advance(by: 60)
+        let anonymous = await api.attribution
+        #expect(anonymous.userID == nil, "fixture: the phone starts signed in")
+        try await Self.visit(store, tree, as: anonymous, at: clock.now)
+
+        try await api.claimDevice(deviceUUID: Self.deviceID, userID: Self.accountID)
+        clock.advance(by: 60)
+        try await Self.move(api, tree, meters: 60)
+        clock.advance(by: 60)
+        let signedIn = await api.attribution
+        #expect(signedIn.userID == Self.accountID, "fixture: the phone is not signed in")
+        try await Self.visit(store, tree, as: signedIn, at: clock.now)
+
+        try await api.signOut()
+        let signedOut = await api.attribution
+        #expect(signedOut.userID == nil, "fixture: the phone is still signed in")
+        return (api, tree)
+    }
+
+    /// Red-proof: remove `OR set_on_device = :device COLLATE NOCASE` from the fifth arm, and this
+    /// goes red on "the signed-out journal holds 0 pin moves".
+    @Test("after sign-out the Journal still holds the moves and visits made on this phone, signed in or not")
+    func signOutKeepsThePinMoves() async throws {
+        let (api, tree) = try await Self.signInAndOut()
+        let entries = try await Self.wholeJournal(api)
+        let moves = entries.filter { $0.kind == .pinMoved }
+        let visits = entries.filter { $0.kind == .visit }
+        #expect(moves.count == 2, "the signed-out journal holds \(moves.count) pin moves, not 2: \(entries.map(\.kind))")
+        #expect(visits.count == 2, "the signed-out journal holds \(visits.count) visits, not 2")
+        #expect(Set(moves.map(\.treeID)) == [tree.id])
+    }
+
+    /// Red-proof: the same break as above; this goes red on the export's pin-move rows.
+    @Test("after sign-out the export still holds both pin moves")
+    func signOutKeepsThePinMovesInTheExport() async throws {
+        let (api, tree) = try await Self.signInAndOut()
+        let csv = String(decoding: try await api.exportLatest(.csv), as: UTF8.self)
+        let lines = csv.split(separator: "\n").map(String.init)
+        let moves = lines.filter { $0.hasPrefix("pinMoved,") }
+        #expect(moves.count == 2, "the export holds \(moves.count) pinMoved rows, not 2:\n\(csv)")
+        #expect(moves.allSatisfy { $0.contains(tree.id.uuidString) })
+        #expect(lines.filter { $0.hasPrefix("visit,") }.count == 2, "the export lost a visit:\n\(csv)")
+    }
+
+    /// Red-proofs: drop `setOnDevice: mine.deviceID` from `LocalAPI.correctLocation` — red on the
+    /// move's provenance; drop `setOnDevice: attribution.deviceID` from `LocalAPI.addTree` — red on
+    /// the root's.
+    @Test("a move made signed in is the account's, and records this phone as where it was set")
+    func aSignedInMoveRecordsThisPhone() async throws {
+        let store = try await CypressStore.inMemory()
+        let api = LocalAPI(store: store, deviceID: Self.deviceID)
+        try await api.claimDevice(deviceUUID: Self.deviceID, userID: Self.accountID)
+        let tree = try await Self.add(api, device: Self.deviceID, at: Self.offshore)
+        try await Self.move(api, tree, meters: 30)
+
+        let chain = try await store.queue.read {
+            try TreeLocationStore().chain(treeID: tree.id, connection: $0)
+        }
+        #expect(chain.count == 2, "fixture: the chain holds \(chain.count) positions")
+        let root = try #require(chain.first)
+        let move = try #require(chain.last)
+        #expect(root.isRoot && !move.isRoot)
+        #expect(move.owner == .user(Self.accountID), "the move's owner is \(move.owner)")
+        #expect(move.movedByDevice == nil, "the move holds two owners")
+        #expect(move.setOnDevice == Self.deviceID, "the move records \(String(describing: move.setOnDevice)) as where it was set")
+        #expect(root.owner == .user(Self.accountID), "the root's owner is \(root.owner)")
+        #expect(root.setOnDevice == Self.deviceID, "the root records \(String(describing: root.setOnDevice)) as where it was set")
+    }
+
+    /// Red-proof: drop `set_on_device = NULL` from the keep-records door's `tree_locations`
+    /// statement in `AccountDeletion.forgetCommunityTrees`, and this goes red on the deleted
+    /// account's moves, which read back in the signed-out Journal.
+    @Test("after the keep-records deletion, the deleted account's moves leave the Journal and lose this phone")
+    func theKeepRecordsDeletionTakesTheMovesOffThisPhone() async throws {
+        let store = try await CypressStore.inMemory()
+        let api = LocalAPI(store: store, deviceID: Self.deviceID)
+        let tree = try await Self.add(api, device: Self.deviceID, at: Self.offshore)
+        try await Self.move(api, tree, meters: 30)
+        try await api.claimDevice(deviceUUID: Self.deviceID, userID: Self.accountID)
+        try await Self.move(api, tree, meters: 60)
+        let before = try await Self.wholeJournal(api).filter { $0.kind == .pinMoved }
+        #expect(before.count == 2, "fixture: the signed-in journal holds \(before.count) moves")
+
+        _ = try await api.deleteAccount(.leaveRecords)
+        let signedOut = await api.attribution
+        #expect(signedOut.userID == nil, "fixture: the phone is still signed in after the deletion")
+
+        let after = try await Self.wholeJournal(api).filter { $0.kind == .pinMoved }
+        #expect(after.isEmpty, "the deleted account's \(after.count) moves are still in this phone's journal")
+        let chain = try await store.queue.read {
+            try TreeLocationStore().chain(treeID: tree.id, connection: $0)
+        }
+        #expect(chain.count == 3, "the keep-records door removed positions: \(chain.count) left")
+        for row in chain {
+            #expect(row.owner == .nobody, "a position still has the owner \(row.owner)")
+            #expect(row.setOnDevice == nil, "a position still records \(String(describing: row.setOnDevice))")
         }
     }
 
