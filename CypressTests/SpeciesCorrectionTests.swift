@@ -511,17 +511,17 @@ struct SpeciesCorrectionTests {
         #expect(presentation.speciesCorrection == .correctable, "the namer is not offered the correction")
         #expect(!presentation.offersSpeciesClaim)
 
+        // Somebody who did not add the tree is offered no species control at all (the owner's
+        // ruling of 2026-11-15, "Hide species controls for now"). It used to offer the report
+        // here. The verb is unchanged, so a report raised another way still reaches the namer.
         let stranger = LocalAPI(store: store, deviceID: Self.strangerDeviceID)
         presentation = TreeProfilePresentation(profile: try await stranger.treeProfile(id: tree.id))
-        #expect(presentation.speciesCorrection == .reportable, "a stranger is offered the correction")
+        #expect(presentation.speciesCorrection == .unavailable, "a stranger is offered a species control")
+        #expect(!presentation.offersSpeciesClaim)
 
         try await stranger.flagWrongSpecies(treeID: tree.id)
         presentation = TreeProfilePresentation(profile: try await stranger.treeProfile(id: tree.id))
-        guard case let .underReview(_, strangerCanResolve) = presentation.speciesCorrection else {
-            Issue.record("the open report is not on the screen: \(presentation.speciesCorrection)")
-            return
-        }
-        #expect(!strangerCanResolve, "the raiser was offered the verdict on their own report")
+        #expect(presentation.speciesCorrection == .unavailable, "the raiser was offered the open report")
 
         presentation = TreeProfilePresentation(profile: try await namer.treeProfile(id: tree.id))
         guard case let .underReview(_, namerCanResolve) = presentation.speciesCorrection else {

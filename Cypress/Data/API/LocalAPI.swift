@@ -3620,6 +3620,31 @@ public actor LocalAPI: CypressAPI {
         return tree.id
     }
 
+    /// Test seam (round C3): a community tree **somebody else added**, in the community cache, so
+    /// the deep-link harness can open the profile and the map of one. The UI suite runs with the
+    /// remote gate shut, so no tile is ever downloaded and the cache is otherwise always empty.
+    ///
+    /// **It goes through the cache's one writer**, `CommunityTreeCacheStore.apply`, as one page of
+    /// the tile that holds the tree, the way `CommunityTileRefresher` writes a page. The tile keeps
+    /// the cursor it already has, so a later real refresh is not handed a made-up cursor; a tile
+    /// with none gets a marker the service refuses, which drops the tile and asks for a snapshot.
+    ///
+    /// The cache holds no history (only the service has it), so a seeded tree's profile shows the
+    /// "Added" row from what the phone knows, and nothing more. Seeding the same id again replaces
+    /// the row, so a re-run is idempotent.
+    public func debugSeedCommunityCache(_ tree: Tree) async throws {
+        let moment = now()
+        let tile = CommunityTile(containing: tree.coordinate).path
+        let cache = CommunityTreeCacheStore()
+        try await store.queue.write { connection in
+            let cursor = try cache.cursor(tile: tile, connection: connection) ?? "debug-seed"
+            try cache.apply(
+                tile: tile, trees: [tree], withdrawnTreeIDs: [], nextCursor: cursor,
+                at: moment, connection: connection
+            )
+        }
+    }
+
     /// Test seam (ERRATA E170): read one flag back, including a resolved one.
     ///
     /// `openReviews` returns open flags only, so a dismissal is invisible through the shipping read —
