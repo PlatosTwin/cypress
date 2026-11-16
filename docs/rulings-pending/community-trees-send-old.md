@@ -176,7 +176,10 @@ in the same run sends exactly those rows and photographs: a visit's photograph o
 and a photograph with no visit on the tree's add (the one still queued, or a new one under the
 tree's own key, which the service answers `duplicate`). Moving a row to the signed-in account is
 what marks it done, so nothing goes twice. City-tree rows stay on the phone (R77), with their owner
-unchanged. An anonymized row has no owner and is never one of these.
+unchanged. An anonymized row has no owner and is never one of these. The account's withdrawn
+photographs on the tree also change owner, and are never sent: one left with the old owner on a
+visit that moved would block "Delete my records", which cannot delete that visit while a photograph
+that is not the account's still points at it.
 
 **Why the rows change owner on the phone, rather than only being sent.** The service stores a
 synced row as the sender's. A row sent as B but still owned by the old id here would be B's on the
