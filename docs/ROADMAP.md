@@ -2601,6 +2601,22 @@ into this section in the round that finds it, and nowhere else. Each item stands
     fixture file checked in, so CI can test reading a HEIC without writing one; nobody has checked
     whether reading a HEIC works on the runner. Until then a HEIC add photo is tested on a
     physical Mac only.
+    **Partly done** on `test/community-test-gaps`; **not struck until CI has run the new tests.**
+    `CypressTests/Fixtures/camera-portrait.heic` (1.7 KB, 400 × 300, orientation 6, GPS, capture
+    time, serial numbers) is checked in, and two tests read it on every machine, each on a `Thread`
+    of its own under a 30 s `ContinuousClock` deadline that records "reading a HEIC did not finish
+    in 30 s" and prints a `CYPRESS-TEST: reading the checked-in HEIC took N ms` line:
+    `aCheckedInHEICIsReadAndCopiedAsAJPEG` (the ingest keeps a HEIC; the JPEG copy is clean and
+    upright) and `aCheckedInHEICAddPhotoIsSentAsAJPEG` (the add photo is staged and sent as a clean,
+    upright JPEG). Still tested on a physical Mac only: the cases that *write* a HEIC
+    (`aHEICStaysAHEICThroughTheIngest` and the HEIC arm of the two picked-type cases). Read the new
+    line in CI's unit log: if it says "did not finish", reading stalls on the runner too. Local note:
+    the read took 97 ms alone and about 24 s inside the full suite (the two new tests and the
+    HEIC-writing cases ran together), so a CI run near 30 s is a contention reading, not a hang.
+    **Found while doing it, not fixed (it is app behavior):** the ingest (`PhotoBinary.write`) leaves
+    the Exif, TIFF, Apple and GPS blocks in a staged HEIC (`carriesIdentifyingMetadata` is true after
+    it), where it removes them from a JPEG. The JPEG copy that is sent is clean. The staged HEIC stays
+    on the phone with its location in it.
 
 
 **Retire the format-1 manifest — DONE, 2026-08-23.** The owner overrode the trigger the day after
