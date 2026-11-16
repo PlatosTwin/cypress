@@ -337,7 +337,7 @@ final class ProfileLinkColumnUITests: XCTestCase, DeepLinkHarness {
             if safe.contains(frame) { return }
             let start = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
             let step = frame.midY > safe.midY ? -screen.height * 0.25 : screen.height * 0.25
-            start.press(forDuration: 0.05, thenDragTo: start.withOffset(CGVector(dx: 0, dy: step)))
+            deliberateDrag(from: start, to: start.withOffset(CGVector(dx: 0, dy: step)))
         }
     }
 
