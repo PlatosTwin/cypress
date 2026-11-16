@@ -100,12 +100,20 @@ final class ProfileLinkColumnUITests: XCTestCase, DeepLinkHarness {
     /// in one stack with one spacing, so equal pitches are what an untouched column draws. A fix that
     /// padded one link to keep its tap area clear of a neighbor's makes one pitch larger than the
     /// rest, which is what builds 87 and 88 did to `Move pin`.
+    ///
+    /// **Measured on top edges, not centers, since the last link became `Withdraw this tree`.** A
+    /// link's frame as XCUITest reports it includes the part of its hit area below the label that no
+    /// later element covers. `Report that there is no tree here` had its caption right under it, and
+    /// `Withdraw this tree` has open space, so its frame reaches about 13 pt further down and its
+    /// center reads about 6.7 pt low (24.3 pt against 17.7 pt) while the labels on screen sit evenly
+    /// (checked on a screenshot, 2026-11-16). Each frame's top is the label's top less the same
+    /// `reachingAbove` cut, so top-to-top distances are the label pitches.
     func testTheLinksSitOneEvenPitchApart() {
         let app = launchColumn()
         guard arriveAtColumn(app) else { return }
 
         let frames = Self.column.map { settledFrame(app.buttons[$0], "'\($0)'") }
-        let pitches = zip(frames, frames.dropFirst()).map { $1.midY - $0.midY }
+        let pitches = zip(frames, frames.dropFirst()).map { $1.minY - $0.minY }
         for (index, pitch) in pitches.enumerated() {
             XCTAssertGreaterThan(
                 pitch, frames[index].height / 2,
@@ -116,8 +124,8 @@ final class ProfileLinkColumnUITests: XCTestCase, DeepLinkHarness {
         for (index, pitch) in pitches.enumerated().dropFirst() {
             XCTAssertEqual(
                 pitch, reference, accuracy: 1,
-                "'\(Self.column[index])' to '\(Self.column[index + 1])' is \(pitch) pt center to "
-                    + "center, where '\(Self.column[0])' to '\(Self.column[1])' is \(reference) pt: "
+                "'\(Self.column[index])' to '\(Self.column[index + 1])' is \(pitch) pt top to "
+                    + "top, where '\(Self.column[0])' to '\(Self.column[1])' is \(reference) pt: "
                     + "the column is no longer evenly spaced (pitches \(pitches))"
             )
         }
