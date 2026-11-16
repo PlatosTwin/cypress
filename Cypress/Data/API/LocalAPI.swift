@@ -3637,6 +3637,8 @@ public actor LocalAPI: CypressAPI {
     /// the tile that holds the tree, the way `CommunityTileRefresher` writes a page. The tile keeps
     /// the cursor it already has, so a later real refresh is not handed a made-up cursor; a tile
     /// with none gets a marker the service refuses, which drops the tile and asks for a snapshot.
+    /// It writes no complete mark (`CommunityTreeCacheStore.markComplete`): one seeded tree is not a
+    /// tile fetched to its last page, so the tile does not count as asked.
     ///
     /// The cache holds no history (only the service has it), so a seeded tree's profile shows the
     /// "Added" row from what the phone knows, and nothing more. Seeding the same id again replaces

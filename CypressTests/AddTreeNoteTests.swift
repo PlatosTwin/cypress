@@ -676,14 +676,17 @@ struct AddTreeNoteTests {
         }
     }
 
-    /// Each tile answered with no trees, as `apply` records it.
+    /// Each tile answered with one empty last page, as the refresher records it: `apply` and the
+    /// complete mark in one transaction.
     private static func fetched(_ tiles: [CommunityTile], _ store: CypressStore) async throws {
         try await store.queue.write { connection in
             for tile in tiles {
-                try CommunityTreeCacheStore().apply(
+                let cache = CommunityTreeCacheStore()
+                try cache.apply(
                     tile: tile.path, trees: [], withdrawnTreeIDs: [], nextCursor: "c-\(tile.path)",
                     at: Date(), connection: connection
                 )
+                try cache.markComplete(tile: tile.path, at: Date(), connection: connection)
             }
         }
     }

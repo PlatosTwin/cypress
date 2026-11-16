@@ -25,7 +25,9 @@ import Foundation
 ///
 /// It sends the tile's stored cursor (none for a tile never fetched, which asks for a snapshot),
 /// applies the page and its cursor **in one transaction**, and follows `has_more` up to
-/// `Policy.maxPagesPerTile` pages. **The cursor moves only when a page was applied**, so a failure
+/// `Policy.maxPagesPerTile` pages. The page whose `has_more` is false also marks the tile complete
+/// (`CommunityTreeCacheStore.markComplete`) in that page's transaction; that mark is what "asked" reads.
+/// **The cursor moves only when a page was applied**, so a failure
 /// at any point leaves the cache and the cursor as they were, and the next refresh asks again from
 /// the same place. The cursor, never a cached tree's `updatedAt`, decides what changed: the page's
 /// trees are written as served (the S2 day-precision ruling).
@@ -218,7 +220,7 @@ public actor CommunityTileRefresher {
             }
             let moment = now()
             let applied = try await queue.write { connection in
-                try cache.apply(
+                let applied = try cache.apply(
                     tile: key,
                     trees: page.trees,
                     withdrawnTreeIDs: page.withdrawnTreeIDs,
@@ -226,6 +228,12 @@ public actor CommunityTileRefresher {
                     at: moment,
                     connection: connection
                 )
+                // The last page: the tile is fetched to its end, in the same transaction as the page
+                // (ROADMAP 156). A pass that stops before this page leaves an earlier mark alone.
+                if !page.hasMore {
+                    try cache.markComplete(tile: key, at: moment, connection: connection)
+                }
+                return applied
             }
             pages += 1
             outcome.stored += applied.stored

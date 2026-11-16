@@ -162,7 +162,8 @@ enum MapInventoryCopy {
     /// The phone has not asked, and gets `notOnTheCityInventory`, when:
     /// - the viewport touches more than `CommunityTileRefresher.Policy.maxTiles` (16) zoom-14
     ///   tiles, a zoomed-out map the refresher never asks about (`.tooManyTiles`);
-    /// - a tile in view was never fetched: the phone is offline, a fetch failed, a refused cursor
+    /// - a tile in view was never fetched to its last page: the phone is offline, a fetch failed
+    ///   (on the first page or a later one), a pass stopped at its page limit, a refused cursor
     ///   dropped the tile and its snapshot has not arrived, or the first fetch has not answered;
     /// - the remote gate is shut (`DataLayer.refreshCommunityTrees` is nil unless
     ///   `RemoteAccess.allowsNetwork`; a DEBUG build is shut unless `CYPRESS_REMOTE` opens it).
