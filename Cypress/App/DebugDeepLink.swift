@@ -207,8 +207,11 @@ enum DebugDeepLink {
         /// accepted the license, so the alert carries the shared message. It leaves that account
         /// signed in; any other deep link signs it out first.
         case withdrawTreeShared
-        /// The profile of a fresh tree this reader added, with **another account's** visit on it, so
-        /// the reason line draws in place of the withdraw control.
+        /// The profile of a fresh tree this reader added **signed in and sharing** (the same debug
+        /// account as `withdrawTreeShared`), with **another account's** visit on it, so the reason
+        /// line draws in place of the withdraw control. Signed in, because another account can only
+        /// have built on a tree everyone can see: a tree only its adder sees has no reason line in
+        /// production.
         case withdrawTreeBuiltOn
         /// The Outbox after the service refused a withdrawal with `conflict` (written by
         /// `debugRefuseTreeWithdrawal`, since the UI suite has no service): the row with the owner's
@@ -357,8 +360,10 @@ enum DebugDeepLink {
             if screen != .unsharedNotSharing, await api.userID == Self.notSharingAccount {
                 try await api.signOut()
             }
-            // The same rule for `withdrawTreeShared`'s debug account.
-            if screen != .withdrawTreeShared, await api.userID == Self.sharingAccount {
+            // The same rule for the debug account `withdrawTreeShared` and `withdrawTreeBuiltOn`
+            // sign in as.
+            if screen != .withdrawTreeShared, screen != .withdrawTreeBuiltOn,
+               await api.userID == Self.sharingAccount {
                 try await api.signOut()
             }
             switch screen {
@@ -566,7 +571,7 @@ enum DebugDeepLink {
                 // The withdrawal round. The account state first, through the shipping verbs, then a
                 // fresh tree through `addTree` on this case's own slot line. A withdrawn tree is in
                 // no read, so the slot it stood on is free again for the next run.
-                if screen == .withdrawTreeShared {
+                if screen == .withdrawTreeShared || screen == .withdrawTreeBuiltOn {
                     if await api.userID != Self.sharingAccount {
                         try await api.signOut()
                         try await api.linkAccount(
