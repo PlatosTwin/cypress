@@ -2623,10 +2623,22 @@ into this section in the round that finds it, and nowhere else. Each item stands
     so since 144 a stranger's tree joins the sender's "Yours" grove on the service. Found by the
     planner of 144 (finding h4) and repeated by its service author. Owner's call whether that is
     wanted.
-165. **A tree you added on another phone offers no species control on this one.** It reaches this
-    phone only through the community cache, and nothing here can act as its adder, so the profile
-    offers neither the claim nor the correction (`CommunitySpeciesMerge.offer`,
-    `TreeProfilePresentation.offersSpeciesClaim`). Found by the planner of 144 (finding h5).
+165. **A tree you added on another phone gets a stranger's species controls on this one, until the
+    service says it is yours.** It reaches this phone only through the community cache, and this
+    phone has no record that you added it. **The local profile**, which is drawn first and stays
+    when offline or against release v16, treats a sharing adder as a stranger: the claim on an
+    unnamed tree, and on a named one "Report the species as wrong" with the note "This goes to the
+    person who added the tree and to a reviewer. The city is not notified.", which names the
+    reader. **After a read from a service that sends 144's keys** (`added_by_you` true for a tree
+    this phone holds only in the cache), `CommunitySpeciesMerge.offer` answers `.unavailable` and
+    the profile offers no species control, and no reported line either. What the service does with
+    each act sent from that phone, because the sender is the adder: a claim on an unnamed tree is
+    the adder's naming and is applied; a correction after it is the adder's correction and is
+    applied, and clears every report; a report is recorded, answered `applied`, and does not count
+    (the adder's own reports never count), while this phone draws the line from its own open flag
+    until a service read replaces it. Owed: tell this phone it holds the reader's own tree (for
+    example from `added_by_you` on the tile page), so it can offer the adder's controls. Found by
+    the planner of 144 (finding h5); reworded after the review of 2026-11-16.
 166. **A reader whose sharing answer the phone does not know gets no species control on somebody
     else's tree.** After a reinstall `ContributionSharing` is `.unknown` (chip 148), and 144's
     controls show only for `.sharing`. `feat/account-license-readback` may make this rare; check

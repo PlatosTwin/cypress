@@ -532,8 +532,9 @@ struct TreeProfilePresentation {
     /// The note under "Report the species as wrong": where the report goes.
     ///
     /// On a community tree somebody else added the report reaches the person who added it and a
-    /// reviewer (the owner's answer of 2026-11-16, "Name the adder"). Any other tree keeps the
-    /// older sentence.
+    /// reviewer (the owner's answer of 2026-11-16, "Name the adder"). Any other tree answers the
+    /// older sentence, but no screen draws it now: the view draws this note only with the
+    /// `.reportable` offer, the adder never gets that offer, and a city row gets `.dataDispute`.
     var reportSpeciesNote: String {
         tree.source == .community && !profile.addedByYou
             ? TreeProfileCopy.reportSpeciesNoticeOthersTree

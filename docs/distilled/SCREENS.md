@@ -841,8 +841,8 @@ service for added trees over the 60 m around the reader:
    >   everyone, and the subtitle then carries `species named by a contributor`. The person who
    >   named it sees `Correct the species` until the adder corrects or keeps the species.
    > - A species: `Report the species as wrong`, and under it the muted note `This goes to the
-   >   person who added the tree and to a reviewer. The city is not notified.` A city tree keeps
-   >   `This goes to a community reviewer. The city is not notified.`
+   >   person who added the tree and to a reviewer. The city is not notified.` A city tree has no
+   >   species report here; its species is disputed through R79's data dispute.
    > - A report counts: every reader sees the muted line `Somebody has reported this species as
    >   wrong.` The adder also sees `Correct the species` and `Keep the species`, and the keep clears
    >   the line for everyone. The namer of a reported species sees the line and `Correct the

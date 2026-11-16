@@ -141,15 +141,22 @@ author's design choices, recorded so a reviewer can check each one.
    community cache go into this phone's own tables (`species_assertions`, `review_flags`) and the
    outbox; the cache itself is written only by the tile refresher. The reader's own answer is laid
    over the cache's species while it is in force: still queued, or the cache has no species, or the
-   cache holds the reader's species or the one their correction replaced. Otherwise the cache wins.
+   cache holds the reader's species, or it holds the species their correction replaced and the cache
+   row was served no later than the service accepted that correction (outbox `remote_sent` against
+   the cache's `fetched_at`). Otherwise the cache wins. So between the namer's send and the next tile
+   page the namer sees their own correction and "Correct the species"; once a page serves the
+   replaced species again (the adder set it back), the namer sees that species and the report.
    With the service's answer in hand, the profile shows the service's species once nothing of the
    reader's is queued.
 4. **The service's answer wins over the phone's**, except over an act of the reader's that is still
    queued: a queued naming or correction keeps the reader's species and correction control, a queued
    report keeps the line, and the adder's queued correction ends the line. **The adder's queued keep
-   does not end the line**: the service clears only up to the report the keep names, so the line
-   goes when a later read says so. A service without the keys (release v16) leaves every answer the
-   phone's.
+   ends the line when it names the report the service sent** (`species_report_flag_id`), so the line
+   and "Keep the species" go when the adder taps, as the owner's second answer says. A served report
+   with another flag id (made after the tap) keeps the line and the control, because the keep does
+   not clear it. A keep the service refused for good is no longer queued and no longer counts. A
+   second keep of the same report is not queued. A service without the keys (release v16) leaves
+   every answer the phone's.
 5. **The adder's phone takes the service's species** onto its own row (`adoptServedSpecies`), owned
    by nobody in the chain, from a profile read and, for an unnamed row only, from a tile page. Never
    while any species act on that tree is queued on this phone, never over a species this phone
@@ -164,3 +171,16 @@ author's design choices, recorded so a reviewer can check each one.
    makes is the reader's when the reader added the tree, and the three new kinds are never "You".
 9. **No phone migration and no new `CypressAPI` requirement.** `RoutedAPI` reaches `LocalAPI`
    through an injected seam (`CommunitySpeciesSeam`), as it does for photographs.
+10. **A tree somebody else added on this phone follows the cached tree's rule.** On this phone's own
+    table (a tree another identity added here), `claimSpecies` and `flagWrongSpecies` refuse a
+    reader who does not share with `.forbidden`, as they do on a cached tree. The adder's own acts
+    are unchanged.
+11. **`TreeProfileCopy.reportSpeciesNotice` can no longer be drawn on any screen.** That string
+    ("This goes to a community reviewer. The city is not notified.") is drawn only under "Report the
+    species as wrong", which the view draws only for the `.reportable` offer. After this change no
+    reader gets `.reportable` on a tree they added (the adder corrects and keeps), and a city row
+    answers `.dataDispute` (R79), not `.reportable`. So `TreeProfilePresentation.reportSpeciesNote`
+    returns `reportSpeciesNotice` only for states that draw no report control. The string is kept.
+    The splice can mark R45's two arms (the author of the claim in force, and a lead answering a
+    report) as superseded by this entry; the city-tree note in the owner's fifth answer above
+    describes a screen that no longer exists.
