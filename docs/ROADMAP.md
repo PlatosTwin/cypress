@@ -2549,11 +2549,18 @@ into this section in the round that finds it, and nowhere else. Each item stands
 155. **Sign-out keeps `account_provider`.** A later sign-in that goes only through `claimDevice`
     (today, DEBUG paths) then reads as "declined to share" where it should read as unknown. Found
     by the reviewer of C3's profile package, 2026-11-15.
-156. **A community tile with more than 10 pages counts as asked after its first page.** The cache
-    writes the tile's row with each page it applies, and the "has this phone asked" check of
-    2026-11-15 reads that row. So over a very dense tile the map card and the empty list could show
-    their new text while part of the tile is still to come. The fetch that follows corrects it. No
-    tile is near that size today.
+156. **A partly fetched community tile counts as asked (a gap in the owner's ruling of 2026-11-15
+    on the map card and the empty list).** The cache writes a tile's row with each page it applies,
+    the service sends at most 100 trees a page, and the "has this phone asked" check reads that
+    row. So in a tile with more than 100 added trees, a fetch that fails after its first page (or
+    that stops at the pass's page limit) leaves the tile marked as asked. The map card and the empty
+    "What tree is this?" list can then show their new text, "Neither has a tree here" and "no added
+    tree is within 60 m of you", while trees on the pages not yet fetched are missing. The next
+    pass corrects it, no sooner than 120 s later, and never while the phone stays offline. Found by
+    the reviewer of C3's add-note package (probe: `ending=stoppedOnError asked=true`). No tile holds
+    100 added trees today. The fix marks a tile complete only when a pass reaches the last page:
+    either a new column on `community_tree_cache_tiles` (a migration, with a named author) or a
+    mark kept in `app_state` in the same transaction. Do it before the community layer grows.
 157. **`Tools/run_tests.sh` prints `screen-width-pt unknown` on this Mac's simulators.** Seen in
     every local log of 2026-11-15 on the four iPhone 17-family devices (Xcode 27.2); CI's header
     prints 402. A width-sensitive UI result from a local log has to take its width from the device
