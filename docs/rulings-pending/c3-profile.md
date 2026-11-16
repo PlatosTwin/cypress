@@ -17,7 +17,9 @@ filename.
 - History rows keep the service's order (newest first). The phone's own "Added" row, when there is
   one, is last.
 - A move whose start or end is missing reads `Pin moved` (or `You moved the pin`) with no distance.
-  A move that rounds to 0 m reads `· 0 m north`; the service refuses neither.
+  A move that rounds to 0 m reads `· 0 m` with no direction; the service refuses neither. This
+  follows `VisitShortlist.label`, which prints a distance that rounds to 0 m with no direction.
+  The owner has not ruled on this case.
 - An event of a kind this build does not know makes no row.
 - `See the whole year` shows only when there is a visit or care row (`offersActivityLink`), because
   screen 13 charts visits, check-ins and care, and a history row is none of them.
@@ -44,6 +46,16 @@ restore, or an account from before the answer was stored), the line shows only w
 added the tree and the service says `is_published: false`, and it is the not-sharing line: the
 reader is signed in and the tree is held back, which happens only to an account that has not
 agreed. Offline, or with the gate shut, nothing is said in the unknown state.
+
+**Limit: an account that agreed on another phone.** The phone's state `.notSharing` comes from
+this phone's own record of the account link. If the same account agreed to share on another
+phone, this phone still holds `.notSharing`, and with `isPublished == nil` (offline, or the gate
+shut) it shows the not-sharing line, which is then wrong. Online, `GET /trees/{id}` answers
+`is_published: true` for the published tree, and that removes the line.
+
+**Limit: the pin under the location dot.** MapKit hides a community pin that sits exactly under
+the reader's location dot. A reader standing on the tree they just added sees the dot and not the
+pin until they move. `OthersTreeUITests` pins the location 67 m from the tree for this reason.
 
 ### R??? — "A tree the reader did not add" includes one on this phone
 

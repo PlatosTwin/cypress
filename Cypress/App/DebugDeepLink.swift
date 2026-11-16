@@ -335,6 +335,13 @@ enum DebugDeepLink {
         present: (Standalone) -> Void = { _ in }
     ) async -> Failure? {
         do {
+            // Round C3: `unsharedNotSharing` signs a debug account in, and the simulator keeps it
+            // for every later launch. Any other deep link signs it out first, so no other test
+            // starts as that account. Only that account: a session a test set up by other means
+            // is left alone.
+            if screen != .unsharedNotSharing, await api.userID == Self.notSharingAccount {
+                try await api.signOut()
+            }
             switch screen {
             case .treeProfile:
                 router.push(.treeProfile(try await standingTree(api)))
@@ -786,7 +793,7 @@ enum DebugDeepLink {
     /// The account `unsharedNotSharing` signs in as. Not a real account. The UI suite runs with the
     /// remote gate shut, so there the id stays on the phone; a DEBUG build pointed at a live service
     /// should not run this case.
-    private static let notSharingAccount = UUID(uuidString: "C3000000-0000-4000-8000-00000000AC01")!
+    static let notSharingAccount =UUID(uuidString: "C3000000-0000-4000-8000-00000000AC01")!
 
     /// The candidate window, **with this device's own status overrides laid over it**.
     ///

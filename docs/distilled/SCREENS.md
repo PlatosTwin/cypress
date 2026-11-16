@@ -1325,9 +1325,11 @@ no activity feed, no quad-action row, badge is `PLANTED <year>` instead of `THRI
 > **Departed from, deliberately — round C3 (the owner's answers of 2026-11-14).** "No activity
 > feed" no longer holds for a community tree. Such a tree is usually cold on a phone that did not
 > add it (nobody here has visited or photographed it), and its history rows, at least its
-> **`Added`** row, must still show (03 §8). So the feed draws on the cold variant whenever it has
-> rows. A cold city tree has none and still draws no feed. (The quad-action row already shows on
-> the cold variant, ERRATA E127.)
+> **`Added`** row, must still show (03 §8). So the feed draws on the cold variant of a community
+> tree. A cold city tree still draws no feed, even when it carries care entries: "cold" means no
+> visit and no photo, so a city tree with care and nothing else is cold
+> (`TreeProfilePresentation.drawsActivityFeed`). (The quad-action row already shows on the cold
+> variant, ERRATA E127.)
 
 ---
 

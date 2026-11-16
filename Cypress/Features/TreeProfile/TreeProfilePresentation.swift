@@ -325,8 +325,9 @@ struct TreeProfilePresentation {
     ///   tree for Share to render badly.
     ///
     /// The two things 14's delta list is still honored on are the regulars row and the activity
-    /// feed, which the view keeps behind `isCold` — and those are the two that would draw *nothing*
-    /// on a cold record anyway, because there are no caretakers and no activity to draw.
+    /// feed, which the view keeps behind `isCold`. Since round C3 the feed is behind it for city
+    /// trees only: a cold community tree draws its history rows. A cold city tree can still carry
+    /// care entries, because `isCold` reads photos and visits only, and its feed stays hidden.
     ///
     /// `acceptsContributions` still decides which cells (`quadActions`), so a memorial keeps losing
     /// the two that write (E95, E112). This is the row's existence, not its contents.
@@ -837,6 +838,14 @@ struct TreeProfilePresentation {
     /// row, and screen 13 charts visits, check-ins and care, none of which a history row is. A link
     /// from a tree whose feed is history alone would open that empty state again.
     var offersActivityLink: Bool { !visitAndCareItems.isEmpty }
+
+    /// Whether the view draws the activity feed at all (round C3).
+    ///
+    /// Before C3 the feed sat behind `!isCold`, per screen 14's "no activity feed". A cold
+    /// community tree now draws it, because its "Added" row must show. A cold city tree still does
+    /// not, even with care entries: `isCold` reads photos and visits only, so a city tree with care
+    /// and nothing else is cold, and screen 14 stays as it was for it.
+    var drawsActivityFeed: Bool { !isCold || tree.source == .community }
 
     // MARK: - Regulars row (A8, D1)
 
@@ -1655,6 +1664,9 @@ enum TreeProfileCopy {
     static func pinMovedDetail(from origin: Coordinate?, to destination: Coordinate?) -> String {
         guard let origin, let destination else { return "" }
         let meters = Int(origin.distance(to: destination).rounded())
+        // A move that rounds to 0 m names no direction, as `VisitShortlist.label` prints a
+        // distance that rounds to 0 m. The owner has not ruled on this case.
+        guard meters > 0 else { return " · 0 m" }
         let heading = VisitPinAdjustCopy.spelledOut(VisitBearing.compass(from: origin, to: destination))
         return " · \(meters) m \(heading)"
     }
