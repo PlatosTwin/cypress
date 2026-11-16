@@ -818,10 +818,13 @@ public struct OutboxStore {
         return Set(try statement.fetchAll { try $0.uuidIfPresent("photo") }.compactMap { $0 })
     }
 
-    /// One species act on a tree that is still queued: its kind, and whose it is.
+    /// One species act on a tree that is still queued: its kind, whose it is, and for a keep, the
+    /// report it names.
     public struct QueuedSpeciesAct: Hashable, Sendable {
         public let kind: OutboxItem.Kind
         public let owner: ContributionOwner
+        /// The report a keep names (`ReviewDismissal.flagID`). Nil for every other kind.
+        public let flagID: UUID?
     }
 
     /// The species acts this phone still has to send for one tree (ROADMAP 144): a naming, a
@@ -835,7 +838,9 @@ public struct OutboxStore {
         let statement = try connection.cachedStatement("""
             SELECT kind,
                    json_extract(payload, '$.attribution.userID') AS user,
-                   json_extract(payload, '$.attribution.deviceID') AS device
+                   json_extract(payload, '$.attribution.deviceID') AS device,
+                   CASE kind WHEN 'species_review_dismissal'
+                        THEN json_extract(payload, '$.flagID') END AS flag
               FROM outbox
              WHERE kind IN ('species_claim', 'species_correction',
                             'wrong_species_report', 'species_review_dismissal')
@@ -853,7 +858,11 @@ public struct OutboxStore {
             } else {
                 owner = .nobody
             }
-            return QueuedSpeciesAct(kind: try row.value("kind", OutboxItem.Kind.self), owner: owner)
+            return QueuedSpeciesAct(
+                kind: try row.value("kind", OutboxItem.Kind.self),
+                owner: owner,
+                flagID: try row.uuidIfPresent("flag")
+            )
         }
     }
 

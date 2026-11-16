@@ -1296,6 +1296,11 @@ public actor LocalAPI: CypressAPI {
             }
             guard try communityTrees.adder(treeID: treeID, connection: connection)?
                 .isOwned(by: mine) ?? false else { throw APIError.forbidden }
+            // A keep of this report is already queued: a second tap, or a read that ran before the
+            // first keep left the queue. It says nothing new, so nothing more is queued.
+            let alreadyKept = try OutboxStore().queuedSpeciesActs(treeID: treeID, connection: connection)
+                .contains { $0.kind == .speciesReviewDismissal && $0.flagID == flagID }
+            if alreadyKept { return }
             if let local = try contributions.reviewFlag(id: flagID, connection: connection),
                local.status == .open, local.deletedAt == nil {
                 try contributions.dismissReviewFlag(id: flagID, at: moment, connection: connection)
@@ -1333,7 +1338,9 @@ public actor LocalAPI: CypressAPI {
                 answerQueued: answers.isQueued(.speciesClaim, by: mine)
                     || answers.isQueued(.speciesCorrection, by: mine),
                 reportQueued: answers.isQueued(.wrongSpeciesReport, by: mine),
-                keepQueued: answers.isQueued(.speciesReviewDismissal, by: mine),
+                keptFlagIDs: Set(answers.queued.compactMap { act in
+                    act.kind == .speciesReviewDismissal && act.owner.isOwned(by: mine) ? act.flagID : nil
+                }),
                 anyActQueued: !answers.queued.isEmpty,
                 openFlagID: answers.openFlag?.id
             )

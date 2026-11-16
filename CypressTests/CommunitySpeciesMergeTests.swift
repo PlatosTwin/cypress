@@ -22,14 +22,17 @@ struct CommunitySpeciesMergeTests {
     static let tree = UUID(uuidString: "14400000-0000-4000-8000-000000000001")!
     static let flag = UUID(uuidString: "14400000-0000-4000-8000-0000000000F1")!
     static let localFlag = UUID(uuidString: "14400000-0000-4000-8000-0000000000F2")!
+    /// A report raised after the one a keep names.
+    static let newerFlag = UUID(uuidString: "14400000-0000-4000-8000-0000000000F3")!
     static let species = UUID(uuidString: "14400000-0000-4000-8000-0000000000A1")!
 
+    /// - Parameter keep: the report the reader's queued keep names, or nil for no queued keep.
     static func state(
-        answer: Bool = false, report: Bool = false, keep: Bool = false, flag: UUID? = nil
+        answer: Bool = false, report: Bool = false, keep: UUID? = nil, flag: UUID? = nil
     ) -> SpeciesAnswerState {
         SpeciesAnswerState(
-            answerQueued: answer, reportQueued: report, keepQueued: keep,
-            anyActQueued: answer || report || keep, openFlagID: flag
+            answerQueued: answer, reportQueued: report, keptFlagIDs: keep.map { [$0] } ?? [],
+            anyActQueued: answer || report || keep != nil, openFlagID: flag
         )
     }
 
@@ -80,20 +83,31 @@ struct CommunitySpeciesMergeTests {
     }
 
     /// The adder: the service's flag id is what "Keep the species" names. A queued correction of the
-    /// adder's ends the line (the service clears every report on it), and a queued keep does not
-    /// (the service clears only up to the report the keep names, and says so in a later read).
+    /// adder's ends the line (the service clears every report on it). A queued keep ends it when it
+    /// names the report the service sent (the owner's "the line clears for everyone"), and not when
+    /// the service sends a newer report, which the keep does not clear.
     ///
-    /// Red-proof: treat a queued keep as clearing (`!(state?.keepQueued ?? false) &&` in front of
-    /// `reported`) — red on "a queued keep cleared the line".
-    @Test("the adder keeps through the service's flag id; a queued correction ends the line, a queued keep does not")
+    /// Red-proof: drop `&& !kept` from `reported` in `CommunitySpeciesMerge.offer` — red on "the
+    /// adder's queued keep left the line". Red-proof: treat any queued keep as clearing — red on
+    /// "a keep of an older report cleared a newer one".
+    @Test("the adder keeps through the service's flag id; a queued correction or keep of that report ends the line, a newer report does not")
     func theAdder() {
         let reported = Self.served(reported: true, flag: Self.flag)
         #expect(Self.offer(local: .correctable, served: reported, isAdder: true, shares: false)
                 == .underReview(flagID: Self.flag, canResolve: true))
         #expect(Self.offer(local: .correctable, served: reported, state: Self.state(answer: true), isAdder: true)
                 == .correctable, "the adder's queued correction left the line")
-        #expect(Self.offer(local: .correctable, served: reported, state: Self.state(keep: true), isAdder: true)
-                == .underReview(flagID: Self.flag, canResolve: true), "a queued keep cleared the line")
+        let kept = Self.offer(local: .correctable, served: reported, state: Self.state(keep: Self.flag), isAdder: true)
+        #expect(kept == .correctable, "the adder's queued keep left the line: \(kept)")
+        let newer = Self.offer(
+            local: .correctable, served: Self.served(reported: true, flag: Self.newerFlag),
+            state: Self.state(keep: Self.flag), isAdder: true
+        )
+        #expect(newer == .underReview(flagID: Self.newerFlag, canResolve: true),
+                "a keep of an older report cleared a newer one: \(newer)")
+        // Somebody who is not the adder holds no keep the service would act on.
+        #expect(Self.offer(served: reported, state: Self.state(keep: Self.flag))
+                == .underReview(flagID: Self.tree, canResolve: false))
     }
 
     /// The namer, while `species_named_by_you` says so: the correction, and with a report on their
@@ -219,12 +233,15 @@ struct CommunitySpeciesMergeTests {
         #expect(try await Self.ownSpecies(added.id, in: store) == plane.id, "the service's answer overwrote a queued claim")
     }
 
-    /// The adder's keep of a report raised on another phone names the service's flag id, and the
-    /// line stays until the service says otherwise.
+    /// The adder's keep of a report raised on another phone names the service's flag id. The read
+    /// that follows the tap runs before the queue drains, and the service still reports the line
+    /// with the same flag id: the line and the control stay gone. A second tap queues nothing more.
+    /// A keep the service refused for good brings the line back, and so does a newer report.
     ///
     /// Red-proof: route `dismissSpeciesReview` straight to the local verb in `RoutedAPI` — red,
-    /// `notFound`.
-    @Test("the adder keeps a report the service named, by its flag id, and the line waits for the service")
+    /// `notFound`. Red-proof: drop the `alreadyKept` return in `keepServedSpeciesReport` — red on
+    /// "a second tap queued a second keep".
+    @Test("the adder keeps a report the service named, by its flag id, and the line clears at once")
     func theAdderKeepsAServedReport() async throws {
         let store = try await OthersTreeControlsTests.seededStore()
         let local = LocalAPI(store: store, deviceID: Self.device)
@@ -248,10 +265,33 @@ struct CommunitySpeciesMergeTests {
         #expect(keeps.map(\.flagID) == [Self.flag], "the keep does not name the service's flag")
         #expect(keeps.first?.treeID == added.id)
 
-        // The service has not answered yet: the line stays.
+        // The service has not drained the keep yet and still reports the same flag: the line is gone.
         let after = try await router.refreshedTreeProfile(id: added.id)
-        #expect(after.speciesCorrection == .underReview(flagID: Self.flag, canResolve: true),
-                "the phone cleared the line before the service did: \(after.speciesCorrection)")
+        #expect(after.speciesCorrection == .correctable,
+                "the line came back after the adder kept the species: \(after.speciesCorrection)")
+
+        // A second tap, from a screen drawn before the first one's read.
+        try await router.dismissSpeciesReview(flagID: Self.flag)
+        let keepsAfterSecondTap = try await OthersTreeControlsTests.queued(store).filter { payload in
+            if case .speciesReviewDismissal = payload { return true }
+            return false
+        }
+        #expect(keepsAfterSecondTap.count == 1, "a second tap queued a second keep: \(keepsAfterSecondTap.count)")
+
+        // A newer report than the one kept: the line and the control come back.
+        transport.answer("GET /trees/\(added.id.uuidString)",
+                         with: try Self.profileBody(added, addedByYou: true, reported: true, flag: Self.newerFlag))
+        let newer = try await router.refreshedTreeProfile(id: added.id)
+        #expect(newer.speciesCorrection == .underReview(flagID: Self.newerFlag, canResolve: true),
+                "a newer report drew no line: \(newer.speciesCorrection)")
+
+        // The service refused the keep for good: it no longer counts, and the line is back.
+        transport.answer("GET /trees/\(added.id.uuidString)",
+                         with: try Self.profileBody(added, addedByYou: true, reported: true, flag: Self.flag))
+        try await OthersTreeControlsTests.answerEverything(store)
+        let refused = try await router.refreshedTreeProfile(id: added.id)
+        #expect(refused.speciesCorrection == .underReview(flagID: Self.flag, canResolve: true),
+                "a refused keep still cleared the line: \(refused.speciesCorrection)")
     }
 
     /// Somebody else's keep is not one: the verb refuses a reader who did not add the tree.

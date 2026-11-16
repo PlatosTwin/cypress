@@ -138,17 +138,18 @@ public struct SpeciesAnswerState: Hashable, Sendable {
     public let answerQueued: Bool
     /// The reader's report is still queued.
     public let reportQueued: Bool
-    /// The reader's "Keep the species" is still queued.
-    public let keepQueued: Bool
+    /// The reports the reader's still-queued "Keep the species" acts name (`ReviewDismissal.flagID`).
+    /// A keep the service refused for good is no longer queued, so it is not here.
+    public let keptFlagIDs: Set<UUID>
     /// Any species act on this tree is still queued, by anybody on this phone.
     public let anyActQueued: Bool
     /// An open species report raised on this phone.
     public let openFlagID: UUID?
 
-    public init(answerQueued: Bool, reportQueued: Bool, keepQueued: Bool, anyActQueued: Bool, openFlagID: UUID?) {
+    public init(answerQueued: Bool, reportQueued: Bool, keptFlagIDs: Set<UUID>, anyActQueued: Bool, openFlagID: UUID?) {
         self.answerQueued = answerQueued
         self.reportQueued = reportQueued
-        self.keepQueued = keepQueued
+        self.keptFlagIDs = keptFlagIDs
         self.anyActQueued = anyActQueued
         self.openFlagID = openFlagID
     }

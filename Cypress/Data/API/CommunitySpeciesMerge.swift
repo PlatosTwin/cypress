@@ -13,9 +13,12 @@
 //  - a queued naming or correction keeps the reader's own species on screen, and keeps the
 //    reader's correction control;
 //  - a queued report keeps the reported line;
-//  - the adder's queued correction ends the line, because the service clears every report on it.
-//  The adder's queued "Keep the species" does **not** end the line: the service clears only up to
-//  the report the keep names, so the line goes when the service says so in a later read.
+//  - the adder's queued correction ends the line, because the service clears every report on it;
+//  - the adder's queued "Keep the species" ends the line only when it names the report the service
+//    sent (`species_report_flag_id`). The service clears up to the report the keep names, so a
+//    newer report, with another flag id, keeps the line and the control. This is the owner's "the
+//    line clears for everyone": without it, the read that follows the tap, which runs before the
+//    queue drains, would draw the line and the control again.
 //
 //  A service that sent none of the keys (release v16 and older) leaves every answer the phone's.
 //
@@ -89,7 +92,8 @@ public enum CommunitySpeciesMerge {
         if addedOnAnotherPhone { return .unavailable }
         guard let served else { return local }
         let answerQueued = state?.answerQueued ?? false
-        let reported = (served.isReported && !(isAdder && answerQueued)) || (state?.reportQueued ?? false)
+        let kept = isAdder && served.reportFlagID.map { state?.keptFlagIDs.contains($0) ?? false } == true
+        let reported = (served.isReported && !(isAdder && answerQueued) && !kept) || (state?.reportQueued ?? false)
         return SpeciesAnswerFacts(
             hasSpecies: hasSpecies,
             isAdder: isAdder,
