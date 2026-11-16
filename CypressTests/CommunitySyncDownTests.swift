@@ -308,12 +308,23 @@ struct CommunityRefresherTests {
     }
 
     /// A cached row as a tile would store it.
-    static func cache(_ id: UUID, at coordinate: Coordinate, tile: String, _ store: CypressStore) async throws {
+    ///
+    /// `complete: true` also writes the tile's complete mark in the same transaction, as the
+    /// refresher does with a tile's last page, so the tile counts as asked
+    /// (`CommunityTreeCacheStore.hasAsked`). Without it the tile has a row and no mark, and reads as
+    /// not asked: a test that needs "asked" must say so here.
+    static func cache(
+        _ id: UUID, at coordinate: Coordinate, tile: String, complete: Bool = false, _ store: CypressStore
+    ) async throws {
         try await store.queue.write { connection in
-            try CommunityTreeCacheStore().apply(
+            let cache = CommunityTreeCacheStore()
+            try cache.apply(
                 tile: tile, trees: [Tree(id: id, source: .community, coordinate: coordinate)],
                 withdrawnTreeIDs: [], nextCursor: "seeded-\(tile)", at: Date(), connection: connection
             )
+            if complete {
+                try cache.markComplete(tile: tile, at: Date(), connection: connection)
+            }
         }
     }
 

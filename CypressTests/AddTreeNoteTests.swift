@@ -356,10 +356,16 @@ struct AddTreeNoteTests {
         )
         let bTile = try #require(CommunityTile.covering(bBox.expanded(by: 0.5), limit: 16))
         #expect(bTile == [CommunityRefresherTests.otherTile], "B is not inside one tile: \(bTile)")
-        // `apply` writes the tile's row with the tree, so B is asked and B is not empty.
+        // B's tile holds a tree and was fetched to its last page (the complete mark), so B is
+        // asked and B is not empty. Without `complete: true`, B would read as not asked, both
+        // viewports would give the first body, and the assertion below could not fail.
         try await CommunityRefresherTests.cache(
             UUID(), at: Coordinate(latitude: 37.7605, longitude: -122.4895),
-            tile: CommunityRefresherTests.otherTile.path, store
+            tile: CommunityRefresherTests.otherTile.path, complete: true, store
+        )
+        #expect(
+            try await Self.asked(bBox, store),
+            "B does not count as asked, so this test cannot tell A's answer from B's"
         )
 
         let (held, release) = AsyncStream.makeStream(of: Void.self)
@@ -676,14 +682,17 @@ struct AddTreeNoteTests {
         }
     }
 
-    /// Each tile answered with no trees, as `apply` records it.
+    /// Each tile answered with one empty last page, as the refresher records it: `apply` and the
+    /// complete mark in one transaction.
     private static func fetched(_ tiles: [CommunityTile], _ store: CypressStore) async throws {
         try await store.queue.write { connection in
             for tile in tiles {
-                try CommunityTreeCacheStore().apply(
+                let cache = CommunityTreeCacheStore()
+                try cache.apply(
                     tile: tile.path, trees: [], withdrawnTreeIDs: [], nextCursor: "c-\(tile.path)",
                     at: Date(), connection: connection
                 )
+                try cache.markComplete(tile: tile.path, at: Date(), connection: connection)
             }
         }
     }

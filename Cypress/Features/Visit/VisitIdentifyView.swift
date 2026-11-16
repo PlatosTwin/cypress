@@ -464,8 +464,8 @@ enum VisitIdentifyCopy {
     /// The empty list's message, from whether this phone has asked for added trees over the
     /// `searchRadiusM` around the reader
     /// (`CommunityTreeCacheStore.hasAsked(covering:maxTiles:connection:)`, the map card's rule). It
-    /// has not when a covering tile was never fetched (offline, a failed fetch, ground the map has
-    /// not shown) or the remote gate is shut.
+    /// has not when a covering tile was never fetched to its last page (offline, a failed fetch,
+    /// a pass stopped at its page limit, ground the map has not shown) or the remote gate is shut.
     static func emptyMessage(communityAsked: Bool) -> String {
         communityAsked ? emptyNeitherKind : emptyNotOnTheCityInventory
     }
