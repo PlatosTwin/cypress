@@ -448,7 +448,9 @@ public struct ContributionStore {
     ///
     ///   - **`storage_key IS NOT NULL`** — the row was written by the outbox's apply
     ///     (`LocalAPI.uploadPhoto` sets it), so a send was queued for it. The add-a-tree photograph
-    ///     keeps `local_path` and never has one: `addTree` queues no binary, and nothing sends it.
+    ///     keeps `local_path` and never has one, so it is never offered here. It is sent since the
+    ///     owner's answer of 2026-11-15 (`CommunityTreeBackfill`), always keyed by its `photos.id`,
+    ///     so photo identity's exact link pairs its service copy and this inexact one is not needed.
     ///   - **no `outbox_photos` row names it** — the send is not still owed. The row is deleted by
     ///     `OutboxStore.completePhoto` when the send completes; while it exists the photograph is
     ///     waiting for Wi-Fi, or its begin failed, or it has not been tried yet.

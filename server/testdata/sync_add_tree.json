@@ -1,0 +1,25 @@
+{
+  "items": [
+    {
+      "client_uuid": "4C9E2B7A-6D1F-4A3E-8B5C-0F2D9E1A7B30",
+      "kind": "add_tree",
+      "tree_uuid": "A7D3F1C9-2E4B-4C6D-9A8F-1B3C5D7E9F20",
+      "occurred_at": "2026-10-15T06:30:00Z",
+      "payload": {
+        "clientUUID": "4C9E2B7A-6D1F-4A3E-8B5C-0F2D9E1A7B30",
+        "treeID": "A7D3F1C9-2E4B-4C6D-9A8F-1B3C5D7E9F20",
+        "attribution": {
+          "deviceID": "D1E2F3A4-B5C6-4D7E-8F90-A1B2C3D4E5F6"
+        },
+        "coordinate": {
+          "latitude": 37.76015,
+          "longitude": -122.50505
+        },
+        "placement": "contributor_placed",
+        "occurredAt": "2026-10-15T06:30:00Z",
+        "addedOn": "2026-10-14"
+      },
+      "device_id": "D1E2F3A4-B5C6-4D7E-8F90-A1B2C3D4E5F6"
+    }
+  ]
+}

@@ -29,6 +29,17 @@ struct MovePinOfferTests {
         }
     }
 
+    /// Deletes the record that the tree's add was queued once (`CommunityTreeStore.queuedOnceKey`).
+    /// `addTree` writes it since ROADMAP 139; a tree added by a build before that has none, which is
+    /// the tree branch 3 is about.
+    private static func forgetQueuedOnce(_ store: CypressStore) async throws {
+        try await store.queue.write { connection in
+            try connection.execute(
+                "DELETE FROM app_state WHERE key LIKE '\(CommunityTreeStore.queuedOnceKeyPrefix)%'"
+            )
+        }
+    }
+
     private static let beforeQueuing = CommunityTreeStore.firstQueuedAddsAt.addingTimeInterval(-30 * 24 * 60 * 60)
 
     /// Branch 1: the add row is still queued, so the tree was queued whatever its date says.
@@ -66,6 +77,7 @@ struct MovePinOfferTests {
     func anUnqueuedOldTreeIsNotOffered() async throws {
         let (store, api, tree) = try await Self.addTree(at: Self.beforeQueuing)
         try await Self.pruneAddRow(store)
+        try await Self.forgetQueuedOnce(store)
 
         let adder = try await Fixture.adder(store, tree.id)
         #expect(adder == .device(Fixture.deviceID), "fixture: the reader is not the adder: \(String(describing: adder))")

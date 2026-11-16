@@ -828,7 +828,13 @@ public actor OutboxQueue {
             // `markDoneIfComplete` is a conditional `UPDATE`, so the count follows what it actually
             // matched rather than the fact that it ran.
             let settled = try await queue.write { connection in
-                try store.markDoneIfComplete(
+                // With no send sink, a binary staged already applied (the add photo,
+                // `OutboxStore.stageAppliedPhoto`) has nothing more owed, exactly as
+                // `settleAppliedPhoto` decides for a binary this drain applied.
+                if send == nil {
+                    try store.dropAppliedPhotosWithNoSink(for: record.id, connection: connection)
+                }
+                return try store.markDoneIfComplete(
                     record.id,
                     requiringRemoteSend: send != nil,
                     at: settledAt,
@@ -1149,9 +1155,41 @@ public struct APIOutboxSendSink: OutboxSendSink {
         // Resolved before both reads below: a photo held for the send (offline, or waiting for
         // Wi-Fi) across an app update holds the old container's path, and the file moved with the
         // container (report F36). Without this the send fails on every attempt.
-        let containerPath = StoredPhotoPath.resolve(
+        var containerPath = StoredPhotoPath.resolve(
             storedPath, applicationSupport: applicationSupportDirectory
         ).path
+        // ── A photograph that is not a JPEG goes as a JPEG copy ──────────────────────────────────
+        //
+        // A photograph picked from the library keeps its own container (HEIC, PNG), and the service
+        // names every photograph `photos/<id>.jpg`. The copy is encoded fresh, so it carries only the
+        // pixels and the orientation, and the check below still runs on it. The person's own file
+        // stays as it is. An image ImageIO reads and cannot decode is refused for good
+        // (`validationFailed`), the same end as a file that cannot be cleaned. A missing file is not
+        // an image here and goes on to fail as it did before.
+        var jpegCopy: URL?
+        defer { if let jpegCopy { try? FileManager.default.removeItem(at: jpegCopy) } }
+        if PhotoBinary.isReadableImage(atPath: containerPath), !PhotoBinary.isJPEG(atPath: containerPath) {
+            let copy = URL(fileURLWithPath: NSTemporaryDirectory())
+                .appendingPathComponent("cypress-send-\(UUID().uuidString).jpg")
+            jpegCopy = copy
+            try PhotoBinary.writeJPEGCopy(from: URL(fileURLWithPath: containerPath), to: copy)
+            containerPath = copy.path
+        }
+        // ── No file leaves with its location or its time in it ─────────────────────────────────
+        //
+        // Every ingest path strips already, and this is the last point before the bytes go. It is
+        // here because two kinds of file reach it that no ingest of this build cleaned: the
+        // photograph taken on the Add this tree screen by a build earlier than ERRATA E148's fix,
+        // and a photograph `LocalAPI.uploadPhoto` moved across unstripped because ImageIO could not
+        // rewrite it. A clean file costs one header read. A file that still says where or when after
+        // the repair is refused for good (`validationFailed` is not retryable), and the drain records
+        // it as refused (`OutboxStore.recordRefusedPhoto`) rather than publishing it.
+        if PhotoBinary.carriesIdentifyingMetadata(atPath: containerPath) {
+            try? PhotoBinary.stripMetadataInPlace(atPath: containerPath)
+            guard !PhotoBinary.carriesIdentifyingMetadata(atPath: containerPath) else {
+                throw APIError.validationFailed
+            }
+        }
         let payload = try OutboxPayload.decode(kind: item.kind, from: item.payload)
         let size = PhotoBinary.pixelSize(atPath: containerPath)
 
@@ -1164,7 +1202,10 @@ public struct APIOutboxSendSink: OutboxSendSink {
                 }(),
                 shotType: photo.shotType,
                 localPath: containerPath,
-                capturedAt: item.createdAt,
+                // The photograph's own time. The queue row's time stood in for it while the two
+                // were seconds apart; a photograph `CommunityTreeBackfill` sends was taken months
+                // before its row was written. Others are served its date only (decision 14a).
+                capturedAt: photo.capturedAt ?? item.createdAt,
                 width: size?.width,
                 height: size?.height,
                 // Deliberately no `publicCoordinate`, for the reason ERRATA E42 gives on the apply

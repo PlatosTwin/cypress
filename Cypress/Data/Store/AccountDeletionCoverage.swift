@@ -32,7 +32,9 @@ import Foundation
 /// Neither is a column the schema can be asked about, so neither is here. Nor is a third thing held
 /// in a key: `app_state`'s `photo_send_refused:<photos.id>` rows (`OutboxStore.recordRefusedPhoto`),
 /// which name a photograph rather than a person. The erasing door removes them with their
-/// photographs, and `AccountDeletionTests` asserts it.
+/// photographs, and `AccountDeletionTests` asserts it. A fourth is the same shape:
+/// `community_tree_queued_once:<tree id>` (`CommunityTreeStore.queuedOnceKey`), which names a tree.
+/// Both doors remove it with its tree (`AccountDeletion.forgetCommunityTrees`).
 extension AccountDeletion {
 
     /// A table with at least one column that names a person or an installation. The raw value is

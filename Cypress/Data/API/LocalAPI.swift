@@ -631,22 +631,24 @@ public actor LocalAPI: CypressAPI {
                 connection: connection
             )
             // Spec §3.4: the mutation is queued in the transaction that performed it, so the tree
-            // and the row that will send it land together or not at all. The photograph is *not*
-            // attached to the row — it is ingested above, and `OutboxSendSink` carries no binary.
-            try Self.queueAppliedMutation(
-                .addTree(
-                    TreeAddition(
-                        clientUUID: draft.clientUUID,
-                        treeID: tree.id,
-                        attribution: attribution,
-                        coordinate: draft.coordinate,
-                        address: draft.address,
-                        placement: draft.placement,
-                        speciesID: draft.speciesID,
-                        landContext: draft.landContext,
-                        occurredAt: moment
-                    )
+            // and the row that will send it land together or not at all. The photograph ingested
+            // above rides on the row as an already-applied binary, and the drain sends it once the
+            // service holds the tree (the owner's answer of 2026-11-15, "Every tree, new and old").
+            try CommunityTreeBackfill.queueAddition(
+                TreeAddition(
+                    clientUUID: draft.clientUUID,
+                    treeID: tree.id,
+                    attribution: attribution,
+                    coordinate: draft.coordinate,
+                    address: draft.address,
+                    placement: draft.placement,
+                    speciesID: draft.speciesID,
+                    landContext: draft.landContext,
+                    occurredAt: moment,
+                    addedOn: TreeAddition.addedDay(of: moment, in: .current)
                 ),
+                addPhoto: (id: photo.id, path: draft.photoLocalPath),
+                applicationSupport: applicationSupportDirectory,
                 at: moment,
                 connection: connection
             )
@@ -3296,6 +3298,27 @@ public actor LocalAPI: CypressAPI {
         // A claim that was not screen 15's — the DEBUG deep links, a future server exchange — leaves
         // no consent record, and must not leave a stale one either. See `linkAccount`.
         try await store.clearAppState(.signedOutUserID)
+        // The old community trees of this account that waited while it was signed out
+        // (`CommunityTreeBackfill`), now that it is the one signed in.
+        await afterClaim?(userID)
+    }
+
+    /// Called at the end of every claim with the account now signed in. `DataLayer.boot` points it
+    /// at `CommunityTreeBackfill` when the send sink is wired; nil otherwise.
+    private var afterClaim: (@Sendable (UUID) async -> Void)?
+
+    /// See `afterClaim`. One handler, replaced rather than accumulated.
+    public func onClaimed(_ handler: (@Sendable (UUID) async -> Void)?) {
+        afterClaim = handler
+    }
+
+    /// The one-time send of this phone's community trees, over this actor's own photo directory.
+    public nonisolated func communityTreeBackfill() -> CommunityTreeBackfill {
+        CommunityTreeBackfill(
+            photoDirectory: photoDirectory,
+            applicationSupport: applicationSupportDirectory,
+            now: now
+        )
     }
 
     // MARK: - The account (local, ERRATA E131)
