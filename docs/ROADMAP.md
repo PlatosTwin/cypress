@@ -2531,8 +2531,10 @@ into this section in the round that finds it, and nowhere else. Each item stands
     `docs/rulings-pending/community-trees-species-for-everyone.md`. **Still to do:** the
     `cypress-sync` deploy (owner's go-ahead), then a second account seen against the live service
     (a naming reaching another phone, the adder's phone taking it, the line on a third phone and
-    the keep clearing it). This chip stays open until then. The phone PR must not merge before
-    the deploy.
+    the keep clearing it). This chip stays open until then. A build with the phone half must not
+    ship before the deploy. Both halves merged in the community gaps train of 2026-11-16 while
+    TestFlight releases are paused (`TESTFLIGHT_RELEASE_PAUSED`), so the merge ships nothing: deploy
+    `cypress-sync` before the release resumes.
 145. **`AreaPickerUITests.testACoarseFixNamesNoNeighborhoodAndOffersThePicker` failed once in CI on a
     tap.** PR 238, run 43775447999, attempt 1, shard 3, iPhone 17 Pro: "Failed to not hittable:
     Button, {{34.0, 293.0}, {111.3, 44.3}}, label: 'Sunset/Parkside'". The rerun of that shard
@@ -2624,7 +2626,8 @@ into this section in the round that finds it, and nowhere else. Each item stands
     fixed, owner's call.** MapKit does not hide the pin. On a clean install on the iPhone 17e
     simulator, with `CYPRESS_LOCATION` on the `othersTreeOnMap` tree, the pin's view is in the
     accessibility tree on the first wait, at the dot's frame. It is covered: the dot and the pin are
-    both 18 pt, and the dot is drawn on top on purpose (`MapLayout.userDotZPriority`, task #150).
+    both 18 pt (the dot also draws a halo of about 8 pt around that), and the dot is drawn on top
+    on purpose (`MapLayout.userDotZPriority`, task #150).
     The dot takes no taps, so a tap on the dot selects the pin under it: the card opens and the
     pin's selected scale and reticle show around the dot. Every fix changes how the dot or a pin
     draws: (a) a pin under the dot draws above it, which hides the dot instead; (b) the dot drops
@@ -2794,6 +2797,78 @@ into this section in the round that finds it, and nowhere else. Each item stands
     profile's read and the tap, the verb answers `forbidden`, and the profile reloads without the
     control and without saying why. The owner has given no sentence for it, so none was written
     (`docs/rulings-pending/community-trees-withdraw.md`). Owner's call.
+176. **Two more breaks at the largest text size on screen 03.** At AX5 the title "Grandmother
+    Cypress" breaks inside the word ("Grandmoth / er"; ERRATA records it as cosmetic), and a history
+    detail such as "· 12 m north" breaks between the number and its unit, where a non-breaking space
+    would hold it (D7). Seen by the author of chip 153, 2026-11-16.
+177. **`Photos/<id>.jpg.stripping` can stay on the phone.** `LocalAPI.uploadPhoto` goes through
+    `writeStrippingMetadata(from:to:)`, which leaves that file if the app is killed during the
+    strip. Chip 151's sweep removes only the `.<name>-<UUID>.clean` shape. Found by the author of
+    chip 151, 2026-11-16.
+178. **`Tools/test_harness_guards.sh` has failing checks on main.** Four checks in its "prebuilt end
+    to end" group fail on main's own scripts, and a fifth fails only when the script runs inside a
+    worktree. Seen by the author of chip 157, 2026-11-16; not investigated.
+179. **A staged HEIC keeps its location on the phone, and `addTree` does not check the strip.** The
+    ingest (`PhotoBinary.write`) leaves the Exif, TIFF, Apple, and GPS blocks in a staged HEIC (chip
+    161 has the detail); the JPEG copy that is sent is clean. `LocalAPI.addTree` also ignores the
+    result of `stripMetadataInPlace`. Found by the author of chip 161, 2026-11-16.
+180. **The service's license answer has four loose ends** (found by the reviewer of
+    `feat/account-license-readback`, 2026-11-16). (a) A sign-in that declines on a second phone
+    overwrites an earlier acceptance, and because the service's answer wins, the first phone then
+    reads "did not agree". (b) A repeated agreement overwrites `license_accepted_at`. (c) NULL
+    means both "declined" and "never asked". (d) No Go guard compares the phone's `ClaimDeviceBody`
+    with `claimRequest`, or `SessionCredentials` with `sessionResponse`.
+181. **Under the leaving door, only one of two pin moves came back to the Journal in a red-proof.**
+    Seen by the reviewer of chip 152 while breaking the code, 2026-11-16; the tombstone rules may
+    explain it. Not investigated.
+182. **`server/testdata/README.md` says "the adder's own calendar day" for the "added" row.** That is
+    approximate for a tree the backfill sent later. Found by the reviewer of chip 149, 2026-11-16.
+183. **Record links center their second line at the largest text size.** At AX5 "Report the species
+    as wrong" and "Report that there is no tree here" wrap, and the second line is centered and
+    sits a few points right of the column edge. It comes from the shared `recordLinkAction` Button
+    label and is older than chip 144; the label probably needs `.multilineTextAlignment(.leading)`.
+    Seen by the author and the reviewer of chip 144's phone half, and in the withdrawal round's AX5
+    screenshots, 2026-11-16.
+184. **Finished Outbox rows are never swept.** `OutboxQueue.pruneCompleted()` has no caller in
+    `Cypress/` (checked by search, 2026-11-16), so `done` rows stay past
+    `OutboxQueue.completedRetention`. Comments in `OutboxPresentation`, `CommunityTreeStore`,
+    `CommunityTreeBackfill`, and `AppSchema` describe a sweep that does not run, and so does item 3
+    of `docs/rulings-pending/community-trees-species-for-everyone.md`. Found by the reviewer of chip
+    144's phone half.
+185. **A namer's correction that the service applied to nobody stays on the namer's own profile.**
+    When the adder kept or corrected the species first, the service records the namer's correction
+    and changes nothing, so no tile page brings the tree again. The profile drawn from local data
+    then shows the namer's species and "Correct the species" for as long as the `done` Outbox row
+    lives (chip 184: for good), while the profile merged with a service read shows the service's
+    species, so the screen changes on each online open. The same holds for a namer whose correction
+    equals what the adder later corrected to. Found by the reviewer of chip 144's phone half
+    (probe C), 2026-11-16.
+186. **A refused species act on a cached tree would say the wrong reason.** For a reader who does
+    not share, the `.forbidden` failure sentences say "This tree comes from the city inventory…".
+    No screen reaches them today, because the controls are hidden for that reader. Found by the
+    author of chip 144's phone half.
+187. **Species verbs can still find a withdrawn tree.** `speciesTarget` reads
+    `communityTrees.tree(id:)`, which does not leave out a withdrawn row. No screen reaches it,
+    because a withdrawn tree's profile answers `notFound`. Older than chip 144. Check it against the
+    withdrawal round's rules.
+188. **An erased account with a withdrawal in mid-send can leave a tree showing here that the
+    service withdrew.** The erasing door restores the tree of every queued `tree_withdrawal` with
+    `remote_sent = 0`, and that includes a row in state `uploading`. If the service applied that
+    send, this phone shows the tree and its own row wins over the cache. Inferred by the reviewer
+    of the withdrawal round, 2026-11-16; not run.
+189. **The withdraw control costs a five-table scan on each profile read.** `othersHaveAddedTo`
+    reads `CommunityTreeBackfill.phoneMadeAccounts` on every profile read of a tree the reader
+    added; it applies `upper()` and `julianday()` to columns, so no index helps. Cheap for one
+    person's history. It could be computed once per session. Found by the reviewer of the
+    withdrawal round.
+190. **Small test gaps left by the community gaps round.** No debug link reaches
+    `.reportedYoursToCorrect`, so no screenshot covers it. `testTheReasonLineAtTheLargestTextSize`
+    is a screenshot only, and its `reach` stops before the whole line is on screen; at AX5 the
+    reason line's gap (`CypressSpacing.gapRows`) is small next to the line spacing.
+191. **Three test runs at once overload this Mac.** With three concurrent `xcodebuild` test runs
+    the load average reached 300 to 700 on 2026-11-16, and two `AddTreeNoteTests` hit their 300 s
+    timeouts on a tree that passes alone. The cap in `CLAUDE.md` is three; two may be the real
+    limit for full runs.
 
 
 **Retire the format-1 manifest — DONE, 2026-08-23.** The owner overrode the trigger the day after
