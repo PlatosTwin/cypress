@@ -272,6 +272,8 @@ final class AreaPickerUITests: XCTestCase {
         pick.tap()
         let elsewhere = app.buttons[Self.otherNeighborhood]
         XCTAssertTrue(elsewhere.waitForExistence(timeout: 20))
+        // The same gap as in the coarse-fix test below: the row exists before the sheet settles.
+        assertReachable(elsewhere, "the picker's “\(Self.otherNeighborhood)” row")
         elsewhere.tap()
         XCTAssertTrue(
             composition(app).waitForExistence(timeout: 20),
@@ -313,6 +315,9 @@ final class AreaPickerUITests: XCTestCase {
 
         let elsewhere = app.buttons[Self.otherNeighborhood]
         XCTAssertTrue(elsewhere.waitForExistence(timeout: 20))
+        // The row exists before the sheet has finished presenting, and a tap in that gap fails as
+        // "Failed to not hittable" (CI, 2026-11-15, this test). Wait until it can be tapped.
+        assertReachable(elsewhere, "the picker's “\(Self.otherNeighborhood)” row")
         elsewhere.tap()
         XCTAssertTrue(
             composition(app).waitForExistence(timeout: 20),
