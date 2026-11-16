@@ -55,12 +55,29 @@ struct PinMovedOutboxTests {
         #expect(row.timeText.hasPrefix(OutboxCopy.metaSeparator) == false)
     }
 
-    @Test("a pin move with no tree name in hand still reads \"Pin moved\" before the fallback")
-    func theRowFallsBackOnTheTreeWord() {
-        #expect(
-            OutboxCopy.title(kind: .locationCorrection, treeName: nil)
-                == "Pin moved · \(TreeProfilePresentation.fallbackTitle)"
-        )
+    /// The app owner's words of 2026-11-16: a pin move on a tree with no name reads `Pin moved`
+    /// alone, not "Pin moved · Tree". A named tree keeps its name, and every other kind keeps the
+    /// fallback. Red-proof: drop the `.locationCorrection` early return from `OutboxCopy.title` — red
+    /// on "an unnamed tree's pin move reads Pin moved · Tree".
+    @Test("a pin move on a tree with no name reads \"Pin moved\" alone; a named tree and other kinds are unchanged")
+    func anUnnamedTreesPinMoveReadsPinMovedAlone() {
+        let unnamed = OutboxCopy.title(kind: .locationCorrection, treeName: nil)
+        #expect(unnamed == "Pin moved", "an unnamed tree's pin move reads \(unnamed)")
+        #expect(OutboxCopy.title(kind: .locationCorrection, treeName: "London plane")
+                == "Pin moved · London plane")
+        #expect(OutboxCopy.title(kind: .visit, treeName: nil)
+                == "Visit · \(TreeProfilePresentation.fallbackTitle)")
+    }
+
+    /// The same rule through the screen: a queued pin move whose tree has no resolved name.
+    @Test("a queued pin move on a tree with no name reads \"Pin moved\" on screen 17")
+    func aQueuedUnnamedPinMoveReadsPinMoved() async throws {
+        let (queue, clock) = try await Self.makeQueue(script: .allFail(.serverError))
+        try await Self.enqueueMove(on: queue, at: clock.now)
+
+        let snapshot = try await queue.snapshot(treeNames: [:], syncPhotosOnWifiOnly: true)
+        let row = try #require(OutboxPresentation(snapshot: snapshot, now: clock.now).queue.first)
+        #expect(row.title == "Pin moved", "the row reads \(row.title)")
     }
 
     /// The service answers a move by somebody who is not the adder with `forbidden`, and a move on

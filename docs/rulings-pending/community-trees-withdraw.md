@@ -206,3 +206,79 @@ account has a withdrawal queued, `RoutedAPI.deleteAccount` sends the outbox befo
   sets a request timeout, so on a connection that reaches nothing each failed batch or photograph
   costs about 60 seconds, and the whole step can take several minutes. All that time the sheet only
   dims its buttons, Cancel is disabled, and nothing shows progress.
+
+---
+
+## Added after pull request 241 opened (branch `feat/withdraw-owner-answers`)
+
+### R??? — The report link hides while the withdraw link shows (the owner's answer, 2026-11-16)
+
+Q: "On a tree you added, the profile shows "Report that there is no tree here" directly above the
+new "Withdraw this tree". Should the adder still see the report link on their own tree?"
+Chosen: **"Hide it while withdraw shows"**. "The adder sees only "Withdraw this tree". When the tree
+cannot be withdrawn because others added to it, the report link comes back as the adder's way to say
+the tree is gone." Not chosen: "Keep both links"; "Always hide the report".
+
+This replaces the placement in answer 1 above ("below "Report that there is no tree here"") for the
+state in which the withdraw link is drawn.
+
+### R??? — Where that rule lives (the author's design note)
+
+- **In the presentation, over the final profile.** `TreeProfilePresentation.recordDefect` draws
+  `.reportable` as nothing exactly while `treeWithdrawal` is `.available`. Every other offer passes
+  through unchanged. The rule is not in `LocalAPI`'s offer, because the withdrawal offer is final
+  only after `RoutedAPI.withdrawalOffer` has read the service's photographs, and that read can turn
+  `.available` into the reason line. A rule in the local offer would hide the report on a tree whose
+  profile then draws the reason line, which is the state the owner wants the report back in.
+- **The verb `flagNeverExisted` does not refuse the adder.** A report is still a valid act on a
+  community tree this phone added, and the verb cannot see the service's photographs, so a refusal
+  there could refuse a report the screen offers. The screen simply does not offer it while the
+  withdraw link shows.
+- **A report the adder already raised is not lost.** It reads `.underReview`, which is not hidden,
+  so the profile still draws `This record has been reported as never having held a tree.` beside
+  the withdraw link. A queued report is a local flag, so it reads the same way before it is sent.
+- A reader who did not add the tree, a signed-out reader on a tree their account added, and a city
+  tree never have `.available`, so they see what they saw before.
+
+### R??? — No Retry on a withdrawal refused because others added to the tree (the owner's answers, 2026-11-16)
+
+Q: "When the service refuses a withdrawal because others added to the tree, the Outbox row shows
+the reason and a Retry button. A retry is refused again unless those other records are gone. Should
+that row keep Retry?"
+Chosen: **"Remove Retry there"**. The row shows only the reason. The tree is back on the map, and
+the profile shows the reason line where the withdraw link would be. Not chosen: "Keep Retry".
+
+Q: "You chose to remove Retry on a withdrawal the service refused because others added to the
+tree. A failed Outbox row has no other control and nothing ever removes one, so without Retry that
+row stays in the Outbox for good, showing only the reason. What should happen to that row?"
+Chosen: **"Row stays, reason only"**. The row stays in the Outbox with the reason and no button. It
+is also what keeps the reason line on the tree's profile, so that line stays correct.
+Not chosen: "Keep Retry after all"; "Add a way to clear it".
+
+**The consequence, stated plainly: that row never leaves the Outbox.** Nothing sweeps a failed
+row, and the row has no control. It leaves only through an account deletion that erases
+everything (`OutboxStore.forgetAccount`, `.eraseEverything`). While it stays, the tree's profile
+draws `Other people have added to this tree, so it stays on the map.`, because
+`CommunityTreeStore.othersHaveAddedTo` reads that row.
+
+How the branch `feat/withdraw-owner-answers` built it (the author's notes):
+
+- **One rule, in two places.** `OutboxRetryPolicy.acceptsRetry(kind:errorCode:)` refuses exactly a
+  `tree_withdrawal` whose last failure code is `conflict`. The screen reads it
+  (`OutboxPresentation.Row.showsRetryButton`, `OutboxItemSnapshot.showsRetryAffordance`), and the
+  store applies the same rule in SQL (`OutboxStore.retryable`) in `retry` and `retryAllFailed`. A
+  test checks the store against the policy for every kind and every code.
+- **The row still looks like a failed row.** It keeps the amber card and the reason, and draws no
+  state word, because on a failed row the word `retry` is the button. No new string.
+- **Every caller of retry leaves the row as it is, and none shows an error.** `OutboxStore.retry`
+  returns false, as it does for a row that is not failed. `OutboxQueue.retry` returns false and
+  notifies nobody. `OutboxViewState.retry` stops at its guard and does not drain. `retryAll` and
+  `retryAllFailed` move every other failed row and leave this one. `CommunityTreeBackfill` retries
+  only `add_tree` rows.
+- **This also keeps the reason line through a retry attempt.** A retry used to clear
+  `last_error_code`, so the profile's reason line went away while the retried row waited.
+- **A withdrawal refused for another reason keeps Retry** (`forbidden`, the 48-hour window), and a
+  retry the service accepts still takes the tree off again (`withdrawAgain`).
+- **Nothing else on screen counts this row.** The Outbox header counts only rows that are still
+  trying (`waitingCount`), the app has no "Retry all" control (`OutboxViewState.retryAll` has no
+  caller on screen), and the You tab shows no Outbox count.

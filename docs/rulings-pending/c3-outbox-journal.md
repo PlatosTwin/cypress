@@ -45,6 +45,27 @@ nearest specified thing, not a new design.
   `device_id`. A signed-out phone reads by `device_id`, so it no longer finds the moves. They come
   back at the next sign-in. The review's probe: add a tree signed out, move it, visit it, sign in,
   move and visit again, sign out; the Journal then reads 0 moves and 2 visits.
+
+### R??? — A pin move on a tree with no name (the owner's answer, 2026-11-16; ROADMAP 159)
+
+Q: "A community tree with no species reads "Moved the pin of Tree" in the Journal and "Pin moved ·
+Tree" in the Outbox. Which words should those two rows use for such a tree?"
+Chosen: **""Moved a tree's pin""**. Journal: `Moved a tree's pin`. Outbox: `Pin moved`.
+Not chosen: "Leave as is"; ""an unnamed tree"".
+
+How the branch `feat/withdraw-owner-answers` built it (the author's notes):
+
+- **The apostrophe on screen is the typographic one** (`Moved a tree’s pin`, U+2019), as in the
+  app's other on-screen strings, for example `Report a mistake in the city’s record`.
+- **Only where the row would otherwise read the fallback title "Tree".** Each row knows that from a
+  fact, not from the word: the Journal row from an empty `treeDisplayName`, and the Outbox row from
+  no resolved name (`treeName` nil). Both come from `LocalAPI.displayNames`, which resolves a
+  given name or a species common name and leaves out a tree with neither. A tree with a given name
+  or a species keeps "Moved the pin of X" and "Pin moved · X".
+- **Only the pin move changes.** Every other kind on an unnamed tree still reads the fallback, for
+  example "Visit · Tree" and "Visited Tree".
+- **A city tree cannot reach either row.** A pin move is made only on a community tree the reader
+  added (`LocalAPI.correctLocation`).
 - The arm has no column that could keep these moves after sign-out without a schema change. The
   owner has not ruled on it. The arm's behavior was not changed.
 - **Resolved on 2026-11-16** by `feat/journal-keeps-pin-moves`. The owner chose "Everything, pin

@@ -853,8 +853,9 @@ service for added trees over the 60 m around the reader:
    >
    > **Added, the withdrawal round (the owner's answers of 2026-11-16).** On a community tree the
    > reader added, the record controls near the bottom of the identity block end with the link
-   > **`Withdraw this tree`**, below `Report that there is no tree here`, in the same style,
-   > spacing and tokens as that link. A tap asks first, in an **alert** titled
+   > **`Withdraw this tree`**, in the same style, spacing and tokens as the links above it. While
+   > that link is drawn, `Report that there is no tree here` and its caption are not (the owner's
+   > answer of 2026-11-16, "Hide it while withdraw shows"). A tap asks first, in an **alert** titled
    > **`Withdraw this tree?`** with the buttons **`Withdraw tree`** (destructive) and **`Keep it`**.
    > Its message, for a tree others can see:
    > `Everyone using Cypress stops seeing this tree once this is sent. If someone else has visited or photographed it, it stays. This cannot be undone.`
@@ -864,7 +865,10 @@ service for added trees over the 60 m around the reader:
    > Yours map, and the reader's own visits, photos and favorite stay saved. No Journal row is
    > made. When the phone already knows somebody else visited or photographed the tree, the link's
    > place holds the muted line
-   > `Other people have added to this tree, so it stays on the map.` A signed-out reader gets no
+   > `Other people have added to this tree, so it stays on the map.`, drawn below
+   > `Report that there is no tree here` and its caption, which come back in that state as the
+   > adder's way to say the tree is gone. A report the adder already raised keeps its line
+   > `This record has been reported as never having held a tree.` A signed-out reader gets no
    > link on a tree their account added, and nobody gets one on a city tree or a tree somebody
    > else added.
 9. **Stat grid** (C11) — `grid-template-columns:1fr 1fr; gap:8px; padding:10px 16px 30px; margin-top:auto`:
@@ -1505,7 +1509,11 @@ scrim `rgba(14,24,17,.3)`.
    **no sub-line**. When it fails for good, the tree comes back on the map. When the service refused
    it because somebody else visited or photographed the tree, the row reads
    `Other people have added to this tree, so it stays on the map.`; any other refusal reads
-   `This couldn't be sent.` (the owner's answers of 2026-11-16).
+   `This couldn't be sent.` (the owner's answers of 2026-11-16). **The row refused because others
+   added to the tree is the one failed row with no `retry`**: it keeps the amber card and its
+   reason, draws no state word, and stays in the list for good (the owner's answers of 2026-11-16,
+   "Remove Retry there" and "Row stays, reason only"). It leaves only through an account deletion
+   that erases everything. A withdrawal refused for any other reason keeps `retry`.
 3. **Wifi setting row** — `margin:10px 16px 0`, fill `#fff`, `1px #E3E8D9`, radius 14px,
    `padding:13px 15px`, `gap:12px`:
    - `Sync photos on wifi only` — 13.5px/700.

@@ -543,13 +543,19 @@ public struct OutboxStore {
     /// Restarts the 48 h cap window and clears the fail count. Without the window reset the item
     /// would move straight back to `failed` on its next attempt, and the button would do nothing —
     /// which is exactly the "silently stuck" behavior the outbox screen exists to prevent.
+    ///
+    /// **A row `OutboxRetryPolicy.acceptsRetry` refuses is left as it is** (`retryable`), and this
+    /// returns false for it, as for any row that is not `failed`. That row is a withdrawal the
+    /// service refused with `conflict`: the owner keeps it with its reason and no button, and its
+    /// `last_error_code` is what keeps the profile's reason line (`othersHaveAddedTo`), so a reset
+    /// here would take that line away while the row waited.
     @discardableResult
     public func retry(_ id: UUID, at date: Date, connection: SQLiteConnection) throws -> Bool {
         let statement = try connection.cachedStatement("""
             UPDATE outbox
                SET state = 'pending', fail_count = 0, last_error = NULL, last_error_code = NULL,
                    window_started_at = :now, next_attempt_at = NULL, updated_at = :now
-             WHERE id = :id AND state = 'failed'
+             WHERE id = :id AND state = 'failed' AND \(Self.retryable)
             """)
         _ = try statement.bind([":now": date, ":id": id])
         try statement.run()
@@ -558,13 +564,14 @@ public struct OutboxStore {
         return changed
     }
 
+    /// `retry` for every failed row it accepts. Returns how many rows it moved.
     @discardableResult
     public func retryAllFailed(at date: Date, connection: SQLiteConnection) throws -> Int {
         let statement = try connection.cachedStatement("""
             UPDATE outbox
                SET state = 'pending', fail_count = 0, last_error = NULL, last_error_code = NULL,
                    window_started_at = :now, next_attempt_at = NULL, updated_at = :now
-             WHERE state = 'failed'
+             WHERE state = 'failed' AND \(Self.retryable)
             """)
         _ = try statement.bind(date, forName: ":now")
         try statement.run()
@@ -572,6 +579,13 @@ public struct OutboxStore {
         _ = try statement.reset()
         return changed
     }
+
+    /// `OutboxRetryPolicy.acceptsRetry` in SQL: every row except a `tree_withdrawal` whose last
+    /// failure code is `conflict`. `last_error_code` holds `APIError.rawValue`.
+    static let retryable = """
+        NOT (kind = '\(OutboxItem.Kind.treeWithdrawal.rawValue)' \
+        AND last_error_code IS '\(APIError.conflict.rawValue)')
+        """
 
     /// Recovers rows left `uploading` by a process that died mid-drain.
     ///

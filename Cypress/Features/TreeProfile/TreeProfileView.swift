@@ -663,8 +663,9 @@ struct TreeProfileView: View {
     }
 
     /// The adder's withdraw control (the owner's answers of 2026-11-16): in the record controls,
-    /// below "Report that there is no tree here", drawn the way its neighbors are. Asks first: the
-    /// alert on `body` is what withdraws.
+    /// drawn the way its neighbors are. While it is drawn, "Report that there is no tree here" is
+    /// not (`TreeProfilePresentation.recordDefect`). Asks first: the alert on `body` is what
+    /// withdraws.
     ///
     /// Where this phone already knows the service would refuse, the owner's reason line is drawn in
     /// the control's place, in the muted sentence style of the block's other notices. It sits

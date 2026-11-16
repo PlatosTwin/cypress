@@ -208,9 +208,7 @@ struct JournalPresentation: Equatable {
                 id: entry.id,
                 title: JournalCopy.rowTitle(
                     kind: entry.kind,
-                    treeName: entry.treeDisplayName.isEmpty
-                        ? TreeProfilePresentation.fallbackTitle
-                        : entry.treeDisplayName
+                    treeName: entry.treeDisplayName.isEmpty ? nil : entry.treeDisplayName
                 ),
                 subtitle: entry.summary.trimmingCharacters(in: .whitespacesAndNewlines),
                 accent: JournalCopy.accent(for: entry.kind),
@@ -454,9 +452,21 @@ enum JournalCopy {
     /// The tree's name is still here, because a journal entry with no tree in it is not a journal
     /// entry this app can have — every row opens a profile — and it is still what its own page calls
     /// it, fallback included.
-    static func rowTitle(kind: JournalEntry.Kind, treeName: String) -> String {
-        "\(verb(for: kind)) \(treeName)"
+    ///
+    /// `treeName` is nil when no name was resolved for the tree (no given name and no species).
+    /// Every kind then reads the fallback title, except a pin move, which reads `unnamedPinMove`.
+    static func rowTitle(kind: JournalEntry.Kind, treeName: String?) -> String {
+        guard let treeName else {
+            if kind == .pinMoved { return unnamedPinMove }
+            return "\(verb(for: kind)) \(TreeProfilePresentation.fallbackTitle)"
+        }
+        return "\(verb(for: kind)) \(treeName)"
     }
+
+    /// A pin move on a tree with no name: the app owner's words, chosen on 2026-11-16 over "Moved the
+    /// pin of Tree". The apostrophe is the typographic one the app's other strings use
+    /// (`TreeProfileCopy.dataDisputeAction`, "the city’s record").
+    static let unnamedPinMove = "Moved a tree’s pin"
 
     /// `Jul 12` inside this year, `Jul 12, 2025` outside it. **A section header now, not a clause.**
     ///
