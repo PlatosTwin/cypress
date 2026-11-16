@@ -654,8 +654,9 @@ public struct RoutedAPI: CypressAPI {
         // deletion, its tree would come back here, and it would stay public for good, against
         // what the person asked. So, when the account has a withdrawal queued, the account's queue
         // is sent now, while the account still owns its trees. With none queued, nothing is sent
-        // first and the requests are the ones this method made before. If a withdrawal still did not go (no connection, the service is down), this
-        // throws before `DELETE /me`, so nothing is deleted anywhere and the person can try again:
+        // first and the requests are the ones this method made before. If a withdrawal still did
+        // not go (no connection, the service is down), this throws before `DELETE /me`, so
+        // nothing is deleted anywhere and the person can try again:
         // the same state, and the same failure line, as a deletion that could not reach the service.
         //
         // The erasing door does not wait for the queue. It discards the account's queued rows and
