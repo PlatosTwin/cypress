@@ -7,7 +7,9 @@
 //
 //  1. Somebody else's tree: the city tree's controls (Visit, Check in, Favorite, Care, Share,
 //     Report), no Move pin, neither species control (the owner's ruling of 2026-11-15, "Hide
-//     species controls for now"), and the "Added" row dated by the service's day.
+//     species controls for now"), and the "Added" row dated by the service's day. Then each control
+//     is used: Favorite changes state, and Care, Share, Check in, a measure tile and Visit each
+//     open their own screen or sheet.
 //  2. Somebody else's unnamed tree: no "Say what species you think this is", whose tap used to fail.
 //  3. Its pin on the map is the same dashed community pin as anybody's.
 //  4. A tree this reader added while signed out, and one added signed in without agreeing to
@@ -73,6 +75,100 @@ final class OthersTreeUITests: XCTestCase, DeepLinkHarness {
         XCTAssertFalse(app.staticTexts[Copy.notSharing].exists, "somebody else's tree carries the adder's line")
     }
 
+    // MARK: - 1b · Each control on somebody else's tree works
+
+    private enum Screens {
+        static let careLog = "Care log"
+        static let share = "Share this tree"
+        static let checkIn = "Check-in"
+        static let measure = "Measure"
+        static let back = "Back"
+        /// `TreeProfilePresentation`'s cold CTA: nobody has photographed this tree.
+        static let visit = "Add the first photo of this tree"
+        /// `VisitCameraModel.closeLabel` over the live viewfinder.
+        static let closeCamera = "Close the camera"
+        /// The stat card's label begins with its name; an empty one reads `Height, Add a reading`.
+        static let heightTile = "Height, "
+    }
+
+    /// Favorite changes state; Care, Share, Check in, a measure tile and Visit each open their own
+    /// screen or sheet, and the profile comes back after each. Visit goes last: it opens the
+    /// camera, which this test closes and then ends.
+    ///
+    /// Camera access is granted once per install (CLAUDE.md), and a visit opened from a profile
+    /// goes straight to the camera and never asks for location, so no system alert covers it.
+    func testEachControlOnSomebodyElsesTreeOpensItsScreen() {
+        let app = launch("othersTree")
+        let added = app.staticTexts[Copy.added]
+        guard added.waitForExistence(timeout: 60) else {
+            XCTFail(deepLinkFailure(app).map { "othersTree: \($0)" }
+                ?? "othersTree: somebody else's tree drew no '\(Copy.added)' row")
+            return
+        }
+
+        // Favorite: the cell's selected state flips, and a second tap puts it back.
+        let favorite = app.buttons["Favorite"]
+        let before = favorite.isSelected
+        favorite.tap()
+        let flipped = expectation(for: NSPredicate(format: "isSelected == %@", NSNumber(value: !before)),
+                                  evaluatedWith: favorite)
+        wait(for: [flipped], timeout: 10)
+        favorite.tap()
+        let restored = expectation(for: NSPredicate(format: "isSelected == %@", NSNumber(value: before)),
+                                   evaluatedWith: favorite)
+        wait(for: [restored], timeout: 10)
+
+        // Care and Share: each raises its sheet, and the scrim strip closes it (`SheetExitUITests`).
+        for (control, title) in [("Care", Screens.careLog), ("Share", Screens.share)] {
+            app.buttons[control].tap()
+            let sheet = app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH %@", title)).firstMatch
+            XCTAssertTrue(sheet.waitForExistence(timeout: 10), "'\(control)' on somebody else's tree raised no '\(title)' sheet")
+            app.coordinate(withNormalizedOffset: .zero).withOffset(CGVector(dx: app.frame.midX, dy: 58)).tap()
+            XCTAssertTrue(waitForGone(sheet), "the '\(title)' sheet did not close")
+            XCTAssertTrue(added.waitForExistence(timeout: 10), "the profile did not come back after '\(title)'")
+        }
+
+        // Check in: pushes screen 07, and Back returns.
+        app.buttons[Copy.checkIn].tap()
+        XCTAssertTrue(app.staticTexts[Screens.checkIn].waitForExistence(timeout: 10),
+                      "check-in on somebody else's tree opened no '\(Screens.checkIn)' screen")
+        app.buttons[Screens.back].tap()
+        XCTAssertTrue(added.waitForExistence(timeout: 10), "the profile did not come back after check-in")
+
+        // A measure tile: pushes screen 16, and Back returns.
+        let height = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", Screens.heightTile)).firstMatch
+        XCTAssertTrue(height.waitForExistence(timeout: 10), "somebody else's tree draws no Height tile")
+        scrollToHittable(height, in: app)
+        height.tap()
+        XCTAssertTrue(app.staticTexts[Screens.measure].waitForExistence(timeout: 10),
+                      "the Height tile on somebody else's tree opened no '\(Screens.measure)' screen")
+        app.buttons[Screens.back].tap()
+        XCTAssertTrue(height.waitForExistence(timeout: 10), "the profile did not come back after Measure")
+
+        // Visit: opens the camera for this tree, and closing it returns to the profile.
+        let visit = app.buttons[Screens.visit]
+        XCTAssertTrue(visit.waitForExistence(timeout: 10), "somebody else's tree offers no '\(Screens.visit)'")
+        scrollToHittable(visit, in: app, upward: true)
+        visit.tap()
+        let close = app.buttons[Screens.closeCamera]
+        XCTAssertTrue(close.waitForExistence(timeout: 15), "Visit on somebody else's tree opened no camera")
+        close.tap()
+        XCTAssertTrue(visit.waitForExistence(timeout: 10), "the profile did not come back after the camera")
+        app.terminate()
+    }
+
+    private func waitForGone(_ element: XCUIElement, timeout: TimeInterval = 10) -> Bool {
+        let gone = expectation(for: NSPredicate(format: "exists == false"), evaluatedWith: element)
+        return XCTWaiter.wait(for: [gone], timeout: timeout) == .completed
+    }
+
+    private func scrollToHittable(_ element: XCUIElement, in app: XCUIApplication, upward: Bool = false) {
+        let screen = app.frame
+        for _ in 0..<6 where !element.isHittableWithoutRaising(onScreen: screen) {
+            if upward { app.swipeDown() } else { app.swipeUp() }
+        }
+    }
+
     // MARK: - 2 · Somebody else's unnamed tree
 
     func testSomebodyElsesUnnamedTreeDoesNotOfferTheClaim() {
@@ -97,14 +193,29 @@ final class OthersTreeUITests: XCTestCase, DeepLinkHarness {
         // never written back (`DebugMapCamera`).
         app.launchEnvironment[DebugMapCamera.key] = "37.7744,-122.5300,150"
         // The map opens on the reader when it has a fix (`MapCenteredStateUITests`), so the fix is
-        // pinned to the same spot (`DebugLocationOverride`, `CYPRESS_LOCATION`).
-        app.launchEnvironment["CYPRESS_LOCATION"] = "37.7744,-122.5300"
+        // pinned (`DebugLocationOverride`, `CYPRESS_LOCATION`). It sits 67 m south of the tree and
+        // inside the 150 m camera, never on the tree: MapKit hides a pin that sits exactly under
+        // the reader's location dot, and the pin then never draws on a clean install. A pinned
+        // fix also means the map never asks for location permission, so no system alert shows.
+        app.launchEnvironment["CYPRESS_LOCATION"] = "37.7738,-122.5300"
         app.launch()
 
         let pin = app.descendants(matching: .any)
             .matching(NSPredicate(format: "label BEGINSWITH %@", Copy.communityPin))
             .firstMatch
-        guard pin.waitForExistence(timeout: 60) else {
+        // The map reads its pins when it appears, and on a clean install the deep link writes the
+        // tree into the cache after that read has started. A real tree arrives through the tile
+        // refresh, which re-reads the map; the debug seam does not. So the test leaves the map
+        // and comes back, which re-reads it, as a reader would. Three tries, so a slow write is
+        // not a race.
+        XCTAssertTrue(app.buttons["Map"].waitForExistence(timeout: 60), "othersTreeOnMap: the tab bar never appeared")
+        var found = pin.waitForExistence(timeout: 10)
+        for _ in 0..<3 where !found {
+            app.buttons["My Grove"].tap()
+            app.buttons["Map"].tap()
+            found = pin.waitForExistence(timeout: 15)
+        }
+        guard found else {
             XCTFail(deepLinkFailure(app).map { "othersTreeOnMap: \($0)" }
                 ?? "othersTreeOnMap: the map drew no '\(Copy.communityPin)' pin over somebody else's tree")
             return
@@ -114,9 +225,10 @@ final class OthersTreeUITests: XCTestCase, DeepLinkHarness {
     // MARK: - 4 · Your own tree that only you can see
 
     func testYourTreeSaysOnlyYouCanSeeItWhetherSignedOutOrNotSharing() {
-        // `unsharedNotSharing` leaves a debug account signed in. `unsharedSignedOut` signs out
-        // first, so it runs last, and once more on the way out, which also covers a test that
-        // stopped before it. The second run adds one more tree at sea; nothing reads it.
+        // `unsharedNotSharing` leaves a debug account signed in. Every other deep link signs that
+        // account out first (`DebugDeepLink.open`). `unsharedSignedOut` also runs once more on the
+        // way out, for a later launch that uses no deep link. That run adds one more tree at sea;
+        // nothing reads it.
         addTeardownBlock {
             let reset = XCUIApplication()
             reset.launchEnvironment["CYPRESS_SCREEN"] = "unsharedSignedOut"

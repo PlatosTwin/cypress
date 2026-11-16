@@ -26,3 +26,22 @@ unless the reader is the adder.
 `anotherPersonsTreeHere` (red when the adder guard is removed). `SpeciesCorrectionTests
 .theOfferMatchesTheBoundary` used to assert that a stranger is offered the report on a tree added
 on this phone; it now asserts the owner's rule.
+
+### E??? — The map pin test passed only on a simulator that had run it before
+
+**What happened.** `OthersTreeUITests.testSomebodyElsesTreeDrawsTheCommunityPin` launched the
+`othersTreeOnMap` deep link and waited for the dashed pin. The map reads its pins once, when it
+appears (`MapHomeView`'s `.task` calls `MapModel.fetch()`). The deep link writes the tree into the
+community cache after that read has started, through `LocalAPI.debugSeedCommunityCache`, and
+nothing asks the map to read again. A real tree from another person arrives through the tile
+refresh, which does re-read the map; the debug seam skips that path. On a simulator where the
+tree was already in the cache from an earlier launch, the first read found it and the test
+passed. On a clean install it drew no pin. The first green run (location on the tree) and the
+review's relaunch (location 67 m south) were both second launches. The location dot over the pin
+was a second, separate cause, found by the review.
+
+**The fix.** The test leaves the map for My Grove and comes back, which re-reads the map, up to
+three times. A run with the seed delayed 5 s missed the pin on the first wait and found it after
+one round trip. The pinned location is 67 m south of the tree, inside the 150 m camera.
+
+**Tests.** The test itself, red on a clean install with the seed removed from the deep link.

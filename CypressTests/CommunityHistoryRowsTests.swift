@@ -52,11 +52,13 @@ struct CommunityHistoryRowsTests {
         isAddedHere: Bool = false,
         createdAt: Date = Date(timeIntervalSince1970: 1_789_948_800),
         source: TreeSource = .community,
-        visits: [Visit] = []
+        visits: [Visit] = [],
+        care: [CareEvent] = []
     ) -> TreeProfile {
         TreeProfile(
             tree: Tree(id: treeID, source: source, coordinate: spot, createdAt: createdAt, updatedAt: createdAt),
             visits: Series(items: visits, isComplete: true),
+            careEvents: Series(items: care, isComplete: true),
             addedByYou: addedByYou,
             communityHistory: history,
             isAddedHere: isAddedHere
@@ -116,6 +118,21 @@ struct CommunityHistoryRowsTests {
         #expect(TreeProfileCopy.pinMovedDetail(from: to, to: from) == " · 12 m south-west")
         #expect(TreeProfileCopy.pinMovedDetail(from: nil, to: to) == "")
         #expect(TreeProfileCopy.pinMovedDetail(from: from, to: nil) == "")
+    }
+
+    /// A move that rounds to 0 m names no direction, the way `VisitShortlist.label` prints a
+    /// distance that rounds to 0 m. The owner has not ruled on this; it follows that precedent.
+    ///
+    /// Red-proof: remove the `meters > 0` guard in `pinMovedDetail` — red, reading a direction.
+    @Test("a move that rounds to 0 m reads 0 m and no direction")
+    func zeroMeters() throws {
+        let from = Self.spot
+        let to = VisitPinAdjust.offset(from, northM: 0.3, eastM: 0)
+        // Calibration: the move is real but rounds to 0 m.
+        #expect(from.distance(to: to) > 0)
+        #expect(Int(from.distance(to: to).rounded()) == 0)
+        #expect(TreeProfileCopy.pinMovedDetail(from: from, to: to) == " · 0 m")
+        #expect(TreeProfileCopy.pinMovedDetail(from: from, to: from) == " · 0 m")
     }
 
     // MARK: - The date
@@ -211,8 +228,10 @@ struct CommunityHistoryRowsTests {
 
     /// Four rows at most, newest day first; on one day a visit sorts above a history row.
     ///
-    /// Red-proof: drop the `if aHistory != bHistory` line in `activity` — red on the same-day order
-    /// at Honolulu, where the visit's 08:00 is before the history row's noon.
+    /// Red-proof: make the `if aHistory != bHistory` line in `activity` return `aHistory` instead
+    /// of `!aHistory` — red on the same-day order. Dropping the line does not go red: the lines
+    /// below it still happen to put this visit first, because visits come before history rows in
+    /// the list the sort starts from.
     @Test("history rows mix with visits by day, a visit above a history row on the same day, four at most")
     func mixedAndLimited() throws {
         let honolulu = try Self.zone("Pacific/Honolulu")
@@ -249,6 +268,34 @@ struct CommunityHistoryRowsTests {
 
         let visited = TreeProfilePresentation(profile: Self.profile(history: nil, visits: [try Self.visit("2026-09-22T18:00:00Z")]))
         #expect(visited.offersActivityLink)
+    }
+
+    /// A city tree with care and no visit or photo is cold, and screen 14 draws no activity feed
+    /// for it. A cold community tree draws one, for its "Added" row.
+    ///
+    /// Red-proof: return `true` from `drawsActivityFeed` — red on the city tree.
+    @Test("a care-only city tree is cold and draws no feed; a cold community tree draws one")
+    func careOnlyCityTree() throws {
+        let at = try Self.instant("2026-09-22T18:00:00Z")
+        let care = CareEvent(
+            treeID: Self.treeID, attribution: Attribution(userID: nil, deviceID: UUID()),
+            capturedAt: at, actions: [.watered]
+        )
+        let city = TreeProfilePresentation(profile: Self.profile(history: nil, source: .cityImport, care: [care]))
+        // Calibration: the care entry is there and would make a row, and the tree is still cold.
+        #expect(city.isCold)
+        #expect(city.activity.map(\.kind) == [.care])
+        #expect(!city.drawsActivityFeed)
+
+        let community = TreeProfilePresentation(profile: Self.profile(history: nil))
+        #expect(community.isCold)
+        #expect(community.drawsActivityFeed)
+
+        let visited = TreeProfilePresentation(
+            profile: Self.profile(history: nil, source: .cityImport, visits: [try Self.visit("2026-09-22T18:00:00Z")])
+        )
+        #expect(!visited.isCold)
+        #expect(visited.drawsActivityFeed)
     }
 
     // MARK: - Whose rows are "you"

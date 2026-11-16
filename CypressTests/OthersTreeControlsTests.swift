@@ -160,5 +160,34 @@ struct OthersTreeControlsTests {
         )
         #expect(try await api.treesNear(Self.spot, radiusM: 5, limit: 5).count == 1, "a re-seed added a second row")
     }
+
+    /// `unsharedNotSharing` signs a debug account in, and the simulator keeps it. Any other deep
+    /// link signs exactly that account out first; another account stays signed in.
+    ///
+    /// Red-proof: remove the sign-out at the top of `DebugDeepLink.open` — red on "the not-sharing
+    /// debug account is still signed in".
+    @MainActor
+    @Test("a deep link after unsharedNotSharing starts signed out, and leaves other accounts alone")
+    func theDebugAccountDoesNotLeak() async throws {
+        let store = try await Self.seededStore()
+        let api = LocalAPI(store: store, deviceID: Self.readerDevice)
+
+        // The state `unsharedNotSharing` leaves, set the way that link sets it. The link itself
+        // also adds a tree from a photograph, which the UI suite covers.
+        try await api.linkAccount(
+            deviceUUID: Self.readerDevice, userID: DebugDeepLink.notSharingAccount,
+            provider: "apple", acceptsLicense: false
+        )
+        #expect(await api.userID == DebugDeepLink.notSharingAccount, "calibration: the debug account is signed in")
+
+        let next = await DebugDeepLink.open(.othersTree, api: api, router: AppRouter())
+        #expect(next == nil, "othersTree failed: \(String(describing: next))")
+        #expect(await api.userID == nil, "the not-sharing debug account is still signed in")
+
+        let someoneElse = UUID(uuidString: "0E000000-0000-4000-8000-0000000C3A03")!
+        try await api.linkAccount(deviceUUID: Self.readerDevice, userID: someoneElse, provider: "apple", acceptsLicense: true)
+        _ = await DebugDeepLink.open(.othersTree, api: api, router: AppRouter())
+        #expect(await api.userID == someoneElse, "a deep link signed out an account that is not the debug one")
+    }
 }
 #endif

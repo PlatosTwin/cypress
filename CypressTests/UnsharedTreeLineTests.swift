@@ -174,6 +174,37 @@ struct UnsharedTreeLineTests {
         #expect(published.readerSharing == .notSharing, "the merge dropped the phone's sharing state")
         #expect(published.isAddedHere, "the merge dropped isAddedHere")
     }
+
+    // MARK: - Agreeing later
+
+    /// A declined account adds a tree, then agrees on the You tab ("Share my tree records"). The
+    /// tree's line goes once the phone records the yes. Driven through `AccountModel.acceptLicense`,
+    /// the You tab's own call, on `LicenseAcceptanceTests`'s rig, so the write is the one the tab
+    /// makes and not a copy of it.
+    ///
+    /// Red-proof: read `.notSharing` for every signed-in account in `ContributionSharing.init` —
+    /// red on "the line stayed after agreeing".
+    @MainActor
+    @Test("agreeing later on the You tab removes the line from a tree added while declined")
+    func agreeingLaterRemovesTheLine() async throws {
+        let rig = try await LicenseAcceptanceTests.declinedPhone(
+            http: LicenseAcceptanceTests.scripted(LicenseAcceptanceTests.ClaimAnswer(200))
+        )
+        let signedIn = Attribution(userID: LicenseAcceptanceTests.userID, deviceID: LicenseAcceptanceTests.deviceID)
+        let tree = try await Self.add(rig.api, attribution: signedIn, at: Self.spot)
+
+        var profile = try await rig.api.treeProfile(id: tree.id)
+        #expect(profile.readerSharing == .notSharing, "precondition: the account declined")
+        #expect(presented(profile).onlyYouCanSeeNote == Self.notSharing, "precondition: the line shows")
+
+        await rig.model.acceptLicense()
+        #expect(rig.model.licenseAcceptanceFailed == false, "the You tab's yes did not go through")
+        #expect(rig.model.link?.acceptsLicense == true, "calibration: the phone recorded the yes")
+
+        profile = try await rig.api.treeProfile(id: tree.id)
+        #expect(profile.readerSharing == .sharing)
+        #expect(presented(profile).onlyYouCanSeeNote == nil, "the line stayed after agreeing")
+    }
 }
 
 /// A presentation with the default clock, for the tests above.

@@ -305,11 +305,10 @@ struct TreeProfileView: View {
                     regularsRow(presentation)
                 }
 
-                // No longer behind `isCold` (round C3): a community tree that nobody has visited
-                // or photographed is cold, and its "Added" row must still show. The feed draws
-                // nothing when it has no rows, which is every cold city tree, so screen 14 is
-                // unchanged for them.
-                activityFeed(presentation)
+                // Behind `isCold` for city trees only (round C3); see `drawsActivityFeed`.
+                if presentation.drawsActivityFeed {
+                    activityFeed(presentation)
+                }
 
                 statGrid(presentation)
 
