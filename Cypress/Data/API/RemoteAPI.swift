@@ -837,8 +837,32 @@ public extension RemoteAPI {
         /// hidden one alike, so its `false` is a fact about this tree only when it sent the tree.
         /// The profile reads it to decide whether to tell the adder that only they can see it.
         public var isPublished: Bool?
-        // The response's `community_tree` is decoded and deliberately not carried here:
-        // `TreeCommunityHalfResponse.communityTree` says why.
+        // The response's `community_tree` is decoded and deliberately not carried here, apart from
+        // its species below: `TreeCommunityHalfResponse.communityTree` says why.
+
+        /// The service's species answers on this tree (ROADMAP 144), or nil when it sent no
+        /// `community_tree` or sent none of the three keys (release v16 and older).
+        public var species: ServedSpecies?
+
+        /// What the service says about a community tree's species.
+        public struct ServedSpecies: Hashable, Sendable {
+            /// `community_tree.speciesCurrentID`: the species in force on the service.
+            public var speciesID: UUID?
+            /// `species_reported`.
+            public var isReported: Bool
+            /// `species_report_flag_id`, sent to the adder only.
+            public var reportFlagID: UUID?
+            /// `species_named_by_you`: the caller is the namer in force and shares, so may correct
+            /// their own answer now.
+            public var namedByYou: Bool
+
+            public init(speciesID: UUID?, isReported: Bool, reportFlagID: UUID?, namedByYou: Bool) {
+                self.speciesID = speciesID
+                self.isReported = isReported
+                self.reportFlagID = reportFlagID
+                self.namedByYou = namedByYou
+            }
+        }
     }
 
     /// `GET /community-trees?tile=14/x/y[&cursor=]` — one page of one tile of the community layer.
@@ -887,7 +911,8 @@ public extension RemoteAPI {
                     toCoordinate: event.toCoordinate,
                     fromSpeciesID: event.fromSpeciesID,
                     toSpeciesID: event.toSpeciesID,
-                    placement: event.placement.map(CommunityTreeHistory.Placement.init(wire:))
+                    placement: event.placement.map(CommunityTreeHistory.Placement.init(wire:)),
+                    byYou: event.byYou
                 )
             },
             isComplete: response.complete
@@ -962,7 +987,19 @@ public extension RemoteAPI {
                 uniquingKeysWith: { first, _ in first }
             ),
             addedByYou: response.addedByYou ?? false,
-            isPublished: response.communityTree == nil ? nil : response.isPublished
+            isPublished: response.communityTree == nil ? nil : response.isPublished,
+            // Only beside a tree the service sent, and only when it sent the keys: a service
+            // without them says nothing about reports, and its silence is not "no report".
+            species: response.communityTree.flatMap { tree in
+                response.speciesReported.map { reported in
+                    TreeCommunityDelta.ServedSpecies(
+                        speciesID: tree.speciesCurrentID,
+                        isReported: reported,
+                        reportFlagID: response.speciesReportFlagID,
+                        namedByYou: response.speciesNamedByYou ?? false
+                    )
+                }
+            }
         )
     }
 

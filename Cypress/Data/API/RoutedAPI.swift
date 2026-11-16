@@ -317,6 +317,13 @@ public struct RoutedAPI: CypressAPI {
     /// `LocalAPI.withdrawServicePhoto(id:treeID:)`. See `deletePhoto(id:)`.
     public let withdrawServicePhoto: (@Sendable (UUID, UUID) async throws -> PhotoDeletion)?
 
+    /// ROADMAP 144's reach into `LocalAPI`, or nil to keep the phone's own species answers.
+    /// `DataLayer.boot` wires it. See `CommunitySpeciesSeam`.
+    public let speciesSeam: CommunitySpeciesSeam?
+
+    /// The reports the service named to this phone's adder. See `ServedSpeciesReports`.
+    public let servedSpeciesReports: ServedSpeciesReports
+
     public init(
         local: any CypressAPI,
         remote: RemoteAPI,
@@ -327,8 +334,12 @@ public struct RoutedAPI: CypressAPI {
         resolvePhotoEvidence: (@Sendable (UUID) async -> PhotoIdentityEvidence)? = nil,
         photoIdentities: PhotoIdentityLedger = PhotoIdentityLedger(),
         deletePhotoNamingServiceRow: (@Sendable (UUID, UUID) async throws -> PhotoDeletion)? = nil,
-        withdrawServicePhoto: (@Sendable (UUID, UUID) async throws -> PhotoDeletion)? = nil
+        withdrawServicePhoto: (@Sendable (UUID, UUID) async throws -> PhotoDeletion)? = nil,
+        speciesSeam: CommunitySpeciesSeam? = nil,
+        servedSpeciesReports: ServedSpeciesReports = ServedSpeciesReports()
     ) {
+        self.speciesSeam = speciesSeam
+        self.servedSpeciesReports = servedSpeciesReports
         self.local = local
         self.remote = remote
         self.log = log
@@ -438,8 +449,19 @@ public struct RoutedAPI: CypressAPI {
         try await local.flagWrongSpecies(treeID: treeID)
     }
 
+    /// The local keep first: a report raised on this phone is closed here and queued. A report the
+    /// service named to the adder (`species_report_flag_id`) has no row on this phone, so the local
+    /// verb answers `notFound` for it, and the keep is queued by the tree a profile read recorded
+    /// for that flag (ROADMAP 144).
     public func dismissSpeciesReview(flagID: UUID) async throws {
-        try await local.dismissSpeciesReview(flagID: flagID)
+        do {
+            try await local.dismissSpeciesReview(flagID: flagID)
+        } catch APIError.notFound {
+            guard let speciesSeam, let treeID = await servedSpeciesReports.tree(of: flagID) else {
+                throw APIError.notFound
+            }
+            try await speciesSeam.keep(treeID, flagID)
+        }
     }
 
     public func flagNeverExisted(treeID: UUID) async throws {
@@ -1069,7 +1091,11 @@ public struct RoutedAPI: CypressAPI {
     /// `try? await remote.treeCommunityHalf(id:)` answers nil for a cancellation exactly as it does
     /// for an unreachable host.
     public func refreshedTreeProfile(id: UUID) async throws -> TreeProfile {
-        let mine = try await local.treeProfile(id: id)
+        var mine = try await local.treeProfile(id: id)
+        // ROADMAP 144: the reader's queued species acts, read **before** the service is asked. An
+        // act queued then may reach the service after it answered, so that answer must not
+        // overwrite the phone's own row; one sent before the question is in the answer.
+        let speciesState = mine.tree.source == .community ? await speciesSeam?.state(id) : nil
         // The history is asked for beside the community half, and only for a community tree: a
         // city tree has none, and the service would answer `not_found` for it every time (round
         // C2). A history that fails costs the history alone, never the photographs.
@@ -1081,6 +1107,46 @@ public struct RoutedAPI: CypressAPI {
             return mine
         }
         let history = await asked
+
+        // ROADMAP 144, the species. The adder's phone takes a species somebody else gave the tree
+        // onto its own row, and reads the profile again so every line agrees with the row.
+        if let served = community.species, let speciesSeam, let speciesState,
+           mine.isAddedHere, mine.addedByYou, !speciesState.anyActQueued,
+           let servedID = served.speciesID, servedID != mine.tree.speciesCurrentID,
+           await speciesSeam.adopt(id, mine.tree.speciesCurrentID, servedID) {
+            mine = try await local.treeProfile(id: id)
+        }
+        if let flagID = community.species?.reportFlagID {
+            await servedSpeciesReports.remember(flagID: flagID, treeID: id)
+        }
+        var tree = mine.tree
+        var species = mine.species
+        if !mine.isAddedHere, mine.tree.source == .community {
+            let shown = CommunitySpeciesMerge.shownSpecies(
+                local: mine.tree.speciesCurrentID, served: community.species, state: speciesState
+            )
+            if shown != tree.speciesCurrentID {
+                // A species this phone cannot resolve keeps the phone's answer rather than drawing a
+                // tree whose species nobody can look up.
+                var resolved: Species?
+                if let shown { resolved = try? await local.species(id: shown) }
+                if shown == nil || resolved != nil {
+                    tree.speciesCurrentID = shown
+                    species = resolved
+                }
+            }
+        }
+        let addedByYou = mine.addedByYou || community.addedByYou
+        let speciesCorrection = CommunitySpeciesMerge.offer(
+            local: mine.speciesCorrection,
+            served: community.species,
+            state: speciesState,
+            isAdder: mine.addedByYou,
+            addedOnAnotherPhone: community.addedByYou && !mine.isAddedHere,
+            readerShares: mine.readerSharing == .sharing,
+            hasSpecies: tree.speciesCurrentID != nil,
+            treeID: id
+        )
 
         var photos = mine.photos.items
         let evidence = await resolvePhotoEvidence?(id) ?? .none
@@ -1100,9 +1166,11 @@ public struct RoutedAPI: CypressAPI {
 
         await log.record(.treeProfile, .live)
         return TreeProfile(
-            tree: mine.tree,
+            // ROADMAP 144: a cached tree shows the service's species once nothing of the reader's
+            // is queued (`CommunitySpeciesMerge.shownSpecies`); every other tree is the phone's.
+            tree: tree,
             activeName: mine.activeName,
-            species: mine.species,
+            species: species,
             neighborhoodName: mine.neighborhoodName,
             cityShortName: mine.cityShortName,
             latestObservation: mine.latestObservation,
@@ -1130,7 +1198,8 @@ public struct RoutedAPI: CypressAPI {
             anonymizedPhotoIDs: mine.anonymizedPhotoIDs,
             photoTallies: mine.photoTallies,
             inventorySource: mine.inventorySource,
-            speciesCorrection: mine.speciesCorrection,
+            // ROADMAP 144: the service decides who counts, over the reader's queued acts.
+            speciesCorrection: speciesCorrection,
             recordDefect: mine.recordDefect,
             // The local answer, like `tree` itself: `tree_status_overrides` is this device's table
             // and the service has no view of it. Taking the remote half's value here would let a
@@ -1143,7 +1212,7 @@ public struct RoutedAPI: CypressAPI {
             // reader's account added on another phone reaches this one only through the cache, and
             // only the service can say whose it is. Its "no" never overrides this phone's yes, for
             // `TreeProfile.addedByYou`'s reasons.
-            addedByYou: mine.addedByYou || community.addedByYou,
+            addedByYou: addedByYou,
             communityHistory: history,
             // The phone's facts: which table holds the tree, and what the reader agreed to.
             isAddedHere: mine.isAddedHere,

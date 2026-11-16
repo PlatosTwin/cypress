@@ -211,8 +211,16 @@ public struct CommunityTreeHistory: Hashable, Sendable {
         /// its `published` event under this name.
         case added
         case locationCorrected
+        /// Named or corrected by the tree's adder. The service keeps these two names for the
+        /// adder's acts, so every build reads them the same way.
         case speciesNamed
         case speciesCorrected
+        /// ROADMAP 144: somebody other than the adder named the tree, or corrected their own
+        /// naming, and the operator corrected it. Kinds of their own on the wire so an older
+        /// build, which reads every row as the adder's, drops them rather than calling them "You".
+        case speciesNamedByContributor
+        case speciesCorrectedByContributor
+        case speciesCorrectedByOperator
         case unrecognized(String)
 
         init(wire: String) {
@@ -221,7 +229,20 @@ public struct CommunityTreeHistory: Hashable, Sendable {
             case "location_corrected": self = .locationCorrected
             case "species_named": self = .speciesNamed
             case "species_corrected": self = .speciesCorrected
+            case "species_named_by_contributor": self = .speciesNamedByContributor
+            case "species_corrected_by_contributor": self = .speciesCorrectedByContributor
+            case "species_corrected_by_operator": self = .speciesCorrectedByOperator
             default: self = .unrecognized(wire)
+            }
+        }
+
+        /// Whether only the adder makes events of this kind. For these, a service that sends no
+        /// `by_you` still says who: the reader made the event exactly when the reader added the tree.
+        public var isOnlyTheAdders: Bool {
+            switch self {
+            case .added, .locationCorrected, .speciesNamed, .speciesCorrected: return true
+            case .speciesNamedByContributor, .speciesCorrectedByContributor, .speciesCorrectedByOperator,
+                 .unrecognized: return false
             }
         }
     }
@@ -246,6 +267,9 @@ public struct CommunityTreeHistory: Hashable, Sendable {
         public let fromSpeciesID: UUID?
         public let toSpeciesID: UUID?
         public let placement: Placement?
+        /// The service's `by_you` (ROADMAP 144): the reader made this event. Nil from a service
+        /// that sent no key (release v16 and older).
+        public let byYou: Bool?
 
         public init(
             id: UUID,
@@ -255,7 +279,8 @@ public struct CommunityTreeHistory: Hashable, Sendable {
             toCoordinate: Coordinate? = nil,
             fromSpeciesID: UUID? = nil,
             toSpeciesID: UUID? = nil,
-            placement: Placement? = nil
+            placement: Placement? = nil,
+            byYou: Bool? = nil
         ) {
             self.id = id
             self.kind = kind
@@ -265,6 +290,14 @@ public struct CommunityTreeHistory: Hashable, Sendable {
             self.fromSpeciesID = fromSpeciesID
             self.toSpeciesID = toSpeciesID
             self.placement = placement
+            self.byYou = byYou
+        }
+
+        /// Whether the reader made this event: the service's `by_you` when it sent one. Without it,
+        /// an event only the adder makes is the reader's exactly when the reader added the tree,
+        /// and any other event is not the reader's.
+        public func isByReader(readerAddedTree: Bool) -> Bool {
+            byYou ?? (kind.isOnlyTheAdders && readerAddedTree)
         }
     }
 

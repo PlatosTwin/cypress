@@ -1384,6 +1384,33 @@ public actor LocalAPI: CypressAPI {
         return adopted ?? false
     }
 
+    /// `adoptServedSpecies` for the trees of one tile page that this phone added and has not named.
+    ///
+    /// The tile serves the adder's own trees too, and the cache drops them (the phone's own row
+    /// wins), so this is how the adder's map learns a contributor's naming without opening the
+    /// profile. **Only an unnamed row** (`observed` nil): a page is not ordered against this
+    /// phone's own species acts, and a row that has a species may hold one the page does not
+    /// include yet. The profile read, which knows what was queued before it asked, takes every
+    /// other change.
+    public func adoptServedSpeciesOnUnnamedTrees(_ trees: [Tree]) async {
+        let named = trees.filter { $0.speciesCurrentID != nil }
+        guard !named.isEmpty else { return }
+        let unnamedHere = (try? await store.queue.read { connection -> Set<UUID> in
+            var ids: Set<UUID> = []
+            for tree in named {
+                if let own = try communityTrees.tree(id: tree.id, connection: connection),
+                   own.speciesCurrentID == nil, own.deletedAt == nil {
+                    ids.insert(tree.id)
+                }
+            }
+            return ids
+        }) ?? []
+        for tree in named where unnamedHere.contains(tree.id) {
+            guard let served = tree.speciesCurrentID else { continue }
+            await adoptServedSpecies(treeID: tree.id, observed: nil, served: served)
+        }
+    }
+
     // MARK: - The record itself (task #125)
 
     /// Reports a record as never having held a tree — the owner's *"a way to flag that a tree that
