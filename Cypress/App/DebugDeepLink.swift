@@ -192,6 +192,19 @@ enum DebugDeepLink {
         /// The map, over a cached tree of somebody else's, to see its dashed pin. The camera is
         /// the test's to pin (`CYPRESS_MAP_CAMERA`); this case seeds the tree and opens the tab.
         case othersTreeOnMap
+        /// ROADMAP 144: the profile of somebody else's **named** cached tree, read by a debug
+        /// account that **shares** tree records, so "Report the species as wrong" shows. A new tree
+        /// id each launch, so a report made by the last run does not stand on this one.
+        case othersTreeSharing
+        /// The same reader on somebody else's **unnamed** cached tree, so "Say what species you
+        /// think this is" shows. A new tree id each launch, for the same reason.
+        case othersTreeUnnamedSharing
+        /// ROADMAP 144: the profile of a tree this reader added (signed out), named, with a species
+        /// report open against it, so the adder's "Somebody has reported this species as wrong."
+        /// and "Keep the species" show. With the remote gate shut the report is one raised on
+        /// this phone (`LocalAPI.debugSeedReview`); the service's own report reaches the same
+        /// control through `RoutedAPI`.
+        case ownTreeSpeciesReported
         /// The profile of a tree this reader added while **signed out**. Signs out first, so the
         /// state is the case's own and not the last launch's, then adds a tree through `addTree`.
         case unsharedSignedOut
@@ -340,6 +353,11 @@ enum DebugDeepLink {
             // starts as that account. Only that account: a session a test set up by other means
             // is left alone.
             if screen != .unsharedNotSharing, await api.userID == Self.notSharingAccount {
+                try await api.signOut()
+            }
+            // ROADMAP 144: the sharing debug account, the same way.
+            if screen != .othersTreeSharing, screen != .othersTreeUnnamedSharing,
+               await api.userID == Self.sharingAccount {
                 try await api.signOut()
             }
             switch screen {
@@ -514,6 +532,50 @@ enum DebugDeepLink {
                 } else {
                     router.push(.treeProfile(id))
                 }
+            case .othersTreeSharing, .othersTreeUnnamedSharing:
+                // ROADMAP 144. The sharing account first, through the shipping verb, then a fresh
+                // cached tree at the case's own spot.
+                if await api.userID != Self.sharingAccount {
+                    try await api.signOut()
+                    try await api.linkAccount(
+                        deviceUUID: api.deviceID,
+                        userID: Self.sharingAccount,
+                        provider: "apple",
+                        acceptsLicense: true
+                    )
+                }
+                var speciesID: UUID?
+                if screen == .othersTreeSharing {
+                    guard let species = try await api.searchSpecies(query: "Platanus", limit: 1).first else {
+                        throw Failure(screen: screen.rawValue, reason: "no species matches Platanus")
+                    }
+                    speciesID = species.id
+                }
+                let id = UUID()
+                try await api.debugSeedCommunityCache(
+                    Tree(
+                        id: id,
+                        source: .community,
+                        coordinate: screen == .othersTreeSharing ? Self.othersSharingSpot : Self.othersUnnamedSharingSpot,
+                        speciesCurrentID: speciesID,
+                        placement: .gps,
+                        createdAt: Self.othersTreeAddedDay,
+                        updatedAt: Self.othersTreeAddedDay
+                    )
+                )
+                router.push(.treeProfile(id))
+            case .ownTreeSpeciesReported:
+                // ROADMAP 144. Signed out, so the adder is this device; a named tree added through
+                // `addTree` somewhere new on the case's own patch of sea, and a report on it.
+                try await api.signOut()
+                let spot = VisitPinAdjust.offset(
+                    Self.ownReportedSpot,
+                    northM: Double.random(in: 0..<120),
+                    eastM: -Double.random(in: 0..<120)
+                )
+                let id = try await api.debugAddCommunityTree(near: spot, speciesQuery: "Platanus")
+                try await api.debugSeedReview(treeID: id, kind: .wrongSpecies)
+                router.push(.treeProfile(id))
             case .unsharedSignedOut, .unsharedNotSharing:
                 // Round C3. The account state first, through the shipping verbs, then a tree added
                 // through `addTree` in that state, on `.movePin`'s kind of slot line so a re-run
@@ -794,6 +856,15 @@ enum DebugDeepLink {
     /// remote gate shut, so there the id stays on the phone; a DEBUG build pointed at a live service
     /// should not run this case.
     static let notSharingAccount = UUID(uuidString: "C3000000-0000-4000-8000-00000000AC01")!
+
+    /// The account `othersTreeSharing` and `othersTreeUnnamedSharing` sign in as (ROADMAP 144):
+    /// one that agreed to share tree records. Not a real account, for `notSharingAccount`'s reason.
+    static let sharingAccount = UUID(uuidString: "C3000000-0000-4000-8000-00000000AC02")!
+
+    /// ROADMAP 144's spots, on the same line north of round C3's.
+    private static let othersSharingSpot = Coordinate(latitude: 37.7798, longitude: -122.5300)
+    private static let othersUnnamedSharingSpot = Coordinate(latitude: 37.7816, longitude: -122.5300)
+    private static let ownReportedSpot = Coordinate(latitude: 37.7834, longitude: -122.5300)
 
     /// The candidate window, **with this device's own status overrides laid over it**.
     ///

@@ -183,11 +183,11 @@ public struct ReviewReport: Codable, Hashable, Sendable {
 /// Closing a report without changing what it was about — the species seam's dismissal and the
 /// record seam's, which are two kinds for the reason `SpeciesStatement` gives.
 ///
-/// **Who was allowed to do it is decided on the device and stated here, not re-decided.** The
-/// species dismissal has an author's arm (`LocalAPI.dismissSpeciesReview`) that depends on the
-/// assertion chain, and the record dismissal is lead-only; neither rule is one this service can
-/// evaluate, because it holds no assertion chain and no role. The item records who dismissed what;
-/// a moderation surface that can adjudicate it is ARCHITECTURE §8's web deliverable.
+/// **Who may send it.** The species dismissal is the tree adder's "Keep the species"
+/// (`LocalAPI.dismissSpeciesReview`, ROADMAP 144). The service checks that itself, acts on the
+/// adder's keep only, and clears the reports up to the one `flagID` names, so a keep for a report
+/// raised on another phone carries the service's `species_report_flag_id`. The record dismissal is
+/// lead-only on the device, a rule the service cannot evaluate because it holds no role.
 public struct ReviewDismissal: Codable, Hashable, Sendable {
     public let clientUUID: UUID
     public let flagID: UUID
