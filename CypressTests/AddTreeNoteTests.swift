@@ -276,6 +276,31 @@ struct AddTreeNoteTests {
         ) {
             VisitPreviewFixtures.identify(rows: [])
         } != nil)
+
+        // The number `MapEmptyInventoryTests.theNoticeFitsTheSlotAtAX5` compares, printed for the
+        // branch report: the card at AX5 on the narrowest phone, and the budget it must stay under.
+        let width = AX5ReflowTests.phoneWidth
+        let card = await AX5ReflowTests.ax5Size(
+            of: MapLocationNotice(title: MapInventoryCopy.title, message: MapInventoryCopy.message),
+            width: width
+        )
+        let searching = await AX5ReflowTests.ax5Size(
+            of: MapLocationNotice(
+                title: MapOpeningCopy.searchingTitle,
+                message: MapOpeningCopy.searchingMessage(.whereYouLeftOff)
+            ),
+            width: width
+        )
+        let notAsked = await AX5ReflowTests.ax5Size(
+            of: MapLocationNotice(
+                title: MapOpeningCopy.notAskedTitle,
+                message: MapOpeningCopy.notAskedMessage(.theCityFallback)
+            ),
+            width: width
+        )
+        print(
+            "C3B-AX5: card \(card.height) pt at \(width) pt; budget \(max(searching.height, notAsked.height)) pt"
+        )
     }
 
     // MARK: - Helpers
