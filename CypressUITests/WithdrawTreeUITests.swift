@@ -94,7 +94,10 @@ final class WithdrawTreeUITests: XCTestCase, DeepLinkHarness {
         attachScreenshot(app, "withdraw-profile-control")
         action.tap()
         XCTAssertTrue(app.staticTexts[Copy.title].waitForExistence(timeout: 10), "the control did not ask first")
-        XCTAssertTrue(app.staticTexts[Copy.sharedMessage].exists,
+        // A subscript takes an identifier of at most 128 characters, and the shared message is
+        // longer: XCUITest throws "Invalid query" on it. Match the label through a predicate.
+        let shared = app.staticTexts.matching(NSPredicate(format: "label == %@", Copy.sharedMessage))
+        XCTAssertTrue(shared.firstMatch.exists,
                       "the alert for a shared tree does not carry the shared message")
         attachScreenshot(app, "withdraw-alert-shared")
     }
