@@ -9,8 +9,8 @@
 //  outright. The *words* are decidable as facts about the string rather than as its phrasing:
 //  CLAUDE.md's rule is "assert facts, not phrasing", and the facts this copy must carry are that
 //  it names what the map draws and puts the absence on those records rather than on the ground
-//  (round C3, the owner's ruling of 2026-11-15), that it makes no promise, and that it is not any other notice on
-//  this screen. What no test here decides is that the sentence is *legible* on a phone — that is
+//  (round C3, the owner's ruling of 2026-11-15), that it makes no promise, and that it is not any
+//  other notice on this screen. What no test here decides is that the sentence is *legible* on a phone — that is
 //  the AX5 measurement at the bottom and the screenshots in the branch report.
 //
 

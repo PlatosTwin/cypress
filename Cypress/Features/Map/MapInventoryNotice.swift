@@ -136,10 +136,25 @@ enum MapInventoryCopy {
     /// that one. Its subject is still the record, never the ground: "Neither has a tree here" says
     /// what the two sources hold, and leaves the reader free to see the trees in front of them.
     ///
-    /// **The sentence is true because of the trigger.** `isOwed` reads `MapContent.markerCount`,
-    /// and `LocalAPI.mapContent` merges the community layer (this phone's trees and other people's
-    /// cached ones) into the same content as the city's. So the card draws only where neither
-    /// layer has a pin or a cluster in view, unnarrowed. The same AX5 budget holds it.
+    /// **"Neither has a tree here" is about the trees this phone holds.** `isOwed` reads
+    /// `MapContent.markerCount`, and `LocalAPI.mapContent` merges the community layer (this phone's
+    /// own trees and other people's trees in its cache) into the same content as the city's. So the
+    /// card draws only where none of those has a pin or a cluster in view, unnarrowed.
+    ///
+    /// **A known limit: other people's trees are in the cache only after this phone asked for
+    /// them.** The service may hold added trees here that the phone never fetched. Then the card
+    /// stays up and the sentence is wrong. The phone asks for nothing in these cases:
+    /// - The viewport touches more than `CommunityTileRefresher.Policy.maxTiles` (16) zoom-14
+    ///   tiles, which is a zoomed-out map: `refresh(covering:)` returns `.tooManyTiles`.
+    /// - The phone is offline, or a fetch fails. The pass stops, and a tile that was tried is not
+    ///   asked again until `Policy.minimumInterval` (120 s) has passed.
+    /// - The remote gate is shut. `DataLayer.refreshCommunityTrees` is nil unless
+    ///   `RemoteAccess.allowsNetwork`, and a DEBUG build is shut unless `CYPRESS_REMOTE` opens it.
+    ///   Release builds are always open.
+    /// - The time between a map read and the first fetch for its tiles. The read that follows a
+    ///   fetch that changed the cache corrects this one.
+    ///
+    /// The same AX5 budget holds the body.
     static let message =
         "Cypress draws a city street-tree inventory and trees people have added. "
         + "Neither has a tree here."

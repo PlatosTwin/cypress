@@ -30,7 +30,7 @@ author of this round writes. None of these choices adds a string beyond the owne
    reason, and leading-aligned like the rows around it; only the button stays pinned
    (`VisitAddTreeLayout.footnotePlace(isAccessibilitySize:)`).
 
-### R??? — The two empty places name both kinds, and both are true
+### R??? — The two empty places name both kinds, about the trees this phone holds
 
 1. **The map card.** The body is the owner's. The trigger did not change and did not need to:
    `MapInventoryNotice.isOwed` reads `MapContent.markerCount`, and `LocalAPI.mapContent` merges the
@@ -41,6 +41,20 @@ author of this round writes. None of these choices adds a string beyond the owne
 2. **The empty list.** The words moved into `VisitIdentifyCopy.emptyMessage`, with the number taken
    from `VisitShortlist.searchRadiusM` (60 m). The list is `LocalAPI.treesNear`, which reads the seed
    and the whole community layer, so it is empty only when neither kind is within 60 m.
-3. **One limit, not a change.** Other people's trees reach the map and the list only after the tile
-   refresher has cached them. Over ground the phone has never fetched, the card can show for the
-   moment before the first fetch answers, and the map's read after the fetch takes it away.
+3. **A known limit, not a change.** Both texts are about the trees this phone holds: its own, and
+   other people's in its cache. Other people's trees reach the cache only when `CommunityTileRefresher`
+   fetches them, and the service may hold added trees here that the phone never fetched. Then the
+   card stays up, or the list stays empty, and "Neither has a tree here" is wrong. The phone asks for
+   nothing in these cases, each checked in the code:
+   - The map's viewport touches more than `Policy.maxTiles` (16) zoom-14 tiles, a zoomed-out map:
+     `refresh(covering:)` returns `.tooManyTiles`.
+   - The phone is offline, or a fetch fails: the pass stops, and a tile that was tried is not asked
+     again until `Policy.minimumInterval` (120 s) has passed.
+   - The remote gate is shut: `DataLayer.refreshCommunityTrees` is nil unless
+     `RemoteAccess.allowsNetwork`. DEBUG builds are shut unless `CYPRESS_REMOTE` opens them; release
+     builds are always open.
+   - The time between a map read and the first fetch for its tiles. The read that follows a fetch
+     that changed the cache corrects it.
+
+   The "What tree is this?" list fetches nothing itself. It reads the cache that map viewports have
+   filled, so it has the same limit for any ground the map has not fetched.
