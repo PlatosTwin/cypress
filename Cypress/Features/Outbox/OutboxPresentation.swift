@@ -380,12 +380,11 @@ enum OutboxCopy {
         // rather than a second noun. Neither invents a botanical or civic fact.
         case .dataDispute: return "Data issue"
         case .dataDisputeWithdrawal: return "Data issue withdrawn"
-        // **NOT SPECIFIED, and provisional.** No screen can queue this kind yet — the move-pin
-        // flow is the community-trees UI round's, and screen 17's row copy for it is one of that
-        // round's questions to the owner (DECISIONS constraint 21). The switch has no `default`,
-        // so the case needs an answer to compile; this one is `Species correction`'s shape, one
-        // seam over, and invents no fact. The UI round replaces it with the owner's words.
-        case .locationCorrection: return "Location correction"
+        // The owner's words for a pin move, chosen on 2026-11-14 from "Pin moved", "Move pin", and
+        // "Location correction": the row reads `Pin moved · Grandmother Cypress` and has no second
+        // line (see `detail(for:)`). A refused move reads `refusedTerminally`, the sentence every
+        // other kind reads; `OutboxFailureReason.describe` does not look at the kind.
+        case .locationCorrection: return "Pin moved"
         }
     }
 
@@ -445,8 +444,9 @@ enum OutboxCopy {
              // them are still the owner's to give (the sheet's whole copy is PR-C's ask). A sub-line
              // here would be this file inventing that copy first and the sheet inheriting it.
              .dataDispute, .dataDisputeWithdrawal,
-             // A moved pin, for the same refusal: "moved 12 m north" is the kind of phrase the UI
-             // round asks the owner for, and printing coordinates would be worse than nothing.
+             // A moved pin: the owner ruled on 2026-11-14 that its row has no second line. The
+             // label `Pin moved` already says what the person did, and printing coordinates would
+             // be worse than nothing.
              .locationCorrection:
             return nil
 
