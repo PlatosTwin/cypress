@@ -334,9 +334,8 @@ struct TreeWithdrawalTests {
                 "the erasing door brought back a tree whose withdrawal the service had accepted")
     }
 
-    /// The export keeps a withdrawn tree's rows (the orchestrator's choice, recorded in
-    /// `docs/rulings-pending/community-trees-withdraw.md`): the rows stay saved, and the export
-    /// promises everything recorded on this phone. Red-proof: point `exportLatest` back at the
+    /// The export keeps a withdrawn tree's rows (the orchestrator's choice of 2026-11-16, not the
+    /// owner's): the rows stay saved, and the export promises everything recorded on this phone. Red-proof: point `exportLatest` back at the
     /// Journal's own read — red on "the CSV lost the visit on the withdrawn tree".
     @Test("the export keeps a visit on a withdrawn tree, with its position, while the Journal drops it")
     func theExportKeepsAWithdrawnTreesRows() async throws {

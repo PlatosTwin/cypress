@@ -2278,8 +2278,8 @@ public struct ContributionStore {
     /// promise is everything this person recorded on this phone, and the owner's answer of
     /// 2026-11-16 says a withdrawn tree's rows stay saved; it names only the Journal, My Grove and
     /// the Yours map as the places the tree leaves. Keeping the export whole is the orchestrator's
-    /// choice, recorded in `docs/rulings-pending/community-trees-withdraw.md`. Without the clauses
-    /// this is the statement the Journal ran before withdrawals existed.
+    /// choice of 2026-11-16, not the owner's. Without the clauses this is the statement the Journal
+    /// ran before withdrawals existed.
     static let exportJournalSQL = journalStatement(includingWithdrawn: true)
 
     private static func journalStatement(includingWithdrawn: Bool) -> String {
