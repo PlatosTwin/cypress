@@ -1330,13 +1330,8 @@ public struct OutboxStore {
         // announce itself in SQL: it matches nothing, and matching nothing is what the statement
         // looks like when it works. `accountDeletionTreatment` is a `switch` with no `default`, so
         // the omission is now a build failure instead.
-        let contributions = "(kind IN (\(Self.kindList(.contribution))))"
-        // Either shape. `json_extract` answers NULL for a path a payload does not have, so exactly
-        // one half of this can match any given row and neither can match a device-owned one.
-        let mine = """
-            (json_extract(payload, '$.userID') = :user COLLATE NOCASE
-             OR json_extract(payload, '$.attribution.userID') = :user COLLATE NOCASE)
-            """
+        let contributions = Self.contributionKindsSQL
+        let mine = Self.namesTheAccountSQL
 
         // One statement or the other, chosen by the door, over exactly the same set of rows — so
         // there is no arrangement of the two in which a queued contribution is both anonymized and
@@ -1424,6 +1419,57 @@ public struct OutboxStore {
             _ = try erase.reset()
             return (discarded: discarded + erased, anonymized: 0)
         }
+    }
+
+    /// The contribution kinds (`OutboxItem.Kind.AccountDeletionTreatment.contribution`), as a
+    /// predicate on `outbox.kind`.
+    static var contributionKindsSQL: String { "(kind IN (\(kindList(.contribution))))" }
+
+    /// A row whose payload names the account bound to `:user`, in either payload shape.
+    /// `json_extract` answers NULL for a path a payload does not have, so exactly one half of this
+    /// can match any given row and neither can match a device-owned one.
+    static let namesTheAccountSQL = """
+        (json_extract(payload, '$.userID') = :user COLLATE NOCASE
+         OR json_extract(payload, '$.attribution.userID') = :user COLLATE NOCASE)
+        """
+
+    // MARK: - Before a keep-records deletion (ROADMAP 192)
+
+    /// Makes every row this account queued, that the service has not accepted, due now.
+    ///
+    /// For `OutboxQueue.sendBeforeAccountDeletion`: a row in backoff would otherwise sit out the
+    /// pass that runs just before `DELETE /me`, and once the account is gone a row that acts on the
+    /// account's own things (a withdrawal, a pin move) can no longer be accepted. Only
+    /// `next_attempt_at` changes; the 48 h window and the fail count stay, so a row that keeps
+    /// failing still expires on time.
+    @discardableResult
+    public func makeAccountRowsDueNow(userID: UUID, connection: SQLiteConnection) throws -> Int {
+        let statement = try connection.cachedStatement("""
+            UPDATE outbox SET next_attempt_at = NULL
+             WHERE state = 'pending' AND remote_sent = 0
+               AND next_attempt_at IS NOT NULL
+               AND \(Self.contributionKindsSQL) AND \(Self.namesTheAccountSQL)
+            """)
+        _ = try statement.bind([":user": userID.uuidString])
+        try statement.run()
+        let changed = connection.changes
+        _ = try statement.reset()
+        return changed
+    }
+
+    /// How many `tree_withdrawal` rows naming this account the service has not accepted and that
+    /// have not failed for good. The same rows the erasing door's restore reads in `forgetAccount`.
+    public func unsentTreeWithdrawals(userID: UUID, connection: SQLiteConnection) throws -> Int {
+        let statement = try connection.cachedStatement("""
+            SELECT count(*) AS n FROM outbox
+             WHERE kind = '\(OutboxItem.Kind.treeWithdrawal.rawValue)'
+               AND \(Self.namesTheAccountSQL)
+               AND remote_sent = 0 AND state <> 'failed'
+            """)
+        _ = try statement.bind([":user": userID.uuidString])
+        let count = try statement.fetchOne { try $0.int("n") } ?? 0
+        _ = try statement.reset()
+        return count
     }
 
     /// The `IN (…)` list of the kinds a deletion treats one way, as SQL literals.

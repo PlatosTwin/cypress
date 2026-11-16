@@ -324,6 +324,19 @@ public struct RoutedAPI: CypressAPI {
     /// The reports the service named to this phone's adder. See `ServedSpeciesReports`.
     public let servedSpeciesReports: ServedSpeciesReports
 
+    /// Sends the outbox before a keep-records deletion, and answers how many of the account's tree
+    /// withdrawals are still unsent (`OutboxQueue.sendBeforeAccountDeletion`; ROADMAP 192).
+    /// `DataLayer.boot` wires it when the network gate is open. Nil keeps the deletion as it was:
+    /// no send first, which is right for a router with no outbox behind it.
+    public let sendQueueBeforeDeletion: (@Sendable (UUID) async throws -> Int)?
+
+    /// Thrown by `deleteAccount` under the keep-records door when a tree withdrawal the account
+    /// queued could not be sent first. Nothing was deleted, on the service or on this phone.
+    public struct WithdrawalNotSentBeforeDeletion: Error, Equatable {
+        /// How many of the account's withdrawals are still unsent.
+        public let unsent: Int
+    }
+
     public init(
         local: any CypressAPI,
         remote: RemoteAPI,
@@ -336,8 +349,10 @@ public struct RoutedAPI: CypressAPI {
         deletePhotoNamingServiceRow: (@Sendable (UUID, UUID) async throws -> PhotoDeletion)? = nil,
         withdrawServicePhoto: (@Sendable (UUID, UUID) async throws -> PhotoDeletion)? = nil,
         speciesSeam: CommunitySpeciesSeam? = nil,
-        servedSpeciesReports: ServedSpeciesReports = ServedSpeciesReports()
+        servedSpeciesReports: ServedSpeciesReports = ServedSpeciesReports(),
+        sendQueueBeforeDeletion: (@Sendable (UUID) async throws -> Int)? = nil
     ) {
+        self.sendQueueBeforeDeletion = sendQueueBeforeDeletion
         self.speciesSeam = speciesSeam
         self.servedSpeciesReports = servedSpeciesReports
         self.local = local
@@ -607,8 +622,10 @@ public struct RoutedAPI: CypressAPI {
     ///   phone did.
     /// - Throws: whatever the remote half threw — `APIError`, or a `SessionError` for a credential
     ///   that could not be refreshed — unchanged and unwrapped, so a caller can tell an offline
-    ///   phone from a refusal. `AccountModel.deleteAccount` turns any of them into the one fact the
-    ///   deletion sheet can draw: nothing was deleted.
+    ///   phone from a refusal. Under the keep-records door it can also throw
+    ///   `WithdrawalNotSentBeforeDeletion`, before the service is asked, or whatever the outbox's
+    ///   own read or write threw. `AccountModel.deleteAccount` turns any of them into the one fact
+    ///   the deletion sheet can draw: nothing was deleted.
     @discardableResult
     public func deleteAccount(_ choice: AccountDeletionChoice) async throws -> AccountDeletion.Outcome {
         // ── What this guard reads, and what the screen above it reads ──────────────────────────
@@ -627,8 +644,27 @@ public struct RoutedAPI: CypressAPI {
         //
         // That is the extent of what is verified here: the two convergence paths exist and run in
         // the direction of signed-out. It is not a claim that no in-run window exists.
-        guard let signedInUserID, await signedInUserID() != nil else {
+        guard let signedInUserID, let userID = await signedInUserID() else {
             return try await local.deleteAccount(choice)
+        }
+        // ── Under the keep-records door, the queue goes first (ROADMAP 192) ────────────────────
+        //
+        // That door makes the account's published trees anonymous on the service, and nobody may
+        // withdraw an anonymous tree. A withdrawal still queued would be refused after the
+        // deletion, its tree would come back here, and it would stay public for good, against
+        // what the person asked. So, when the account has a withdrawal queued, the account's queue
+        // is sent now, while the account still owns its trees. With none queued, nothing is sent
+        // first and the requests are the ones this method made before. If a withdrawal still did not go (no connection, the service is down), this
+        // throws before `DELETE /me`, so nothing is deleted anywhere and the person can try again:
+        // the same state, and the same failure line, as a deletion that could not reach the service.
+        //
+        // The erasing door does not wait for the queue. It discards the account's queued rows and
+        // puts back the tree of an unsent withdrawal (`OutboxStore.forgetAccount`), and the service
+        // deletes or anonymizes the account's trees itself, so sending first would change nothing
+        // it ends with.
+        if choice == .leaveRecords, let sendQueueBeforeDeletion {
+            let unsent = try await sendQueueBeforeDeletion(userID)
+            guard unsent == 0 else { throw WithdrawalNotSentBeforeDeletion(unsent: unsent) }
         }
         // The service's answer about the trees the account added goes to the local half, which
         // acts on it instead of guessing (`ROADMAP` 104 and 105). Nil from an older service keeps
