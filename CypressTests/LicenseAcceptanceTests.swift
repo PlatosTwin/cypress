@@ -288,6 +288,30 @@ struct LicenseAcceptanceTests {
         #expect(await http.requests.count == 2)
     }
 
+    // MARK: - 5b. The failure, spoken
+
+    @Test("each failure is announced once, with the failure line's own words")
+    func failureIsAnnounced() async throws {
+        // The rule the view applies to the count.
+        #expect(AccountCopy.shareRecordsAnnouncement(previousFailures: 0, failures: 1) == AccountCopy.shareRecordsFailed)
+        #expect(AccountCopy.shareRecordsAnnouncement(previousFailures: 1, failures: 2) == AccountCopy.shareRecordsFailed)
+        #expect(AccountCopy.shareRecordsAnnouncement(previousFailures: 2, failures: 2) == nil)
+        #expect(AccountCopy.shareRecordsAnnouncement(previousFailures: 3, failures: 0) == nil)
+
+        // The count it is applied to: up once per failure, including a failure right after a
+        // failure, when the flag itself never reads false between them; not up on a success.
+        let claim = ClaimAnswer(503, Self.refusal("server_error"))
+        let rig = try await Self.declinedPhone(http: Self.scripted(claim))
+        #expect(rig.model.licenseAcceptanceFailures == 0)
+        await rig.model.acceptLicense()
+        #expect(rig.model.licenseAcceptanceFailures == 1)
+        await rig.model.acceptLicense()
+        #expect(rig.model.licenseAcceptanceFailures == 2, "a second failure in a row would go unannounced")
+        claim.set(200)
+        await rig.model.acceptLicense()
+        #expect(rig.model.licenseAcceptanceFailures == 2, "a success was announced as a failure")
+    }
+
     // MARK: - 6. In flight
 
     /// A wire that holds every `/devices/claim` until `open()`, so a test can tap again while the
@@ -343,10 +367,45 @@ struct LicenseAcceptanceTests {
         #expect(rig.model.licenseAcceptanceFailed == false)
     }
 
+    /// The account ends while the request is in flight: `DataLayer.boot`'s `onSessionEnded` signs
+    /// the local half out after another request's refresh is refused. The service's yes that arrives
+    /// afterwards must not put the account back on the phone (found in review of this branch).
+    @Test("an account that ends while the request is in flight stays signed out after the yes")
+    func signOutInFlightStaysSignedOut() async throws {
+        let http = HeldClaimHTTP()
+        let rig = try await Self.declinedPhone(http: http)
+
+        let first = Task { await rig.model.acceptLicense() }
+        for _ in 0..<500 {
+            if await http.claims > 0 { break }
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        try #require(await http.claims == 1, "the request never reached the wire")
+
+        // What `onSessionEnded` does, and what a sign-out does: both halves end.
+        try await rig.api.signOut()
+        try await rig.session.signOut()
+        try #require(await rig.api.userID == nil, "precondition: signed out while in flight")
+
+        await http.open()
+        await first.value
+
+        #expect(await rig.api.userID == nil, "the phone was signed back in after a sign-out in flight")
+        #expect(try await rig.store.appState(.currentUserID) == nil, "current_user_id was written back")
+        #expect(rig.model.isSignedIn == false, "the You tab draws an account with no session")
+        #expect(try await rig.store.appState(.accountLicenseVersion) == nil,
+                "an agreement was written for an account that is no longer on the phone")
+        // Signed out, so the signed-out Account section shows. The failure line belongs to the
+        // signed-in arm, and a flag left set would surface after the next sign-in.
+        #expect(rig.model.licenseAcceptanceFailed == false, "a failure was reported for a sign-out")
+        #expect(rig.model.licenseAcceptanceFailures == 0, "a failure was announced for a sign-out")
+    }
+
     // MARK: - 7. The builder attaches no credential
 
     // The body's two keys are the json tags of `claimRequest` in `server/internal/api/auth.go`.
-    // `theRequest` pins them as literals. A test that read that Go file from here was tried and
+    // `theRequest` pins them as literals, and a Go test in `server/internal/api` reads them from
+    // this client's source. A test that read that Go file from here was tried and
     // removed: `DeployPathsAgreeTests` requires every server file the iOS suite reads to be carved
     // back into the workflow's run predicate, and that workflow is not this change's to edit.
 

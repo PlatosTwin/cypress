@@ -142,6 +142,7 @@ struct YouTabView: View {
                 isBusy: account.isBusy,
                 deletionFailed: account.deletionFailed,
                 licenseAcceptanceFailed: account.licenseAcceptanceFailed,
+                licenseAcceptanceFailures: account.licenseAcceptanceFailures,
                 onSignIn: { router?.present(.accountAsk) },
                 onSignOut: { Task { await account.signOut() } },
                 onDelete: { choice in Task { await account.deleteAccount(choice) } },

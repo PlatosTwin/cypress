@@ -143,6 +143,14 @@ final class AccountModel {
     /// away with the "did not agree" line.
     private(set) var licenseAcceptanceFailed = false
 
+    /// How many attempts to agree have failed since this model was made. Only ever goes up.
+    ///
+    /// The view announces the failure line to VoiceOver when this rises. It cannot watch
+    /// `licenseAcceptanceFailed` for that: a retry that fails again clears the flag and sets it
+    /// again within one call, and SwiftUI need not see the moment it was false, so a second failure
+    /// could go unannounced.
+    private(set) var licenseAcceptanceFailures = 0
+
     init(api: LocalAPI?, session: AppSession? = nil, router: (any CypressAPI)? = nil) {
         self.api = api
         self.session = session
@@ -236,6 +244,16 @@ final class AccountModel {
     /// **`isBusy` is set before the first `await`.** This model is on the main actor, and every
     /// `await` lets another call run. A guard that awaited before marking itself busy would let a
     /// second tap pass the same guard and send a second request.
+    ///
+    /// **The account must still be this phone's when the service answers** (found in review of this
+    /// branch). The account can end while the request is in flight: `DataLayer.boot`'s
+    /// `onSessionEnded` signs the local half out when another request's refresh is refused.
+    /// `linkAccount` re-runs `claimDevice`, which writes `current_user_id` back, so writing the local
+    /// half after that would sign the phone back in to an account with no Keychain session. So a yes
+    /// that arrives for an account that is gone writes nothing here. The You tab then shows the
+    /// signed-out Account section, and no failure line: the row and its line belong to the signed-in
+    /// arm, and a flag left set would show after the next sign-in. The service did record the
+    /// agreement; the next sign-in on screen 15 sends that sign-in's own answer.
     func acceptLicense() async {
         guard let api, let session, !isBusy,
               isSignedIn, let link, let provider = link.provider, !link.acceptsLicense
@@ -247,6 +265,11 @@ final class AccountModel {
         do {
             guard let account = await api.userID else { throw SessionError.noCredential }
             try await session.acceptLicense()
+            // Both halves must still name this account. See this method's comment.
+            guard await api.userID == account, await session.signedInUserID == account else {
+                await load()
+                return
+            }
             try await api.linkAccount(
                 deviceUUID: api.deviceID,
                 userID: account,
@@ -255,6 +278,7 @@ final class AccountModel {
             )
         } catch {
             licenseAcceptanceFailed = true
+            licenseAcceptanceFailures += 1
         }
         await load()
     }

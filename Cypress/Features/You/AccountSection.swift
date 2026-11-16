@@ -53,6 +53,10 @@ struct AccountSection: View {
     /// "Share my tree records" row, which stays so the person can tap it again.
     var licenseAcceptanceFailed = false
 
+    /// How many attempts to agree have failed. When it rises, the failure line is announced to
+    /// VoiceOver. See `AccountModel.licenseAcceptanceFailures` for why it is a count and not the flag.
+    var licenseAcceptanceFailures = 0
+
     var onSignIn: () -> Void = {}
     var onSignOut: () -> Void = {}
     /// Reached **only** from inside `AccountDeletionSheet`, and always carrying the door the person
@@ -144,11 +148,23 @@ struct AccountSection: View {
         // `hasFailed` true beside the button that retries it.
         // ══════════════════════════════════════════════════════════════════════════════════════
         .onChange(of: isSignedIn) { _, stillSignedIn in
-            if !stillSignedIn { isConfirmingDeletion = false }
+            // The share confirmation goes too: it asks about an account that is no longer here.
+            if !stillSignedIn {
+                isConfirmingDeletion = false
+                isConfirmingShare = false
+            }
         }
         // An alert, the presentation this app uses for every confirmation since ROADMAP 77 (iOS 26
         // drew a `confirmationDialog` without its cancel button). See `ShareRecordsConfirmation`.
         .modifier(ShareRecordsConfirmation(isPresented: $isConfirmingShare, onShare: onAcceptLicense))
+        // The failure line appears under the row while a VoiceOver reader's focus is elsewhere (the
+        // alert they answered has just gone), and nothing moves it there. An announcement reports it
+        // without stealing focus, the reason `VisitPinAdjustView` and `MapHomeView` give.
+        .onChange(of: licenseAcceptanceFailures) { previous, current in
+            if let sentence = AccountCopy.shareRecordsAnnouncement(previousFailures: previous, failures: current) {
+                AccessibilityNotification.Announcement(sentence).post()
+            }
+        }
     }
 
     // MARK: - Signed in
@@ -395,6 +411,12 @@ enum AccountCopy {
     /// Drawn under the row after a failed try: no connection, the remote gate shut, or the service
     /// refused. Nothing was written on the phone.
     static let shareRecordsFailed = "That did not go through."
+
+    /// What VoiceOver hears when the failure count changes: the failure line, once per new failure,
+    /// and nothing otherwise. No new words.
+    static func shareRecordsAnnouncement(previousFailures: Int, failures: Int) -> String? {
+        failures > previousFailures ? shareRecordsFailed : nil
+    }
 }
 
 // MARK: - The confirmation

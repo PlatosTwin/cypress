@@ -50,3 +50,29 @@ declined to share agree later. There is one now.
 - **Re-consent when the license version changes.** `docs/RULINGS.md` names it as open ("re-consent
   when the license version moves"). This row does not settle it: an account that agreed to an older
   version reads as having agreed, so the row does not show for it.
+
+#### Known limits and review findings (facts, not rulings)
+
+- **A conflict after the service has agreed.** On the service, `POST /devices/claim` records the
+  answer and publishes the account's trees (`RecordLicenseConsent`, its own transaction) before it
+  runs `ClaimDevice`. If `ClaimDevice` answered `conflict` (409), the service would have agreed while
+  the phone shows "That did not go through." Checked in `server/internal/api/auth.go` and
+  `server/internal/store`: a sign-in whose device belongs to another account is refused with
+  `conflict` before any session is minted, only `ClaimDevice` sets a device's account, and only an
+  account deletion clears it, which ends that account's session too. So a phone that holds this
+  account's live session holds a device this account owns, and the conflict is judged unreachable.
+  Not handled.
+- **Nobody has seen the confirmation alert on a screen.** The screenshot suite cannot draw an iOS 26
+  alert faithfully off-screen (its background, dimming, and message are missing from the capture). A
+  unit test reads the alert's labels and proves its title, message, "Share", and "Cancel" are there
+  at the default text size and at the largest accessibility size.
+- **Found in review, and fixed: a sign-out while the request was in flight.** The account can end
+  while the request is in flight (`DataLayer.boot`'s `onSessionEnded` signs the phone out when
+  another request's refresh is refused). The first build then wrote the phone after the service's
+  yes, and that write signed the phone back in to an account with no stored session. Now the phone
+  is written only when both its database and its stored session still name the account. Otherwise
+  the You tab shows the signed-out Account section and no failure line. The service has still
+  recorded the agreement.
+- **Two smaller additions from review.** The failure line is announced to VoiceOver with its own
+  words, once per failed try. The confirmation closes if the account is signed out while it is up,
+  as the deletion sheet does.
