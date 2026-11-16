@@ -602,7 +602,8 @@ file.
   and a privacy decision: the screenshot's own tree was recorded on private property, and
   DECISIONS constraint 16 keeps community trees out of the city layer until verified. Large.
   **Owner decision** on both halves before either is built. **Decided 2026-09-28, and scheduled**:
-  see "Community trees: the client rounds" below.
+  see "Community trees: the client rounds" below. **ANSWERED, 2026-11-15:** rounds C1, C2 and C3
+  and chips 139 and 140 are built; that section says what is still owed on a physical phone.
 
 - **F32 — adding a tree where the app will not let you.** Build 77, 2026-09-26, verbatim:
   *"Need a more complete species list. Tried to add cook pine and it wasn't an option. Also some
@@ -745,10 +746,12 @@ or redeploy would change that (chip 12: merging server work changes nothing in p
   one box, 43 ms for pins and 1.9 ms for clusters; with 50,000, 80 ms and 23 ms (the table is in the
   rulings file's cache-limit entry). **A shared link to a community tree the phone never fetched** cannot
   open: `LocalAPI.treeProfile` throws `notFound` for a tree in neither table before the service is
-  asked. **Left for C3:** drawing the history and `addedByYou`; the DEBUG seam that seeds the cache;
+  asked. ~~**Left for C3:** drawing the history and `addedByYou`; the DEBUG seam that seeds the cache;
   and **the cache keeps `createdAt` as an instant, so C3 must draw "Added" dates with
-  `CalendarDay(utcDayOf:)`**, never in the reader's zone.
-- **C3 — the UI (`feat/community-trees-ui`). The owner answered every question on 2026-11-14; not
+  `CalendarDay(utcDayOf:)`**, never in the reader's zone.~~ **DONE in C3, 2026-11-15**
+  (`feat/c3-profile`): the profile draws the history, the DEBUG seam is
+  `LocalAPI.debugSeedCommunityCache`, and a cached tree's "Added" day is the UTC day.
+- ~~**C3 — the UI (`feat/community-trees-ui`). The owner answered every question on 2026-11-14; not
   built; merges last, and strikes F31.** The answers, with each chosen string word for word, are in
   `docs/rulings-pending/community-trees-c3-answers.md`. In short. *Move the pin*: no distance limit,
   the draft strings stay, the Outbox row is "Pin moved", and a refused move says "This couldn't be
@@ -763,7 +766,28 @@ or redeploy would change that (chip 12: merging server work changes nothing in p
   late-conflict question was dropped, because the owner removed the 10 m rule (chip 140). Five facts
   the round must check first are listed at the end of the answers file. The UI suite runs with the
   remote gate off, so this round also needs a DEBUG seam that seeds the cache; a deep link that
-  quietly no-ops is forbidden (ARCHITECTURE §7).
+  quietly no-ops is forbidden (ARCHITECTURE §7).~~ **BUILT, 2026-11-15, in three packages on one
+  shared base** (`feat/c3-base`: the community tree mark and `ContributionSharing`): the profile
+  (`feat/c3-profile`), the Add this tree note and the two empty places (`feat/c3-add-note`), and the
+  Outbox and Journal rows (`feat/c3-outbox-journal`). Where the build differs from the summary
+  above, the owner decided it on 2026-11-15, and each answer is in a pending rulings file:
+  - **Species controls are hidden on a tree someone else added**, until the service change of chip
+    144 (`community-trees-answers-2026-11-15.md`).
+  - **An unshared tree says "Only you can see it"**, not "only on this phone", because the phone
+    does send such a tree and the service keeps it private (`community-trees-only-you-can-see.md`).
+    A person who declined can agree later from the You tab's "Share my tree records" row
+    (`account-agree-later.md`).
+  - **The map card and the empty "What tree is this?" list keep their old text where the phone has
+    not asked the service for added trees** (zoomed out past 16 tiles, offline, a failed download,
+    or the gate shut), and name both kinds of tree everywhere else (`c3-add-note.md`).
+  - **A history row's square draws the community tree mark** (`c3-profile.md`,
+    `c3-outbox-journal.md`).
+
+  **F31 is answered:** a person can move a tree they added (C1), and other people see it (C2, C3,
+  and chip 139 for trees older than syncing). **Owed on a physical phone,** because no simulator
+  run shows them: synced trees from a second account against the live service; the "Share my tree
+  records" confirmation; the camera stopping under a profile opened from the "ALREADY ON RECORD"
+  note and starting again after Back; and each control on a tree someone else added.
 
 ### Follow-up tickets from the 2026-08-30 rounds
 
@@ -2394,8 +2418,8 @@ into this section in the round that finds it, and nowhere else. Each item stands
     (`feat/community-trees-send-old`; the reading and its limits are in
     `docs/rulings-pending/community-trees-send-old.md`). The build that carries the phone piece
     should ship only after `cypress-sync` runs the 10 m change and migration 008: the retry
-    happens once, so a refusal under the old rule would be final. **`cypress-sync` release v16 (`4b0e35b7`, deployed 2026-11-15) runs
-    both.**
+    happens once, so a refusal under the old rule would be final. **`cypress-sync` release v16
+    (`4b0e35b7`, deployed 2026-11-15) runs both.**
 140. ~~**Stop refusing a tree that is within 10 m of another (owner's ruling, 2026-11-14).**
     The owner, on how far a pin may move: "can go anywhere, and also fine to go within 10m of another
     tree. sometimes they will be close together and that's fine". Asked how far that goes, the owner
@@ -2426,7 +2450,8 @@ into this section in the round that finds it, and nowhere else. Each item stands
     add and every pin move. Dropping it needs a server migration, with one migration author named
     for the round.~~ **(a) DONE, 2026-11-15**, in `feat/community-tree-added-day-server`: migration
     `008_community_tree_added_on.sql` drops the index, after a grep found no other position filter
-    on `community_trees`; `TestTheTileIndexesServeTheirQueries` still passes. Not deployed. (b) The comments in migration 001 (lines ~37, 205 and 226), 002 (~21) and 007
+    on `community_trees`; `TestTheTileIndexesServeTheirQueries` still passes. Deployed 2026-11-15 as `cypress-sync`
+    release v16 (`4b0e35b7`). (b) The comments in migration 001 (lines ~37, 205 and 226), 002 (~21) and 007
     (~139) still describe the 10 m dedupe or its resolution sheet. Decide whether applied
     migrations' comments are corrected in place or left as the record of their day.
 142. **UI tests leave community trees in the app's database, and they break another test on a
@@ -2489,6 +2514,61 @@ into this section in the round that finds it, and nowhere else. Each item stands
     day the tree was added.** Since migration 008 the row is dated by `added_on`, where it used to
     carry the day the tree went public. Found by the author of the service's added-day change,
     2026-11-15.
+150. **Two test waits failed once in CI on a busy runner (run 43786913681, the second merge train
+    of 2026-11-15, attempt 1; the rerun of the two jobs passed).** (a) Three `CommunityAddTests`
+    ("a slow read for the old pin position…", "a read that answers after the add began…", "an older
+    read at the same position…") recorded "only 1 reads arrived, not 2" or "the add never reached
+    the API" after 87.5 s each: their wait was 400 turns of a 5 ms sleep, and on that runner 400
+    turns took 87 s. The third train made the wait a 120 s clock. The log does not show why the
+    second read took so long to start, so this is a wider bound and not a found cause. (b)
+    `DeepLinkVoiceOverTests.testThePinSaysWhenItHasGoneAsFarAsItGoes` lost its first nudge: the pin
+    still read "Right where you are standing." 10 s after the tap. The train changed only comments
+    on that screen. The third train makes the first tap wait until the button can be tapped, which
+    rules out one cause. Same family as chip 129. Strike each half if it does not come back.
+151. **A stripped photo's temporary file can stay on the phone.** `PhotoBinary` writes a hidden
+    `.<name>-<uuid>.clean` file beside the photo and swaps it in with one rename. Its cleanup is a
+    `defer`, which does not run if the app is killed during the strip, and nothing sweeps the photo
+    folder. It costs disk space only; nothing reads the file. Found by the reviewer of chip 139's
+    phone piece, 2026-11-15. A sweep at launch would remove them.
+152. **The Journal treats a pin move and a visit differently at sign-out (owner's call).** Sign-in
+    moves a tree's location rows to the account (`user_id` set, `device_id` NULL), and visits keep
+    their `device_id`. So after sign-out, pin moves leave the Journal and the export while visits
+    stay, and the moves come back at the next sign-in. The same fact has a second side: the
+    Journal's device arm (`device_id = :device`, with no condition on `user_id`) keeps showing a
+    signed-in account's visits after sign-out, and possibly to a second account on the same phone;
+    nobody checked whether sign-out changes the device id. Found by the reviewer of C3's Outbox and
+    Journal package, 2026-11-15 (the probe read 0 moves and 2 visits). Keeping the moves needs a
+    column `tree_locations` does not have, so it is a schema change with a named migration author.
+153. **Row text breaks badly at the largest text size.** At AX5, `ActivityRow` breaks inside words
+    ("Specie s", "drippi ng"): its timestamp is `.fixedSize()` and squeezes the label. The You tab's
+    SYNC tile shows "…", and "Watered" breaks mid-word. All three predate C3; its authors and
+    reviewers saw them in screenshots, 2026-11-15.
+154. **A community pin exactly under the reader's location dot does not draw.** MapKit hides it, so
+    a person standing at a tree they or someone else added may not see its pin. Found when a C3 UI
+    test put the reader on the tree, 2026-11-15; 67 m away the pin draws.
+155. **Sign-out keeps `account_provider`.** A later sign-in that goes only through `claimDevice`
+    (today, DEBUG paths) then reads as "declined to share" where it should read as unknown. Found
+    by the reviewer of C3's profile package, 2026-11-15.
+156. **A community tile with more than 10 pages counts as asked after its first page.** The cache
+    writes the tile's row with each page it applies, and the "has this phone asked" check of
+    2026-11-15 reads that row. So over a very dense tile the map card and the empty list could show
+    their new text while part of the tile is still to come. The fetch that follows corrects it. No
+    tile is near that size today.
+157. **`Tools/run_tests.sh` prints `screen-width-pt unknown` on this Mac's simulators.** Seen in
+    every local log of 2026-11-15 on the four iPhone 17-family devices (Xcode 27.2); CI's header
+    prints 402. A width-sensitive UI result from a local log has to take its width from the device
+    table in CLAUDE.md until the probe is fixed.
+158. **A photo taken between build 55 and F30 and never sent stays on the phone.** Found by the
+    planner of chip 139, 2026-11-15, and outside that chip: the owner's ruling covers community
+    trees and what is recorded on them, and these photos are on city trees.
+159. **A community tree with no name reads "Moved the pin of Tree" in the Journal and "Pin moved ·
+    Tree" in the Outbox.** The fallback title is the same one every community tree row uses. Owner's
+    call whether those two rows want other words for an unnamed tree.
+160. **The pending rulings and errata are not numbered yet.** After the third merge train of
+    2026-11-15, `docs/rulings-pending/` holds 35 files and `docs/errata-pending/` holds 26, from
+    the community-tree rounds and from earlier ones, and SCREENS.md cites several by filename. The splice is its own docs-only change: it
+    replaces the `R???` and `E???` placeholders, rewrites those citations to numbers, and runs
+    `DocumentCitationGuardTests` red and green before it merges.
 
 
 **Retire the format-1 manifest — DONE, 2026-08-23.** The owner overrode the trigger the day after
