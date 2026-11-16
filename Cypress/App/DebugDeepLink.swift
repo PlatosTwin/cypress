@@ -182,6 +182,23 @@ enum DebugDeepLink {
         /// and deletion answering the same way about the same picture, which is the convergence the
         /// ruling is.
         case strandedPhotoHero
+        /// Round C3: the profile of a community tree **somebody else added**, with a species. The
+        /// tree is written into the community cache through `LocalAPI.debugSeedCommunityCache`,
+        /// because no tile is downloaded with the remote gate shut. Same id and spot every launch,
+        /// so a re-run replaces the row rather than adding one.
+        case othersTree
+        /// The same, with no species: the state where the claim used to be offered and refused.
+        case othersTreeUnnamed
+        /// The map, over a cached tree of somebody else's, to see its dashed pin. The camera is
+        /// the test's to pin (`CYPRESS_MAP_CAMERA`); this case seeds the tree and opens the tab.
+        case othersTreeOnMap
+        /// The profile of a tree this reader added while **signed out**. Signs out first, so the
+        /// state is the case's own and not the last launch's, then adds a tree through `addTree`.
+        case unsharedSignedOut
+        /// The profile of a tree this reader added while **signed in, not sharing**: links a fixed
+        /// debug account that declined the license, then adds a tree. It leaves that account
+        /// signed in; `unsharedSignedOut` is how a test puts the phone back.
+        case unsharedNotSharing
         // Presented over the tab root.
         case careLog            // 09
         case share              // 10
@@ -462,6 +479,63 @@ enum DebugDeepLink {
                 }
                 guard let id else { throw APIError.conflict }
                 router.push(.treeProfile(id))
+            case .othersTree, .othersTreeUnnamed, .othersTreeOnMap:
+                // Round C3. Seeded through the cache's own writer, with a fixed id per case, so a
+                // re-run replaces the row. A species comes from `searchSpecies`, the picker's path.
+                let named = screen != .othersTreeUnnamed
+                var speciesID: UUID?
+                if named {
+                    guard let species = try await api.searchSpecies(query: "Platanus", limit: 1).first else {
+                        throw Failure(screen: screen.rawValue, reason: "no species matches Platanus")
+                    }
+                    speciesID = species.id
+                }
+                let (id, spot) = Self.othersTreeSeat(screen)
+                try await api.debugSeedCommunityCache(
+                    Tree(
+                        id: id,
+                        source: .community,
+                        coordinate: spot,
+                        speciesCurrentID: speciesID,
+                        placement: .gps,
+                        createdAt: Self.othersTreeAddedDay,
+                        updatedAt: Self.othersTreeAddedDay
+                    )
+                )
+                if screen == .othersTreeOnMap {
+                    router.tab = .map
+                } else {
+                    router.push(.treeProfile(id))
+                }
+            case .unsharedSignedOut, .unsharedNotSharing:
+                // Round C3. The account state first, through the shipping verbs, then a tree added
+                // through `addTree` in that state, on `.movePin`'s kind of slot line so a re-run
+                // adds a tree rather than being refused by the last run's.
+                try await api.signOut()
+                if screen == .unsharedNotSharing {
+                    try await api.linkAccount(
+                        deviceUUID: api.deviceID,
+                        userID: Self.notSharingAccount,
+                        provider: "apple",
+                        acceptsLicense: false
+                    )
+                }
+                let line = screen == .unsharedSignedOut ? Self.signedOutSpot : Self.notSharingSpot
+                var id: UUID?
+                for step in 0..<Self.profileLinksSlots {
+                    let slot = VisitPinAdjust.offset(
+                        line, northM: 0, eastM: -Self.movePinSlotSpacingM * Double(step)
+                    )
+                    let taken = try await api.treesNear(
+                        slot, radiusM: Self.movePinSlotSpacingM, limit: 1
+                    )
+                    if taken.isEmpty {
+                        id = try await api.debugAddCommunityTree(near: slot, speciesQuery: "Platanus")
+                        break
+                    }
+                }
+                guard let id else { throw APIError.conflict }
+                router.push(.treeProfile(id))
             case .recordDefect:
                 // Resolved-then-added, like `.communityPhotos` and unlike `.speciesClaim`, because
                 // this case is meant to be *run twice*: the second run is how the withdrawal is
@@ -681,6 +755,38 @@ enum DebugDeepLink {
     /// The eighth, ~200 m north of the seventh: open water with nothing on record, where
     /// `.addTreeAlone` opens the add screen with no note to draw.
     private static let addTreeAloneSpot = Coordinate(latitude: 37.7726, longitude: -122.5300)
+
+    // ── Round C3's spots, each ~200 m north of the last, out at sea like the rest ──────────────
+
+    /// The cached trees of somebody else's: one fixed id and spot per case, so a case never writes
+    /// onto a tree another case reads, and a re-run replaces its own row.
+    static func othersTreeSeat(_ screen: Screen) -> (id: UUID, spot: Coordinate) {
+        switch screen {
+        case .othersTreeUnnamed:
+            return (UUID(uuidString: "C3000000-0000-4000-8000-0000000000B2")!,
+                    Coordinate(latitude: 37.7726, longitude: -122.5300))
+        case .othersTreeOnMap:
+            return (UUID(uuidString: "C3000000-0000-4000-8000-0000000000B3")!,
+                    Coordinate(latitude: 37.7744, longitude: -122.5300))
+        default:
+            return (UUID(uuidString: "C3000000-0000-4000-8000-0000000000B1")!,
+                    Coordinate(latitude: 37.7708, longitude: -122.5300))
+        }
+    }
+
+    /// The day a cached tree was added, as the service sends it: midnight UTC of the day. The
+    /// profile's "Added" row prints `Sep 21` in every zone, which `OthersTreeUITests` reads.
+    static let othersTreeAddedDay = Date(timeIntervalSince1970: 1_789_948_800) // 2026-09-21T00:00:00Z
+
+    /// The start of each line of slots for the two "only you can see it" cases, west to sea like
+    /// `profileLinksSpot`'s, `profileLinksSlots` long.
+    private static let signedOutSpot = Coordinate(latitude: 37.7762, longitude: -122.5300)
+    private static let notSharingSpot = Coordinate(latitude: 37.7780, longitude: -122.5300)
+
+    /// The account `unsharedNotSharing` signs in as. Not a real account. The UI suite runs with the
+    /// remote gate shut, so there the id stays on the phone; a DEBUG build pointed at a live service
+    /// should not run this case.
+    private static let notSharingAccount = UUID(uuidString: "C3000000-0000-4000-8000-00000000AC01")!
 
     /// The candidate window, **with this device's own status overrides laid over it**.
     ///

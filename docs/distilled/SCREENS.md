@@ -418,7 +418,9 @@ All pills: `border-radius: 999px`.
   `HStack(spacing:11)`, `align-items:center`, shadow `0 1px 3px rgba(25,40,28,.05)`.
 - Leading thumb: 38×38, `border-radius:10px`, either a photo gradient or a tinted tile
   (`#E2EFE2` with the 12×12 `#2F6B4F` leaf glyph for Care; `#EDEEE6` with mono 10px `SYNC` in
-  `#5C6555` for the city-sync row on 19).
+  `#5C6555` for the city-sync row on 19; the community tree mark for a community tree's history
+  rows: the C19 community pin, 18×18, dashed `2.5px` Canopy ring on `#EDF1E3`, centered on the
+  `#EDEEE6` SYNC ground; the app owner's decision of 2026-11-15).
 - Body: 13.5px, `<b>` label + ` · ` + detail.
 - Trailing timestamp: Spline Sans Mono 11px, `#8B9482`, `white-space:nowrap`, pushed with
   `margin-left:auto`.
@@ -758,6 +760,39 @@ empty/no-GPS state.
    - **`Visit`** ` · “Fog dripping off the crown”` — thumb `radial(40% 40%, #4E8F6A 0→50%)` over
      `linear-gradient(170deg,#DCE5D2,#A9C4AE)` — `Oct 12`
    - **`Care`** ` · watered, mulched` — thumb `#E2EFE2` + 12px leaf glyph `#2F6B4F` — `Sep 28`
+
+   > **Added, round C3 (the owner's answers of 2026-11-14 and 2026-11-15).** On a community tree
+   > the feed also holds the tree's public history, mixed with visits and care by date, four rows
+   > in all, newest first. Each history row's thumb is the community tree mark (C9). The rows, word
+   > for word, for other readers and for the person who did it on their own phone:
+   >
+   > | Event | Other readers | The adder, on their own phone |
+   > |---|---|---|
+   > | Added | **`Added`** | **`You added this tree`** |
+   > | Pin moved | **`Pin moved`** ` · 12 m north` | **`You moved the pin`** ` · 12 m north` |
+   > | Species named | **`Species named`** | **`You named the species`** |
+   > | Species corrected | **`Species corrected`** | **`You corrected the species`** |
+   >
+   > The distance is whole meters and one of eight directions in the Move pin screen's words
+   > (`north`, `north-east`, …); a move with an unknown end reads **`Pin moved`** alone. The date
+   > is month and day, `Mar 20`, and a history day prints as itself in every zone. On one day,
+   > visits and care sort above history rows. When the history cannot be read or is empty, the
+   > feed shows the **`Added`** row from what the phone knows, dated by the day the tree was added
+   > on its adder's phone, and no message. `See the whole year` shows only when there is a visit
+   > or care row. A city tree has no history rows.
+   >
+   > The identity block also carries one muted line (13.5px in `text.muted`, the style of the
+   > unread-species note) under the subtitle, only on a tree the reader added that only they can
+   > see: signed out, `Only you can see this tree. Everyone can see it after you sign in.`; signed
+   > in and not sharing, `Only you can see this tree. Everyone can see it after you agree to share
+   > your tree records.` No line when the reader agreed, when the service says the tree is
+   > public, or when the phone does not know the answer and the service does not say the tree is
+   > held back.
+   >
+   > On a community tree somebody else added, the profile offers what a city tree offers (visit,
+   > check-in, care, favorite, share, measure). It offers no Move pin and, in this build, neither
+   > `Say what species you think this is` nor `Report the species as wrong` (the owner,
+   > 2026-11-15: "Hide species controls for now").
 9. **Stat grid** (C11) — `grid-template-columns:1fr 1fr; gap:8px; padding:10px 16px 30px; margin-top:auto`:
 
    | Label | Value | Badge |
@@ -1286,6 +1321,13 @@ Intro: *The unglamorous screens that make the app trustworthy: a brand-new tree 
 
 **Differences from 03 to encode as a variant:** no hero, no foliage strip, no regulars row,
 no activity feed, no quad-action row, badge is `PLANTED <year>` instead of `THRIVING`.
+
+> **Departed from, deliberately — round C3 (the owner's answers of 2026-11-14).** "No activity
+> feed" no longer holds for a community tree. Such a tree is usually cold on a phone that did not
+> add it (nobody here has visited or photographed it), and its history rows, at least its
+> **`Added`** row, must still show (03 §8). So the feed draws on the cold variant whenever it has
+> rows. A cold city tree has none and still draws no feed. (The quad-action row already shows on
+> the cold variant, ERRATA E127.)
 
 ---
 

@@ -1144,7 +1144,12 @@ public struct RoutedAPI: CypressAPI {
             // only the service can say whose it is. Its "no" never overrides this phone's yes, for
             // `TreeProfile.addedByYou`'s reasons.
             addedByYou: mine.addedByYou || community.addedByYou,
-            communityHistory: history
+            communityHistory: history,
+            // The phone's facts: which table holds the tree, and what the reader agreed to.
+            isAddedHere: mine.isAddedHere,
+            readerSharing: mine.readerSharing,
+            // The service's answer, nil unless it sent the tree (`TreeCommunityDelta.isPublished`).
+            isPublished: community.isPublished
         )
     }
 
