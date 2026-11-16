@@ -389,6 +389,12 @@ struct RootView: View {
         // surfacing a failure banner, because a harness `setUp` that cannot clear the table is not
         // a state a screenshot helps with — it belongs in the run's own log, and `debugClearStatus
         // Overrides` is a single `DELETE` with nothing conditional in it to fail on in practice.
+        // Chip 142: a launch that asks for it starts with no community trees, then goes on to its
+        // screen. `try?` for the reason below: a harness that cannot withdraw has nothing a banner
+        // would help with, and the test that asked will say what it saw.
+        if ProcessInfo.processInfo.environment[DebugDeepLink.withdrawCommunityTreesEnvironmentKey] != nil {
+            _ = try? await data.local.debugWithdrawAllCommunityTrees()
+        }
         if ProcessInfo.processInfo.environment[DebugDeepLink.clearStatusOverridesEnvironmentKey] != nil {
             deepLinkAttempted = true
             try? await data.local.debugClearStatusOverrides()

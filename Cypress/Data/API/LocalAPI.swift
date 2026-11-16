@@ -3875,6 +3875,33 @@ public actor LocalAPI: CypressAPI {
         overrideCache = nil
     }
 
+    /// Test seam (ROADMAP chip 142): withdraw every community tree this phone holds, the way
+    /// `CommunityTreeStore.withdraw` withdraws one (a soft delete: `deleted_at` and `updated_at`).
+    ///
+    /// **Why it has to exist.** Every deep-link case that adds a community tree adds a new one on
+    /// each run, and a community tree counts as the reader's own. On a simulator that is reused,
+    /// those trees pile up in the ocean off Ocean Beach, and `Yours` then aims its camera at them.
+    /// A test that needs a reader with no community trees calls this at its own launch. Nothing in
+    /// the shipping app calls it, and it does not change what a real reader's `Yours` camera does.
+    ///
+    /// - Returns: how many rows it withdrew.
+    @discardableResult
+    public func debugWithdrawAllCommunityTrees() async throws -> Int {
+        let moment = now()
+        return try await store.queue.write { connection in
+            let statement = try connection.cachedStatement("""
+                UPDATE community_trees
+                   SET deleted_at = :now, updated_at = :now
+                 WHERE deleted_at IS NULL
+                """)
+            _ = try statement.bind([":now": moment])
+            try statement.run()
+            let changed = Int(connection.changes)
+            _ = try statement.reset()
+            return changed
+        }
+    }
+
     /// Test seam (ERRATA E125): give a real seed tree some photographs, so the deep-link harness can
     /// open screen 20 and the profile hero against records that exist.
     ///
