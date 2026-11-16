@@ -185,6 +185,7 @@ struct AX5ReflowTests {
                 location: VisitLocationProvider(
                     pinnedFix: .located(VisitPreviewFixtures.origin, accuracyM: 9)
                 ),
+                communityAsked: nil,
                 onPick: { _ in },
                 onAddTree: {},
                 onBack: {}
@@ -1431,7 +1432,7 @@ struct AX5ReflowTests {
             let host = UIHostingController(rootView: AnyView(
                 MapLocationNotice(
                     title: MapInventoryCopy.title,
-                    message: MapInventoryCopy.message,
+                    message: MapInventoryCopy.notOnTheCityInventory,
                     maxHeight: maxHeight
                 )
                 .environment(\.dynamicTypeSize, .accessibility5)
@@ -1462,7 +1463,7 @@ struct AX5ReflowTests {
             let host = UIHostingController(
                 rootView: MapLocationNotice(
                     title: MapInventoryCopy.title,
-                    message: MapInventoryCopy.message,
+                    message: MapInventoryCopy.notOnTheCityInventory,
                     maxHeight: maxHeight
                 )
             )

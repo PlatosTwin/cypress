@@ -148,37 +148,291 @@ struct AddTreeNoteTests {
 
     // MARK: - The two empty places
 
-    /// The owner's body for the map card, exactly. `MapEmptyInventoryTests` holds the facts it must
-    /// carry and its AX5 budget.
-    @Test("the map card's body is the owner's two sentences")
+    /// The map card's two bodies, exactly: the owner's new one where the phone asked for added
+    /// trees, and the body that shipped before round C3 where it did not (the owner's answer of
+    /// 2026-11-15, "Show the old text there"). `MapEmptyInventoryTests` holds the facts each must
+    /// carry and the AX5 budget.
+    @Test("the map card's two bodies are the owner's words, and each shows where it should")
     func theMapCardNamesBothKinds() {
         #expect(
-            MapInventoryCopy.message
-                == "Cypress draws a city street-tree inventory and trees people have added. Neither has a tree here."
+            MapInventoryCopy.neitherHasATree
+                == "Cypress draws a city street-tree inventory and trees people have added. "
+                + "Neither has a tree here."
         )
+        #expect(
+            MapInventoryCopy.notOnTheCityInventory
+                == "Cypress draws a city street-tree inventory, and this ground is not on it. "
+                + "Trees may stand here without being listed."
+        )
+        #expect(MapInventoryCopy.message(communityAsked: true) == MapInventoryCopy.neitherHasATree)
+        #expect(MapInventoryCopy.message(communityAsked: false) == MapInventoryCopy.notOnTheCityInventory)
         #expect(MapInventoryCopy.title == "No trees on record here")
     }
 
-    /// The owner's sentence, with the number taken from the radius the list is read at.
+    // MARK: - Has this phone asked for added trees here?
+
+    /// A tile the service answered with no trees is asked: `apply` writes the tile's row with
+    /// every page, empty or not. Before the fetch it is not asked.
+    ///
+    /// Red-proof: in `CommunityTreeCacheStore.hasAsked`, return `fetched > paths.count` — red on
+    /// "a tile served with no trees does not count as asked".
+    @Test("a tile fetched with no trees counts as asked")
+    func anEmptyFetchedTileIsAsked() async throws {
+        let store = try await CypressStore.inMemory()
+        let service = ScriptedTileService()
+        await service.enqueue(CommunityRefresherTests.tile, .success(CommunityRefresherTests.page([], cursor: "c1")))
+        let box = CommunityRefresherTests.box
+        #expect(try await Self.asked(box, store) == false, "a tile never fetched counts as asked")
+
+        _ = await CommunityRefresherTests.make(store, service).refresh(covering: box)
+
+        #expect(try await Self.asked(box, store), "a tile served with no trees does not count as asked")
+    }
+
+    /// A failed fetch writes nothing, so the ground stays not asked.
+    ///
+    /// Red-proof: in `CommunityTreeCacheStore.hasAsked`, `return true` after the tile guard — red
+    /// on "a failed fetch counts as asked".
+    @Test("a failed fetch leaves the ground not asked")
+    func aFailedFetchIsNotAsked() async throws {
+        let store = try await CypressStore.inMemory()
+        // Nothing enqueued: `ScriptedTileService` throws `notConnectedToInternet`.
+        let outcome = await CommunityRefresherTests.make(store, ScriptedTileService())
+            .refresh(covering: CommunityRefresherTests.box)
+        #expect(outcome.ending == .stoppedOnError)
+        #expect(
+            try await Self.asked(CommunityRefresherTests.box, store) == false,
+            "a failed fetch counts as asked"
+        )
+    }
+
+    /// Every covering tile must have been fetched: one of two is not enough.
+    ///
+    /// Red-proof: in `CommunityTreeCacheStore.hasAsked`, return `fetched > 0` — red on "one of two
+    /// tiles fetched counts as asked".
+    @Test("a viewport with one covering tile never fetched is not asked")
+    func everyCoveringTileMustBeFetched() async throws {
+        let store = try await CypressStore.inMemory()
+        let tiles = try #require(CommunityTile.covering(Self.twoTiles, limit: 16))
+        #expect(tiles.count == 2, "the fixture box covers \(tiles.count) tiles, not 2")
+        try await Self.fetched([tiles[0]], store)
+        #expect(try await Self.asked(Self.twoTiles, store) == false, "one of two tiles fetched counts as asked")
+        try await Self.fetched([tiles[1]], store)
+        #expect(try await Self.asked(Self.twoTiles, store), "both tiles fetched does not count as asked")
+    }
+
+    /// More than `Policy.maxTiles` tiles is a map the refresher never asks about, so it is not
+    /// asked, even with a row for every tile.
+    ///
+    /// Red-proof: in `CommunityTreeCacheStore.hasAsked`, cover with `limit: .max` — red on "a
+    /// viewport of more than 16 tiles counts as asked".
+    @Test("a viewport of more than 16 tiles is not asked, whatever the cache holds")
+    func tooManyTilesIsNotAsked() async throws {
+        let store = try await CypressStore.inMemory()
+        let tiles = try #require(CommunityTile.covering(Self.manyTiles, limit: 10_000))
+        #expect(tiles.count > CommunityTileRefresher.Policy().maxTiles, "the fixture covers only \(tiles.count) tiles")
+        try await Self.fetched(tiles, store)
+        #expect(
+            try await Self.asked(Self.manyTiles, store) == false,
+            "a viewport of more than 16 tiles counts as asked"
+        )
+        // The control: the same rows answer true with a limit that admits them all.
+        let allowed = try await store.queue.read { connection in
+            try CommunityTreeCacheStore().hasAsked(
+                covering: Self.manyTiles, maxTiles: tiles.count, connection: connection
+            )
+        }
+        #expect(allowed, "with a limit that admits every tile, the fetched rows do not count")
+    }
+
+    // MARK: - The map card picks its body
+
+    /// The map, over ground with nothing on it, after a refresh that fetched every tile in view
+    /// and found no trees: the card is owed, and it says the new body. The refresh changes no pin,
+    /// so no second map read happens; the model must read the answer again when the refresh ends.
+    ///
+    /// Red-proof: take out the `!changed` branch in `MapModel.startCommunityRefresh` that reads the
+    /// answer again — red on "the card kept the first body after every tile was fetched".
+    @MainActor
+    @Test("every tile fetched and nothing in view: the card says neither has a tree")
+    func aFetchedEmptyViewportGetsTheNewBody() async throws {
+        let store = try await CypressStore.inMemory()
+        let service = ScriptedTileService()
+        await service.enqueue(CommunityRefresherTests.tile, .success(CommunityRefresherTests.page([], cursor: "c1")))
+        let model = Self.map(store, service: service)
+
+        await Self.settle(model)
+
+        #expect(model.inventoryIsEmptyHere, "the card is not owed over an empty viewport")
+        #expect(
+            model.inventoryNoticeMessage == MapInventoryCopy.neitherHasATree,
+            "the card kept the first body after every tile was fetched: \(model.inventoryNoticeMessage)"
+        )
+    }
+
+    /// The same ground, but the fetch fails: the card keeps the first body.
+    @MainActor
+    @Test("a failed fetch: the card keeps the first body")
+    func aFailedFetchKeepsTheFirstBody() async throws {
+        let store = try await CypressStore.inMemory()
+        let model = Self.map(store, service: ScriptedTileService())
+
+        await Self.settle(model)
+
+        #expect(model.inventoryIsEmptyHere)
+        #expect(
+            model.inventoryNoticeMessage == MapInventoryCopy.notOnTheCityInventory,
+            "a failed fetch drew the new body: \(model.inventoryNoticeMessage)"
+        )
+    }
+
+    /// The remote gate shut: no refresher at all, the composition root's reader over the cache.
+    /// Nothing was ever fetched, so the card says the first body.
+    ///
+    /// Red-proof: make `CommunityTreeCacheStore.askedReader` answer `true` — red on "with the gate
+    /// shut the card drew the new body".
+    @MainActor
+    @Test("the remote gate shut: the card says the first body")
+    func aShutGateKeepsTheFirstBody() async throws {
+        let store = try await CypressStore.inMemory()
+        let model = Self.map(store, service: nil)
+
+        await Self.settle(model)
+
+        #expect(model.inventoryIsEmptyHere)
+        #expect(
+            model.inventoryNoticeMessage == MapInventoryCopy.notOnTheCityInventory,
+            "with the gate shut the card drew the new body: \(model.inventoryNoticeMessage)"
+        )
+    }
+
+    /// Zoomed out past the refresher's limit: the card says the first body, though every tile has
+    /// a row.
+    ///
+    /// Red-proof: in `CommunityTreeCacheStore.hasAsked`, cover with `limit: .max` — red on "a
+    /// zoomed-out map drew the new body".
+    @MainActor
+    @Test("a viewport of more than 16 tiles: the card says the first body")
+    func aWideViewportKeepsTheFirstBody() async throws {
+        let store = try await CypressStore.inMemory()
+        // Every tile the model's viewport could touch is fetched: `cameraDidChange` widens the
+        // screen by 8 % before it reads, so the rows cover a box half again as wide. Only the
+        // 16-tile rule can then keep the first body.
+        let tiles = try #require(CommunityTile.covering(Self.manyTiles.expanded(by: 0.5), limit: 10_000))
+        try await Self.fetched(tiles, store)
+        let model = MapModel(
+            api: LocalAPI(store: store, deviceID: Self.deviceID),
+            communityAsked: CommunityTreeCacheStore.askedReader(queue: store.queue)
+        )
+        model.cameraDidChange(bounds: Self.manyTiles, zoom: 12)
+        await TestWait.settle(model) { model.inventoryIsEmptyHere }
+
+        #expect(model.inventoryIsEmptyHere)
+        #expect(
+            model.inventoryNoticeMessage == MapInventoryCopy.notOnTheCityInventory,
+            "a zoomed-out map drew the new body: \(model.inventoryNoticeMessage)"
+        )
+    }
+
+    /// The owner's two sentences, each with the number taken from the radius the list is read at.
+    /// The second is the text as it shipped before round C3 (`e5b11dba`), character for character.
     ///
     /// Red-proof: write `50` in place of `\(Int(VisitShortlist.searchRadiusM))` in
-    /// `VisitIdentifyCopy.emptyMessage` — red on "the sentence does not state the list's radius".
-    @Test("the empty list names both kinds and states its own radius")
+    /// `VisitIdentifyCopy.emptyNeitherKind` — red on "the sentence does not state the list's radius".
+    @Test("the empty list's two texts state its own radius, word for word")
     func theEmptyListNamesBothKinds() {
         let radius = Int(VisitShortlist.searchRadiusM)
-        #expect(
-            VisitIdentifyCopy.emptyMessage.contains("within \(radius) m of you"),
-            "the sentence does not state the list's radius (\(radius) m): \(VisitIdentifyCopy.emptyMessage)"
-        )
+        for message in [VisitIdentifyCopy.emptyNeitherKind, VisitIdentifyCopy.emptyNotOnTheCityInventory] {
+            #expect(
+                message.contains("within \(radius) m of you"),
+                "the sentence does not state the list's radius (\(radius) m): \(message)"
+            )
+        }
         // The owner approved the words at today's radius. If the radius changes, this fails, and
         // the owner sees the new number before a reader does.
         #expect(radius == 60, "the list's radius is \(radius) m; the owner approved the sentence at 60 m")
         #expect(
-            VisitIdentifyCopy.emptyMessage
+            VisitIdentifyCopy.emptyNeitherKind
                 == "No city tree and no added tree is within 60 m of you. "
                 + "If there is a tree in front of you, it is not on the map yet."
         )
+        #expect(
+            VisitIdentifyCopy.emptyNotOnTheCityInventory
+                == "Nothing in the city inventory is within 60 m of you. "
+                + "If there is a tree in front of you, it is not on the map yet."
+        )
+        #expect(VisitIdentifyCopy.emptyMessage(communityAsked: true) == VisitIdentifyCopy.emptyNeitherKind)
+        #expect(
+            VisitIdentifyCopy.emptyMessage(communityAsked: false)
+                == VisitIdentifyCopy.emptyNotOnTheCityInventory
+        )
         #expect(VisitIdentifyCopy.emptyTitle == MapInventoryCopy.title)
+    }
+
+    /// The 60 m the list reads around `spot` sits inside one zoom-14 tile. The three tests below
+    /// rely on it; this says so, rather than a comment.
+    @Test("the list's area at the test spot is one tile")
+    func theListAreaIsOneTile() throws {
+        let tiles = try #require(CommunityTile.covering(Self.listArea, limit: 16))
+        #expect(tiles.count == 1, "the list's area covers \(tiles.count) tiles")
+    }
+
+    /// The reader stands where nothing is on record, and the phone has fetched every tile under
+    /// the list's 60 m: the list says neither kind is here.
+    ///
+    /// Red-proof: in `VisitIdentifyModel.load`, take out the `communityAsked` read (leave
+    /// `communityAskedHere` false) — red on "the list kept the old text after every tile was
+    /// fetched".
+    @MainActor
+    @Test("every tile under the list fetched and nothing in range: the list says neither kind")
+    func aFetchedEmptyListGetsTheNewText() async throws {
+        let store = try await CypressStore.inMemory()
+        try await Self.fetched(try #require(CommunityTile.covering(Self.listArea, limit: 16)), store)
+        let model = try await Self.emptyList(store, reader: CommunityTreeCacheStore.askedReader(queue: store.queue))
+
+        #expect(
+            model.emptyMessage == VisitIdentifyCopy.emptyNeitherKind,
+            "the list kept the old text after every tile was fetched: \(model.emptyMessage)"
+        )
+    }
+
+    /// The phone fetched a tile next door, never the one under the reader: the old text.
+    ///
+    /// Red-proof: in `VisitIdentifyModel.load`, set `communityAskedHere = true` without the read —
+    /// red on "the list drew the new text over a tile it never fetched".
+    @MainActor
+    @Test("a covering tile never fetched: the list keeps the old text")
+    func anUnfetchedTileKeepsTheOldText() async throws {
+        let store = try await CypressStore.inMemory()
+        let under = try #require(CommunityTile.covering(Self.listArea, limit: 16)?.first)
+        let nextDoor = try #require(CommunityTile(x: under.x + 1, y: under.y))
+        try await Self.fetched([nextDoor], store)
+        let model = try await Self.emptyList(store, reader: CommunityTreeCacheStore.askedReader(queue: store.queue))
+
+        #expect(
+            model.emptyMessage == VisitIdentifyCopy.emptyNotOnTheCityInventory,
+            "the list drew the new text over a tile it never fetched: \(model.emptyMessage)"
+        )
+    }
+
+    /// The remote gate shut: the refresher never runs, so the cache has no rows, and the
+    /// composition root's reader answers no. A flow built without a reader answers no as well.
+    ///
+    /// Red-proof: the same break as above — red on "with the gate shut the list drew the new text".
+    @MainActor
+    @Test("the remote gate shut: the list keeps the old text")
+    func aShutGateKeepsTheOldText() async throws {
+        let store = try await CypressStore.inMemory()
+        let readers: [(String, ((BoundingBox) async -> Bool)?)] = [
+            ("over the cache", CommunityTreeCacheStore.askedReader(queue: store.queue)), ("nil", nil),
+        ]
+        for (name, reader) in readers {
+            let model = try await Self.emptyList(store, reader: reader)
+            #expect(
+                model.emptyMessage == VisitIdentifyCopy.emptyNotOnTheCityInventory,
+                "with the gate shut the list drew the new text (reader \(name)): \(model.emptyMessage)"
+            )
+        }
     }
 
     /// **The two texts say "neither has a tree here", so an added tree must keep both away.** The
@@ -263,25 +517,41 @@ struct AddTreeNoteTests {
         ) {
             VisitPreviewFixtures.addTree()
         } != nil)
-        for (suffix, size) in [("default", DynamicTypeSize.large), ("ax5", .accessibility5)] {
-            #expect(await ScreenSweepShots.capture("c3b-map-card-\(suffix)", size: size, scheme: .light) {
-                VStack {
-                    Spacer()
-                    MapLocationNotice(title: MapInventoryCopy.title, message: MapInventoryCopy.message)
-                }
+        let bodies = [
+            ("new", MapInventoryCopy.neitherHasATree), ("old", MapInventoryCopy.notOnTheCityInventory),
+        ]
+        for (body, message) in bodies {
+            for (suffix, size) in [("default", DynamicTypeSize.large), ("ax5", .accessibility5)] {
+                #expect(await ScreenSweepShots.capture(
+                    "c3b-map-card-\(body)-\(suffix)", size: size, scheme: .light
+                ) {
+                    VStack {
+                        Spacer()
+                        MapLocationNotice(title: MapInventoryCopy.title, message: message)
+                    }
+                } != nil)
+            }
+        }
+        for (text, asked) in [("new", true), ("old", false)] {
+            #expect(await ScreenSweepShots.capture(
+                "c3b-identify-empty-\(text)", size: .large, scheme: .light,
+                settleFloor: RenderSettle.legacyBudget
+            ) {
+                VisitPreviewFixtures.identify(rows: [], communityAsked: asked)
             } != nil)
         }
-        #expect(await ScreenSweepShots.capture(
-            "c3b-identify-empty", size: .large, scheme: .light, settleFloor: RenderSettle.legacyBudget
-        ) {
-            VisitPreviewFixtures.identify(rows: [])
-        } != nil)
 
         // The number `MapEmptyInventoryTests.theNoticeFitsTheSlotAtAX5` compares, printed for the
         // branch report: the card at AX5 on the narrowest phone, and the budget it must stay under.
         let width = AX5ReflowTests.phoneWidth
-        let card = await AX5ReflowTests.ax5Size(
-            of: MapLocationNotice(title: MapInventoryCopy.title, message: MapInventoryCopy.message),
+        let newCard = await AX5ReflowTests.ax5Size(
+            of: MapLocationNotice(title: MapInventoryCopy.title, message: MapInventoryCopy.neitherHasATree),
+            width: width
+        )
+        let oldCard = await AX5ReflowTests.ax5Size(
+            of: MapLocationNotice(
+                title: MapInventoryCopy.title, message: MapInventoryCopy.notOnTheCityInventory
+            ),
             width: width
         )
         let searching = await AX5ReflowTests.ax5Size(
@@ -299,11 +569,89 @@ struct AddTreeNoteTests {
             width: width
         )
         print(
-            "C3B-AX5: card \(card.height) pt at \(width) pt; budget \(max(searching.height, notAsked.height)) pt"
+            "C3B-AX5: new body \(newCard.height) pt, old body \(oldCard.height) pt at \(width) pt; "
+                + "budget \(max(searching.height, notAsked.height)) pt"
         )
     }
 
     // MARK: - Helpers
+
+    /// Two zoom-14 tiles side by side (x 2616 and 2617, the border at longitude -122.4976), inside
+    /// `CommunityRefresherTests.tile`'s row.
+    private static let twoTiles = BoundingBox(
+        minLatitude: 37.7600, maxLatitude: 37.7610, minLongitude: -122.4990, maxLongitude: -122.4960
+    )
+    /// About 30 zoom-14 tiles: more than `Policy.maxTiles`.
+    private static let manyTiles = BoundingBox(
+        minLatitude: 37.7000, maxLatitude: 37.8000, minLongitude: -122.5200, maxLongitude: -122.4000
+    )
+
+    /// The area screen 02's list reads around a reader standing at `spot`.
+    private static let listArea = BoundingBox(around: spot, radiusM: VisitShortlist.searchRadiusM)
+
+    /// Screen 02's model for a reader at `spot`, run until its first list is published, with the
+    /// list checked to be empty.
+    @MainActor
+    private static func emptyList(
+        _ store: CypressStore, reader: ((BoundingBox) async -> Bool)?
+    ) async throws -> VisitIdentifyModel {
+        let model = VisitIdentifyModel(
+            api: LocalAPI(store: store, deviceID: deviceID),
+            location: VisitLocationProvider(pinnedFix: .located(spot, accuracyM: 5)),
+            communityAsked: reader
+        )
+        let running = Task { await model.run() }
+        for _ in 0..<500 where model.isLoading {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        running.cancel()
+        #expect(!model.isLoading, "the list never loaded")
+        #expect(model.shortlist.state == .empty, "the list is not empty at the test spot")
+        return model
+    }
+
+    private static func asked(_ box: BoundingBox, _ store: CypressStore) async throws -> Bool {
+        try await store.queue.read { connection in
+            try CommunityTreeCacheStore().hasAsked(covering: box, connection: connection)
+        }
+    }
+
+    /// Each tile answered with no trees, as `apply` records it.
+    private static func fetched(_ tiles: [CommunityTile], _ store: CypressStore) async throws {
+        try await store.queue.write { connection in
+            for tile in tiles {
+                try CommunityTreeCacheStore().apply(
+                    tile: tile.path, trees: [], withdrawnTreeIDs: [], nextCursor: "c-\(tile.path)",
+                    at: Date(), connection: connection
+                )
+            }
+        }
+    }
+
+    /// The map over `CommunityRefresherTests.box`, which no seed covers, wired the way the
+    /// composition root wires it: a refresher over `service`, or none for a shut gate, and the
+    /// cache's own answer to "asked".
+    @MainActor
+    private static func map(_ store: CypressStore, service: ScriptedTileService?) -> MapModel {
+        let refresher = service.map { CommunityRefresherTests.make(store, $0) }
+        let model = MapModel(
+            api: LocalAPI(store: store, deviceID: deviceID),
+            refreshCommunity: refresher.map { refresher in
+                { bounds in await refresher.refresh(covering: bounds).changedCache }
+            },
+            communityAsked: CommunityTreeCacheStore.askedReader(queue: store.queue)
+        )
+        model.cameraDidChange(bounds: CommunityRefresherTests.box, zoom: 18)
+        return model
+    }
+
+    /// The read, then the refresh behind it and anything that started, all finished.
+    @MainActor
+    private static func settle(_ model: MapModel) async {
+        await TestWait.settle(model) { model.inventoryIsEmptyHere }
+        await model.communityRefresh?.value
+        for task in model.outstandingTasks { await task.value }
+    }
 
     @MainActor
     private static func model(api: LocalAPI, reader: @escaping ContributionSharingReader) -> VisitAddTreeModel {

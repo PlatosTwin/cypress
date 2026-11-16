@@ -30,17 +30,101 @@ author of this round writes. None of these choices adds a string beyond the owne
    reason, and leading-aligned like the rows around it; only the button stays pinned
    (`VisitAddTreeLayout.footnotePlace(isAccessibilitySize:)`).
 
-### R??? — The two empty places name both kinds, and both are true
+### R??? — The two empty places name both kinds, about the trees this phone holds
 
-1. **The map card.** The body is the owner's. The trigger did not change and did not need to:
+1. **The map card.** The new body is the owner's; where the phone has not asked for added trees the
+   card keeps the first body (the next entry). The trigger did not change and did not need to:
    `MapInventoryNotice.isOwed` reads `MapContent.markerCount`, and `LocalAPI.mapContent` merges the
    community layer (this phone's trees and other people's cached ones) into the same content as the
    city's. So the card draws only where neither has a pin or cluster in view, unnarrowed. Measured at
    AX5 on the 393 pt phone `MapEmptyInventoryTests.theNoticeFitsTheSlotAtAX5` uses: 357.0 pt, against
    a budget of 402.7 pt (the tallest location notice in the same slot).
-2. **The empty list.** The words moved into `VisitIdentifyCopy.emptyMessage`, with the number taken
-   from `VisitShortlist.searchRadiusM` (60 m). The list is `LocalAPI.treesNear`, which reads the seed
+2. **The empty list.** The words moved into `VisitIdentifyCopy.emptyNeitherKind`, with the number
+   taken from `VisitShortlist.searchRadiusM` (60 m). Where the phone has not asked for added trees
+   the list keeps the old text (the last entry). The list is `LocalAPI.treesNear`, which reads the seed
    and the whole community layer, so it is empty only when neither kind is within 60 m.
-3. **One limit, not a change.** Other people's trees reach the map and the list only after the tile
-   refresher has cached them. Over ground the phone has never fetched, the card can show for the
-   moment before the first fetch answers, and the map's read after the fetch takes it away.
+3. **Both texts are about the trees this phone holds**: its own, and other people's in its cache.
+   Other people's trees reach the cache only when `CommunityTileRefresher` fetches them, and the
+   service may hold added trees that the phone never fetched. The phone asks for nothing in these
+   cases, each checked in the code:
+   - The map's viewport touches more than `Policy.maxTiles` (16) zoom-14 tiles, a zoomed-out map:
+     `refresh(covering:)` returns `.tooManyTiles`.
+   - The phone is offline, or a fetch fails: the pass stops, and a tile that was tried is not asked
+     again until `Policy.minimumInterval` (120 s) has passed.
+   - The remote gate is shut: `DataLayer.refreshCommunityTrees` is nil unless
+     `RemoteAccess.allowsNetwork`. DEBUG builds are shut unless `CYPRESS_REMOTE` opens them; release
+     builds are always open.
+   - The time between a map read and the first fetch for its tiles.
+
+   **The map card handles this** (the owner's answer below): where the phone has not asked, it shows
+   the first body, which says only that the ground is not on the city inventory. "Neither has a tree
+   here" is drawn only where every tile in view was fetched.
+
+   **The "What tree is this?" list handles it the same way** (the owner's second answer, the last
+   entry). It fetches nothing itself and reads the cache that map viewports have filled, so it says
+   "No city tree and no added tree is within 60 m of you" only where every tile under those 60 m was
+   fetched, and the old text everywhere else.
+
+### R??? — The map card where the phone has not asked for added trees
+
+**The question (AskUserQuestion, 2026-11-15).** The "No trees on record here" card now ends
+"Neither has a tree here." In cases where the phone has not asked the service for added trees
+(zoomed out past about 3 km, offline, or a failed download) the card can be wrong; what should it do
+there?
+
+**Offered:** "Show the old text there (Recommended)"; "Keep the new text everywhere"; "Show no card
+there". **Chosen: "Show the old text there".**
+
+**How it is built.**
+1. **Asked, from the cache's tile table.** `CommunityTreeCacheStore.hasAsked(covering:maxTiles:connection:)`
+   is true when the box touches at most `Policy.maxTiles` (16) zoom-14 tiles and every one of them
+   has a row in `community_tree_cache_tiles`. What a row means, read from the code: `apply` writes
+   it with each page it applies, with trees or without, so a tile the service answered empty has
+   one. A failed request writes nothing. A refused cursor deletes the row (`dropTile`) until the
+   snapshot after it is applied. A shut remote gate never runs the refresher and leaves no rows. A
+   row from an earlier fetch counts as asked however old it is. No migration.
+2. **The card picks its body.** `MapModel` reads the answer for the settled viewport with each map
+   read (before it publishes the content, so the body and the trigger change together) and again
+   when a community refresh ends without changing the cache, because a tile served with no trees
+   changes no pin but is now asked. `MapInventoryCopy.message(communityAsked:)` returns
+   `neitherHasATree` when asked and `notOnTheCityInventory` when not. The title and `isOwed` did not
+   change.
+3. **The two bodies.** Asked: "Cypress draws a city street-tree inventory and trees people have
+   added. Neither has a tree here." Not asked: "Cypress draws a city street-tree inventory, and this
+   ground is not on it. Trees may stand here without being listed." (the body as it shipped before
+   round C3, copied from main at `e5b11dba`).
+4. **A second caller.** `CommunityTreeCacheStore.askedReader(queue:)` answers the same question
+   for any box. The "What tree is this?" list uses it for the 60 m around the reader (the next
+   entry).
+5. **AX5.** On the 393 pt phone `MapEmptyInventoryTests.theNoticeFitsTheSlotAtAX5` uses, against a
+   budget of 402.7 pt: the new body measures 357.0 pt and the first body 402.7 pt, which fits with
+   no room to spare (the test allows equal). It is the same height it had when it shipped.
+
+### R??? — The empty list where the phone has not asked for added trees
+
+**The question (AskUserQuestion, 2026-11-15).** "The empty "What tree is this?" list has the same
+gap as the map card, because it reads only the added trees the phone has already downloaded; where
+the phone has not asked the service for added trees around you (offline or a failed download), what
+should the empty list say?"
+
+**Offered:** "Show the old text there (Recommended)"; "Keep the new text everywhere". **Chosen:
+"Show the old text there".**
+
+**How it is built.**
+1. **The same function as the map card.** `VisitIdentifyModel` reads
+   `CommunityTreeCacheStore.askedReader(queue:)` for the box of `VisitShortlist.searchRadiusM`
+   (60 m) around the fix the list was read at. It reads it only when the list came back empty, and
+   before it publishes the list, so the empty state and its message change together. The
+   composition root passes the reader through `VisitFlowView`; a flow built without one answers
+   "not asked".
+2. **The list picks its message.** `VisitIdentifyCopy.emptyMessage(communityAsked:)` returns
+   `emptyNeitherKind` when asked and `emptyNotOnTheCityInventory` when not. The title, "No trees on
+   record here", did not change.
+3. **The two messages.** Asked: "No city tree and no added tree is within 60 m of you. If there is a
+   tree in front of you, it is not on the map yet." Not asked: "Nothing in the city inventory is
+   within 60 m of you. If there is a tree in front of you, it is not on the map yet." (the message as
+   it shipped before round C3, copied from main at `e5b11dba`). In both, the number is
+   `VisitShortlist.searchRadiusM`.
+4. **What counts as asked** is the map card's rule: every zoom-14 tile under the 60 m has a row in
+   `community_tree_cache_tiles`. At the default radius the area is one or, near a tile border, up to
+   four tiles, far below the 16-tile limit.

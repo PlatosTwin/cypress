@@ -53,6 +53,8 @@ final class AddTreeNearbyUITests: XCTestCase, DeepLinkHarness {
         static let signedOutNote = "Recorded as community-added and unverified. Only you can see it. "
             + "Everyone using Cypress can see it after you sign in."
         static let unknownNote = "Recorded as community-added and unverified, on this phone."
+        /// `VisitAddTreeCopy.land(nil)`, a row of the form with nothing chosen.
+        static let landUnanswered = "Where it stands will not be recorded."
         /// The two sentences of the refusal the ruling removed.
         static let refused = ["Nothing was added.", "If one of these is the tree in front of you, open it."]
     }
@@ -298,13 +300,26 @@ final class AddTreeNearbyUITests: XCTestCase, DeepLinkHarness {
 
     /// Round C3, the owner's ruling of 2026-11-15 on the note under the Add this tree button. The
     /// harness's add screen runs on a fresh install with nobody signed in, so the note says the
-    /// signed-out sentence, and at the drawn size it is pinned under the button, outside the form.
-    /// Nothing is tapped, so this test adds no tree.
+    /// signed-out sentence, and below the accessibility sizes it is pinned under the button,
+    /// outside the form. Nothing is tapped, so this test adds no tree.
     ///
-    /// Red-proof: make the add screen read no state (drop `await refreshSharing()` from
-    /// `VisitAddTreeModel.load()`) — red on "no signed-out note".
+    /// **It runs at the largest size below the accessibility sizes (XXXL), not the default.** With a
+    /// photo chosen, the form at the default size can fit the screen and not scroll, and then "the
+    /// note did not move after a swipe" would hold for a note in the form too. At XXXL the form
+    /// scrolls, so the test checks that a row of the form moved while the note stayed.
+    ///
+    /// Red-proofs: make the add screen read no state (drop `await refreshSharing()` from
+    /// `VisitAddTreeModel.load()`) — red on "no signed-out note". Return `.scroll` for every size
+    /// from `VisitAddTreeLayout.footnotePlace` — red on the note not being reachable without
+    /// scrolling.
     func testTheSignedOutNoteIsPinnedUnderTheButton() {
-        let app = launch("addTreeAlone")
+        let app = XCUIApplication()
+        app.launchEnvironment[Self.deepLinkScreenKey] = "addTreeAlone"
+        app.launchArguments += [
+            "-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryXXXL"
+        ]
+        DebugMapCamera.pin(app)
+        app.launch()
 
         let note = app.staticTexts[Copy.signedOutNote]
         guard note.waitForExistence(timeout: 60) else {
@@ -314,7 +329,7 @@ final class AddTreeNearbyUITests: XCTestCase, DeepLinkHarness {
             )
             return
         }
-        record(app, named: "signed-out-note-default")
+        record(app, named: "signed-out-note-xxxl")
         XCTAssertFalse(
             app.staticTexts[Copy.unknownNote].exists,
             "the screen still says the note for a phone that does not know the account"
@@ -326,13 +341,22 @@ final class AddTreeNearbyUITests: XCTestCase, DeepLinkHarness {
             note.frame.minY, add.frame.maxY,
             "the note is not under the button: note \(note.frame), button \(add.frame)"
         )
-        // Pinned: a swipe that scrolls the form leaves the note where it was.
-        let before = note.frame
+        // Pinned: a swipe scrolls the form, so a row of the form moves, and the note stays.
+        let row = app.staticTexts[Copy.landUnanswered]
+        XCTAssertTrue(row.exists, "no land row to watch the form scroll by")
+        let noteBefore = note.frame
+        let rowBefore = row.frame
         app.swipeUp()
-        XCTAssertTrue(
-            note.waitForExistence(timeout: 5) && note.frame == before,
-            "the note moved with the form at the drawn size, so it is not pinned: \(before) → \(note.frame)"
+        XCTAssertTrue(note.waitForExistence(timeout: 5), "the note is gone after a swipe")
+        XCTAssertLessThan(
+            row.frame.minY, rowBefore.minY,
+            "the form did not scroll at XXXL (land row \(rowBefore) → \(row.frame)), so the swipe proves nothing"
         )
+        XCTAssertEqual(
+            note.frame, noteBefore,
+            "the note moved with the form below the accessibility sizes, so it is not pinned"
+        )
+        record(app, named: "signed-out-note-xxxl-after-swipe")
     }
 
     /// The same ruling, "move into the scroll": at the largest accessibility text size the note is

@@ -177,11 +177,13 @@ enum VisitPreviewFixtures {
     @MainActor
     static func identify(
         rows: [NearbyTree] = shortlistRows,
-        fix: VisitLocationProvider.Fix = .located(origin, accuracyM: 9)
+        fix: VisitLocationProvider.Fix = .located(origin, accuracyM: 9),
+        communityAsked: Bool = false
     ) -> VisitIdentifyView {
         VisitIdentifyView(
             api: VisitPreviewAPI(nearby: rows),
             location: VisitLocationProvider(pinnedFix: fix),
+            communityAsked: { _ in communityAsked },
             onPick: { _ in },
             onAddTree: {},
             onBack: {}

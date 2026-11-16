@@ -192,7 +192,11 @@ struct RootView: View {
                 api: data.api,
                 refreshProfile: data.refreshTreeProfile,
                 refreshMembership: data.refreshMapMembership,
-                refreshCommunity: data.refreshCommunityTrees
+                refreshCommunity: data.refreshCommunityTrees,
+                // Which body the empty-inventory card draws. Over the phone's own cache, with the
+                // gate open or shut: a shut gate leaves no fetched tiles, so the answer is "not
+                // asked" there.
+                communityAsked: CommunityTreeCacheStore.askedReader(queue: data.store.queue)
             )
         )
     }
@@ -606,7 +610,11 @@ struct RootView: View {
                 // survives (the owner's decision of 2026-11-15). See `existingTreeScreen`.
                 openExisting: existingTreeScreen,
                 // The note under the add screen's button. See `contributionSharing`.
-                contributionSharing: contributionSharing()
+                contributionSharing: contributionSharing(),
+                // The empty shortlist's message: the new text where this phone has asked for added
+                // trees around the reader, the old one where it has not (the owner's answer of
+                // 2026-11-15). The map card reads the same function.
+                communityAsked: CommunityTreeCacheStore.askedReader(queue: data.store.queue)
             )
 
         case let .photoViewer(id, caption, treeID):

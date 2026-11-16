@@ -128,6 +128,10 @@ struct VisitFlowView: View {
     /// Whether this phone's account shares its tree records, read by the add screen each time it
     /// appears for the note under its button. The composition root's, like `userID`.
     let contributionSharing: ContributionSharingReader
+    /// Whether this phone has asked the service for added trees over a box, which picks the empty
+    /// shortlist's message (`VisitIdentifyCopy.emptyMessage(communityAsked:)`). The composition
+    /// root's (`CommunityTreeCacheStore.askedReader(queue:)`); nil answers "not asked".
+    var communityAsked: ((BoundingBox) async -> Bool)? = nil
 
     @State private var location = VisitLocationProvider()
     @State private var ledger = VisitSaveLedger()
@@ -156,6 +160,7 @@ struct VisitFlowView: View {
             VisitIdentifyView(
                 api: api,
                 location: location,
+                communityAsked: communityAsked,
                 onPick: { candidate in step = .camera(Subject(candidate)) },
                 onAddTree: { step = .addTree },
                 onBack: onExit
