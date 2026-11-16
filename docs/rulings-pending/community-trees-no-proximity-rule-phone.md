@@ -98,6 +98,19 @@ the host's router, which has no tabs: they empty its stack and close the host, s
 the add screen with the draft, not on the map or the grove. Nothing discards the draft. A flow started
 there whose own add screen lists a tree nests a further host the same way.
 
+### R??? — Screen 18's exits inside a visit started from a note-opened profile (owner's decision, 2026-11-15)
+
+**The question**, asked by the orchestrator in a dialog: "On the Add this tree screen, a tap on a tree
+in the "ALREADY ON RECORD" note opens that tree's profile over the add screen, and Back returns to
+your draft (your earlier choice). If the person starts a visit from that profile and finishes it, the
+last visit screen offers "Back to the map" and "Route done · see your grove". As built, both of those
+land on the add screen with the draft still there, not on the map or the grove. What should they do?"
+
+**Offered:** "Land on the add screen (Recommended)"; "Go to the map or the grove"; "Hide Visit on that
+profile".
+
+**Chosen: Land on the add screen.** As built; no code change.
+
 ### R??? — The note shows at 10 m and hides past 15 m (owner's decision, 2026-11-15)
 
 **The question**, asked with AskUserQuestion. A GPS fix drifting across 10 m made the note appear and
