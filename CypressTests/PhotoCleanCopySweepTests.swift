@@ -183,4 +183,25 @@ struct PhotoCleanCopySweepTests {
         try Data("left".utf8).write(to: scratch)
         #expect(PhotoBinary.removeAbandonedCleanCopies(in: directory).map(\.lastPathComponent) == [scratch.lastPathComponent])
     }
+
+    /// The registry counts its holders. An upload's scratch is named for its photograph, not with a
+    /// fresh UUID, so two strips could hold one name; the first to end must not free it for the
+    /// other.
+    ///
+    /// Red-proof: make `InProgressNames.remove` drop the name outright (`names[name] = nil`) — red on
+    /// "one of two holders ended and the name was released".
+    @Test("a name two strips hold stays held until both have ended")
+    func aNameHeldTwiceIsReleasedOnlyByTheSecondEnd() {
+        let names = InProgressNames()
+        let name = "\(UUID().uuidString).jpg.stripping"
+        #expect(names.unlessHeld(name) { true } == true, "calibration: a name nobody holds is refused")
+
+        names.insert(name)
+        names.insert(name)
+        names.remove(name)
+        #expect(names.unlessHeld(name) { true } == nil, "one of two holders ended and the name was released")
+
+        names.remove(name)
+        #expect(names.unlessHeld(name) { true } == true, "both holders ended and the name is still held")
+    }
 }
