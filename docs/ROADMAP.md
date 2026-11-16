@@ -2560,6 +2560,17 @@ into this section in the round that finds it, and nowhere else. Each item stands
 154. **A community pin exactly under the reader's location dot does not draw.** MapKit hides it, so
     a person standing at a tree they or someone else added may not see its pin. Found when a C3 UI
     test put the reader on the tree, 2026-11-15; 67 m away the pin draws.
+    **Investigated in the community gaps round of 2026-11-16 (`fix/community-phone-gaps`); not
+    fixed, owner's call.** MapKit does not hide the pin. On a clean install on the iPhone 17e
+    simulator, with `CYPRESS_LOCATION` on the `othersTreeOnMap` tree, the pin's view is in the
+    accessibility tree on the first wait, at the dot's frame. It is covered: the dot and the pin are
+    both 18 pt, and the dot is drawn on top on purpose (`MapLayout.userDotZPriority`, task #150).
+    The dot takes no taps, so a tap on the dot selects the pin under it: the card opens and the
+    pin's selected scale and reticle show around the dot. Every fix changes how the dot or a pin
+    draws: (a) a pin under the dot draws above it, which hides the dot instead; (b) the dot drops
+    its core, or draws see-through, while a pin is under it; (c) the pin or the dot is drawn a few
+    points aside, which puts one of them off its true position; (d) no change, since the tap
+    already reaches the tree. Simulator only; not seen on a phone.
 155. **Sign-out keeps `account_provider`.** A later sign-in that goes only through `claimDevice`
     (today, DEBUG paths) then reads as "declined to share" where it should read as unknown. Found
     by the reviewer of C3's profile package, 2026-11-15.
