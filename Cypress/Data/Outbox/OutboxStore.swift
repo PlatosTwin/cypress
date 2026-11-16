@@ -866,6 +866,40 @@ public struct OutboxStore {
         }
     }
 
+    /// When the service accepted each species correction of one tree to one species: the outbox's
+    /// `updated_at` on a row with `remote_sent = 1`, and whose correction it was (ROADMAP 144).
+    ///
+    /// `LocalAPI.localSpeciesAnswers` compares it with the cache row's `fetched_at`. A row the
+    /// prune has already removed (`state = 'done'`, past its cutoff) is not here.
+    public func acceptedSpeciesCorrections(
+        treeID: UUID,
+        speciesID: UUID,
+        connection: SQLiteConnection
+    ) throws -> [(owner: ContributionOwner, acceptedAt: Date)] {
+        let statement = try connection.cachedStatement("""
+            SELECT updated_at,
+                   json_extract(payload, '$.attribution.userID') AS user,
+                   json_extract(payload, '$.attribution.deviceID') AS device
+              FROM outbox
+             WHERE kind = 'species_correction'
+               AND remote_sent = 1
+               AND json_extract(payload, '$.treeID') = :tree COLLATE NOCASE
+               AND json_extract(payload, '$.speciesID') = :species COLLATE NOCASE
+            """)
+        _ = try statement.bind([":tree": treeID.uuidString, ":species": speciesID.uuidString])
+        return try statement.fetchAll { row in
+            let owner: ContributionOwner
+            if let user = try row.uuidIfPresent("user") {
+                owner = .user(user)
+            } else if let device = try row.uuidIfPresent("device") {
+                owner = .device(device)
+            } else {
+                owner = .nobody
+            }
+            return (owner: owner, acceptedAt: try row.date("updated_at"))
+        }
+    }
+
     /// Drops the queue rows of binaries whose photograph has been withdrawn.
     ///
     /// **The drain's own half of the F1 repair, and the half that does not depend on which door the

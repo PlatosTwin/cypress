@@ -98,6 +98,16 @@ public struct CommunityTreeCacheStore {
             tile = excluded.tile, fetched_at = excluded.fetched_at
         """
 
+    /// When a page last served one cached tree (`fetched_at`), or nil when the cache does not hold it.
+    public func fetchedAt(id: UUID, connection: SQLiteConnection) throws -> Date? {
+        let statement = try connection.cachedStatement(
+            "SELECT fetched_at FROM main.community_tree_cache WHERE id = :id COLLATE NOCASE"
+        )
+        _ = try statement.bind([":id": id.uuidString])
+        defer { _ = try? statement.reset() }
+        return try statement.fetchOne { try $0.date("fetched_at") }
+    }
+
     /// Drops cached trees by id, from the whole cache. Returns how many were there.
     @discardableResult
     public func remove(ids: [UUID], connection: SQLiteConnection) throws -> Int {

@@ -1189,10 +1189,15 @@ public actor LocalAPI: CypressAPI {
     /// the tile refresher, so it learns the reader's naming or correction a refresh after the
     /// service applied it. Until then, and for as long as the cache agrees, the answer is the
     /// reader's: the answer is still queued, or the cache has no species, or the cache holds the
-    /// reader's species, or it still holds the species the reader's correction replaced. Any other
-    /// species in the cache is somebody else's later act (the adder's, or the operator's), or the
-    /// first naming that won a race, and the cache wins. `RoutedAPI` checks this against the
-    /// service's own answer (`species_named_by_you`) whenever it has one.
+    /// reader's species, or it still holds the species the reader's correction replaced **and the
+    /// cache row was served no later than the service accepted that correction** (outbox
+    /// `remote_sent`, against the cache's `fetched_at`). Without that last bound, an adder who set
+    /// the replaced species back would leave the namer's phone showing the namer's correction for
+    /// good. Any other species in the cache is somebody else's later act (the adder's, or the
+    /// operator's), or the first naming that won a race, and the cache wins. A correction whose
+    /// outbox row the prune removed counts as not in force, and the cache wins then too.
+    /// `RoutedAPI` checks this against the service's own answer (`species_named_by_you`) whenever
+    /// it has one.
     func localSpeciesAnswers(
         tree: Tree,
         addedHere: Bool,
@@ -1223,9 +1228,18 @@ public actor LocalAPI: CypressAPI {
             || answers.isQueued(.speciesCorrection, by: mine)
         var inForce = answerQueued || cached == nil || cached == named
         if !inForce {
+            // The cache still holds the species the reader's correction replaced. That means "the
+            // correction is in force" only while the cache has not been served since the service
+            // accepted the correction. A row served after that is the service's word: somebody
+            // (the adder, or the operator) set that species back, and the cache wins.
             let replaced = try assertions.chain(treeID: tree.id, connection: connection)
                 .first { $0.supersededBy == head.id }?.speciesID
-            inForce = replaced != nil && cached == replaced
+            if let replaced, cached == replaced,
+               let fetched = try CommunityTreeCacheStore().fetchedAt(id: tree.id, connection: connection) {
+                inForce = try OutboxStore().acceptedSpeciesCorrections(
+                    treeID: tree.id, speciesID: named, connection: connection
+                ).contains { $0.owner.isOwned(by: mine) && fetched <= $0.acceptedAt }
+            }
         }
         if inForce {
             answers.isNamer = true

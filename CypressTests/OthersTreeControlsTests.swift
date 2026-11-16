@@ -267,6 +267,69 @@ struct OthersTreeControlsTests {
         await #expect(throws: APIError.forbidden) { _ = try await api.correctSpecies(treeID: id, speciesID: plane.id) }
     }
 
+    /// Every queued item accepted by the service at `date`, as a drain that sent it leaves it.
+    static func acceptEverything(_ store: CypressStore, at date: Date) async throws {
+        try await store.queue.write { connection in
+            let statement = try connection.prepare(
+                "UPDATE outbox SET remote_sent = 1, state = 'done', updated_at = :at WHERE state <> 'done'"
+            )
+            defer { statement.finalize() }
+            _ = try statement.bind([":at": date])
+            try statement.run()
+        }
+    }
+
+    /// A tile page serves the tree with `species` at `date`.
+    static func serve(_ api: LocalAPI, _ store: CypressStore, id: UUID, species: UUID, at date: Date) async throws {
+        try await api.debugSeedCommunityCache(Tree(id: id, source: .community, coordinate: spot, speciesCurrentID: species))
+        try await store.queue.write { connection in
+            let statement = try connection.prepare(
+                "UPDATE community_tree_cache SET fetched_at = :at WHERE id = :id COLLATE NOCASE"
+            )
+            defer { statement.finalize() }
+            _ = try statement.bind([":at": date, ":id": id.uuidString])
+            try statement.run()
+        }
+    }
+
+    /// The namer corrects plane to oak, and the adder sets it back to plane. While the cache was
+    /// last served before the service accepted the namer's correction, the cache's plane is the
+    /// species the correction replaced, and the namer's oak is in force. Once a page serves plane
+    /// after that, plane is the adder's word, and the cache wins.
+    ///
+    /// Red-proof: drop the `fetched <= $0.acceptedAt` bound in `localSpeciesAnswers` (accept any
+    /// `replaced` match) — red on "the adder's species did not win".
+    @Test("the adder setting back the species the namer's correction replaced wins once the cache is served again")
+    func theAdderSettingTheReplacedSpeciesBackWins() async throws {
+        let store = try await Self.seededStore()
+        let api = LocalAPI(store: store, deviceID: Self.readerDevice)
+        try await Self.signIn(api)
+        let plane = try await Self.plane(api)
+        let oak = try await Self.oak(api, besides: plane)
+        let id = try await Self.cached(api, species: nil)
+        let day = { (n: Double) in Date(timeIntervalSince1970: 1_790_000_000 + n * 86_400) }
+
+        // The namer names it plane; the service accepts it, and a page serves plane.
+        _ = try await api.claimSpecies(treeID: id, speciesID: plane.id)
+        try await Self.acceptEverything(store, at: day(1))
+        try await Self.serve(api, store, id: id, species: plane.id, at: day(2))
+        // The namer corrects it to oak; the service accepts it at day 3.
+        _ = try await api.correctSpecies(treeID: id, speciesID: oak.id)
+        try await Self.acceptEverything(store, at: day(3))
+
+        // No page since: the namer sees their own correction, and may still correct it.
+        var profile = try await api.treeProfile(id: id)
+        #expect(profile.species?.id == oak.id, "calibration: the sent correction is not shown before the next page")
+        #expect(profile.speciesCorrection == .correctable, "\(profile.speciesCorrection)")
+
+        // The adder sets plane back, and a page serves it at day 4.
+        try await Self.serve(api, store, id: id, species: plane.id, at: day(4))
+        profile = try await api.treeProfile(id: id)
+        #expect(profile.species?.id == plane.id, "the adder's species did not win: \(String(describing: profile.species?.id))")
+        #expect(profile.speciesCorrection == .reportable, "\(profile.speciesCorrection)")
+        await #expect(throws: APIError.forbidden) { _ = try await api.correctSpecies(treeID: id, speciesID: oak.id) }
+    }
+
     /// The claim on an unnamed cached tree is for sharers only, on the screen and at the verb.
     ///
     /// Red-proof: drop the sharing guard in `claimCachedSpecies` — red on the verb, which succeeds.
