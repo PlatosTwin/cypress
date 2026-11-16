@@ -1155,9 +1155,26 @@ public struct APIOutboxSendSink: OutboxSendSink {
         // Resolved before both reads below: a photo held for the send (offline, or waiting for
         // Wi-Fi) across an app update holds the old container's path, and the file moved with the
         // container (report F36). Without this the send fails on every attempt.
-        let containerPath = StoredPhotoPath.resolve(
+        var containerPath = StoredPhotoPath.resolve(
             storedPath, applicationSupport: applicationSupportDirectory
         ).path
+        // ── A photograph that is not a JPEG goes as a JPEG copy ──────────────────────────────────
+        //
+        // A photograph picked from the library keeps its own container (HEIC, PNG), and the service
+        // names every photograph `photos/<id>.jpg`. The copy is encoded fresh, so it carries only the
+        // pixels and the orientation, and the check below still runs on it. The person's own file
+        // stays as it is. An image ImageIO reads and cannot decode is refused for good
+        // (`validationFailed`), the same end as a file that cannot be cleaned. A missing file is not
+        // an image here and goes on to fail as it did before.
+        var jpegCopy: URL?
+        defer { if let jpegCopy { try? FileManager.default.removeItem(at: jpegCopy) } }
+        if PhotoBinary.isReadableImage(atPath: containerPath), !PhotoBinary.isJPEG(atPath: containerPath) {
+            let copy = URL(fileURLWithPath: NSTemporaryDirectory())
+                .appendingPathComponent("cypress-send-\(UUID().uuidString).jpg")
+            jpegCopy = copy
+            try PhotoBinary.writeJPEGCopy(from: URL(fileURLWithPath: containerPath), to: copy)
+            containerPath = copy.path
+        }
         // ── No file leaves with its location or its time in it ─────────────────────────────────
         //
         // Every ingest path strips already, and this is the last point before the bytes go. It is

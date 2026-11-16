@@ -55,6 +55,13 @@ struct CommunityTreeBackfillTests {
         }
     }
 
+    final class Counter: @unchecked Sendable {
+        private let lock = NSLock()
+        private var count = 0
+        /// 1 on the first call, 2 on the second, and so on.
+        func next() -> Int { lock.withLock { count += 1; return count } }
+    }
+
     struct Phone {
         let store: CypressStore
         let api: LocalAPI
@@ -314,9 +321,8 @@ struct CommunityTreeBackfillTests {
         var interrupted = phone.backfill()
         interrupted.afterAddRow = { throw Boom() }
         phone.clock.set(Self.today)
-        await #expect(throws: Boom.self) {
-            try await interrupted.run(identity: phone.signedOut, queue: phone.store.queue)
-        }
+        let stopped = try await interrupted.run(identity: phone.signedOut, queue: phone.store.queue)
+        #expect(stopped.treesFailed == 1 && stopped.trees == 0, "\(stopped)")
         #expect(try await phone.outbox().isEmpty, "a stopped tree left rows behind")
         #expect(try await !phone.isQueuedOnce(tree.id), "a stopped tree was recorded as queued")
 
@@ -758,5 +764,284 @@ struct CommunityTreeBackfillTests {
         let afterLive = try await live.store.queue.read { try OutboxStore().allItems(connection: $0) }
         #expect(afterLive.map(\.item.kind) == [.addTree], "with the sink wired the launch queued \(afterLive.map(\.item.kind))")
         #expect(try await live.store.queue.read { try CommunityTreeBackfill.isQueued(treeID: tree.id, connection: $0) })
+    }
+
+    // MARK: - 12. A deleted account's anonymized work
+
+    /// Red-proof: drop the `notAnonymized` clause from `CommunityTreeBackfill.live` — red on the
+    /// anonymized visit queued under account B.
+    @Test("a deleted account's anonymized rows on an old tree are not sent under the account signed in now")
+    func anonymizedRowsAreNeverSent() async throws {
+        let phone = try await Self.phone(userID: Self.accountB)
+        let (tree, _) = try await Self.addTree(on: phone, at: Self.old)
+        try await phone.write { connection in
+            let statement = try connection.cachedStatement(
+                "UPDATE community_trees SET user_id = :user, device_id = NULL"
+            )
+            _ = try statement.bind(Self.accountB.uuidString, forName: ":user")
+            try statement.run()
+            _ = try statement.reset()
+        }
+        let rows = try await Self.addRows(
+            on: phone, tree: tree.id,
+            owner: Attribution(userID: Self.accountA, deviceID: Self.deviceID), at: Self.old
+        )
+        try await phone.write { connection in
+            _ = try AccountDeletion().delete(
+                userID: Self.accountA, choice: .leaveRecords,
+                at: Self.old.addingTimeInterval(3600), connection: connection
+            )
+        }
+        let owners = try await phone.store.queue.read { connection -> (user: UUID?, device: UUID?, tombstoned: Bool) in
+            let statement = try connection.cachedStatement("""
+                SELECT user_id, device_id,
+                       EXISTS (SELECT 1 FROM anonymized_contributions t
+                                WHERE t.client_uuid = visits.client_uuid) AS tombstoned
+                  FROM visits WHERE id = :id
+                """)
+            _ = try statement.bind(rows.visitWithPhoto.id, forName: ":id")
+            defer { _ = try? statement.reset() }
+            return try #require(try statement.fetchOne { row in
+                (try row.uuidIfPresent("user_id"), try row.uuidIfPresent("device_id"), try row.bool("tombstoned"))
+            })
+        }
+        #expect(owners.user == nil && owners.device == Self.deviceID && owners.tombstoned,
+                "fixture: the leaving door did not leave the visit as this device's, tombstoned")
+
+        let report = try await phone.run(phone.signedIn(Self.accountB))
+        let queued = try await phone.outbox()
+        let keys = Set(queued.map(\.item.clientUUID))
+        for (name, key) in [
+            ("visit", rows.visitWithPhoto.clientUUID), ("second visit", rows.otherVisit.clientUUID),
+            ("check-in", rows.checkIn.clientUUID), ("measurement", rows.measurement.clientUUID),
+            ("care event", rows.care.clientUUID)
+        ] {
+            #expect(!keys.contains(key), "a deleted account's anonymized \(name) was queued under account B")
+        }
+        #expect(queued.map(\.item.kind) == [.addTree], "queued \(queued.map(\.item.kind))")
+        let stagedVisitPhoto = try await phone.store.queue.read { connection -> Bool in
+            let statement = try connection.cachedStatement(
+                "SELECT 1 AS p FROM outbox_photos WHERE photo_id = :id COLLATE NOCASE"
+            )
+            _ = try statement.bind(rows.visitPhotoID, forName: ":id")
+            defer { _ = try? statement.reset() }
+            return try statement.fetchOne { _ in true } ?? false
+        }
+        #expect(!stagedVisitPhoto, "a deleted account's anonymized photograph was staged")
+        #expect(report.trees == 1, "\(report)")
+    }
+
+    /// Red-proof: make `Identity.maySend` answer true when both owners are nil — red on the tree and
+    /// on its add photo.
+    @Test("an old tree and its add photo whose adder deleted the account are never sent")
+    func anAnonymizedTreeAndItsAddPhotoStay() async throws {
+        let phone = try await Self.phone(userID: Self.accountA)
+        let (tree, _) = try await Self.addTree(on: phone, at: Self.old)
+        let addPhoto = try #require(try await Self.addPhotoID(phone, tree.id))
+        try await phone.write { connection in
+            // As `addTree` would have left it, signed in as A: the tree and its photograph are A's.
+            let tree = try connection.cachedStatement("UPDATE community_trees SET user_id = :user, device_id = NULL")
+            _ = try tree.bind(Self.accountA.uuidString, forName: ":user")
+            try tree.run()
+            _ = try tree.reset()
+            let photo = try connection.cachedStatement("UPDATE photos SET user_id = :user, device_id = NULL")
+            _ = try photo.bind(Self.accountA.uuidString, forName: ":user")
+            try photo.run()
+            _ = try photo.reset()
+            _ = try AccountDeletion().delete(
+                userID: Self.accountA, choice: .leaveRecords,
+                at: Self.old.addingTimeInterval(3600), connection: connection
+            )
+        }
+        let owners = try await phone.store.queue.read { connection -> [String?] in
+            let statement = try connection.cachedStatement("""
+                SELECT (SELECT coalesce(user_id, device_id) FROM community_trees) AS tree,
+                       (SELECT coalesce(user_id, device_id) FROM photos WHERE id = :photo) AS photo
+                """)
+            _ = try statement.bind(addPhoto, forName: ":photo")
+            defer { _ = try? statement.reset() }
+            return try #require(try statement.fetchOne { [try $0.stringIfPresent("tree"), try $0.stringIfPresent("photo")] })
+        }
+        #expect(owners == [nil, nil], "fixture: the leaving door left an owner on the tree or its photo: \(owners)")
+
+        for identity in [phone.signedOut, phone.signedIn(Self.accountB)] {
+            let report = try await phone.run(identity)
+            #expect(try await phone.outbox().isEmpty, "an anonymized tree was queued: \(report)")
+        }
+        #expect(try await !phone.isQueuedOnce(tree.id))
+    }
+
+    // MARK: - 13. One tree that fails
+
+    /// Red-proof: take the `do`/`catch` out of `run` — red on the second tree.
+    @Test("a tree that fails on every run does not hold back the trees after it, and is tried again")
+    func oneFailingTreeDoesNotStopTheOthers() async throws {
+        let phone = try await Self.phone()
+        let (first, _) = try await Self.addTree(on: phone, at: Self.old)
+        let (second, _) = try await Self.addTree(on: phone, at: Self.old.addingTimeInterval(60))
+        // Fails only on the first tree. Trees go oldest first, so the first run's first call is the
+        // first tree, its second call the second tree, and the second run's only call the first tree.
+        let calls = Counter()
+        var failing = phone.backfill()
+        failing.afterAddRow = {
+            if calls.next() != 2 { throw Boom() }
+        }
+        phone.clock.set(Self.today)
+        for _ in 0..<2 {
+            let report = try await failing.run(identity: phone.signedOut, queue: phone.store.queue)
+            #expect(report.treesFailed <= 1, "\(report)")
+        }
+        #expect(try await !phone.isQueuedOnce(first.id), "the failing tree was recorded as queued")
+        #expect(try await phone.isQueuedOnce(second.id), "the tree after a failing one was never reached")
+        let queuedFor = Set(try await phone.outbox().compactMap { try? Self.addition($0).treeID })
+        #expect(queuedFor == [second.id], "queued adds for \(queuedFor)")
+
+        // Once it stops failing, the next run sends it.
+        try await phone.run(phone.signedOut)
+        #expect(try await phone.isQueuedOnce(first.id), "the failed tree was not tried again")
+    }
+
+    // MARK: - 14. The added day on an older build's queued add
+
+    /// Red-proof: drop the `addAddedDayIfMissing` call from the `.stageOn` arm — red on the day.
+    @Test("an older build's pending add of 23:30 Pacific gets that day before it is sent")
+    func aPendingAddGetsItsAddedDay() async throws {
+        let phone = try await Self.phone()
+        let evening = try #require(ISO8601DateFormatter().date(from: "2026-10-15T06:30:00Z"))
+        let (tree, _) = try await Self.addTree(on: phone, at: evening, asOldBuild: false)
+        try await phone.write { connection in
+            try connection.execute("DELETE FROM outbox_photos")
+            try connection.execute("UPDATE outbox SET payload = json_remove(payload, '$.addedOn') WHERE kind = 'add_tree'")
+            try connection.execute(
+                "DELETE FROM app_state WHERE key LIKE '\(CommunityTreeStore.queuedOnceKeyPrefix)%'"
+            )
+        }
+        let before = try #require(try await phone.outbox().first)
+        #expect(try Self.addition(before).addedOn == nil && before.item.state == .pending, "fixture")
+
+        let losAngeles = try #require(TimeZone(identifier: "America/Los_Angeles"))
+        try await phone.run(phone.signedOut, timeZone: losAngeles)
+        let after = try #require(try await phone.outbox().first { $0.id == before.id })
+        let addition = try Self.addition(after)
+        #expect(addition.addedOn == "2026-10-14", "the pending add's day is \(addition.addedOn ?? "nil")")
+        #expect(addition.occurredAt == evening && addition.treeID == tree.id)
+        #expect(after.item.state == .pending)
+    }
+
+    // MARK: - 15. Photographs that are not JPEGs
+
+    /// A real HEIC or PNG, 400 × 300, with a GPS fix, a capture time and orientation 6 (the way an
+    /// iPhone stores a portrait photograph).
+    static func image(_ type: UTType, at url: URL) throws -> URL {
+        let jpeg = try PhotoMetadataTests.cameraJPEG()
+        let source = try #require(CGImageSourceCreateWithData(jpeg as CFData, nil))
+        let image = try #require(CGImageSourceCreateImageAtIndex(source, 0, nil))
+        let properties = try #require(CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any])
+        let destination = try #require(
+            CGImageDestinationCreateWithURL(url as CFURL, type.identifier as CFString, 1, nil),
+            "this simulator cannot write \(type.identifier)"
+        )
+        CGImageDestinationAddImage(destination, image, properties as CFDictionary)
+        #expect(CGImageDestinationFinalize(destination), "fixture: \(type.identifier) not written")
+        return url
+    }
+
+    /// Fact-finding for the library path: a HEIC goes through the ingest that `VisitAddTreeModel`
+    /// uses (`PhotoBinary.write`) and comes out a HEIC, which is not a JPEG.
+    @Test("a HEIC through the ingest stays a HEIC, so it is not a JPEG")
+    func aHEICStaysAHEICThroughTheIngest() throws {
+        let folder = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("cypress-139-heic-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let heic = try Self.image(.heic, at: folder.appendingPathComponent("pick.heic"))
+        let staged = folder.appendingPathComponent("staged")
+        try PhotoBinary.write(try Data(contentsOf: heic), strippingMetadataTo: staged)
+        let type = CGImageSourceCreateWithURL(staged as CFURL, nil).flatMap(CGImageSourceGetType) as String?
+        #expect(type == UTType.heic.identifier, "the ingest wrote \(type ?? "nil")")
+        #expect(!PhotoBinary.isJPEG(atPath: staged.path))
+    }
+
+    /// Red-proof: make `sendableFile` require a JPEG again — red on "not staged"; and drop the JPEG
+    /// copy from `APIOutboxSendSink.uploadPhoto` — red on the sent type.
+    @Test("an add photo picked as HEIC or PNG is staged and sent as a clean, upright JPEG", arguments: [UTType.heic, .png])
+    func aLibraryAddPhotoIsSentAsAJPEG(_ type: UTType) async throws {
+        let phone = try await Self.phone()
+        let (tree, _) = try await Self.addTree(on: phone, at: Self.old)
+        let addPhoto = try #require(try await Self.addPhotoID(phone, tree.id))
+        let stored = try await phone.store.queue.read { connection -> String in
+            let statement = try connection.cachedStatement("SELECT local_path FROM photos WHERE id = :id")
+            _ = try statement.bind(addPhoto, forName: ":id")
+            defer { _ = try? statement.reset() }
+            return try #require(try statement.fetchOne { try $0.string("local_path") })
+        }
+        let original = URL(fileURLWithPath: stored)
+        try FileManager.default.removeItem(at: original)
+        _ = try Self.image(type, at: original)
+        let originalBytes = try Data(contentsOf: original)
+        #expect(!PhotoBinary.isJPEG(atPath: stored), "fixture: the add photo is a JPEG")
+
+        try await phone.run(phone.signedOut)
+        let add = try #require(try await phone.outbox().first { $0.item.kind == .addTree })
+        let row = try #require(try await phone.sendable(add.id).first, "the \(type.identifier) add photo was not staged")
+
+        let serviceID = UUID()
+        let destination = URL(string: "https://storage.invalid/photos/\(serviceID.uuidString).jpg?sig=139\(type.preferredFilenameExtension ?? "")")!
+        StubStorageProtocol.park(destination, status: 200)
+        let transport = ScriptedTransport()
+        transport.answer("POST /photos/begin", with: """
+            {"photo_id":"\(serviceID.uuidString)","presigned_put_url":"\(destination.absoluteString)",
+             "moderation_state":"approved","approval_reason":"auto_approved_launch"}
+            """)
+        transport.answer("POST /photos/\(serviceID.uuidString)/received", with: #"{"received":true}"#)
+        let sink = APIOutboxSendSink(
+            remote: RemoteAPITests.api(transport, session: StubStorageProtocol.session()),
+            applicationSupportDirectory: phone.folder
+        )
+        try await sink.uploadPhoto(row, for: add.item)
+
+        let put = try #require(StubStorageProtocol.requests(to: destination).first { $0.method == "PUT" })
+        let sent = phone.folder.appendingPathComponent("sent-\(UUID().uuidString)")
+        try #require(put.body).write(to: sent)
+        #expect(PhotoBinary.isJPEG(atPath: sent.path), "the \(type.identifier) add photo was sent as it is, not as a JPEG")
+        #expect(!PhotoBinary.carriesIdentifyingMetadata(atPath: sent.path), "the sent file still says where or when")
+        let properties = try #require(
+            CGImageSourceCreateWithURL(sent as CFURL, nil)
+                .flatMap { CGImageSourceCopyPropertiesAtIndex($0, 0, nil) as? [CFString: Any] }
+        )
+        #expect(properties[kCGImagePropertyOrientation] as? Int == 6, "the sent file lost which way up it goes")
+        #expect(PhotoBinary.pixelSize(atPath: sent.path).map { [$0.width, $0.height] } == [400, 300])
+        #expect(try Data(contentsOf: original) == originalBytes, "the person's own file was changed")
+    }
+
+    // MARK: - 16. The strip replaces the file in one step
+
+    /// Red-proof: remove the destination before the rename in `PhotoBinary.install` — red on "the
+    /// original is gone".
+    @Test("a strip that fails at the swap leaves the original photograph in place")
+    func aFailedSwapKeepsTheOriginal() throws {
+        let folder = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("cypress-139-swap-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let file = folder.appendingPathComponent("photo.jpg")
+        let original = try PhotoMetadataTests.cameraJPEG()
+        try original.write(to: file)
+
+        #expect(throws: Boom.self) {
+            try PhotoBinary.stripMetadataInPlace(atPath: file.path, rename: { _, _ in throw Boom() })
+        }
+        #expect(FileManager.default.fileExists(atPath: file.path), "the original is gone after a failed swap")
+        #expect(try Data(contentsOf: file) == original, "the original changed after a failed swap")
+        let left = try FileManager.default.contentsOfDirectory(atPath: folder.path)
+        #expect(left == ["photo.jpg"], "the failed strip left \(left)")
+
+        // And with the real swap: cleaned, upright, one file.
+        try PhotoBinary.stripMetadataInPlace(atPath: file.path)
+        #expect(!PhotoBinary.carriesIdentifyingMetadata(atPath: file.path))
+        let orientation = CGImageSourceCreateWithURL(file as CFURL, nil)
+            .flatMap { CGImageSourceCopyPropertiesAtIndex($0, 0, nil) as? [CFString: Any] }?[kCGImagePropertyOrientation]
+        #expect(orientation as? Int == 6)
+        #expect(try FileManager.default.contentsOfDirectory(atPath: folder.path) == ["photo.jpg"])
     }
 }

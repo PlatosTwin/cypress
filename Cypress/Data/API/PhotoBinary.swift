@@ -138,13 +138,72 @@ enum PhotoBinary {
         try data.write(to: incoming, options: .atomic)
         try writeStrippingMetadata(from: incoming, to: stripped)
 
-        // A rename inside one volume, so the staged file is either absent or complete — the same
-        // promise `.atomic` was making, kept the same way. The previous file goes first, because a
-        // retake reuses the name.
-        if FileManager.default.fileExists(atPath: destination.path) {
-            try FileManager.default.removeItem(at: destination)
+        try install(stripped, over: destination)
+    }
+
+    /// Puts `source` at `destination` in one `rename(2)`, replacing any file already there.
+    ///
+    /// One call, so at every moment `destination` is either the old file or the new one. The
+    /// previous code removed the old file and then moved the new one in: a process killed between the
+    /// two left no file at all, and `stripMetadataInPlace` runs over a person's only copy of a
+    /// photograph. Both paths are in one folder or under one temporary root on the same volume, which
+    /// `rename` requires; across volumes it fails and leaves `destination` as it was.
+    ///
+    /// - Parameter rename: the swap itself. Only a test passes one, to fail it.
+    static func install(
+        _ source: URL,
+        over destination: URL,
+        rename: (URL, URL) throws -> Void = PhotoBinary.rename
+    ) throws {
+        try rename(source, destination)
+    }
+
+    /// `rename(2)`, which replaces `to` atomically when both are on one volume.
+    static func rename(_ from: URL, _ to: URL) throws {
+        guard Foundation.rename(from.path, to.path) == 0 else {
+            throw CocoaError(.fileWriteUnknown, userInfo: [NSFilePathErrorKey: to.path])
         }
-        try FileManager.default.moveItem(at: stripped, to: destination)
+    }
+
+    /// Whether ImageIO can read the file at `path` as an image.
+    static func isReadableImage(atPath path: String) -> Bool {
+        guard let source = CGImageSourceCreateWithURL(URL(fileURLWithPath: path) as CFURL, nil),
+              CGImageSourceGetType(source) != nil
+        else { return false }
+        return CGImageSourceGetCount(source) > 0
+    }
+
+    /// A JPEG of the image at `source`, written to `destination`, with nothing in it but the pixels
+    /// and which way up they go.
+    ///
+    /// For a file that is not a JPEG: a HEIC or PNG from the photo library, which the ingest path
+    /// keeps in its own container (`copyContainer` writes the source's type). The service names every
+    /// photograph `photos/<id>.jpg`, so such a file is sent as this copy. This re-encodes, unlike the
+    /// strip above, and is used only where the original cannot be sent as it is. The person's own
+    /// file is not touched.
+    ///
+    /// The image is decoded and encoded fresh, so no metadata container of the source is carried
+    /// across. The orientation tag is written back, for the reason `writeStrippingMetadata` gives.
+    ///
+    /// - Throws: `APIError.validationFailed` when the file is not an image ImageIO can decode.
+    static func writeJPEGCopy(from source: URL, to destination: URL) throws {
+        guard let imageSource = CGImageSourceCreateWithURL(source as CFURL, nil),
+              CGImageSourceGetCount(imageSource) > 0,
+              let image = CGImageSourceCreateImageAtIndex(imageSource, 0, nil)
+        else { throw APIError.validationFailed }
+        let properties = CGImageSourceCopyPropertiesAtIndex(imageSource, 0, nil) as? [CFString: Any]
+        var options: [CFString: Any] = [kCGImageDestinationLossyCompressionQuality: 0.9]
+        if let orientation = properties?[kCGImagePropertyOrientation] as? Int, orientation != 1 {
+            options[kCGImagePropertyOrientation] = orientation
+        }
+        guard let imageDestination = CGImageDestinationCreateWithURL(
+            destination as CFURL, UTType.jpeg.identifier as CFString, 1, nil
+        ) else { throw APIError.validationFailed }
+        CGImageDestinationAddImage(imageDestination, image, options as CFDictionary)
+        guard CGImageDestinationFinalize(imageDestination) else {
+            try? FileManager.default.removeItem(at: destination)
+            throw APIError.validationFailed
+        }
     }
 
     /// Cleans a file that is about to become a record, when it may already have been cleaned.
@@ -164,11 +223,19 @@ enum PhotoBinary {
     ///   cannot be rewritten. Nothing has produced that combination — reading a GPS dictionary out of
     ///   a container means ImageIO knows the container — and if something does, refusing the record is
     ///   the correct end of it.
-    static func stripMetadataInPlace(atPath path: String) throws {
+    static func stripMetadataInPlace(
+        atPath path: String,
+        rename: (URL, URL) throws -> Void = PhotoBinary.rename
+    ) throws {
         guard carriesIdentifyingMetadata(atPath: path) else { return }
         let file = URL(fileURLWithPath: path)
-        let data = try Data(contentsOf: file)
-        try write(data, strippingMetadataTo: file)
+        // The clean copy is made next to the file, so the swap is a rename inside one folder: the
+        // temporary directory `write` uses may be on another volume, where `rename` cannot replace.
+        let clean = file.deletingLastPathComponent()
+            .appendingPathComponent(".\(file.lastPathComponent)-\(UUID().uuidString).clean")
+        defer { try? FileManager.default.removeItem(at: clean) }
+        try writeStrippingMetadata(from: file, to: clean)
+        try install(clean, over: file, rename: rename)
     }
 
     /// One container-level rewrite, source to destination, under the given ImageIO options.

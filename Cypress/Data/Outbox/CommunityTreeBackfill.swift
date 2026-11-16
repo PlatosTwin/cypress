@@ -36,7 +36,7 @@
 //    the one refusal that would not be repeated. The row is retried once, and the tree is treated
 //    as an old tree for everything on it.
 //  - **A pending or uploading row**: queued by an earlier build, not yet sent. Its add photo is
-//    staged on it.
+//    staged on it, and it gets the added day it was queued without.
 //  - **A done row, or a failed row with another code**: left alone and not marked. A done row is
 //    seen again once it is pruned; a failed one is the person's to retry from the Outbox screen.
 //
@@ -54,8 +54,13 @@
 //    could send anything then.
 //
 //  Either is skipped while a queue row or a refusal record names it, when its file is missing or is
-//  not a JPEG, or when its owner is not one this phone can send for now. Location and time data are
-//  stripped by the send sink, the last point before the bytes go (`APIOutboxSendSink.uploadPhoto`).
+//  not an image, or when its owner is not one this phone can send for now. A file that is not a JPEG
+//  (a HEIC or PNG from the library) is sent as a JPEG copy, and location and time data are stripped,
+//  both by the send sink, the last point before the bytes go (`APIOutboxSendSink.uploadPhoto`).
+//
+//  A row the leaving door of an account deletion anonymized is never sent: it keeps this device's
+//  `device_id`, so only its tombstone says it is nobody's (`ContributionStore.notAnonymized`). An
+//  anonymized tree or photograph has no owner at all, and `Identity.maySend` refuses it.
 //
 //  ── Who may be sent for ───────────────────────────────────────────────────────────────────────
 //
@@ -71,7 +76,8 @@
 //  ── Once, and safe to stop at any point ───────────────────────────────────────────────────────
 //
 //  One write transaction per tree, with the key written last in it. A failure anywhere in a tree
-//  rolls back that tree's rows and its key together, so the next run starts the tree from nothing.
+//  rolls back that tree's rows and its key together, so the next run starts the tree from nothing,
+//  and the run goes on to the next tree.
 //  A tree whose key is written is never looked at again. Done rows do not last (`pruneCompleted`),
 //  which is why the record is an `app_state` key rather than the queue itself.
 //
@@ -125,8 +131,10 @@ public struct CommunityTreeBackfill: Sendable {
         public var treesWaiting = 0
         /// Rows on a queued tree left behind because their owner is not this identity.
         public var rowsSkipped = 0
-        /// Photographs left behind: missing file, not a JPEG, or another owner.
+        /// Photographs left behind: missing file, not an image, or another owner.
         public var photosSkipped = 0
+        /// Trees whose transaction threw and rolled back; each is tried again on the next run.
+        public var treesFailed = 0
 
         public init() {}
 
@@ -138,6 +146,7 @@ public struct CommunityTreeBackfill: Sendable {
             treesWaiting += other.treesWaiting
             rowsSkipped += other.rowsSkipped
             photosSkipped += other.photosSkipped
+            treesFailed += other.treesFailed
         }
     }
 
@@ -207,12 +216,21 @@ public struct CommunityTreeBackfill: Sendable {
         }
         var report = Report()
         for treeID in candidates {
-            let tree = try await queue.write { connection -> Report in
-                var tree = Report()
-                try queueTree(treeID, identity: identity, report: &tree, connection: connection)
-                return tree
+            // One tree's failure is that tree's alone. Its transaction rolls back, so it keeps no
+            // row and no key, and the next launch tries it again from nothing. The trees after it
+            // still go. There is no limit on how often a tree that always fails is tried: each try
+            // is one rolled-back transaction at launch, and giving up would need a second record
+            // and would leave the tree behind for good, against the owner's ruling.
+            do {
+                let tree = try await queue.write { connection -> Report in
+                    var tree = Report()
+                    try queueTree(treeID, identity: identity, report: &tree, connection: connection)
+                    return tree
+                }
+                report.absorb(tree)
+            } catch {
+                report.treesFailed += 1
             }
-            report.absorb(tree)
         }
         return report
     }
@@ -323,6 +341,9 @@ public struct CommunityTreeBackfill: Sendable {
             report.adds += 1
 
         case let .stageOn(id):
+            // Queued by an earlier build, with no added day: the service would then use the UTC
+            // date of the add, a day late for an evening add west of Greenwich.
+            try Self.addAddedDayIfMissing(id, timeZone: timeZone(), connection: connection)
             addRowID = id
 
         case let .retry(id):
@@ -417,9 +438,14 @@ public struct CommunityTreeBackfill: Sendable {
         _ decode: (SQLiteRow) throws -> T
     ) throws -> [T] {
         // `table` is one of four literals above, never input.
+        // Not anonymized: the leaving door of an account deletion keeps a row's `device_id` and
+        // records its `client_uuid` in `anonymized_contributions` (ERRATA E157). Without this
+        // clause such a row reads as this device's own work and would be sent under whoever is
+        // signed in now, and the service would store it as theirs.
         let statement = try connection.cachedStatement("""
             SELECT * FROM \(table)
              WHERE tree_uuid = :tree COLLATE NOCASE AND deleted_at IS NULL
+               AND \(ContributionStore.notAnonymized(table))
              ORDER BY captured_at, id
             """)
         _ = try statement.bind(treeID.uuidString, forName: ":tree")
@@ -523,10 +549,11 @@ public struct CommunityTreeBackfill: Sendable {
                          WHERE app_state.key = :refused || upper(photos.id))
         """
 
-    /// The stored path names a JPEG on this device today.
+    /// The stored path names an image ImageIO can read on this device today. A file that is not a
+    /// JPEG (a HEIC or PNG picked from the library) is sent as a JPEG copy (`APIOutboxSendSink`).
     static func sendableFile(_ stored: String, applicationSupport: URL) -> Bool {
         let resolved = StoredPhotoPath.resolve(stored, applicationSupport: applicationSupport).path
-        return FileManager.default.fileExists(atPath: resolved) && PhotoBinary.isJPEG(atPath: resolved)
+        return FileManager.default.fileExists(atPath: resolved) && PhotoBinary.isReadableImage(atPath: resolved)
     }
 
     // MARK: - The tree and its add row
@@ -600,6 +627,13 @@ public struct CommunityTreeBackfill: Sendable {
     ) throws {
         let store = OutboxStore()
         guard try store.retry(id, at: moment, connection: connection) else { return }
+        try addAddedDayIfMissing(id, timeZone: timeZone, connection: connection)
+    }
+
+    /// Sets `addedOn` on a queued add that has none, from the add's own `occurredAt`.
+    private static func addAddedDayIfMissing(
+        _ id: UUID, timeZone: TimeZone, connection: SQLiteConnection
+    ) throws {
         let read = try connection.cachedStatement("SELECT payload FROM outbox WHERE id = :id")
         _ = try read.bind(id, forName: ":id")
         let payload = try read.fetchOne { try $0.string("payload") }
