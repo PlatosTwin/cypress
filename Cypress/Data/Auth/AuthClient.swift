@@ -211,10 +211,14 @@ public struct AuthClient: Sendable {
     /// defaults" — and the server reads absent, null and a string as three different facts
     /// (`consent` in `server/internal/api/auth.go`), because the claim sweep is re-run for reasons
     /// that have nothing to do with consent and a body that wrote on every call withdrew one.
+    ///
+    /// The session answers carry the same three states back (`SessionCredentials.licenseVersion`).
     public enum LicenseAnswer: Sendable, Hashable {
-        /// This request is not about consent. The key is omitted.
+        /// This request is not about consent. The key is omitted. In a session answer: the key was
+        /// missing, so the answer says nothing about the account.
         case unstated
-        /// The row was unchecked. The key travels as an explicit `null`.
+        /// The row was unchecked. The key travels as an explicit `null`. In a session answer: the
+        /// service holds no known acceptance for the account.
         case declined
         /// The version consented to, `LicenseConsent.currentVersion`.
         case accepted(String)

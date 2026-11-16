@@ -618,9 +618,13 @@ public struct RemoteAPI: CypressAPI {
 
     /// `POST /devices/claim` — the idempotent sweep that re-homes a device's unattributed rows onto
     /// an account (D9).
+    ///
+    /// `userID` is not sent: the service takes the account from the session's bearer and refuses an
+    /// unknown body field (`ClaimDeviceBody`). The parameter stays because the protocol requirement
+    /// is shared with `LocalAPI`, whose half needs it.
     public func claimDevice(deviceUUID: UUID, userID: UUID) async throws {
         _ = try await transport.send(
-            try request("devices/claim", method: "POST", body: ClaimDeviceBody(deviceUUID: deviceUUID, userID: userID))
+            try request("devices/claim", method: "POST", body: ClaimDeviceBody(deviceUUID: deviceUUID))
         )
     }
 

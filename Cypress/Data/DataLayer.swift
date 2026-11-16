@@ -318,14 +318,15 @@ public struct DataLayer: Sendable {
         // **A restore does not raise it, and that is deliberate**: no route on this service reports a
         // role, so a restored install reads back `.member`. A role is authority, and the direction to
         // fail in is the one that does not grant it. `LocalAPI.restoreAccount` is where that is
-        // enforced rather than here, because it is enforced for the provider and the consent in the
-        // same breath.
+        // enforced rather than here, because it clears the provider and the consent in the same
+        // breath, and then writes back only the license answer the service stored with the session.
         let role = (try await store.appState(.currentUserRole)).flatMap(UserRole.init(rawValue:)) ?? .member
         let local = LocalAPI(store: store, deviceID: deviceID, userID: storedUserID, role: role)
 
         // Applied through `LocalAPI`'s own verbs rather than by writing `app_state` here. A restore is
         // the local half of a sign-in: `restoreAccount` sweeps this installation's unattributed rows
-        // onto the account and writes the id, and clears the three facts a restore cannot know.
+        // onto the account and writes the id, clears the three facts the phone cannot know, and then
+        // adopts the license answer the service stored with the session.
         // Ending signed out is `signOut()`, which keeps every row and remembers the id. Re-
         // implementing either as a bare `setAppState` would be a second statement of a rule that
         // already has one.
@@ -333,11 +334,21 @@ public struct DataLayer: Sendable {
         // Both are idempotent, which is what makes a launch killed part-way through recoverable: the
         // next launch reads all three inputs again and reaches the same verdict. See `SessionRestore`
         // for why there is no "restore in progress" flag to be left behind.
+        // The license answer the service sent with the stored session (ROADMAP chip 148). Read from
+        // the Keychain, so it reaches no network either.
+        let storedLicenseAnswer = await session.storedSession?.licenseVersion ?? .unstated
         switch reconciliation {
         case .unchanged:
-            break
+            // A phone still signed in adopts the stored answer too, so an agreement made on another
+            // phone and carried by a refresh shows here. `adoptLicenseAnswer` writes nothing unless
+            // the stored session names the account signed in here.
+            if let account = await session.signedInUserID {
+                try await local.adoptLicenseAnswer(storedLicenseAnswer, for: account)
+            }
         case let .restore(userID):
-            try await local.restoreAccount(deviceUUID: deviceID, userID: userID)
+            try await local.restoreAccount(
+                deviceUUID: deviceID, userID: userID, licenseAnswer: storedLicenseAnswer
+            )
         case .endSignedOut:
             // **Both halves.** One of the two states that reach here is a live session beside a
             // deliberate sign-out (F1), and leaving that session standing would leave the bearer as
@@ -356,6 +367,12 @@ public struct DataLayer: Sendable {
         // local sign-out could report to — the next launch's reconciliation reaches the same verdict
         // from `app_state` and the now-empty Keychain.
         await session.onSessionEnded { [local] _ in try? await local.signOut() }
+        // The same rule for the license answer: each refresh carries the service's answer, and the
+        // phone adopts it in the same run (ROADMAP chip 148). `try?` for the reason above; the next
+        // launch adopts the answer the refresh stored.
+        await session.onLicenseAnswer { [local] account, answer in
+            try? await local.adoptLicenseAnswer(answer, for: account)
+        }
 
         // ── One decision, not two ──────────────────────────────────────────────────────────────
         //

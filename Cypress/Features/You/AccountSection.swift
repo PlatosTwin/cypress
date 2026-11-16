@@ -391,7 +391,8 @@ enum AccountCopy {
     /// "declined". That is exactly when `licenseLine` draws "You did not agree…".
     ///
     /// Not for an account that agreed, not when signed out, and not when the phone does not know the
-    /// answer (`provider == nil`, after a restore). A function a test can read, for
+    /// answer (`provider == nil`: a restore from a stored session that carried no answer, until the
+    /// first refresh brings it). A function a test can read, for
     /// `storageCardTitle`'s reason.
     static func offersLicenseAcceptance(isSignedIn: Bool, link: AccountLinkRecord?) -> Bool {
         guard isSignedIn, let link, link.provider != nil else { return false }

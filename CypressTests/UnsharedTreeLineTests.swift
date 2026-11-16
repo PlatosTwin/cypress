@@ -111,8 +111,8 @@ struct UnsharedTreeLineTests {
         #expect(profile.readerSharing == .sharing)
         #expect(presented(profile).onlyYouCanSeeNote == nil)
 
-        // A sign-in that was not screen 15's: no record of the answer.
-        try await api.restoreAccount(deviceUUID: Self.device, userID: Self.account)
+        // A restore from a stored session that carried no answer: no record of the answer.
+        try await api.restoreAccount(deviceUUID: Self.device, userID: Self.account, licenseAnswer: .unstated)
         profile = try await api.treeProfile(id: declinedTree.id)
         #expect(profile.readerSharing == .unknown)
         #expect(presented(profile).onlyYouCanSeeNote == nil)
