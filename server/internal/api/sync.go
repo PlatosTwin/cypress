@@ -453,6 +453,9 @@ var disputeTreeSources = map[string]bool{"city_import": true, "community": true}
 //     here and none of those rules is one this service can evaluate — ARCHITECTURE §8 makes the
 //     moderation surface a web deliverable. Recording the act and refusing to guess at its effect is
 //     the honest half; guessing would move somebody's species on an unadjudicated say-so.
+//     (Superseded in part for community trees: 007 materialized the adder's species acts, and 009
+//     the owner's rules for everybody else's, ROADMAP 144. A city tree's species is still recorded
+//     and never moved.)
 //
 //   - **`photo_withdrawal` is the second that materializes, and it no longer waits on the upload.**
 //     Two earlier versions of this comment were wrong in opposite directions: the first filed it
@@ -583,8 +586,11 @@ var disputeTreeSources = map[string]bool{"city_import": true, "community": true}
 //     existence oracle: a stranger's act on a withdrawn, taken-down, unpublished or erased tree is
 //     answered as the same act on an unknown id). The second is the adder withdrawing the tree for everyone while
 //     nobody else has built on it (decision 8), `conflict` otherwise. `species_claim` and
-//     `species_correction` also materialize from 007 on, for a community tree's adder only, and
-//     never refuse — see `store.materializeSpecies`.
+//     `species_correction` also materialize from 007 on, for a community tree's adder, and from 009
+//     on for a sharing account's first naming and that namer's own correction (ROADMAP 144).
+//     `wrong_species_report` and `species_review_dismissal` materialize from 009 on: a sharing
+//     account's report marks the species, and the adder's dismissal ("Keep the species") clears the
+//     mark. None of the four ever refuses — see `store/species.go`.
 var syncKinds = map[string]bool{
 	"visit": true, "observation": true, "measurement": true,
 	"care_event": true, "favorite_toggle": true, "private_reminder": true,

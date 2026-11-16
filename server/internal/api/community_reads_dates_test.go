@@ -142,7 +142,8 @@ func TestEverybodyIsToldTheDayTheTreeWasAddedOnThePhone(t *testing.T) {
 			}
 			if own, theirs := ownHistory.byYou(), history.byYou(); len(own) != 1 || own[0] == nil || !*own[0] ||
 				len(theirs) != 1 || theirs[0] == nil || *theirs[0] {
-				t.Fatalf("by_you is %v for the adder and %v for a stranger; want true and false", own, theirs)
+				t.Fatalf("by_you is %s for the adder and %s for a stranger; want true and false",
+					ownHistory.raw, history.raw)
 			}
 			assertPublicationInvariant(t, h)
 		})

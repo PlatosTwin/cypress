@@ -135,6 +135,13 @@ decodes to `server_error` rather than throwing and would look like an outage.
 | `GET /photos/{id}` | The photograph a device never wrote. |
 | `GET /public/trees/{id}` | **The only unauthenticated read.** The publicly visible community half of one tree — see below. |
 | `POST /operator/photos/{id}/reject` | Operator takedown. Not optional — see below. |
+| `POST /operator/community-trees/{id}/take-down` | Operator takedown of a community tree. |
+| `POST /operator/community-trees/{id}/species` | The operator corrects a community tree's species for everyone: `{"species_id": "…"}`. It clears "Somebody has reported this species as wrong." and ends a contributor's right to correct their own naming. **The species id is not checked**: this service holds no species catalog, so a mistyped id is stored, and no phone can name it. Copy the id from the species table. `404` for an id that names no live community tree. |
+| `POST /operator/community-trees/{id}/species-reports/clear` | The operator clears the reported state and keeps the species. A later report brings it back. |
+
+All three operator routes take `Authorization: Bearer $OPERATOR_TOKEN` and answer `forbidden` to
+anything else. The species rules for everybody else (who may name, correct, report, and keep) are
+in `internal/store/species.go`'s header.
 
 ### `GET /public/trees/{id}` is the one route with no credential, and what it may say is a ruling
 
@@ -379,7 +386,7 @@ credential and neither changes behaviour — the first is what Fly sets anyway, 
 | `APPLE_KEY_ID` | yes | `kid` of the Apple client secret. |
 | `APPLE_PRIVATE_KEY` | yes | The `.p8` file's full PEM text, newlines and all. Read as-is; a value whose newlines were flattened to `\n` is also accepted. |
 | `APPLE_BUNDLE_ID` | no | `app.cypress.Cypress`. In `fly.toml` `[env]`, not in secrets — it is in every copy of the app. |
-| `OPERATOR_TOKEN` | yes | Authorizes the takedown route. Required: a takedown with no credential configured is a takedown that cannot be performed. |
+| `OPERATOR_TOKEN` | yes | Authorizes the operator routes (the takedowns and the species correction). Required: a takedown with no credential configured is a takedown that cannot be performed. |
 | `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_ENDPOINT_URL_S3`, `AWS_REGION`, `BUCKET_NAME` | no | The **`cypress-cities`** bucket's, set as app secrets by `flyctl storage create`. The service itself no longer reads them — only the seed-publish relay does — but they must not be disturbed, which is the whole reason the photo bucket has its own names below. |
 | `PHOTOS_AWS_ACCESS_KEY_ID`, `PHOTOS_AWS_SECRET_ACCESS_KEY`, `PHOTOS_AWS_ENDPOINT_URL_S3`, `PHOTOS_AWS_REGION`, `PHOTOS_BUCKET_NAME` | yes | The **private photo bucket's**. The service refuses to boot without all five (`storage.PhotoConfig`), and each refusal names the variable it is missing. See "Provisioning the photo bucket" — photographs may not share `cypress-cities`, which is public-read. |
 

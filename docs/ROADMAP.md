@@ -2486,6 +2486,19 @@ into this section in the round that finds it, and nowhere else. Each item stands
     still correct it; on a tree that has a species, the name stays and the profile shows "Somebody
     has reported this species as wrong." until the adder or the operator corrects it. It is a
     service change, a deploy, and a phone change. No round has planned it.
+    **Service half built, not deployed** (branch `feat/species-for-everyone-server`, migration 009,
+    2026-11-16). With the owner's answers of 2026-11-16: only sharing accounts count; the adder's
+    "Keep the species" clears the line for everyone; the namer may correct their own answer until
+    the adder corrects or keeps it; the species stays when the namer erases their account. The
+    operator routes are `POST /operator/community-trees/{id}/species` and
+    `…/species-reports/clear`. The profile gains `species_reported`, `species_report_flag_id` (adder
+    only) and `species_named_by_you`; the history gains `by_you` and three kinds
+    (`server/testdata/README.md`). **Still to do:** the `cypress-sync` deploy (owner's go-ahead),
+    then the phone half: bring the two controls back for sharing readers on a cached tree, send
+    `disputedSpeciesID` on a report, adopt a contributor's species on the adder's own row, read the
+    three profile keys and `by_you`, map the three history kinds, the namer's correct control, the
+    adder's keep through `species_report_flag_id`, and the owner's new note under "Report the
+    species as wrong". The phone PR must not merge before the deploy.
 145. **`AreaPickerUITests.testACoarseFixNamesNoNeighborhoodAndOffersThePicker` failed once in CI on a
     tap.** PR 238, run 43775447999, attempt 1, shard 3, iPhone 17 Pro: "Failed to not hittable:
     Button, {{34.0, 293.0}, {111.3, 44.3}}, label: 'Sunset/Parkside'". The rerun of that shard
