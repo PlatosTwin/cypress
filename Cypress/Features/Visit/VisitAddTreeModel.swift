@@ -322,8 +322,40 @@ final class VisitAddTreeModel {
     // MARK: - Lifecycle
 
     func load() async {
+        // Nothing starts under a listed tree's profile: the cover leaves this screen in place, so a
+        // `load` from anywhere while it is up would run a capture session nobody can see.
+        guard !isShowingListedTree else { return }
         location.start()
         await camera.start()
+    }
+
+    // MARK: - A listed tree, opened over this screen
+
+    /// Whether a tree the note lists is open over this screen (the owner's decision of 2026-11-15,
+    /// "Keep the draft").
+    ///
+    /// The model rather than the view, because the view cannot rely on its own lifecycle here. A
+    /// `fullScreenCover` leaves the screen under it in place: `onDisappear` does not fire when the
+    /// profile opens, and `.task` does not run again when it closes. The second review of
+    /// 2026-11-15 logged exactly that, and the note kept saying "4 m" for a tree the reader had just
+    /// moved 15 m north from its profile. So the view calls these two at the edges of the cover.
+    private(set) var isShowingListedTree = false
+
+    /// The note's row was tapped, and the tree's profile is about to cover this screen. Stops the
+    /// camera first, so the profile's own Visit cannot start a second capture session over this
+    /// one. Two sessions at once were never observed on a phone; this closes the path to it.
+    func openListedTree() {
+        isShowingListedTree = true
+        camera.stop()
+    }
+
+    /// The profile closed. Reads the note again, because the reader may have moved that tree from
+    /// its profile, then starts again what `load()` starts. The draft (photo, pin, ground, species)
+    /// is untouched. `camera.start()` leaves a running session alone, so this cannot start a second.
+    func closeListedTree() async {
+        isShowingListedTree = false
+        await refreshNearby()
+        await load()
     }
 
     func stop() {
@@ -422,11 +454,13 @@ final class VisitAddTreeModel {
     /// ten rows — so the note lists exactly the trees the refusal would have named: every one is
     /// inside the circle, not only inside the box searched (ERRATA E35).
     ///
-    /// A failed read clears the list rather than showing an error. The note is advice about trees
-    /// already on record, and the add does not depend on it.
+    /// A failed read keeps the list as it is rather than showing an error, so one failed read does
+    /// not take a note down that is showing (second review, 2026-11-15). The note is advice about
+    /// trees already on record, and the add does not depend on it.
     ///
-    /// The answer is dropped when the position moved while it was read, so a slow read for an old
-    /// position never overwrites the list for the new one. It is dropped too once an add is under
+    /// The answer is dropped when a newer read has started, or the position moved while it was read,
+    /// so a slow read never overwrites the list a later one wrote: a read started before a listed
+    /// tree's profile opened cannot land after the read `closeListedTree` makes. It is dropped too once an add is under
     /// way: the screen is leaving, and the tree being added must not appear in its own note.
     ///
     /// The read reaches out to `TreeDraft.proximityNoteKeepRadiusM`, not to the 10 m, because a tree
@@ -434,16 +468,24 @@ final class VisitAddTreeModel {
     /// rows are listed is `listed(_:keeping:)`. A pin placed by hand gets the same rule from its new
     /// position: the list it keeps from is whatever the note showed before the pin moved.
     func refreshNearby() async {
+        nearbyReads += 1
+        let read = nearbyReads
         guard let asked = coordinate else {
             nearby = []
             return
         }
-        let found = (try? await api.treesNear(
-            asked, radiusM: TreeDraft.proximityNoteKeepRadiusM, limit: 10
-        )) ?? []
-        guard coordinate == asked, phase != .adding else { return }
+        let found: [NearbyTree]
+        do {
+            found = try await api.treesNear(asked, radiusM: TreeDraft.proximityNoteKeepRadiusM, limit: 10)
+        } catch {
+            return
+        }
+        guard read == nearbyReads, coordinate == asked, phase != .adding else { return }
         nearby = Self.listed(found, keeping: nearby)
     }
+
+    /// Counts the note's reads, so an answer can tell whether a newer read has started since.
+    @ObservationIgnored private var nearbyReads = 0
 
     /// The rows the note lists, from a fresh read and the rows it listed before.
     ///

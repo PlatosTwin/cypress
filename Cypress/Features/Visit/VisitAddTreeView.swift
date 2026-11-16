@@ -145,8 +145,9 @@ struct VisitAddTreeView: View {
         .background(CypressColor.surfaceScreen)
         .task {
             #if DEBUG
-            // Once: this task runs again when a listed tree's profile closes over the screen, and
-            // the photograph the reader has then is theirs.
+            // Only when there is no photograph yet, so the harness never replaces one the reader
+            // chose. (This task does not run again when a listed tree's profile closes; see
+            // `VisitAddTreeModel.isShowingListedTree`.)
             if let debugPhoto, !model.hasPhoto { model.useLibraryImage(debugPhoto) }
             #endif
             await model.load()
@@ -159,10 +160,16 @@ struct VisitAddTreeView: View {
         // A row of the note opens that tree's profile **over** this screen, not in place of it: the
         // owner's decision of 2026-11-15 ("Keep the draft"). This view, and the model it holds in
         // `@State`, stay where they are under the cover, so Back returns to the same photograph, pin,
-        // ground and species, and the same note. The camera stops on the way out (`onDisappear`) and
-        // starts again on the way back (`.task`), so the profile's own Visit cannot open a second
-        // camera over a live one.
-        .fullScreenCover(item: $openedTree) { opened in
+        // ground and species.
+        //
+        // The cover leaves this screen in place, so `onDisappear` above does not fire when it opens
+        // and the `.task`s above do not run again when it closes (second review, 2026-11-15). The
+        // row's tap therefore stops the camera itself (`openListedTree`), and the dismissal reads
+        // the note again and starts the camera again (`closeListedTree`). Two capture sessions at
+        // once were never observed on a phone; this closes the path to them.
+        .fullScreenCover(item: $openedTree, onDismiss: {
+            Task { await model.closeListedTree() }
+        }) { opened in
             openExisting(opened.id) { openedTree = nil }
         }
         .onChange(of: libraryItem) { _, item in
@@ -588,6 +595,7 @@ struct VisitAddTreeView: View {
                     .fixedSize(horizontal: false, vertical: true)
                 ForEach(candidates) { candidate in
                     Button {
+                        model.openListedTree()
                         openedTree = OpenedTree(id: candidate.tree.id)
                     } label: {
                         HStack(spacing: CypressSpacing.gapCandidates) {

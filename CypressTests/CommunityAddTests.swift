@@ -365,6 +365,95 @@ struct CommunityAddTests {
         _ = await adding.value
     }
 
+    /// One failed read must not take down a note that is showing (second review, 2026-11-15).
+    ///
+    /// Red-proof: turn a thrown read back into `[]` — red on "a failed read took the note down".
+    @MainActor
+    @Test("a failed read keeps the note that is showing")
+    func aFailedReadKeepsTheNote() async throws {
+        let held = HeldReads()
+        let subject = Self.model(api: HeldAPI(held: held), fix: .located(Self.spot, accuracyM: 6))
+
+        let first = Task { await subject.refreshNearby() }
+        try await held.waitForReads(1)
+        let shown = Self.row(distanceM: 4)
+        held.answer(0, with: [shown])
+        await first.value
+        #expect(subject.nearby.map(\.id) == [shown.id])
+
+        let second = Task { await subject.refreshNearby() }
+        try await held.waitForReads(2)
+        held.fail(1)
+        await second.value
+        #expect(subject.nearby.map(\.id) == [shown.id], "a failed read took the note down")
+    }
+
+    /// Two reads at the same position: the older one answering last must not replace the newer
+    /// one. This is the read a listed tree's profile closing makes, racing a read from before it
+    /// opened.
+    ///
+    /// Red-proof: drop `read == nearbyReads` from the guard — red on "an older read replaced a newer
+    /// one at the same position".
+    @MainActor
+    @Test("an older read at the same position does not replace a newer one")
+    func anOlderReadAtTheSamePositionIsDropped() async throws {
+        let held = HeldReads()
+        let subject = Self.model(api: HeldAPI(held: held), fix: .located(Self.spot, accuracyM: 6))
+
+        let older = Task { await subject.refreshNearby() }
+        try await held.waitForReads(1)
+        let newer = Task { await subject.refreshNearby() }
+        try await held.waitForReads(2)
+
+        let fromNewer = Self.row(distanceM: 3)
+        held.answer(1, with: [fromNewer])
+        await newer.value
+        #expect(subject.nearby.map(\.id) == [fromNewer.id])
+
+        held.answer(0, with: [Self.row(distanceM: 4)])
+        await older.value
+        #expect(subject.nearby.map(\.id) == [fromNewer.id], "an older read replaced a newer one at the same position")
+    }
+
+    /// A listed tree's profile over the screen: nothing starts the camera while it is up, and
+    /// closing it reads the note again, for a tree the reader moved from that profile, then starts
+    /// the camera again. A simulator has no capture device, so the camera's start shows as
+    /// `.unavailable` and "not started" as `.idle`; a running session stopping is phone-only.
+    ///
+    /// Red-proofs: drop the guard in `load()` — red on "the camera was started under the profile".
+    /// Drop `refreshNearby()` from `closeListedTree()` — red on "the row still says 4 m".
+    @MainActor
+    @Test("while a listed tree is open over the screen nothing starts the camera, and closing it reads the note again")
+    func closingAListedTreeReadsTheNoteAgain() async throws {
+        let store = try await CypressStore.inMemory()
+        let api = LocalAPI(store: store, deviceID: Self.deviceID)
+        let tree = try await api.addTree(
+            TreeDraft(coordinate: Self.spot, photoLocalPath: try Self.stagedPhoto(), attribution: Self.attribution)
+        )
+        let subject = Self.model(
+            api: api, fix: .located(VisitPinAdjust.offset(Self.spot, northM: 4, eastM: 0), accuracyM: 6)
+        )
+        await subject.refreshNearby()
+        #expect(subject.nearby.map { $0.distanceM.rounded() } == [4])
+
+        subject.openListedTree()
+        #expect(subject.isShowingListedTree)
+        await subject.load()
+        #expect(subject.camera.availability == .idle, "the camera was started under the profile")
+
+        // The reader moves the tree 15 m north from its profile.
+        _ = try await api.correctLocation(
+            treeID: tree.id,
+            to: VisitPinAdjust.offset(Self.spot, northM: 15, eastM: 0),
+            placement: .contributorPlaced,
+            locationAccuracyM: nil
+        )
+        await subject.closeListedTree()
+        #expect(!subject.isShowingListedTree)
+        #expect(subject.nearby.map { $0.distanceM.rounded() } == [11], "the row still says 4 m")
+        #expect(subject.camera.availability != .idle, "closing the profile did not start the camera again")
+    }
+
     // MARK: - Fixtures
 
     /// A row under the note, at a given distance, for the rule tests and the held reads.
@@ -402,10 +491,10 @@ struct CommunityAddTests {
     /// are nonisolated and run off the main actor.
     private final class HeldReads: @unchecked Sendable {
         private let lock = NSLock()
-        private var reads: [CheckedContinuation<[NearbyTree], Never>] = []
+        private var reads: [CheckedContinuation<[NearbyTree], Error>] = []
         private var add: CheckedContinuation<Void, Error>?
 
-        func hold(_ continuation: CheckedContinuation<[NearbyTree], Never>) {
+        func hold(_ continuation: CheckedContinuation<[NearbyTree], Error>) {
             lock.withLock { reads.append(continuation) }
         }
 
@@ -416,6 +505,11 @@ struct CommunityAddTests {
         func answer(_ index: Int, with rows: [NearbyTree]) {
             let continuation = lock.withLock { reads[index] }
             continuation.resume(returning: rows)
+        }
+
+        func fail(_ index: Int) {
+            let continuation = lock.withLock { reads[index] }
+            continuation.resume(throwing: APIError.serverError)
         }
 
         func failAdd() {
@@ -446,7 +540,7 @@ struct CommunityAddTests {
         let held: HeldReads
 
         func treesNear(_ c: Coordinate, radiusM: Double, limit: Int) async throws -> [NearbyTree] {
-            await withCheckedContinuation { held.hold($0) }
+            try await withCheckedThrowingContinuation { held.hold($0) }
         }
 
         func addTree(_ draft: TreeDraft) async throws -> Tree {

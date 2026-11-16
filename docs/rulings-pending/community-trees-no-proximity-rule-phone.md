@@ -24,9 +24,11 @@ under way. Two unit tests in `CommunityAddTests` hold each of those two drops.
 
 **What the reader sees.** The same "ALREADY ON RECORD" card, at the top of the scrolling form, above
 the photo (the owner's decision below), with the owner's two sentences and the same list of trees.
-Each row opens its tree's profile over the add screen (the owner's decision below, "Keep the draft"). The Add this tree button does not read the list: it stays active, and one
-tap adds the tree. A read that fails shows no note rather than an error, because the note is advice
-and the add does not depend on it.
+Each row opens its tree's profile over the add screen (the owner's decision below, "Keep the
+draft"). The Add this tree button does not read the list: it stays active, and one tap adds the tree.
+A read that fails leaves the list as it was rather than showing an error, so one failed read does not
+take a note down that is showing (second review, 2026-11-15). The note is advice, and the add does
+not depend on it. An answer is dropped when a newer read has started since it was asked.
 
 ### R??? — Where the note sits: the top of the form (owner's decision, 2026-11-15)
 
@@ -68,8 +70,16 @@ Back returns to the add screen with the photo, pin, and species still there."
 
 **As built.** The add screen presents the profile over itself (`fullScreenCover(item:)`), so the
 screen and its model stay alive under it, and the draft (photo, pin and placement, land answer,
-species, and the note) is there after Back. The camera stops while the profile is up and starts
-again on return. The profile is built by the composition root (`ExistingTreeScreen`, built by
+species) is there after Back. A `fullScreenCover` leaves the screen under it in place, so the add
+screen's `onDisappear` does not fire when the profile opens and its `.task`s do not run again when it
+closes; the second review of 2026-11-15 logged both, and the note kept saying "4 m" for a tree moved
+15 m from its profile. So the row's tap calls `VisitAddTreeModel.openListedTree()`, which stops the
+camera before the cover goes up, and while it is up `load()` starts nothing. The cover's dismissal
+calls `closeListedTree()`, which reads the note again and then starts again what `load()` starts.
+`AddTreeNearbyUITests.testAMovedListedTreeShowsItsNewDistanceAfterBack` holds the read on Back. A
+simulator has no camera, so that a live session stops under the profile is shown by the code and the
+unit test of the gate, not observed. Two capture sessions at once were never observed on a phone;
+this closes the path to them. The profile is built by the composition root (`ExistingTreeScreen`, built by
 `RootView.existingTreeScreen`) in an `ExistingTreeHost` with **its own `AppRouter`**, because the
 profile navigates only through the router in its environment: with the app's router, every push
 would land under the visit flow's cover and every sheet would replace that cover. The host draws the
@@ -104,6 +114,14 @@ flips it. A listed tree can briefly show a distance of 11 to 15 m under the word
 15 m, and lists nothing else, so the note goes when no listed tree is left. A tree that newly comes
 within 10 m joins. The distances shown are the fresh read's. A pin placed by hand gets the same rule
 from its new position. The words of the note did not change.
+
+**The orchestrator's reading, 2026-11-15, with no owner question needed.** A pin the reader places by
+hand follows the same keep rule as a GPS move, as built: the owner's "Show at 10 m, hide past 15 m"
+covers both, because the rule is about where the pin is, not how it got there.
+
+**A known limit.** The read asks for 10 rows out to 15 m, nearest first. In a dense block with ten
+or more trees nearer than a listed tree at 10 to 15 m, that tree is not in the answer and drops out of
+the note, although it is within 15 m. No code change; recorded so it is not mistaken for a defect.
 
 ### R??? — What stays of the proximity conflict on the phone
 

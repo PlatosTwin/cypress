@@ -46,6 +46,9 @@ final class AddTreeNearbyUITests: XCTestCase, DeepLinkHarness {
         static let landChosen = "This will be recorded as your answer that it stands in a city park."
         static let cityPark = "City park"
         static let back = "Back"
+        /// `MovePinCopy`'s north nudge and save, repeated by hand.
+        static let nudgeNorth = "Move the pin north"
+        static let save = "Save"
         /// The two sentences of the refusal the ruling removed.
         static let refused = ["Nothing was added.", "If one of these is the tree in front of you, open it."]
     }
@@ -169,6 +172,61 @@ final class AddTreeNearbyUITests: XCTestCase, DeepLinkHarness {
                 .waitForExistence(timeout: 30),
             "one tap on Add this tree after Back did not open the new tree's profile"
         )
+    }
+
+    /// The note is read again when the profile opened from it closes. The harness's tree is this
+    /// phone's own, so its profile offers Move pin: three 5 m nudges north put it 15 m north of where
+    /// it was, which is about 11 m from the pin 4 m north of its old spot. That is inside the 15 m a
+    /// listed tree is kept for (the owner's decision of 2026-11-15), so after Back the row stays and
+    /// must say where the tree is now.
+    ///
+    /// Red-proof: take out the read on dismissal — red on "the row still says 4 m".
+    func testAMovedListedTreeShowsItsNewDistanceAfterBack() {
+        let app = launch("addTreeNearby")
+
+        let label = app.staticTexts[Copy.label]
+        guard label.waitForExistence(timeout: 60) else {
+            XCTFail(
+                deepLinkFailure(app).map { "addTreeNearby: \($0)" }
+                    ?? "addTreeNearby: the add screen drew no '\(Copy.label)' note before any tap"
+            )
+            return
+        }
+        let rows = app.buttons.matching(NSPredicate(format: "label CONTAINS %@", Copy.candidate))
+        XCTAssertEqual(rows.count, 1, "the note lists \(rows.count) trees, not the one this launch put there")
+        let row = rows.firstMatch
+        XCTAssertTrue(row.label.contains("4 m"), "the row does not start at 4 m: \(row.label)")
+        assertReachable(row, "the note's row")
+        row.tap()
+
+        let movePin = app.buttons[Copy.movePin]
+        assertReachable(movePin, "the opened profile's Move pin")
+        movePin.tap()
+        let north = app.buttons[Copy.nudgeNorth]
+        for step in 1...3 {
+            assertReachable(north, "the north nudge")
+            north.tap()
+            XCTAssertTrue(
+                app.staticTexts["\(step * 5) m north of where it was."].waitForExistence(timeout: 10),
+                "nudge \(step) did not put the pin \(step * 5) m north"
+            )
+        }
+        let save = app.buttons[Copy.save]
+        assertReachable(save, "the Save button")
+        save.tap()
+
+        XCTAssertTrue(movePin.waitForExistence(timeout: 15), "Save did not return to the profile")
+        let back = hittableBack(in: app)
+        XCTAssertNotNil(back, "the profile has no Back to press")
+        back?.tap()
+
+        assertReachable(label, "the note on the add screen after Back")
+        let moved = app.buttons.matching(NSPredicate(format: "label CONTAINS %@", "11 m")).firstMatch
+        XCTAssertTrue(
+            moved.waitForExistence(timeout: 10),
+            "the row still says 4 m after the tree moved 15 m north: \(row.exists ? row.label : "no row")"
+        )
+        record(app, named: "after-move-back")
     }
 
     /// With no tree within 10 m the note is not drawn and leaves no gap: the photo starts right
