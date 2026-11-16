@@ -1104,7 +1104,8 @@ public struct RoutedAPI: CypressAPI {
         // The history is asked for beside the community half, and only for a community tree: a
         // city tree has none, and the service would answer `not_found` for it every time (round
         // C2). A history that fails costs the history alone, never the photographs.
-        async let asked = Self.history(of: mine.tree, from: remote)
+        let askedAbout = mine.tree
+        async let asked = Self.history(of: askedAbout, from: remote)
         guard let community = try? await remote.treeCommunityHalf(id: id) else {
             _ = await asked
             // Nothing is recorded for a refresh we cancelled ourselves — `refreshedGrove()`'s note.
