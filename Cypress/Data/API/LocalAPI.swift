@@ -439,8 +439,8 @@ public actor LocalAPI: CypressAPI {
 
             // ROADMAP 144: on a tree in the community cache, the reader's own naming or correction
             // is laid over the cache's species while it is in force. The cache keeps its one writer.
-            let speciesAnswers = tree.source == .community
-                ? try localSpeciesAnswers(tree: tree, addedHere: addedHere, isAdder: isAdder, connection: connection)
+            let speciesAnswers = try tree.source == .community
+                ? localSpeciesAnswers(tree: tree, addedHere: addedHere, isAdder: isAdder, connection: connection)
                 : nil
             if let speciesAnswers { tree.speciesCurrentID = speciesAnswers.shownSpeciesID }
 
@@ -1322,9 +1322,10 @@ public actor LocalAPI: CypressAPI {
         let mine = attribution
         return try? await store.queue.read { connection -> SpeciesAnswerState? in
             guard let row = try layer.row(id: treeID, connection: connection) else { return nil }
-            let isAdder = row.isAddedHere
-                ? try communityTrees.adder(treeID: treeID, connection: connection)?.isOwned(by: mine) ?? false
-                : false
+            var isAdder = false
+            if row.isAddedHere {
+                isAdder = try communityTrees.adder(treeID: treeID, connection: connection)?.isOwned(by: mine) ?? false
+            }
             let answers = try localSpeciesAnswers(
                 tree: row.tree, addedHere: row.isAddedHere, isAdder: isAdder, connection: connection
             )

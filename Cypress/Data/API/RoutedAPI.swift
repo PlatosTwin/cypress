@@ -1095,7 +1095,12 @@ public struct RoutedAPI: CypressAPI {
         // ROADMAP 144: the reader's queued species acts, read **before** the service is asked. An
         // act queued then may reach the service after it answered, so that answer must not
         // overwrite the phone's own row; one sent before the question is in the answer.
-        let speciesState = mine.tree.source == .community ? await speciesSeam?.state(id) : nil
+        let speciesState: SpeciesAnswerState?
+        if mine.tree.source == .community {
+            speciesState = await speciesSeam?.state(id)
+        } else {
+            speciesState = nil
+        }
         // The history is asked for beside the community half, and only for a community tree: a
         // city tree has none, and the service would answer `not_found` for it every time (round
         // C2). A history that fails costs the history alone, never the photographs.
