@@ -97,10 +97,8 @@ struct VisitIdentifyView: View {
         case .empty:
             // BUILD-PLAN §9 empty state.
             VisitIdentifyNotice(
-                title: "No trees on record here",
-                message: "Nothing in the city inventory is within "
-                    + "\(Int(VisitShortlist.searchRadiusM)) m of you. If there is a tree in front "
-                    + "of you, it is not on the map yet."
+                title: VisitIdentifyCopy.emptyTitle,
+                message: VisitIdentifyCopy.emptyMessage
             )
 
         case .ranked, .lowAccuracy:
@@ -427,6 +425,22 @@ struct VisitIdentifyNotice: View {
                 .fixedSize(horizontal: false, vertical: true)
         }
         .padding(.horizontal, CypressSpacing.gutterSheet)
+    }
+}
+
+/// The words of screen 02's empty state, out of the view so a test can read them.
+enum VisitIdentifyCopy {
+
+    static let emptyTitle = "No trees on record here"
+
+    /// **It names both kinds** (the owner's ruling of 2026-11-15 on places with no city
+    /// inventory). The list is `LocalAPI.treesNear`, which reads the city inventory and the whole
+    /// community layer (this phone's trees and other people's cached ones), so an empty list means
+    /// neither has a tree within the radius. The number is `VisitShortlist.searchRadiusM`, not a
+    /// literal, because the sentence is a claim about the radius the list was read at.
+    static var emptyMessage: String {
+        "No city tree and no added tree is within \(Int(VisitShortlist.searchRadiusM)) m of you. "
+            + "If there is a tree in front of you, it is not on the map yet."
     }
 }
 

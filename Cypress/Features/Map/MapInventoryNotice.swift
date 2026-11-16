@@ -93,7 +93,10 @@ enum MapInventoryCopy {
     /// Park has upwards of a hundred thousand trees in it and the app knows about none of them.
     static let title = "No trees on record here"
 
-    /// **Three things, in the order a reader needs them.**
+    /// **The history of this body.** The numbered points and the next two paragraphs argued for the
+    /// first body, which named only the city inventory. They are kept because what they say about
+    /// promises, the subject and the AX5 budget still holds; the last paragraph says what changed.
+    /// The first body made three points, in the order a reader needs them.
     ///
     /// 1. *What the map is drawing* — a city street-tree inventory. That is the inventory's own
     ///    published name rather than a characterization invented here: all three inventories the
@@ -126,20 +129,18 @@ enum MapInventoryCopy {
     /// the *top* of the display. `MapEmptyInventoryTests.theNoticeFitsTheSlotAtAX5` holds the
     /// budget, so a copy edit that spends the line back fails rather than ships.
     ///
-    /// **The hedge is load-bearing and is not to be tidied away.** The trigger fires wherever the
-    /// record is empty, which includes the Pacific and the ground outside a downloaded city's
-    /// window. `Trees stand here` would be a stronger sentence and a false one in those places;
-    /// `may` is true in all of them and still refuses the reading the ticket is about — that the
-    /// park has no trees.
+    /// **Since the community trees are drawn for everyone, the map draws two things, and the body
+    /// names both** (the owner's ruling of 2026-11-15 on places with no city inventory, "name both
+    /// kinds"). It replaces the body above, which named only the city inventory and then hedged
+    /// "Trees may stand here without being listed." The owner chose the new words over keeping
+    /// that one. Its subject is still the record, never the ground: "Neither has a tree here" says
+    /// what the two sources hold, and leaves the reader free to see the trees in front of them.
     ///
-    /// The copy audit of 2026-08-23 (R25) replaced `Trees may well stand here, unlisted.`:
-    /// `may well` leans toward asserting the trees, which is the half of the hedge the sentence
-    /// cannot carry, and the trailing `unlisted` made a fact about the record read as an adjective
-    /// on the trees. The clause the rewrite spends on `without being listed` is measured, not
-    /// assumed — see the AX5 budget above.
-    ///
-    /// No spaces around em dashes (ARCHITECTURE §5.7) — there are none to space.
+    /// **The sentence is true because of the trigger.** `isOwed` reads `MapContent.markerCount`,
+    /// and `LocalAPI.mapContent` merges the community layer (this phone's trees and other people's
+    /// cached ones) into the same content as the city's. So the card draws only where neither
+    /// layer has a pin or a cluster in view, unnarrowed. The same AX5 budget holds it.
     static let message =
-        "Cypress draws a city street-tree inventory, and this ground is not on it. "
-        + "Trees may stand here without being listed."
+        "Cypress draws a city street-tree inventory and trees people have added. "
+        + "Neither has a tree here."
 }

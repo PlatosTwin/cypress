@@ -8,7 +8,8 @@
 //  `MapInventoryNotice.isOwed` is a pure function of four facts, so the gates are decidable
 //  outright. The *words* are decidable as facts about the string rather than as its phrasing:
 //  CLAUDE.md's rule is "assert facts, not phrasing", and the facts this copy must carry are that
-//  it says the trees may exist, that it makes no promise, and that it is not any other notice on
+//  it names what the map draws and puts the absence on those records rather than on the ground
+//  (round C3, the owner's ruling of 2026-11-15), that it makes no promise, and that it is not any other notice on
 //  this screen. What no test here decides is that the sentence is *legible* on a phone — that is
 //  the AX5 measurement at the bottom and the screenshots in the branch report.
 //
@@ -118,19 +119,39 @@ struct MapEmptyInventoryTests {
     /// hundred thousand trees in it and the app knows about none of them (`ERRATA E214`). A notice
     /// a reader could take as "there are no trees here" would be a worse screen than the silent
     /// one it replaces.
-    @Test("the notice says the trees may exist, and puts the absence on the record")
+    ///
+    /// **What changed in round C3.** The body used to end with the hedge "Trees may stand here
+    /// without being listed.", and this test required it. The owner's ruling of 2026-11-15 on
+    /// places with no city inventory ("name both kinds") replaced the body with two sentences that
+    /// name the two things the map draws and say neither has a tree here. That keeps the absence
+    /// on the record rather than on the ground, so the test now holds that: the body names both
+    /// sources, and the sentence about the absence has them, not the ground, as its subject.
+    ///
+    /// Red-proof: put back the old first sentence, which names only the city inventory — red on
+    /// "the notice does not name the trees people have added".
+    @Test("the notice names both kinds the map draws, and puts the absence on them")
     func theTreesAreNotDeniedOnlyTheRecordsAre() {
         let words = MapInventoryCopy.title + " " + MapInventoryCopy.message
-        // The clause read `Trees may well stand here, unlisted.` until the copy audit of
-        // 2026-08-23 (R25) made it `Trees may stand here without being listed.` What this test
-        // holds is the hedge and its subject, not the adverb: the trees have to be left standing,
-        // as a possibility the notice raises in so many words.
+        let lowered = MapInventoryCopy.message.lowercased()
         #expect(
-            MapInventoryCopy.message.contains("Trees may stand here"),
+            lowered.contains("city street-tree inventory"),
+            "the notice does not name the city inventory: \(MapInventoryCopy.message)"
+        )
+        #expect(
+            lowered.contains("trees people have added"),
             """
-            the notice does not say the trees may be standing here; without that clause it reads \
-            as "this ground has no trees", which is false of every park in the city
+            the notice does not name the trees people have added; since round C3 the map draws \
+            them for everyone, so a body that names only the city inventory says less than the map \
+            shows: \(MapInventoryCopy.message)
             """
+        )
+        // The absence belongs to the two sources: "Neither" is the subject of the last sentence.
+        let last = MapInventoryCopy.message
+            .split(separator: ".", omittingEmptySubsequences: true)
+            .last.map { $0.trimmingCharacters(in: .whitespaces) } ?? ""
+        #expect(
+            last.hasPrefix("Neither"),
+            "the sentence about the absence is not about the two sources: “\(last)”"
         )
         // And the message may not say the opposite. **The title is not swept here and must not
         // be**: it reads `No trees on record here`, and its whole design is that "no trees"

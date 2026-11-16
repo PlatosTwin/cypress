@@ -675,6 +675,14 @@ tap the FAB → 02; filter chips switch the pin set; search opens species/street
 selection is single-select with `All` default. **NOT SPECIFIED:** search results, zoom controls,
 empty/no-GPS state.
 
+**ADDED — round C3, owner ruling 2026-11-15** (see `docs/rulings-pending/community-trees-c3-answers.md`,
+"Places with no city inventory"). The built map's empty-inventory card (title `No trees on record
+here`, drawn when a settled, unnarrowed read has nothing to draw) now names both kinds of tree the
+map draws. Its body reads: `Cypress draws a city street-tree inventory and trees people have added.
+Neither has a tree here.` It replaces `Cypress draws a city street-tree inventory, and this ground is
+not on it. Trees may stand here without being listed.` The trigger is unchanged: the card draws
+only when no pin or cluster of either kind is in view.
+
 ---
 
 #### 02 · What tree is this?
@@ -715,9 +723,31 @@ empty/no-GPS state.
 4. **Footer CTA** — `margin-top:auto`, `padding:14px 16px 40px`, C7 outline button
    `padding:14px`, 15px: **`None of these? Add this tree`**
 
+   **ADDED — round C3, owner rulings 2026-11-15** (see `docs/rulings-pending/community-trees-c3-answers.md`,
+   "The note under the Add this tree button", `docs/rulings-pending/community-trees-answers-2026-11-15.md`,
+   the last entry, and the rulings-pending file `community-trees-only-you-can-see.md`, written by
+   another author of this round). The add screen
+   this button opens has no mock. The note under its own `Add this tree` button now says who can
+   see the tree, by the account's state, read each time the add screen appears:
+   - signed in and sharing: `Recorded as community-added and unverified. Everyone using Cypress can see it once it is sent.`
+   - signed out: `Recorded as community-added and unverified. Only you can see it. Everyone using Cypress can see it after you sign in.`
+   - signed in, not sharing: `Recorded as community-added and unverified. Only you can see it. Everyone using Cypress can see it after you agree to share your tree records.`
+   - signed in, and the phone holds no answer: `Recorded as community-added and unverified, on this phone.` (the note as it was)
+
+   The note does not mention private property. At the accessibility text sizes it is the last row
+   of the scrolling form, and only the button stays pinned.
+
 **Affordances:** tap a card to pick a species → 03/visit; the outline button starts a new tree record.
 
 **States:** selected (2px `#2F6B4F` border + shadow + eyebrow + confidence bar) vs. idle.
+
+**ADDED — round C3, owner ruling 2026-11-15** (see `docs/rulings-pending/community-trees-c3-answers.md`,
+"Places with no city inventory"). The built empty state, `No trees on record here`, names both
+kinds of tree the list reads: `No city tree and no added tree is within 60 m of you. If there is a
+tree in front of you, it is not on the map yet.` The number is the list's search radius. It
+replaces `Nothing in the city inventory is within 60 m of you. …`. The list reads the city
+inventory and every added tree on the phone, this phone's and other people's, so it is empty only
+when neither has a tree within the radius.
 
 ---
 

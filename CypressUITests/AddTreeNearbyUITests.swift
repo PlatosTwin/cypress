@@ -49,6 +49,10 @@ final class AddTreeNearbyUITests: XCTestCase, DeepLinkHarness {
         /// `MovePinCopy`'s north nudge and save, repeated by hand.
         static let nudgeNorth = "Move the pin north"
         static let save = "Save"
+        /// `VisitAddTreeCopy.footnote(for: .signedOut)` and `(for: .unknown)`, repeated by hand.
+        static let signedOutNote = "Recorded as community-added and unverified. Only you can see it. "
+            + "Everyone using Cypress can see it after you sign in."
+        static let unknownNote = "Recorded as community-added and unverified, on this phone."
         /// The two sentences of the refusal the ruling removed.
         static let refused = ["Nothing was added.", "If one of these is the tree in front of you, open it."]
     }
@@ -290,6 +294,83 @@ final class AddTreeNearbyUITests: XCTestCase, DeepLinkHarness {
         let add = app.buttons[Copy.cta]
         assertReachable(add, "the Add this tree button at the largest text size")
         XCTAssertTrue(add.isEnabled, "the note disabled the Add this tree button at the largest text size")
+    }
+
+    /// Round C3, the owner's ruling of 2026-11-15 on the note under the Add this tree button. The
+    /// harness's add screen runs on a fresh install with nobody signed in, so the note says the
+    /// signed-out sentence, and at the drawn size it is pinned under the button, outside the form.
+    /// Nothing is tapped, so this test adds no tree.
+    ///
+    /// Red-proof: make the add screen read no state (drop `await refreshSharing()` from
+    /// `VisitAddTreeModel.load()`) — red on "no signed-out note".
+    func testTheSignedOutNoteIsPinnedUnderTheButton() {
+        let app = launch("addTreeAlone")
+
+        let note = app.staticTexts[Copy.signedOutNote]
+        guard note.waitForExistence(timeout: 60) else {
+            XCTFail(
+                deepLinkFailure(app).map { "addTreeAlone: \($0)" }
+                    ?? "addTreeAlone: no signed-out note under the button"
+            )
+            return
+        }
+        record(app, named: "signed-out-note-default")
+        XCTAssertFalse(
+            app.staticTexts[Copy.unknownNote].exists,
+            "the screen still says the note for a phone that does not know the account"
+        )
+        let add = app.buttons[Copy.cta]
+        assertReachable(add, "the Add this tree button")
+        assertReachable(note, "the note under the button, without scrolling")
+        XCTAssertGreaterThanOrEqual(
+            note.frame.minY, add.frame.maxY,
+            "the note is not under the button: note \(note.frame), button \(add.frame)"
+        )
+        XCTAssertFalse(
+            app.scrollViews.firstMatch.staticTexts[Copy.signedOutNote].exists,
+            "at the drawn size the note is in the scrolling form, not pinned under the button"
+        )
+    }
+
+    /// The same ruling, "move into the scroll": at the largest accessibility text size the note is
+    /// the last row of the scrolling form, and only the button stays pinned. The reader scrolls to
+    /// the note, and it is then above the button. Nothing is tapped, so this test adds no tree.
+    ///
+    /// Red-proof: return `.footer` for both sizes from `VisitAddTreeLayout.footnotePlace` — red on
+    /// "the note is not in the scrolling form".
+    func testTheNoteMovesIntoTheFormAtTheLargestTextSize() {
+        let app = XCUIApplication()
+        app.launchEnvironment[Self.deepLinkScreenKey] = "addTreeAlone"
+        app.launchArguments += [
+            "-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXXXL"
+        ]
+        DebugMapCamera.pin(app)
+        app.launch()
+
+        let add = app.buttons[Copy.cta]
+        guard add.waitForExistence(timeout: 60) else {
+            XCTFail(
+                deepLinkFailure(app).map { "addTreeAlone: \($0)" }
+                    ?? "addTreeAlone: no Add this tree button at the largest text size"
+            )
+            return
+        }
+        let inForm = app.scrollViews.firstMatch.staticTexts[Copy.signedOutNote]
+        XCTAssertTrue(
+            inForm.waitForExistence(timeout: 10),
+            "the note is not in the scrolling form at the largest text size"
+        )
+        assertReachable(add, "the pinned Add this tree button at the largest text size")
+        record(app, named: "signed-out-note-ax5-top")
+
+        scroll(app, until: inForm, up: true)
+        record(app, named: "signed-out-note-ax5-scrolled")
+        assertReachable(inForm, "the note, after scrolling the form")
+        XCTAssertLessThanOrEqual(
+            inForm.frame.maxY, add.frame.minY,
+            "the scrolled-to note is not above the pinned button: note \(inForm.frame), button \(add.frame)"
+        )
+        assertReachable(add, "the Add this tree button after scrolling, which must stay pinned")
     }
 
     /// The note's label and both its sentences sit inside the visible form, above the pinned button,
