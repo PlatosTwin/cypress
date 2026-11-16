@@ -354,9 +354,14 @@ public struct CommunityTreeBackfill: Sendable {
             ":tree": treeID.uuidString, ":ids": ids, ":user": current.uuidString, ":now": moment
         ]
         for table in ["visits", "observations", "measurements", "care_events", "photos"] {
+            // Live rows only, but every photograph, withdrawn or not: a withdrawn photograph left
+            // with the old owner on a visit that moved would block "Delete my records", which
+            // deletes the visit and cannot delete a photograph that is not the account's (a
+            // foreign key). A withdrawn photograph is still never sent (`stageOldPhotos`).
+            let live = table == "photos" ? "" : "AND deleted_at IS NULL"
             let select = try connection.cachedStatement("""
                 SELECT id FROM \(table)
-                 WHERE tree_uuid = :tree COLLATE NOCASE AND deleted_at IS NULL AND \(ownedByPhoneMade)
+                 WHERE tree_uuid = :tree COLLATE NOCASE \(live) AND \(ownedByPhoneMade)
                 """)
             _ = try select.bind([":tree": treeID.uuidString, ":ids": ids])
             let found = try select.fetchAll { try $0.uuid("id") }
@@ -364,7 +369,7 @@ public struct CommunityTreeBackfill: Sendable {
             guard !found.isEmpty else { continue }
             let update = try connection.cachedStatement("""
                 UPDATE \(table) SET user_id = :user, updated_at = :now
-                 WHERE tree_uuid = :tree COLLATE NOCASE AND deleted_at IS NULL AND \(ownedByPhoneMade)
+                 WHERE tree_uuid = :tree COLLATE NOCASE \(live) AND \(ownedByPhoneMade)
                 """)
             _ = try update.bind(bindings)
             try update.run()
@@ -462,7 +467,8 @@ public struct CommunityTreeBackfill: Sendable {
         guard !ids.isEmpty else { return false }
         let statement = try connection.cachedStatement("""
             SELECT 1 AS p FROM photos
-             WHERE visit_id IS NULL AND upper(id) IN (SELECT value FROM json_each(:ids))
+             WHERE visit_id IS NULL AND deleted_at IS NULL
+               AND upper(id) IN (SELECT value FROM json_each(:ids))
              LIMIT 1
             """)
         _ = try statement.bind(jsonIDs(ids), forName: ":ids")

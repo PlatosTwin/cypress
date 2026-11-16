@@ -1256,18 +1256,39 @@ struct CommunityTreeBackfillTests {
         #expect(try await Self.owner(phone, "visits", gone.visitWithPhoto.id) == nil, "an anonymized visit was given an owner")
     }
 
-    /// Red-proof: leave the rows with the phone-made owner and send them as B (drop the `UPDATE` in
-    /// `adopt`) — red on the erasing door's count and the leaving door's tombstone.
+    /// Red-proof: move only live photographs in `adopt` (put `AND deleted_at IS NULL` back for
+    /// photos) — red on the erasing door, which cannot delete a visit that still has the old
+    /// account's withdrawn photograph on it (a foreign key).
     @Test("deleting the signed-in account takes the adopted rows with it, by either door")
     func theDeletionDoorsTreatAdoptedRowsAsTheAccounts() async throws {
         for choice in [AccountDeletionChoice.eraseEverything, .leaveRecords] {
             let phone = try await Self.phone(userID: Self.accountB)
             let (tree, _) = try await Self.addTree(on: phone, at: Self.old)
-            let rows = try await Self.addRows(
-                on: phone, tree: tree.id, owner: Attribution(userID: Self.phoneMade, deviceID: Self.deviceID), at: Self.old
+            let made = Attribution(userID: Self.phoneMade, deviceID: Self.deviceID)
+            let rows = try await Self.addRows(on: phone, tree: tree.id, owner: made, at: Self.old)
+            // A photograph the old account withdrew, on the same visit.
+            let withdrawn = Photo(
+                treeID: tree.id, visitID: rows.visitWithPhoto.id, storageKey: "\(UUID().uuidString).jpg",
+                shotType: .trunk, capturedAt: Self.old, createdAt: Self.old, updatedAt: Self.old
             )
+            try await phone.write { connection in
+                _ = try ContributionStore().insert(
+                    withdrawn, localPath: nil, owner: PhotoOwner(made), takenOnDevice: Self.deviceID, connection: connection
+                )
+                let statement = try connection.cachedStatement("UPDATE photos SET deleted_at = :at WHERE id = :id")
+                _ = try statement.bind([":at": Self.old, ":id": withdrawn.id])
+                try statement.run()
+                _ = try statement.reset()
+            }
             try await phone.run(phone.signedIn(Self.accountB))
             #expect(try await Self.owner(phone, "visits", rows.visitWithPhoto.id) == Self.accountB, "fixture")
+            let staged = try await phone.store.queue.read { connection -> Bool in
+                let statement = try connection.cachedStatement("SELECT 1 AS p FROM outbox_photos WHERE photo_id = :id COLLATE NOCASE")
+                _ = try statement.bind(withdrawn.id, forName: ":id")
+                defer { _ = try? statement.reset() }
+                return try statement.fetchOne { _ in true } ?? false
+            }
+            #expect(!staged, "a withdrawn photograph was staged")
 
             _ = try await phone.api.deleteAccount(choice)
             let state = try await phone.store.queue.read { connection -> (live: Int, tombstoned: Bool, photoOwner: String?) in
