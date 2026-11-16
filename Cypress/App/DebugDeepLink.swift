@@ -216,6 +216,19 @@ enum DebugDeepLink {
         /// (DECISIONS constraint 21). What makes it deep-linkable anyway is that the view takes a
         /// coordinate and two closures and owns no data — see `Standalone`.
         case pinAdjust
+        /// The community add with a tree already on record 4 m from the pin, so the
+        /// "ALREADY ON RECORD" note draws over an active Add this tree button (the owner's ruling of
+        /// 2026-11-14). A `Standalone`, for `pinAdjust`'s reason: the add screen is a step of
+        /// `VisitFlowView`, not a `Route`.
+        ///
+        /// It writes: each launch adds one community tree on the first free slot of its own line
+        /// (`addTreeNearbySpot`), the way `.movePin` does, so every launch finds exactly one tree near
+        /// the pin. A tap on the button adds another. The line is its own, out at sea like the other
+        /// community cases, so no tree lands near a record another case reads.
+        case addTreeNearby
+        /// The same add screen on a spot at sea with nothing on record within 10 m, so the note is
+        /// not drawn and the form starts at the photo. It writes nothing.
+        case addTreeAlone
     }
 
     /// A screen the harness presents directly, because it is not on any router.
@@ -227,12 +240,16 @@ enum DebugDeepLink {
     /// renderer reports `notDetermined` and stays there. So the fix is pinned to the map's own
     /// opening center, which is a real place with real streets under it.
     ///
-    /// **It writes nothing**, which is the other half of the rule `photographedTree(_:)` encodes: a
-    /// case that writes persistent state must not write it onto a tree another case reads. This case
-    /// touches no tree, no photograph and no row — it presents a view and takes a coordinate back.
-    /// There is nothing for a later run, or a neighboring case, to find.
+    /// **`pinAdjust` writes nothing**, which is the other half of the rule `photographedTree(_:)`
+    /// encodes: a case that writes persistent state must not write it onto a tree another case
+    /// reads. It touches no tree, no photograph and no row — it presents a view and takes a
+    /// coordinate back. `addTree` does write, on its own spot at sea; `Screen.addTreeNearby` says
+    /// what.
     enum Standalone: Equatable {
         case pinAdjust(anchor: Coordinate, accuracyM: Double)
+        /// The community add on a pinned fix, with a photograph already chosen. See
+        /// `Screen.addTreeNearby`.
+        case addTree(fix: Coordinate, accuracyM: Double)
     }
 
     /// The fix the pin screen opens on, and a plausible street-canyon accuracy to draw beside it.
@@ -400,10 +417,10 @@ enum DebugDeepLink {
                 // record to resolve and the only honest harness is one that adds one the way the app
                 // does. `debugAddCommunityTree` goes through `addTree`.
                 //
-                // Each case gets its **own** coordinate, well outside the other's 10 m dedupe circle
-                // and outside the seed's own trees, because the rule this file already keeps —
-                // a case that writes persistent state must not write it onto a record another case
-                // reads — applies twice over to a table whose write is refused by proximity.
+                // Each case gets its **own** coordinate, well away from the other's and from the
+                // seed's own trees, because of the rule this file already keeps: a case that writes
+                // persistent state must not write it onto a record another case reads. A re-run adds
+                // a second tree on the same spot and opens that one.
                 let spot = screen == .speciesClaim ? claimedSpot : unclaimedSpot
                 let id = try await api.debugAddCommunityTree(
                     near: spot,
@@ -411,8 +428,8 @@ enum DebugDeepLink {
                 )
                 router.push(.treeProfile(id))
             case .movePin:
-                // The first slot along the line with nothing within the dedupe radius, so a re-run
-                // adds a tree instead of being refused by the one the last run moved.
+                // The first slot along the line with nothing within 30 m of it, so each run's tree
+                // stands apart from the ones earlier runs added and moved.
                 var id: UUID?
                 for step in 0..<Self.movePinSlots {
                     let slot = VisitPinAdjust.offset(
@@ -448,9 +465,9 @@ enum DebugDeepLink {
             case .recordDefect:
                 // Resolved-then-added, like `.communityPhotos` and unlike `.speciesClaim`, because
                 // this case is meant to be *run twice*: the second run is how the withdrawal is
-                // looked at after it has happened. A blind `debugAddCommunityTree` would trip the
-                // 10 m proximity dedupe against the tree the first run left standing and the harness
-                // would draw its own failure instead of the screen.
+                // looked at after it has happened. A blind `debugAddCommunityTree` would add a second
+                // tree beside the one the first run left standing, and open the new tree instead of
+                // the one whose withdrawal is being looked at.
                 let existing = try await api.treesNear(
                     recordDefectSpot, radiusM: TreeDraft.proximityDedupeRadiusM, limit: 1
                 ).first?.tree.id
@@ -485,9 +502,8 @@ enum DebugDeepLink {
                 // delete can leave a record violating its own creation rule (ERRATA E147).
                 //
                 // Resolved before it is added, unlike `.speciesClaim`, because this case exists to
-                // have its photograph *deleted*: a second run would otherwise trip the 10 m
-                // proximity dedupe against the tree the first run left standing, and the harness
-                // would draw its failure instead of the screen. One photograph, not three, because
+                // have its photograph *deleted*: a second run comes back to the tree the first run
+                // left standing rather than adding another beside it. One photograph, not three, because
                 // "the only photograph of a community add" is the state being looked at.
                 let existing = try await api.treesNear(
                     communityPhotoSpot, radiusM: TreeDraft.proximityDedupeRadiusM, limit: 1
@@ -580,6 +596,44 @@ enum DebugDeepLink {
             case .pinAdjust:
                 // No record, no write, no route. See `Standalone`.
                 present(pinAdjustFix)
+            case .addTreeAlone:
+                // Writes nothing. A tree within 10 m would draw the note this case exists to show
+                // absent, so one there is reported rather than drawn over.
+                let onRecord = try await api.treesNear(
+                    addTreeAloneSpot, radiusM: TreeDraft.proximityDedupeRadiusM, limit: 1
+                )
+                guard onRecord.isEmpty else {
+                    throw Failure(
+                        screen: "addTreeAlone",
+                        reason: "a tree is on record within 10 m of the spot, so the note would draw"
+                    )
+                }
+                present(.addTree(fix: addTreeAloneSpot, accuracyM: 5))
+            case .addTreeNearby:
+                // `.movePin`'s slot search, on a line of its own: the first slot with nothing within
+                // `addTreeNearbySlotCheckM` of it gets one new tree, so every launch finds exactly one
+                // tree near the pin however many earlier runs added theirs. A tap on the button adds
+                // a second tree 4 m north of the slot, which the next launch's slot is clear of.
+                var chosen: Coordinate?
+                for step in 0..<Self.addTreeNearbySlots {
+                    let slot = VisitPinAdjust.offset(
+                        Self.addTreeNearbySpot, northM: 0, eastM: -Self.addTreeNearbySlotSpacingM * Double(step)
+                    )
+                    let taken = try await api.treesNear(
+                        slot, radiusM: Self.addTreeNearbySlotCheckM, limit: 1
+                    )
+                    if taken.isEmpty {
+                        _ = try await api.debugAddCommunityTree(near: slot, speciesQuery: nil)
+                        chosen = slot
+                        break
+                    }
+                }
+                guard let chosen else { throw APIError.conflict }
+                // 4 m north of it: inside the note's 10 m circle, and far enough off that the pin is
+                // plainly a second spot rather than the same one.
+                present(.addTree(
+                    fix: VisitPinAdjust.offset(chosen, northM: 4, eastM: 0), accuracyM: 5
+                ))
             }
             return nil
         } catch let failure as Failure {
@@ -592,14 +646,11 @@ enum DebugDeepLink {
     /// Where the two community-tree cases put their trees.
     ///
     /// Ocean, west of Ocean Beach: the seed is the city's street-tree inventory, so nothing of the
-    /// city's is out here and neither case can trip the 10 m dedupe against a record it did not
-    /// write. They are ~200 m apart, which is well outside each other's circle, so running one case
-    /// after the other on one simulator does not refuse the second tree. A re-run of the *same* case
-    /// does refuse — the first tree is still there, 0 m away — which is correct behavior and shows
-    /// as the deep link reporting a failure rather than as a screen quietly showing the wrong tree.
-    /// Its own coordinate, well outside the other two's 10 m dedupe circles, for the reason
-    /// `.speciesClaim` gives: a case that writes persistent state must not write it onto a record
-    /// another case reads.
+    /// city's is out here and no case lands its tree beside a record it did not write. They are
+    /// ~200 m apart, for the reason `.speciesClaim` gives: a case that writes persistent state must
+    /// not write it onto a record another case reads. Since the owner's ruling of 2026-11-14 a tree
+    /// within 10 m of another is not refused, so a re-run of `.speciesClaim` or `.speciesUnclaimed`
+    /// adds a second tree on its spot and opens that one.
     private static let communityPhotoSpot = Coordinate(latitude: 37.7636, longitude: -122.5300)
     private static let claimedSpot = Coordinate(latitude: 37.7600, longitude: -122.5300)
     private static let unclaimedSpot = Coordinate(latitude: 37.7618, longitude: -122.5300)
@@ -607,7 +658,7 @@ enum DebugDeepLink {
     private static let recordDefectSpot = Coordinate(latitude: 37.7654, longitude: -122.5300)
     /// The fifth, ~200 m north of the fourth, and the start of a line of slots running **west**,
     /// further out to sea, 30 m apart. A slot is free when nothing is within 30 m of it, so a pin a
-    /// test moved 10 m north never makes the next slot refuse its add.
+    /// test moved 10 m north never lands on the next run's tree.
     private static let movePinSpot = Coordinate(latitude: 37.7672, longitude: -122.5300)
     private static let movePinSlotSpacingM: Double = 30
     private static let movePinSlots = 60
@@ -617,6 +668,19 @@ enum DebugDeepLink {
     /// `.conflict` says the line is full.
     private static let profileLinksSpot = Coordinate(latitude: 37.7690, longitude: -122.5300)
     private static let profileLinksSlots = 200
+    /// The seventh, ~200 m north of the sixth's line, and the start of a line of slots running west,
+    /// 40 m apart: one tree per launch of `.addTreeNearby`, which opens the add screen 4 m north of
+    /// it. A slot is free when nothing is within 30 m of it. The trees a run leaves (the slot's own,
+    /// and the one a tap adds 4 m north of it) are about 40 m from the next slot, so they are outside
+    /// both that check and the note's 15 m. `AddTreeNearbyUITests` launches this case up to three
+    /// times per run, so 300 slots is about 100 runs on one simulator before `.conflict`.
+    private static let addTreeNearbySpot = Coordinate(latitude: 37.7708, longitude: -122.5300)
+    private static let addTreeNearbySlotSpacingM: Double = 40
+    private static let addTreeNearbySlotCheckM: Double = 30
+    private static let addTreeNearbySlots = 300
+    /// The eighth, ~200 m north of the seventh: open water with nothing on record, where
+    /// `.addTreeAlone` opens the add screen with no note to draw.
+    private static let addTreeAloneSpot = Coordinate(latitude: 37.7726, longitude: -122.5300)
 
     /// The candidate window, **with this device's own status overrides laid over it**.
     ///

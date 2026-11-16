@@ -119,10 +119,12 @@ public enum DataDisputeLimits {
     /// over, and keying both on one number blanked a segment that could still answer (F3).
     ///
     /// The read here is "which tree is this position the position of", and this app already has a
-    /// measured answer to that: 10 m is the distance inside which `addTree` treats a new pin and an
-    /// existing record as **the same tree**. A fix whose own error circle is wider than that cannot
-    /// pick out the tree it is offered as a correction *to* — it is an answer to a different
-    /// question, which is the shape this project's verification rules warn about.
+    /// measured answer to that: 10 m is the distance inside which the Add this tree screen says
+    /// another tree is **already on record** here (until the owner's ruling of 2026-11-14 `addTree`
+    /// refused inside it; it now notes and adds, and this rule is unchanged). A fix whose own error
+    /// circle is wider than that cannot pick out the tree it is offered as a correction *to* — it
+    /// is an answer to a different question, which is the shape this project's verification rules
+    /// warn about.
     public static var positionResolutionRadiusM: Double { TreeDraft.proximityDedupeRadiusM }
 
     /// Whether a fix of this stated accuracy may be offered as a tree's correct position.

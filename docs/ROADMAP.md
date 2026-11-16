@@ -631,7 +631,11 @@ file.
      the rule chosen, for example a smaller radius, or an override that states the reader has
      checked the nearby record. **Decided by the owner on 2026-11-14: the rule stops refusing, for
      new trees and for pin moves.** See chip 140 and
-     `docs/rulings-pending/community-trees-no-proximity-rule.md`.
+     `docs/rulings-pending/community-trees-no-proximity-rule.md`. **Built on the phone in
+     `feat/no-proximity-refusal-phone`**: the add screen shows "ALREADY ON RECORD" as a note before
+     the tap, at the top of the form above the photo, and adds the tree anyway. The service half is
+     `feat/no-proximity-refusal-server` (PR 236), **deployed 2026-11-15** as `cypress-sync` release
+     v15.
 
 - ~~**F33 — zoom while taking the photo on add-a-tree.**~~ Build 77, 2026-09-28, verbatim: *"Need
   ability to zoom in on photo in this view"*. The screenshot is add-a-tree's live viewfinder
@@ -1679,10 +1683,10 @@ into this section in the round that finds it, and nowhere else. Each item stands
     #187 scoped the candidates to trees the caller may see, which closed the leak of other people's
     unpublished trees; what remains is a published tree's adder-supplied address and creation
     second, which the tile and the profile both withhold. The fix moves
-    `server/testdata/proximity_conflict.json` and its Swift test (`GoldenWireFixtureTests`) together,
+    the fixture `proximity_conflict.json` and its Swift test (`GoldenWireFixtureTests`) together,
     which is why #190 left it.~~ **MOOT, 2026-11-15:** `feat/no-proximity-refusal-server` (chip 140)
     removes the proximity conflict and `candidateFrom`, so no route serves a candidate any more. The
-    fixture file stays for the phone-side round to settle.
+    phone-side branch, `feat/no-proximity-refusal-phone`, deletes the fixture and its Swift test.
 63. **Does a photograph's presigned `GET` give away its capture time?** A hypothesis, not
     reproduced. Object storage normally answers with `Last-Modified`, the upload time to the second,
     and for a photograph uploaded while online that is close to the capture time decision 14 hides
@@ -2384,8 +2388,8 @@ into this section in the round that finds it, and nowhere else. Each item stands
     service keeps the phone's dates), are in `docs/rulings-pending/community-trees-old-trees.md`. Rows on a city tree are
     still under R77; the owner was not asked about them. Not built. It belongs with C2, because
     nobody else sees any community tree until C2 lands.
-140. **Stop refusing a tree that is within 10 m of another (owner's ruling, 2026-11-14).** The
-    owner, on how far a pin may move: "can go anywhere, and also fine to go within 10m of another
+140. ~~**Stop refusing a tree that is within 10 m of another (owner's ruling, 2026-11-14).**
+    The owner, on how far a pin may move: "can go anywhere, and also fine to go within 10m of another
     tree. sometimes they will be close together and that's fine". Asked how far that goes, the owner
     chose pin moves and new trees. This reverses the second half of DECISIONS constraint 16 and
     answers F32, finding 3. The service refuses in three places and the phone in two; the Add this
@@ -2394,7 +2398,16 @@ into this section in the round that finds it, and nowhere else. Each item stands
     deploys before any build that stops refusing on the phone**, and each `cypress-sync` deploy needs
     the owner's go-ahead. The ruling and the build notes are in
     `docs/rulings-pending/community-trees-no-proximity-rule.md`. Not built. It goes before chip 139,
-    whose old trees can otherwise come back as conflicts.
+    whose old trees can otherwise come back as conflicts.~~ **DONE, 2026-11-15:** the phone half is
+    `feat/no-proximity-refusal-phone` and the service half `feat/no-proximity-refusal-server`
+    (PR 236), deployed with the owner's approval as `cypress-sync` release v15 (`bd8a35af`). The
+    owner placed the note at the top of the Add this tree form, above the photo, made a row of the
+    note open its tree over the add screen with the draft kept, and made the note show at 10 m and
+    hide past 15 m (three decisions of 2026-11-15,
+    `docs/rulings-pending/community-trees-no-proximity-rule-phone.md`). **Owed on the physical phone:
+    the shutter's position with a tree nearby.** A simulator has no live camera; the reviewer measured
+    "Choose a photo from this phone" at about 646 pt with a tree nearby on the 390 pt iPhone 17e, still
+    above the pinned button at about 696 pt.
 141. **The service keeps an index and migration comments that only the 10 m dedupe needed.** Found
     while building chip 140 (`feat/no-proximity-refusal-server`, 2026-11-15). ~~(a)
     `idx_community_trees_position` (`server/migrations/001_initial.sql`, line 254) existed for the

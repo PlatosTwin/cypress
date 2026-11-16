@@ -120,6 +120,11 @@ struct VisitFlowView: View {
     var onOpenTree: (UUID) -> Void = { _ in }
     /// "Route done · see your grove" (screen 08).
     var onOpenGrove: () -> Void = {}
+    /// The profile of a tree the add screen's "ALREADY ON RECORD" note lists, which the add screen
+    /// presents over itself so its draft survives (the owner's decision of 2026-11-15). Not
+    /// `onOpenTree`: that one closes this flow, which is right for a tree the flow just added and
+    /// wrong for a tree the reader only wants to look at before adding theirs.
+    let openExisting: ExistingTreeScreen
 
     @State private var location = VisitLocationProvider()
     @State private var ledger = VisitSaveLedger()
@@ -212,7 +217,7 @@ struct VisitFlowView: View {
                 location: location,
                 attribution: attribution,
                 onAdded: onOpenTree,
-                onOpenExisting: onOpenTree,
+                openExisting: openExisting,
                 onBack: { step = .identify }
             )
 

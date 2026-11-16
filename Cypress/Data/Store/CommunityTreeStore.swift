@@ -279,7 +279,7 @@ public struct CommunityTreeStore {
     /// (ROADMAP 107).
     ///
     /// **When the tree's `add_tree` row still exists, its state decides.** Yes unless it is
-    /// `failed`: a failed add was refused for good (`conflict` within 10 m of another tree, say) or
+    /// `failed`: a failed add was refused for good (a `conflict`, say) or
     /// gave up at the 48 h cap, so the service does not hold the tree, and the row is never pruned
     /// (`pruneCompleted` deletes only `done` rows). A pending or uploading add is still on its way,
     /// and the move waits behind it (`OutboxStore.dueItems`).
@@ -364,15 +364,17 @@ public struct CommunityTreeStore {
         return try statement.fetchAll(Self.decode)
     }
 
-    /// The 10 m proximity dedupe from `POST /trees`, over the community table. The seed half runs
+    /// The trees within a radius, over the community table: the half of `treesNear` that draws the
+    /// Add this tree screen's 10 m "ALREADY ON RECORD" note (once the `POST /trees` proximity
+    /// dedupe, which the owner's ruling of 2026-11-14 turned into that note). The seed half runs
     /// through `TreeQueries.nearest`.
     ///
     /// The box is read **unbounded** and the caller's limit is applied afterwards. `inBounds` has no
     /// `ORDER BY`, so a `LIMIT` inside it drops rows in storage order rather than by distance — the
-    /// row it discards can be the one 3 m away, and a dedupe that misses its own duplicate admits a
-    /// second record of the same tree. The box is a pre-filter; the circle and the limit are the
-    /// answer, and they are applied to exact meters. This table holds tens of rows within any
-    /// dedupe radius, so reading it whole costs nothing.
+    /// row it discards can be the one 3 m away, and a note that misses the nearest tree tells the
+    /// reader nothing is on record where something is. The box is a pre-filter; the circle and the
+    /// limit are the answer, and they are applied to exact meters. This table holds tens of rows
+    /// within such a radius, so reading it whole costs nothing.
     public func near(_ coordinate: Coordinate, radiusM: Double, limit: Int, connection: SQLiteConnection) throws -> [Tree] {
         let bounds = BoundingBox(around: coordinate, radiusM: radiusM)
         return try inBounds(bounds, limit: nil, connection: connection)

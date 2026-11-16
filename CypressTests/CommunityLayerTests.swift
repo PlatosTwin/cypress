@@ -140,13 +140,13 @@ struct CommunityLayerTests {
         #expect(profile.speciesCorrection == .unavailable, "\(profile.speciesCorrection)")
         #expect(profile.recordDefect == .unavailable, "\(profile.recordDefect)")
 
-        // And the add dedupe sees it: a tree 5 m from somebody else's is a duplicate.
-        do {
-            _ = try await Fixture.add(api, at: ProximityDedupeTests.diagonal(from: Fixture.offshore, meters: 5))
-            Issue.record("a tree 5 m from somebody else's published tree was added")
-        } catch let conflict as ProximityConflict {
-            #expect(conflict.candidates.map(\.tree.id) == [theirs.id])
-        }
+        // And the add screen's note sees it: a tree 5 m from somebody else's is added (the owner's
+        // ruling of 2026-11-14), and the 10 m query the note draws lists theirs.
+        let spot = ProximityDedupeTests.diagonal(from: Fixture.offshore, meters: 5)
+        let mine = try await Fixture.add(api, at: spot)
+        let noted = try await api.treesNear(spot, radiusM: TreeDraft.proximityDedupeRadiusM, limit: 10)
+            .filter { $0.tree.id != mine.id }
+        #expect(noted.map(\.tree.id) == [theirs.id], "the note's query does not see the cached tree")
     }
 
     /// A tree this phone withdrew is not brought back by the service's copy of it.

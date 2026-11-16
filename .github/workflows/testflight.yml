@@ -322,8 +322,8 @@ jobs:
       # them:
       #
       #   * `SERVER_IOS_READS` — CONTENT the iOS suite opens.
-      #     `CypressTests/GoldenWireFixtureTests` decodes `server/testdata/grove.json` and
-      #     `proximity_conflict.json`, so regenerating a Go-side fixture can turn the iOS unit
+      #     `CypressTests/GoldenWireFixtureTests` decodes `server/testdata/grove.json` and the
+      #     other fixtures there, so regenerating a Go-side fixture can turn the iOS unit
       #     suite red. Checked 2026-09-28: that is the only `"server/…"` path literal in
       #     `CypressTests/` or `CypressUITests/`, and `DeployPathsAgreeTests` now finds those
       #     literals itself and fails if one is not covered here.
