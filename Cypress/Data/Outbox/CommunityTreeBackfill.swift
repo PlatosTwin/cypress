@@ -303,7 +303,10 @@ public struct CommunityTreeBackfill: Sendable {
 
         let moment = now()
         let store = OutboxStore()
+        // Only a file that is there and is an image, the same test a new tree's add photo passes
+        // (`queueAddition`).
         let addPhoto = try Self.addPhoto(treeID: treeID, identity: identity, connection: connection)
+            .flatMap { Self.sendableFile($0.path, applicationSupport: applicationSupport) ? $0 : nil }
         var addRowID: UUID?
         var everything = false
 

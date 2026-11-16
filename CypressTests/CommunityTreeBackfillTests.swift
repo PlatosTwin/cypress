@@ -1014,6 +1014,50 @@ struct CommunityTreeBackfillTests {
         #expect(try Data(contentsOf: original) == originalBytes, "the person's own file was changed")
     }
 
+    /// Red-proof: make `sendableFile` require a JPEG again — red on "not staged on the add".
+    @Test("a new tree whose photo was picked as HEIC or PNG queues it on its add", arguments: [UTType.heic, .png])
+    func aNewTreeWithALibraryPhotoQueuesIt(_ type: UTType) async throws {
+        let phone = try await Self.phone()
+        phone.clock.set(Self.later)
+        let picked = try Self.image(type, at: phone.folder.appendingPathComponent("pick-\(UUID().uuidString)"))
+        // What `VisitAddTreeModel.apply` does with the picker's bytes.
+        let staged = phone.folder.appendingPathComponent("staged-\(UUID().uuidString)")
+        try PhotoBinary.write(try Data(contentsOf: picked), strippingMetadataTo: staged)
+        #expect(!PhotoBinary.isJPEG(atPath: staged.path), "fixture: the ingest made a JPEG")
+
+        let tree = try await phone.api.addTree(TreeDraft(
+            coordinate: phone.clock.nextSpot(),
+            photoLocalPath: staged.path,
+            attribution: .anonymous(deviceID: Self.deviceID)
+        ))
+        let add = try #require(try await phone.outbox().first { $0.item.kind == .addTree })
+        let addPhoto = try #require(try await Self.addPhotoID(phone, tree.id), "the add stored no photograph")
+        #expect(try await phone.sendable(add.id).map(\.id) == [addPhoto],
+                "the \(type.identifier) add photo was not staged on the add")
+    }
+
+    /// Red-proof: drop the `sendableFile` check on the add photo in `queueTree` — red on the staged
+    /// photograph.
+    @Test("an old tree whose add photo file is gone is queued without it")
+    func aMissingAddPhotoIsNotStaged() async throws {
+        let phone = try await Self.phone()
+        let (tree, _) = try await Self.addTree(on: phone, at: Self.old)
+        let stored = try await phone.store.queue.read { connection -> String in
+            let statement = try connection.cachedStatement(
+                "SELECT local_path FROM photos WHERE tree_uuid = :tree COLLATE NOCASE AND visit_id IS NULL"
+            )
+            _ = try statement.bind(tree.id.uuidString, forName: ":tree")
+            defer { _ = try? statement.reset() }
+            return try #require(try statement.fetchOne { try $0.string("local_path") })
+        }
+        try FileManager.default.removeItem(atPath: stored)
+
+        let report = try await phone.run(phone.signedOut)
+        let add = try #require(try await phone.outbox().first { $0.item.kind == .addTree })
+        #expect(try await phone.sendable(add.id).isEmpty, "a missing add photo was staged")
+        #expect(report.trees == 1 && report.photos == 0, "\(report)")
+    }
+
     // MARK: - 16. The strip replaces the file in one step
 
     /// Red-proof: remove the destination before the rename in `PhotoBinary.install` — red on "the
