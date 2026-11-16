@@ -202,7 +202,19 @@ final class OthersTreeUITests: XCTestCase, DeepLinkHarness {
         let pin = app.descendants(matching: .any)
             .matching(NSPredicate(format: "label BEGINSWITH %@", Copy.communityPin))
             .firstMatch
-        guard pin.waitForExistence(timeout: 60) else {
+        // The map reads its pins when it appears, and on a clean install the deep link writes the
+        // tree into the cache after that read has started. A real tree arrives through the tile
+        // refresh, which re-reads the map; the debug seam does not. So the test leaves the map
+        // and comes back, which re-reads it, as a reader would. Three tries, so a slow write is
+        // not a race.
+        XCTAssertTrue(app.buttons["Map"].waitForExistence(timeout: 60), "othersTreeOnMap: the tab bar never appeared")
+        var found = pin.waitForExistence(timeout: 10)
+        for _ in 0..<3 where !found {
+            app.buttons["My Grove"].tap()
+            app.buttons["Map"].tap()
+            found = pin.waitForExistence(timeout: 15)
+        }
+        guard found else {
             XCTFail(deepLinkFailure(app).map { "othersTreeOnMap: \($0)" }
                 ?? "othersTreeOnMap: the map drew no '\(Copy.communityPin)' pin over somebody else's tree")
             return
