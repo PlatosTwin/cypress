@@ -37,10 +37,11 @@ struct AccountDeletionCoverageTests {
     ///
     /// Every spelling the schema actually uses, read out of it: `user_id` and `device_id` on the
     /// contribution tables, `raised_by` (`review_flags`, `tree_data_disputes`), `given_by`
-    /// (`tree_names`), `set_by` (`tree_status_overrides`), `taken_on_device` (`photos`, v16) and the
-    /// `device` table's own `device_uuid`.
+    /// (`tree_names`), `set_by` (`tree_status_overrides`), `taken_on_device` (`photos`, v16),
+    /// `set_on_device` (`tree_locations`, v24) and the `device` table's own `device_uuid`.
     static let identitySpellings: Set<String> = [
-        "user_id", "device_id", "device_uuid", "raised_by", "given_by", "set_by", "taken_on_device"
+        "user_id", "device_id", "device_uuid", "raised_by", "given_by", "set_by", "taken_on_device",
+        "set_on_device"
     ]
 
     /// Every other column name in the writable schema. A new name has to be put here or above, and
@@ -391,8 +392,11 @@ struct AccountDeletionCoverageTests {
             return timed(["id": tree, "client_uuid": fresh(), "lat": "37.76", "lon": "-122.5",
                     "user_id": who])
         case .treeLocations:
+            // `set_on_device` on both rows, so the stranger's byte-for-byte check also covers the
+            // door's clear of that column (`AppSchema` v24).
             return timed(["id": fresh(), "tree_id": tree, "client_uuid": fresh(), "lat": "37.76",
-                    "lon": "-122.5", "placement": "gps", "occurred_at": stamp, "user_id": who])
+                    "lon": "-122.5", "placement": "gps", "occurred_at": stamp, "user_id": who,
+                    "set_on_device": device])
         }
     }
 

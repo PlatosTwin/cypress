@@ -2530,7 +2530,7 @@ into this section in the round that finds it, and nowhere else. Each item stands
     `defer`, which does not run if the app is killed during the strip, and nothing sweeps the photo
     folder. It costs disk space only; nothing reads the file. Found by the reviewer of chip 139's
     phone piece, 2026-11-15. A sweep at launch would remove them.
-152. **The Journal treats a pin move and a visit differently at sign-out (owner's call).** Sign-in
+152. ~~**The Journal treats a pin move and a visit differently at sign-out (owner's call).** Sign-in
     moves a tree's location rows to the account (`user_id` set, `device_id` NULL), and visits keep
     their `device_id`. So after sign-out, pin moves leave the Journal and the export while visits
     stay, and the moves come back at the next sign-in. The same fact has a second side: the
@@ -2538,7 +2538,11 @@ into this section in the round that finds it, and nowhere else. Each item stands
     signed-in account's visits after sign-out, and possibly to a second account on the same phone;
     nobody checked whether sign-out changes the device id. Found by the reviewer of C3's Outbox and
     Journal package, 2026-11-15 (the probe read 0 moves and 2 visits). Keeping the moves needs a
-    column `tree_locations` does not have, so it is a schema change with a named migration author.
+    column `tree_locations` does not have, so it is a schema change with a named migration author.~~
+    **DONE, 2026-11-16,** in `feat/journal-keeps-pin-moves`. The owner chose "Everything, pin moves
+    too". Migration v24 adds `tree_locations.set_on_device`, the phone that set each position, and
+    the Journal's pin-move part also matches it; the probe now reads 2 moves and 2 visits. The
+    ruling is `docs/rulings-pending/journal-keeps-pin-moves.md`. The second side is chip 162.
 153. **Row text breaks badly at the largest text size.** At AX5, `ActivityRow` breaks inside words
     ("Specie s", "drippi ng"): its timestamp is `.fixedSize()` and squeezes the label. The You tab's
     SYNC tile shows "…", and "Watered" breaks mid-word. All three predate C3; its authors and
@@ -2588,6 +2592,28 @@ into this section in the round that finds it, and nowhere else. Each item stands
     fixture file checked in, so CI can test reading a HEIC without writing one; nobody has checked
     whether reading a HEIC works on the runner. Until then a HEIC add photo is tested on a
     physical Mac only.
+162. **A second account on a phone sees the first account's work (the second side of chip 152).**
+    The service refuses a second account's sign-in while the first account still owns the phone.
+    One path gets past that: the first account is deleted from a different phone. The service then
+    unlinks every phone and ends the first account's sessions, and this phone signs out, but its
+    rows still name the first account and this phone, with no tombstone. When a second account
+    signs in, its Journal, My Grove, export, and species ring show the first account's visits and
+    notes, and it can delete the first account's photos and withdraw its readings. Anyone holding
+    the signed-out phone sees the same rows before that. The fix belongs where the phone learns its
+    account was deleted elsewhere: make that account's rows on this phone anonymous, as the
+    keep-records door does. Found by reading, by the planner of chip 152, 2026-11-16; not run.
+163. **A queued item made while signed in is refused after sign-out.** Sign-out keeps the outbox
+    sending with the device credential. The service answers an item whose payload names an account
+    with `forbidden` ("Sign in to send this."), which is final, so the row fails for good with
+    "This couldn't be sent." A signed-out phone that withdraws or deletes one of the account's
+    readings or photos meets the same refusal ("belongs to a different contributor"). Found by
+    reading the code (`server/internal/api/sync.go`), by the planner of chip 152, 2026-11-16; not
+    run.
+164. **The Grove species ring skips the tombstone check.** `GroveQueries.ownContributions` has no
+    `notAnonymized` clause. After a keep-records account deletion, the deleted account's visits keep
+    `device_id`, so they still count in the species ring for whoever holds the phone. The comment on
+    `notAnonymized` says the rule holds in "all five" places, and this reader is outside them.
+    Found by the planner of chip 152, 2026-11-16.
 
 
 **Retire the format-1 manifest — DONE, 2026-08-23.** The owner overrode the trigger the day after

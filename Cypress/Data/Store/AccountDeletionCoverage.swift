@@ -84,17 +84,21 @@ extension AccountDeletion {
         /// An installation column is D9's anonymous handle. Neither door clears one wholesale: a row
         /// owned by the device was never the account's (see `delete`), and on the four contribution
         /// tables `device_id` is `NOT NULL` and survives anonymization on purpose (v13's tombstone is
-        /// what stops the next account adopting it). `photos.taken_on_device` is the exception the
-        /// leaving door does clear, and `anonymizeContributions` says why.
+        /// what stops the next account adopting it). `photos.taken_on_device` and
+        /// `tree_locations.set_on_device` (`AppSchema` v24) are the exceptions: both record which
+        /// installation wrote the row, both doors clear them on the account's rows, and
+        /// `anonymizeContributions` and `forgetCommunityTrees` say why.
         public var installationColumns: Set<String> {
             switch self {
             case .device:
                 return ["device_uuid"]
             case .visits, .observations, .measurements, .careEvents, .photoVotes, .favorites,
-                 .privateReminders, .speciesAssertions, .communityTrees, .treeLocations:
+                 .privateReminders, .speciesAssertions, .communityTrees:
                 return ["device_id"]
             case .photos:
                 return ["device_id", "taken_on_device"]
+            case .treeLocations:
+                return ["device_id", "set_on_device"]
             case .communityNotes, .reviewFlags, .treeNames, .treeStatusOverrides, .treeDataDisputes:
                 return []
             }
