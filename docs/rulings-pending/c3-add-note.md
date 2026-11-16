@@ -80,9 +80,25 @@ there". **Chosen: "Show the old text there".**
    is true when the box touches at most `Policy.maxTiles` (16) zoom-14 tiles and every one of them
    has a row in `community_tree_cache_tiles`. What a row means, read from the code: `apply` writes
    it with each page it applies, with trees or without, so a tile the service answered empty has
-   one. A failed request writes nothing. A refused cursor deletes the row (`dropTile`) until the
-   snapshot after it is applied. A shut remote gate never runs the refresher and leaves no rows. A
-   row from an earlier fetch counts as asked however old it is. No migration.
+   one. A failed request writes nothing itself, but the pages before it in the same pass have
+   already written the row (the known limit below). A refused cursor deletes the row (`dropTile`)
+   until the snapshot after it is applied. A shut remote gate never runs the refresher and leaves
+   no rows. A row from an earlier fetch counts as asked however old it is. No migration.
+
+   **Known limit: a row does not mean the tile was fetched to its end.** `CommunityTileRefresher`
+   applies each page in its own transaction, and the service serves at most 100 trees a page
+   (`communityTileMaxLimit` in `server/internal/api/community_reads.go`). So in a tile with more
+   than 100 added trees, a request that fails after the first page (offline, a timeout, a server
+   error) ends the pass with `stoppedOnError` but leaves the row the first page wrote, and
+   `hasAsked` answers true for a tile only partly fetched. A tile that needs more than
+   `Policy.maxPagesPerTile` (10) pages in one pass is the same. Where no tree the phone holds is in
+   view, the map card then says "Neither has a tree here." and the empty list says "No city tree
+   and no added tree is within 60 m of you", while the service holds added trees there that the
+   phone never downloaded. The next pass for that tile corrects it: it continues from the stored
+   cursor, no sooner than `Policy.minimumInterval` (120 s) after the last attempt started, and not
+   at all while the phone stays offline. Marking a tile complete across pages needs either a new
+   column in `community_tree_cache_tiles` (a migration, which this round does not have) or a mark
+   kept outside the tile table. Neither is built.
 2. **The card picks its body.** `MapModel` reads the answer for the settled viewport with each map
    read (before it publishes the content, so the body and the trigger change together) and again
    when a community refresh ends without changing the cache, because a tile served with no trees

@@ -237,6 +237,12 @@ final class MapModel {
     /// pin but is now asked.
     private(set) var communityAskedHere = false
 
+    /// The viewport whose read `content` holds. `viewport` moves the moment the camera does, but
+    /// `content` keeps the previous read until the next one publishes after the debounce. The
+    /// answer in `communityAskedHere` must describe the content on screen, so a read of it that
+    /// does not come from `fetch` is made for this viewport and applied only while it is current.
+    private var publishedViewport: MapViewport?
+
     /// The empty-inventory card's body for the settled viewport.
     var inventoryNoticeMessage: String {
         MapInventoryCopy.message(communityAsked: communityAskedHere)
@@ -727,6 +733,7 @@ final class MapModel {
             let asked = await communityAsked?(viewport.bounds) ?? false
             guard !Task.isCancelled else { return }
             communityAskedHere = asked
+            publishedViewport = viewport
             self.content = content
             #if DEBUG
             MapFrameProbe.shared.noteFetch()
@@ -936,10 +943,12 @@ final class MapModel {
             guard let self else { return }
             if !changed {
                 // Nothing to draw, but tiles served with no trees are now asked: read the answer
-                // for the viewport on screen, unless the camera moved on while it was read.
-                guard let current = self.viewport else { return }
-                let asked = await self.communityAsked?(current.bounds) ?? false
-                if self.viewport == current { self.communityAskedHere = asked }
+                // again for the content on screen (`publishedViewport`, not `viewport`, which may
+                // already be a camera position whose read has not published), and drop it if
+                // another read published while this one ran.
+                guard let shown = self.publishedViewport else { return }
+                let asked = await self.communityAsked?(shown.bounds) ?? false
+                if self.publishedViewport == shown { self.communityAskedHere = asked }
                 return
             }
             guard self.viewport != nil else { return }
