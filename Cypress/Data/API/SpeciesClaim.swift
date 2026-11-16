@@ -111,6 +111,11 @@ public enum SpeciesCorrectionOffer: Hashable, Sendable {
     /// A report is open. `canResolve` is whether *this* viewer may answer it: the author of the
     /// disputed claim, or a lead.
     case underReview(flagID: UUID, canResolve: Bool)
+    /// A report is open against a species this viewer named on a tree somebody else added
+    /// (ROADMAP 144). The namer may still correct their own answer (the owner's answer of
+    /// 2026-11-16, "Yes, until the adder corrects it"), and only the adder may keep it, so the
+    /// screen draws the reported line and the correction, and no "Keep the species".
+    case reportedYoursToCorrect
     /// A **city** row, whose species is disputed through R79's surface rather than through this one.
     ///
     /// The answer this case replaces was `.unavailable`, and that answer had become false: R79 made
@@ -123,4 +128,93 @@ public enum SpeciesCorrectionOffer: Hashable, Sendable {
     /// place. `TreeProfile.cityDataDispute` is the accessor a view should use;
     /// `DataDisputeTests.theTwoOffersAgreeOnACityRow` is what keeps them from disagreeing.
     case dataDispute(DataDisputeOffer)
+}
+
+/// This phone's own species acts on one community tree that the service may not include yet
+/// (ROADMAP 144). `LocalAPI.speciesAnswerState(treeID:)` reads it; `RoutedAPI` lays it over the
+/// service's answer.
+public struct SpeciesAnswerState: Hashable, Sendable {
+    /// The reader's naming or correction is still queued.
+    public let answerQueued: Bool
+    /// The reader's report is still queued.
+    public let reportQueued: Bool
+    /// The reader's "Keep the species" is still queued.
+    public let keepQueued: Bool
+    /// Any species act on this tree is still queued, by anybody on this phone.
+    public let anyActQueued: Bool
+    /// An open species report raised on this phone.
+    public let openFlagID: UUID?
+
+    public init(answerQueued: Bool, reportQueued: Bool, keepQueued: Bool, anyActQueued: Bool, openFlagID: UUID?) {
+        self.answerQueued = answerQueued
+        self.reportQueued = reportQueued
+        self.keepQueued = keepQueued
+        self.anyActQueued = anyActQueued
+        self.openFlagID = openFlagID
+    }
+}
+
+/// What the species offer on a **community** tree is decided from (ROADMAP 144).
+///
+/// The rules are the service's (`server/internal/store/species.go`), so the phone never draws a
+/// control whose act the service would record and apply to nobody:
+/// - **The adder** may always correct, and keeps a reported species with "Keep the species".
+/// - **The namer** (somebody who is not the adder and named an unnamed tree) may correct their own
+///   answer until the adder corrects or keeps it, or the operator corrects it. A namer who does not
+///   share counts for nothing on the service, so the namer's arm needs `readerShares`.
+/// - **Anybody else who shares** may report a named species as wrong.
+/// - **Nobody else** gets a control. The reported line is drawn to everybody, because it is a fact
+///   about the tree and not a control.
+///
+/// `LocalAPI` fills it from this phone's tables; `RoutedAPI` fills it again with the service's
+/// answer when the service sent one. Both decide through `offer(placeholderFlagID:)`, so the two
+/// paths cannot draw different controls for the same facts.
+public struct SpeciesAnswerFacts: Hashable, Sendable {
+    /// The profile shows a species (on a cached tree, after the reader's own answer is laid over it).
+    public var hasSpecies: Bool
+    /// The reader added the tree, by this phone's own record.
+    public var isAdder: Bool
+    /// The species in force is the reader's own naming, and the adder has not stepped in.
+    public var isNamer: Bool
+    /// The reader is signed in and agreed to share tree records (`ContributionSharing.sharing`).
+    public var readerShares: Bool
+    /// Somebody's report against the species in force counts.
+    public var isReported: Bool
+    /// The report the adder's "Keep the species" answers: this phone's own flag, or the service's
+    /// `species_report_flag_id`. Nil for anybody but the adder on the service's answer.
+    public var reportFlagID: UUID?
+
+    public init(
+        hasSpecies: Bool,
+        isAdder: Bool,
+        isNamer: Bool,
+        readerShares: Bool,
+        isReported: Bool,
+        reportFlagID: UUID?
+    ) {
+        self.hasSpecies = hasSpecies
+        self.isAdder = isAdder
+        self.isNamer = isNamer
+        self.readerShares = readerShares
+        self.isReported = isReported
+        self.reportFlagID = reportFlagID
+    }
+
+    /// The one control (or none) these facts allow.
+    ///
+    /// - Parameter placeholderFlagID: the id carried by an `.underReview` that the reader cannot
+    ///   resolve. Nothing reads it in that state; the tree's id is what callers pass.
+    public func offer(placeholderFlagID: UUID) -> SpeciesCorrectionOffer {
+        // An unnamed tree has nothing to correct or report; naming it is the claim control's job.
+        guard hasSpecies else { return .unavailable }
+        if isAdder {
+            if isReported, let reportFlagID { return .underReview(flagID: reportFlagID, canResolve: true) }
+            return .correctable
+        }
+        if isNamer && readerShares {
+            return isReported ? .reportedYoursToCorrect : .correctable
+        }
+        if isReported { return .underReview(flagID: reportFlagID ?? placeholderFlagID, canResolve: false) }
+        return readerShares ? .reportable : .unavailable
+    }
 }

@@ -818,6 +818,45 @@ public struct OutboxStore {
         return Set(try statement.fetchAll { try $0.uuidIfPresent("photo") }.compactMap { $0 })
     }
 
+    /// One species act on a tree that is still queued: its kind, and whose it is.
+    public struct QueuedSpeciesAct: Hashable, Sendable {
+        public let kind: OutboxItem.Kind
+        public let owner: ContributionOwner
+    }
+
+    /// The species acts this phone still has to send for one tree (ROADMAP 144): a naming, a
+    /// correction, a report, or a keep, by anybody on this phone.
+    ///
+    /// Only while queued (`pending`, or `uploading` mid-drain), the window `queuedPhotoWithdrawals`
+    /// uses and for its reason: until the act has been answered, the service's view of the tree
+    /// does not include it, so the profile lays the act over the service's answer, and a species
+    /// the service sends must not overwrite the phone's own row. A `failed` act was answered.
+    public func queuedSpeciesActs(treeID: UUID, connection: SQLiteConnection) throws -> [QueuedSpeciesAct] {
+        let statement = try connection.cachedStatement("""
+            SELECT kind,
+                   json_extract(payload, '$.attribution.userID') AS user,
+                   json_extract(payload, '$.attribution.deviceID') AS device
+              FROM outbox
+             WHERE kind IN ('species_claim', 'species_correction',
+                            'wrong_species_report', 'species_review_dismissal')
+               AND state IN ('pending', 'uploading')
+               AND json_extract(payload, '$.treeID') = :tree COLLATE NOCASE
+             ORDER BY seq
+            """)
+        _ = try statement.bind(treeID.uuidString, forName: ":tree")
+        return try statement.fetchAll { row in
+            let owner: ContributionOwner
+            if let user = try row.uuidIfPresent("user") {
+                owner = .user(user)
+            } else if let device = try row.uuidIfPresent("device") {
+                owner = .device(device)
+            } else {
+                owner = .nobody
+            }
+            return QueuedSpeciesAct(kind: try row.value("kind", OutboxItem.Kind.self), owner: owner)
+        }
+    }
+
     /// Drops the queue rows of binaries whose photograph has been withdrawn.
     ///
     /// **The drain's own half of the F1 repair, and the half that does not depend on which door the

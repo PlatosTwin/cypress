@@ -154,6 +154,12 @@ public struct ReviewReport: Codable, Hashable, Sendable {
     public let kind: ReviewFlag.Kind
     public let attribution: Attribution
     public let occurredAt: Date
+    /// The species a `wrong_species` report says is wrong (ROADMAP 144), or nil. The service counts
+    /// a report only while this is still the tree's species, so a report about a name that has
+    /// since changed stops marking the tree. Absent from a report queued by an older build and from
+    /// a `never_existed` report; the service then takes the species in force when the report
+    /// arrives. The synthesized coding omits a nil, so an older payload still decodes.
+    public let disputedSpeciesID: UUID?
 
     public init(
         clientUUID: UUID,
@@ -161,7 +167,8 @@ public struct ReviewReport: Codable, Hashable, Sendable {
         treeID: UUID,
         kind: ReviewFlag.Kind,
         attribution: Attribution,
-        occurredAt: Date
+        occurredAt: Date,
+        disputedSpeciesID: UUID? = nil
     ) {
         self.clientUUID = clientUUID
         self.flagID = flagID
@@ -169,6 +176,7 @@ public struct ReviewReport: Codable, Hashable, Sendable {
         self.kind = kind
         self.attribution = attribution
         self.occurredAt = occurredAt
+        self.disputedSpeciesID = disputedSpeciesID
     }
 }
 
