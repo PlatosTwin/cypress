@@ -39,10 +39,6 @@ final class MovePinUITests: XCTestCase, DeepLinkHarness {
         // app owner's words of 2026-11-14.
         static let outboxRowPrefix = "Pin moved · "
         static let journalRowPrefix = "Moved the pin of "
-        static let journalTab = "Journal"
-        static let yoursSegment = "Yours"
-        static let youTab = "You"
-        static let outboxRow = "Outbox"
     }
 
     // MARK: - 1 · Move a tree you added
@@ -144,39 +140,32 @@ final class MovePinUITests: XCTestCase, DeepLinkHarness {
             "after Save the profile still does not say the position was placed by hand"
         )
 
-        // The Journal, on its own list.
-        let journalTab = app.buttons[Copy.journalTab]
-        assertReachable(journalTab, "the Journal tab")
-        journalTab.tap()
-        let yours = app.buttons[Copy.yoursSegment]
-        if yours.waitForExistence(timeout: 10) {
-            assertReachable(yours, "the Journal's Yours segment")
-            yours.tap()
-        }
-        let journalRow = app.buttons
+        // The profile is a pushed screen with no tab bar, so the two lists are opened the way the
+        // rest of this target opens them: by relaunching on their deep links. The move is stored,
+        // so it is still there.
+        let journal = launch("journalList")
+        let journalRow = journal.buttons
             .matching(NSPredicate(format: "label BEGINSWITH %@", Copy.journalRowPrefix))
             .firstMatch
-        XCTAssertTrue(
-            journalRow.waitForExistence(timeout: 20),
-            "the Journal drew no row whose label begins '\(Copy.journalRowPrefix)' after a move"
-        )
+        guard journalRow.waitForExistence(timeout: 60) else {
+            XCTFail(
+                deepLinkFailure(journal).map { "journalList: \($0)" }
+                    ?? "the Journal drew no row whose label begins '\(Copy.journalRowPrefix)' after a move"
+            )
+            return
+        }
 
-        // The Outbox, from the You tab.
-        let youTab = app.buttons[Copy.youTab]
-        assertReachable(youTab, "the You tab")
-        youTab.tap()
-        let outboxRow = app.buttons
-            .matching(NSPredicate(format: "label BEGINSWITH %@", Copy.outboxRow))
-            .firstMatch
-        assertReachable(outboxRow, "the You tab's Outbox row")
-        outboxRow.tap()
-        let pinMoved = app.staticTexts
+        let outbox = launch("outbox")
+        let pinMoved = outbox.staticTexts
             .matching(NSPredicate(format: "label BEGINSWITH %@", Copy.outboxRowPrefix))
             .firstMatch
-        XCTAssertTrue(
-            pinMoved.waitForExistence(timeout: 20),
-            "the Outbox drew no row titled '\(Copy.outboxRowPrefix)…' after a move"
-        )
+        guard pinMoved.waitForExistence(timeout: 60) else {
+            XCTFail(
+                deepLinkFailure(outbox).map { "outbox: \($0)" }
+                    ?? "the Outbox drew no row titled '\(Copy.outboxRowPrefix)…' after a move"
+            )
+            return
+        }
     }
 
     // MARK: - 2 · Where the link sits on the profile
