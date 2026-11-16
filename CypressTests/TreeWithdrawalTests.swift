@@ -672,4 +672,101 @@ struct TreeWithdrawalTests {
                 == "Everyone using Cypress stops seeing this tree once this is sent. If someone else has visited or photographed it, it stays. This cannot be undone.")
         #expect(TreeProfilePresentation(profile: shared).treeWithdrawal == .available)
     }
+
+    // MARK: - 6. The report link beside the withdraw link (ROADMAP 172)
+
+    /// The owner's answer of 2026-11-16, "Hide it while withdraw shows": the adder who is offered
+    /// `Withdraw this tree` is not offered `Report that there is no tree here`; the reason line
+    /// brings the report back. The rule is the presentation's (`TreeProfilePresentation
+    /// .recordDefect`), so the API's own offer is unchanged.
+    ///
+    /// Red-proof: return `profile.recordDefect` unchanged from the presentation — red on "the adder
+    /// who can withdraw is still offered the report".
+    @Test("the adder who can withdraw is not offered the report, and the API's own offer is unchanged")
+    func theAdderWhoCanWithdrawIsNotOfferedTheReport() async throws {
+        let store = try await CypressStore.inMemory()
+        let api = LocalAPI(store: store, deviceID: Fixture.deviceID, userID: Fixture.userID)
+        let tree = try await Fixture.add(api)
+
+        let profile = try await api.treeProfile(id: tree.id)
+        #expect(profile.treeWithdrawal == .available, "fixture: the adder is not offered the withdrawal")
+        #expect(profile.recordDefect == .reportable, "the API's own offer changed: \(profile.recordDefect)")
+        let drawn = TreeProfilePresentation(profile: profile)
+        #expect(drawn.treeWithdrawal == .available)
+        #expect(drawn.recordDefect == .unavailable,
+                "the adder who can withdraw is still offered the report: \(drawn.recordDefect)")
+    }
+
+    /// Red-proof: make the presentation hide `.reportable` for every adder (drop the
+    /// `treeWithdrawal == .available` test) — red on "the reason line did not bring the report back".
+    @Test("the reason line brings the report back, from the phone's own facts and from the service's")
+    func theReasonLineBringsTheReportBack() async throws {
+        let store = try await CypressStore.inMemory()
+        let api = LocalAPI(store: store, deviceID: Fixture.deviceID, userID: Fixture.userID)
+        let tree = try await Fixture.add(api)
+
+        // Another account's visit that has reached the service: the phone's own fact.
+        let visit = try await Self.visit(
+            store, on: tree.id, by: Attribution(userID: Self.otherUserID, deviceID: Fixture.deviceID)
+        )
+        let item = try OutboxPayload.visit(visit).makeItem()
+        _ = try await store.queue.write { try OutboxStore().enqueue(item, connection: $0) }
+        try await store.queue.write { connection in
+            try connection.execute(
+                "UPDATE outbox SET local_applied = 1, remote_sent = 1, state = 'done' WHERE kind = 'visit'"
+            )
+        }
+        let local = TreeProfilePresentation(profile: try await api.treeProfile(id: tree.id))
+        #expect(local.treeWithdrawal == .othersHaveAddedToIt, "fixture: the reason line is not drawn")
+        #expect(local.recordDefect == .reportable,
+                "the reason line did not bring the report back: \(local.recordDefect)")
+
+        // The service's fact: `RoutedAPI.withdrawalOffer` turned `.available` into the reason line
+        // after `LocalAPI` answered `.reportable`.
+        let routed = TreeProfile(
+            tree: tree, recordDefect: .reportable, treeWithdrawal: .othersHaveAddedToIt,
+            addedByYou: true, isAddedHere: true
+        )
+        #expect(TreeProfilePresentation(profile: routed).recordDefect == .reportable,
+                "the service's reason line did not bring the report back")
+    }
+
+    /// A report the adder already raised keeps its line; a reader who did not add the tree, and a
+    /// city tree, see what they saw before. Red-proof: make the presentation return `.unavailable`
+    /// for every arm while withdrawal is `.available` — red on "the adder's own report lost its line".
+    @Test("a report already raised keeps its line, and a stranger and a city tree are unaffected")
+    func everyOtherOfferPassesThrough() async throws {
+        let store = try await CypressStore.inMemory()
+        let adder = LocalAPI(store: store, deviceID: Fixture.deviceID)
+        let stranger = LocalAPI(store: store, deviceID: Fixture.otherDeviceID)
+        let tree = try await Fixture.add(adder)
+
+        // Somebody who did not add the tree: no withdrawal, so the report is drawn as before.
+        let strangers = TreeProfilePresentation(profile: try await stranger.treeProfile(id: tree.id))
+        #expect(strangers.treeWithdrawal == .unavailable, "fixture: a stranger is offered the withdrawal")
+        #expect(strangers.recordDefect == .reportable,
+                "a reader who did not add the tree lost the report: \(strangers.recordDefect)")
+
+        // The adder's own report, queued before this change shipped: still on record, still drawn.
+        try await adder.flagNeverExisted(treeID: tree.id)
+        let reported = TreeProfilePresentation(profile: try await adder.treeProfile(id: tree.id))
+        #expect(reported.treeWithdrawal == .available, "fixture: the report took the withdrawal away")
+        guard case .underReview = reported.recordDefect else {
+            Issue.record("the adder's own report lost its line: \(reported.recordDefect)")
+            return
+        }
+
+        // A city tree: its data-dispute arm, whatever a stray withdrawal value says.
+        let city = Tree(
+            id: UUID(), externalRef: "13284", source: .cityImport,
+            coordinate: Coordinate(latitude: 37.799, longitude: -122.443),
+            address: "2576 Lombard St", status: .alive, plantedYear: 1993,
+            verificationState: .cityRecord
+        )
+        let cityProfile = TreeProfile(
+            tree: city, recordDefect: .dataDispute(.raisable), treeWithdrawal: .available
+        )
+        #expect(TreeProfilePresentation(profile: cityProfile).recordDefect == .dataDispute(.raisable),
+                "a city tree's record controls changed")
+    }
 }

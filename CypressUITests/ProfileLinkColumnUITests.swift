@@ -5,8 +5,9 @@
 //  ROADMAP 119: the column of text links under a tree's name on screen 03.
 //
 //  On the profile of a tree this phone added with no species, four links sit one under the next:
-//  `Show me where this is`, `Move pin`, `Say what species you think this is` and `Report that there
-//  is no tree here`. Their label centers are about 18 pt apart, and each link's tap area is 44 pt
+//  `Show me where this is`, `Move pin`, `Say what species you think this is` and `Withdraw this
+//  tree`. (`Report that there is no tree here` stood fourth until the owner's answer of 2026-11-16
+//  hid it while the withdraw link shows.) Their label centers are about 18 pt apart, and each link's tap area is 44 pt
 //  tall, so the tap areas of two neighbors can overlap. The owner wants the column tight
 //  (2026-11-14), so the fix is in the tap areas and not in the spacing.
 //
@@ -35,8 +36,8 @@ final class ProfileLinkColumnUITests: XCTestCase, DeepLinkHarness {
         static let movePin = "Move pin"
         /// `TreeProfileCopy.claimSpeciesAction`
         static let claimSpecies = "Say what species you think this is"
-        /// `TreeProfileCopy.reportNeverExistedAction`
-        static let reportNoTree = "Report that there is no tree here"
+        /// `TreeProfileCopy.withdrawTreeAction`
+        static let withdrawTree = "Withdraw this tree"
 
         /// `PinSetCopy.recenterLabel(_:)`: the screen `Show me where this is` opens.
         static let pinSetRecenterPrefix = "Center the map on"
@@ -46,13 +47,15 @@ final class ProfileLinkColumnUITests: XCTestCase, DeepLinkHarness {
         static let speciesPickTitle = "Which species?"
         /// `SpeciesPickCopy.skip`: how that cover is left without a claim.
         static let speciesPickSkip = "I'm not sure"
-        /// `TreeProfileCopy.recordReported`: what the profile says after `Report` was pressed.
-        static let recordReported = "This record has been reported as never having held a tree."
+        /// `TreeProfileCopy.withdrawTreeConfirmTitle`: the alert `Withdraw this tree` opens.
+        static let withdrawTreeTitle = "Withdraw this tree?"
+        /// `TreeProfileCopy.withdrawTreeCancel`: how that alert is left without withdrawing.
+        static let withdrawTreeKeep = "Keep it"
         static let back = "Back"
     }
 
     /// The column, top to bottom. A link's position in this list is its position on screen.
-    private static let column = [Copy.showWhere, Copy.movePin, Copy.claimSpecies, Copy.reportNoTree]
+    private static let column = [Copy.showWhere, Copy.movePin, Copy.claimSpecies, Copy.withdrawTree]
 
     // MARK: - 1 · Each tap reaches the link it was meant for
 
@@ -60,8 +63,8 @@ final class ProfileLinkColumnUITests: XCTestCase, DeepLinkHarness {
     /// 2 pt below it. Each tap must open the link on its own side.
     ///
     /// The taps are placed from the frames the screen reports, not from numbers chosen here, so the
-    /// test follows the layout wherever it is. `Report` writes a flag on the record and its link then
-    /// goes away, so the one tap that may press it is the last tap of the run.
+    /// test follows the layout wherever it is. `Withdraw this tree` only asks first, and the test
+    /// answers `Keep it`, so the tree is still there for the next tap.
     func testATapOnEitherSideOfTheMidpointOpensThatLinkAndNotItsNeighbor() {
         let app = launchColumn()
         guard arriveAtColumn(app) else { return }
@@ -183,7 +186,7 @@ final class ProfileLinkColumnUITests: XCTestCase, DeepLinkHarness {
             ),
             (Copy.movePin, app.staticTexts[Copy.movePinUnmoved]),
             (Copy.claimSpecies, app.staticTexts[Copy.speciesPickTitle]),
-            (Copy.reportNoTree, app.staticTexts[Copy.recordReported]),
+            (Copy.withdrawTree, app.staticTexts[Copy.withdrawTreeTitle]),
         ]
         let deadline = Date().addingTimeInterval(15)
         while Date() < deadline {
@@ -193,16 +196,20 @@ final class ProfileLinkColumnUITests: XCTestCase, DeepLinkHarness {
         return nil
     }
 
-    /// Back to the profile after `link` opened, with the column reachable again. `Report` opens
-    /// nothing, so after it there is nothing to leave.
+    /// Back to the profile after `link` opened, with the column reachable again. `Withdraw this
+    /// tree` opens an alert, and `Keep it` leaves it without withdrawing.
     private func returnToProfile(from link: String, in app: XCUIApplication) {
         switch link {
         case Copy.claimSpecies:
             let skip = app.buttons[Copy.speciesPickSkip]
             assertReachable(skip, "the species picker's '\(Copy.speciesPickSkip)'")
             skip.tap()
-        case Copy.reportNoTree:
-            return
+        case Copy.withdrawTree:
+            let keep = app.buttons[Copy.withdrawTreeKeep]
+            assertReachable(keep, "the withdraw alert's '\(Copy.withdrawTreeKeep)'")
+            keep.tap()
+            XCTAssertTrue(app.staticTexts[Copy.withdrawTreeTitle].waitForNonExistence(timeout: 10),
+                          "'\(Copy.withdrawTreeKeep)' left the withdraw alert up")
         default:
             let back = app.buttons[Copy.back]
             assertReachable(back, "the Back control after '\(link)'")

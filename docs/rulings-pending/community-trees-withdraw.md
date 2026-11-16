@@ -153,3 +153,36 @@ The screen leaves through the lead's `withdrewRecord` path. A `notFound` also le
 is already gone. Any other refusal (a sign-out between the read and the tap) reloads the profile, and
 the reload draws the record controls as they now are. **No sentence is drawn for that refusal: the
 owner has given none, and none was invented.** If the owner wants one, it is theirs to choose.
+
+---
+
+## Added after pull request 241 opened (branch `feat/withdraw-owner-answers`)
+
+### R??? — The report link hides while the withdraw link shows (the owner's answer, 2026-11-16)
+
+Q: "On a tree you added, the profile shows "Report that there is no tree here" directly above the
+new "Withdraw this tree". Should the adder still see the report link on their own tree?"
+Chosen: **"Hide it while withdraw shows"**. "The adder sees only "Withdraw this tree". When the tree
+cannot be withdrawn because others added to it, the report link comes back as the adder's way to say
+the tree is gone." Not chosen: "Keep both links"; "Always hide the report".
+
+This replaces the placement in answer 1 above ("below "Report that there is no tree here"") for the
+state in which the withdraw link is drawn.
+
+### R??? — Where that rule lives (the author's design note)
+
+- **In the presentation, over the final profile.** `TreeProfilePresentation.recordDefect` draws
+  `.reportable` as nothing exactly while `treeWithdrawal` is `.available`. Every other offer passes
+  through unchanged. The rule is not in `LocalAPI`'s offer, because the withdrawal offer is final
+  only after `RoutedAPI.withdrawalOffer` has read the service's photographs, and that read can turn
+  `.available` into the reason line. A rule in the local offer would hide the report on a tree whose
+  profile then draws the reason line, which is the state the owner wants the report back in.
+- **The verb `flagNeverExisted` does not refuse the adder.** A report is still a valid act on a
+  community tree this phone added, and the verb cannot see the service's photographs, so a refusal
+  there could refuse a report the screen offers. The screen simply does not offer it while the
+  withdraw link shows.
+- **A report the adder already raised is not lost.** It reads `.underReview`, which is not hidden,
+  so the profile still draws `This record has been reported as never having held a tree.` beside
+  the withdraw link. A queued report is a local flag, so it reads the same way before it is sent.
+- A reader who did not add the tree, a signed-out reader on a tree their account added, and a city
+  tree never have `.available`, so they see what they saw before.

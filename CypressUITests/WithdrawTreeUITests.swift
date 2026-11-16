@@ -7,10 +7,12 @@
 //
 //  1. A tree this installation just added, signed out, offers `Withdraw this tree`. The alert asks
 //     first, with the "only you" message. `Withdraw tree` takes the reader back off the profile, and
-//     the tree's profile no longer opens.
+//     the tree's profile no longer opens. While the control shows, `Report that there is no tree
+//     here` does not (the owner's answer of 2026-11-16).
 //  2. Signed in and sharing, the alert carries the shared message.
 //  3. Signed in and sharing, with another account's visit on the tree, the reason line draws in
-//     place of the control, and the profile does not say only the reader can see the tree.
+//     place of the control, below the report link that comes back in this state, and the profile
+//     does not say only the reader can see the tree.
 //  4. After the service refuses (`debugRefuseTreeWithdrawal`), the Outbox row reads
 //     `Tree withdrawn · …` with the owner's sentence.
 //  5. A city tree offers no control.
@@ -65,12 +67,17 @@ final class WithdrawTreeUITests: XCTestCase, DeepLinkHarness {
     func testWithdrawingATreeOnlyYouCanSeeAsksAndThenLeavesTheProfile() {
         guard let (app, action) = arriveAtControl("withdrawTree") else { return }
 
-        // The control sits below "Report that there is no tree here", in the same column. The
-        // report link is on this screen for a tree the reader added, so its absence is a failure.
-        let report = app.buttons[Copy.reportNoTree]
-        XCTAssertTrue(report.exists, "the profile drew no '\(Copy.reportNoTree)' to place the control under")
-        XCTAssertLessThan(report.frame.midY, action.frame.midY, "the control is not below the report link")
-        XCTAssertEqual(report.frame.minX, action.frame.minX, accuracy: 1, "the control is not in the report link's column")
+        // The control is present (`arriveAtControl`) and sits in the column of the links above it,
+        // with `Show me where this is` as the reference: it is drawn on every profile. While the
+        // control shows, the report link is not drawn (the owner's answer of 2026-11-16, "Hide it
+        // while withdraw shows"); the control's presence is what makes that absence a fact.
+        let showWhere = app.buttons[Copy.showWhere]
+        XCTAssertTrue(showWhere.exists, "the profile drew no '\(Copy.showWhere)' to measure the column by")
+        XCTAssertLessThan(showWhere.frame.midY, action.frame.midY, "the control is not below the column's first link")
+        XCTAssertEqual(showWhere.frame.minX, action.frame.minX, accuracy: 1, "the control is not in the links' column")
+        XCTAssertFalse(app.buttons[Copy.reportNoTree].exists,
+                       "'\(Copy.reportNoTree)' is drawn beside '\(Copy.action)'")
+        attachScreenshot(app, "withdraw-profile-control-only-you")
 
         action.tap()
         let title = app.staticTexts[Copy.title]
@@ -117,6 +124,11 @@ final class WithdrawTreeUITests: XCTestCase, DeepLinkHarness {
             )
             return
         }
+        // The report link comes back in this state, as the adder's way to say the tree is gone (the
+        // owner's answer of 2026-11-16), and the reason line sits below it.
+        let report = app.buttons[Copy.reportNoTree]
+        XCTAssertTrue(report.exists, "the reason line is drawn without '\(Copy.reportNoTree)' above it")
+        XCTAssertLessThan(report.frame.midY, line.frame.midY, "the reason line is not below the report link")
         XCTAssertFalse(app.buttons[Copy.action].exists, "the control is drawn beside its reason line")
         // A screen a person can reach: another account can only build on a tree everyone sees, so
         // the profile must not also say that only the reader can see it.

@@ -619,7 +619,25 @@ struct TreeProfilePresentation {
     /// claim that the record was never true is *most* worth making about a record the app has
     /// stopped taking contributions on, and a memorial for a tree that never lived is precisely the
     /// state R46 exists to prevent.
-    var recordDefect: RecordDefectOffer { profile.recordDefect }
+    ///
+    /// ── One narrowing, made here: the adder who can withdraw is not offered the report ──────────
+    ///
+    /// The owner's answer of 2026-11-16 ("Hide it while withdraw shows"): "The adder sees only
+    /// "Withdraw this tree". When the tree cannot be withdrawn because others added to it, the report
+    /// link comes back as the adder's way to say the tree is gone." So `.reportable` is drawn as
+    /// `.unavailable` exactly while `treeWithdrawal` is `.available`. Every other arm passes through:
+    /// a report already raised still reads `.underReview`, the reason line brings the link back, and
+    /// a reader who did not add the tree never has `.available`.
+    ///
+    /// **Here and not in `LocalAPI`**, because the withdrawal offer is final only after
+    /// `RoutedAPI.withdrawalOffer` has read the service's photographs, which can turn `.available`
+    /// into `.othersHaveAddedToIt`. A rule in the local offer would hide the link on a tree whose
+    /// profile then draws the reason line. `flagNeverExisted` is left as it is: a report is still a
+    /// valid act on a community tree this phone added, and the screen simply does not offer it.
+    var recordDefect: RecordDefectOffer {
+        if case .reportable = profile.recordDefect, treeWithdrawal == .available { return .unavailable }
+        return profile.recordDefect
+    }
 
     /// Whether this screen offers to move the tree's pin: the owner's Move pin control of
     /// 2026-11-12, **NOT SPECIFIED** in SCREENS.md. Read straight off the payload for

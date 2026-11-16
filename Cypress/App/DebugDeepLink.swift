@@ -169,10 +169,10 @@ enum DebugDeepLink {
         case movePin
         /// 03 over a **fresh** community tree this installation just added, with **no species**: the
         /// state where the identity block draws its full column of links, one under the next — `Show
-        /// me where this is`, `Move pin`, `Say what species you think this is` and `Report that there
-        /// is no tree here` (ROADMAP 119). Fresh on every launch, like `.movePin`, because the test
-        /// that drives it presses `Report`, which writes a flag, and a tree a previous run reported
-        /// no longer draws that link. Each launch takes the first free slot on its own line
+        /// me where this is`, `Move pin`, `Say what species you think this is` and `Withdraw this
+        /// tree` (ROADMAP 119; the report link is hidden while the withdraw link shows, the owner's
+        /// answer of 2026-11-16). Fresh on every launch, like `.movePin`, so no earlier run's state
+        /// reaches the column. Each launch takes the first free slot on its own line
         /// (`profileLinksSpot`).
         case profileLinks
         /// Screen 07 with a nearby hero drawn from a photograph **this installation took under an
