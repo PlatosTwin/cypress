@@ -418,7 +418,9 @@ All pills: `border-radius: 999px`.
   `HStack(spacing:11)`, `align-items:center`, shadow `0 1px 3px rgba(25,40,28,.05)`.
 - Leading thumb: 38×38, `border-radius:10px`, either a photo gradient or a tinted tile
   (`#E2EFE2` with the 12×12 `#2F6B4F` leaf glyph for Care; `#EDEEE6` with mono 10px `SYNC` in
-  `#5C6555` for the city-sync row on 19).
+  `#5C6555` for the city-sync row on 19; the community tree mark for a community tree's history
+  rows: the C19 community pin, 18×18, dashed `2.5px` Canopy ring on `#EDF1E3`, centered on the
+  `#EDEEE6` SYNC ground; the app owner's decision of 2026-11-15).
 - Body: 13.5px, `<b>` label + ` · ` + detail.
 - Trailing timestamp: Spline Sans Mono 11px, `#8B9482`, `white-space:nowrap`, pushed with
   `margin-left:auto`.
