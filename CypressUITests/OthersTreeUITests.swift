@@ -96,6 +96,9 @@ final class OthersTreeUITests: XCTestCase, DeepLinkHarness {
         // and nothing of the city's inventory, which has no rows out at sea. A pinned camera is
         // never written back (`DebugMapCamera`).
         app.launchEnvironment[DebugMapCamera.key] = "37.7744,-122.5300,150"
+        // The map opens on the reader when it has a fix (`MapCenteredStateUITests`), so the fix is
+        // pinned to the same spot (`DebugLocationOverride`, `CYPRESS_LOCATION`).
+        app.launchEnvironment["CYPRESS_LOCATION"] = "37.7744,-122.5300"
         app.launch()
 
         let pin = app.descendants(matching: .any)
