@@ -328,8 +328,10 @@ struct WithdrawBeforeAccountDeletionTests {
     /// The deletion starts while a drain holds the withdrawal `uploading`. It must wait for that
     /// drain, not race it.
     ///
-    /// Red-proof: remove `await waitUntilIdle()` from `sendBeforeAccountDeletion` — red on the
-    /// deletion's throw (the row is still `uploading` in the other drain, so it counts as unsent).
+    /// Red-proof: remove `await waitUntilIdle()` from `sendBeforeAccountDeletion` — the two passes
+    /// race: the log reads `["sync tree_withdrawal", "DELETE /me", "sync tree_withdrawal"]`, the
+    /// held drain's late send is refused, and the test is red on "the tree came back" and "the
+    /// withdrawal row is .failed".
     @Test("a drain already running is waited for, and the withdrawal still goes first")
     func aRunningDrainIsWaitedFor() async throws {
         let phone = try await Phone()
