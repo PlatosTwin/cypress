@@ -117,8 +117,11 @@ there". **Chosen: "Show the old text there".**
      in the app that deletes tile rows. Sign-out (`LocalAPI.signOut`) and both account deletion
      doors (`AccountDeletion.delete`) do not touch the cache or its tile table (the trees are
      other people's, and no account owns a tile), and nothing else wipes the cache. Each is
-     covered by `CommunityTileCompleteTests`, and a source guard there fails if a file deletes tile
-     rows without clearing the mark.
+     covered by `CommunityTileCompleteTests`. That `dropTile` clears the mark is proved by behavior
+     there (`dropTileDropsTheMark`, `aRefusedCursorResetsTheMark`). A source guard there proves
+     only one narrower fact: the one app file that spells out a `DELETE FROM` or `DROP TABLE` on the
+     tile table, in any case, is `CommunityTreeCacheStore.swift`. It does not see an interpolated
+     table name or a deleted database file, and it does not check that the mark is cleared.
    - **Rows written before this build** have no mark, so those tiles read as not asked (the first
      body) until the next pass for each reaches the last page, which a delta from the stored cursor
      usually does in one page. That is the honest reading for a row whose pass may have stopped

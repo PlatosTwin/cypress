@@ -232,28 +232,32 @@ struct CommunityTileCompleteTests {
         #expect(try await Self.asked(store) == (hasRow && hasMark))
     }
 
-    /// Every statement in the app that deletes a tile's row lives in a file that also clears the
-    /// complete mark, so a new reset path cannot leave a mark standing over a tile that is gone.
+    /// **What this proves, and only this:** the set of app source files that spell out a statement
+    /// deleting tile rows (`DELETE FROM` or `DROP TABLE` on `community_tree_cache_tiles`, in any
+    /// case, with or without `main.`) is exactly `CommunityTreeCacheStore.swift`. A new reset path
+    /// written as such a statement in another file turns this red, and whoever adds it has to decide
+    /// what happens to the complete mark there.
     ///
-    /// Red-proof: add `"DELETE FROM community_tree_cache_tiles"` to a string in `LocalAPI.signOut`
-    /// — red on "deletes tile rows without clearing the complete mark".
-    @Test("every deletion of tile rows sits beside the complete mark's deletion")
-    func everyTileDeletionClearsTheMark() throws {
+    /// **What it does not prove.** That the deleter clears the mark: `dropTileDropsTheMark` and
+    /// `aRefusedCursorResetsTheMark` prove that by behavior. Nor does it see a table name built by
+    /// interpolation, or a deletion of the whole database file.
+    ///
+    /// Red-proof: add `"delete from community_tree_cache_tiles"` to a string in `LocalAPI.signOut`
+    /// — red on "tile rows are deleted in".
+    @Test("the only file that deletes tile rows is the cache store")
+    func onlyTheCacheStoreDeletesTileRows() throws {
         let root = AppSourceLiterals.repositoryRoot()
         let files = AppSourceLiterals.sourceFiles(root: root)
         #expect(files.count > 100, "the source walk found only \(files.count) files under \(root.path)")
-        let deletion = try Regex("DELETE\\s+FROM\\s+(main\\.)?community_tree_cache_tiles\\b")
+        let deletion = try Regex(
+            "(delete\\s+from|drop\\s+table(\\s+if\\s+exists)?)\\s+(main\\.)?community_tree_cache_tiles\\b"
+        ).ignoresCase()
         var deleters: [String] = []
         for file in files {
             let text = try String(contentsOf: file, encoding: .utf8)
-            guard text.contains(deletion) else { continue }
-            deleters.append(file.lastPathComponent)
-            #expect(
-                text.contains("completeKey(tile:"),
-                "\(file.lastPathComponent) deletes tile rows without clearing the complete mark"
-            )
+            if text.contains(deletion) { deleters.append(file.lastPathComponent) }
         }
-        // The calibration: the one deleter there is today is found.
+        // The calibration: the one deleter there is today is found, so an empty walk cannot pass.
         #expect(deleters == ["CommunityTreeCacheStore.swift"], "tile rows are deleted in \(deleters)")
     }
 }
