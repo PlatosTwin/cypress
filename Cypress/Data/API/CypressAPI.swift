@@ -75,6 +75,21 @@ public protocol CypressAPI: Sendable {
         locationAccuracyM: Double?
     ) async throws -> Tree
 
+    /// The adder withdraws a community tree for everyone (the owner's decision 8; `TreeWithdrawal`).
+    ///
+    /// Sets the tree's `deleted_at` and queues a `tree_withdrawal`, in one transaction. The tree
+    /// leaves this phone at once. The service may still refuse, and then the tree comes back
+    /// (`OutboxQueue.settle`).
+    ///
+    /// - Throws: `.notFound` when there is no such tree, or it is already withdrawn; `.forbidden`
+    ///   when the tree is real and not this person's to withdraw: a city row, somebody else's tree
+    ///   from the cache, or a tree this phone added whose adder is not whoever is asking (which
+    ///   covers a signed-out phone and a tree whose adder is nobody).
+    ///
+    /// Defaulted in `TreeWithdrawal.swift` to `.notFound`. **Declared here and not only in an
+    /// extension**, for the reason `photoData` gives below at length (ERRATA E125).
+    func withdrawTree(treeID: UUID) async throws
+
     /// Names the species on a community tree that has none — the "after" half of "add tree species
     /// after/at same time as adding a custom tree".
     ///
@@ -1163,6 +1178,14 @@ public struct TreeProfile: Hashable, Sendable {
     /// `false` for every stub and preview, the safe direction: it offers nothing.
     public let canMovePin: Bool
 
+    /// What the profile offers about withdrawing this tree (the owner's answers of 2026-11-16;
+    /// `TreeWithdrawalOffer` says when each case is drawn). Not gated on whether the service has
+    /// received the tree, unlike `canMovePin`: the service answers a withdrawal of a tree it does
+    /// not hold with `applied`, and the tree's add then arrives withdrawn.
+    ///
+    /// `.unavailable` for every stub and preview, the safe direction: it offers nothing.
+    public let treeWithdrawal: TreeWithdrawalOffer
+
     /// Whether the reader added this community tree (round C2). Carried for the round that draws
     /// it (C3, "the reader's own rows say 'you'"); nothing in C2 draws it.
     ///
@@ -1230,6 +1253,7 @@ public struct TreeProfile: Hashable, Sendable {
         recordDefect: RecordDefectOffer = .unavailable,
         statusProvenance: TreeStatusProvenance = .record,
         canMovePin: Bool = false,
+        treeWithdrawal: TreeWithdrawalOffer = .unavailable,
         addedByYou: Bool = false,
         communityHistory: CommunityTreeHistory? = nil,
         isAddedHere: Bool = false,
@@ -1259,6 +1283,7 @@ public struct TreeProfile: Hashable, Sendable {
         self.recordDefect = recordDefect
         self.statusProvenance = statusProvenance
         self.canMovePin = canMovePin
+        self.treeWithdrawal = treeWithdrawal
         self.addedByYou = addedByYou
         self.communityHistory = communityHistory
         self.isAddedHere = isAddedHere

@@ -24,10 +24,9 @@ import (
 // way: the service ships first (S1 and S2 deploy before any client PR merges, so a TestFlight build
 // can never queue a kind the service refuses), and C1 adds the cases. The value is the case C1 must
 // declare, **name and raw value both**, and the test below holds C1 to it the moment it lands.
-var kindsAwaitingTheirClient = map[string]string{
-	"location_correction": "locationCorrection",
-	"tree_withdrawal":     "treeWithdrawal",
-}
+//
+// Empty now: C1 declared `locationCorrection`, and the withdrawal round declared `treeWithdrawal`.
+var kindsAwaitingTheirClient = map[string]string{}
 
 // TestTheOutboxKindsMatchTheSwiftVocabulary holds `syncKinds` to `OutboxItem.Kind`.
 //

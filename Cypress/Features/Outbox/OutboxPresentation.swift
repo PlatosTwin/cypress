@@ -385,6 +385,8 @@ enum OutboxCopy {
         // line (see `detail(for:)`). A refused move reads `refusedTerminally`, the sentence every
         // other kind reads; `OutboxFailureReason.describe` does not look at the kind.
         case .locationCorrection: return "Pin moved"
+        // The owner's words, chosen on 2026-11-16 with the control's. No second line.
+        case .treeWithdrawal: return "Tree withdrawn"
         }
     }
 
@@ -447,7 +449,9 @@ enum OutboxCopy {
              // A moved pin: the owner ruled on 2026-11-14 that its row has no second line. The
              // label `Pin moved` already says what the person did, and printing coordinates would
              // be worse than nothing.
-             .locationCorrection:
+             .locationCorrection,
+             // A withdrawn tree: `Tree withdrawn` says it all, and the act carries nothing more.
+             .treeWithdrawal:
             return nil
 
         // The one §3.4-shaped kind that *does* carry a sub-line, because the fact is on the payload

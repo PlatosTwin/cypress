@@ -769,6 +769,8 @@ struct RemoteAPITests {
             // refusal rather than a missing route — `POST /trees` exists and names the tree by the
             // act's key, not the tree's id (the one-id rule, `CommunityLayer`).
             "addTree", "correctLocation",
+            // The adder's withdrawal (decision 8): queued as `tree_withdrawal`, never called.
+            "withdrawTree",
             // Spec §3.4's nine unqueued mutations, plus the export D12 has not built.
             "claimSpecies", "correctSpecies", "flagWrongSpecies", "dismissSpeciesReview",
             "flagNeverExisted", "withdrawRecord", "dismissRecordReview", "setPhotoVote",
@@ -979,6 +981,16 @@ struct RemoteAPITests {
                 placement: .gps,
                 locationAccuracyM: nil
             )
+        }
+        #expect(transport.calls.isEmpty)
+    }
+
+    /// A tree withdrawal is queued, never called: `withdrawTree` has no route on the service.
+    @Test("withdrawTree has no route here")
+    func withdrawTreeHasNoRoute() async throws {
+        let transport = ScriptedTransport()
+        await #expect(throws: RemoteSurface.noRouteOnThisService) {
+            try await Self.api(transport).withdrawTree(treeID: UUID())
         }
         #expect(transport.calls.isEmpty)
     }

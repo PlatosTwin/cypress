@@ -1387,6 +1387,34 @@ public struct OutboxStore {
             // The staged JPEGs these rows point at are removed by `LocalAPI.deleteAccount` before
             // this transaction opens; `AccountDeletion.photoBytes` reads them from this same
             // `photo_paths` column, which is why that read has to happen first.
+            //
+            // **A withdrawal discarded here puts its tree back first.** The tree's tombstone was
+            // written on this phone when the withdrawal was queued, and the service never saw the
+            // withdrawal. If the service keeps the tree (another identity built on it, so the
+            // answer lists it as anonymized), `AccountDeletion.forgetCommunityTrees` keeps it here
+            // too, and without this step this phone alone would hide a tree everyone else sees.
+            // Only a row the service has not accepted (`remote_sent = 0`) counts: an accepted one
+            // took the tree off the service as well. A `failed` row already put its tree back
+            // (`OutboxQueue.settle`). The restore undoes only the tombstone this row wrote.
+            let unsentWithdrawals = try connection.cachedStatement("""
+                SELECT id, json_extract(payload, '$.treeID') AS tree
+                  FROM outbox
+                 WHERE kind = '\(OutboxItem.Kind.treeWithdrawal.rawValue)'
+                   AND \(mine)
+                   AND remote_sent = 0 AND state <> 'failed'
+                """)
+            _ = try unsentWithdrawals.bind([":user": userID.uuidString])
+            let withdrawals = try unsentWithdrawals.fetchAll { row in
+                (outbox: try row.uuid("id"), tree: try row.stringIfPresent("tree").flatMap(UUID.init(uuidString:)))
+            }
+            _ = try unsentWithdrawals.reset()
+            for withdrawal in withdrawals {
+                guard let tree = withdrawal.tree else { continue }
+                _ = try CommunityTreeStore().restoreAfterRefusedWithdrawal(
+                    treeID: tree, outboxID: withdrawal.outbox, at: date, connection: connection
+                )
+            }
+
             let erase = try connection.cachedStatement("""
                 DELETE FROM outbox WHERE \(contributions) AND \(mine)
                 """)

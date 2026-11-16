@@ -218,6 +218,24 @@ enum DebugDeepLink {
         /// debug account that declined the license, then adds a tree. It leaves that account
         /// signed in; `unsharedSignedOut` is how a test puts the phone back.
         case unsharedNotSharing
+        /// The profile of a **fresh** tree this reader added while signed out, where the withdraw
+        /// control draws (the owner's answers of 2026-11-16). Its alert carries the "only you"
+        /// message. Fresh on every launch: the test that drives it withdraws the tree.
+        case withdrawTree
+        /// The same, added while **signed in and sharing**: links a fixed debug account that
+        /// accepted the license, so the alert carries the shared message. It leaves that account
+        /// signed in; any other deep link signs it out first.
+        case withdrawTreeShared
+        /// The profile of a fresh tree this reader added **signed in and sharing** (the same debug
+        /// account as `withdrawTreeShared`), with **another account's** visit on it, so the reason
+        /// line draws in place of the withdraw control. Signed in, because another account can only
+        /// have built on a tree everyone can see: a tree only its adder sees has no reason line in
+        /// production.
+        case withdrawTreeBuiltOn
+        /// The Outbox after the service refused a withdrawal with `conflict` (written by
+        /// `debugRefuseTreeWithdrawal`, since the UI suite has no service): the row with the owner's
+        /// sentence, and the tree back on the map.
+        case withdrawTreeRefused
         // Presented over the tab root.
         case careLog            // 09
         case share              // 10
@@ -361,8 +379,9 @@ enum DebugDeepLink {
             if screen != .unsharedNotSharing, await api.userID == Self.notSharingAccount {
                 try await api.signOut()
             }
-            // ROADMAP 144: the sharing debug account, the same way.
+            // ROADMAP 144 and the withdrawal round: the sharing debug account, the same way.
             if screen != .othersTreeSharing, screen != .othersTreeUnnamedSharing,
+               screen != .withdrawTreeShared, screen != .withdrawTreeBuiltOn,
                await api.userID == Self.sharingAccount {
                 try await api.signOut()
             }
@@ -611,6 +630,50 @@ enum DebugDeepLink {
                 }
                 guard let id else { throw APIError.conflict }
                 router.push(.treeProfile(id))
+            case .withdrawTree, .withdrawTreeShared, .withdrawTreeBuiltOn, .withdrawTreeRefused:
+                // The withdrawal round. The account state first, through the shipping verbs, then a
+                // fresh tree through `addTree` on this case's own slot line. A withdrawn tree is in
+                // no read, so the slot it stood on is free again for the next run.
+                if screen == .withdrawTreeShared || screen == .withdrawTreeBuiltOn {
+                    if await api.userID != Self.sharingAccount {
+                        try await api.signOut()
+                        try await api.linkAccount(
+                            deviceUUID: api.deviceID,
+                            userID: Self.sharingAccount,
+                            provider: "apple",
+                            acceptsLicense: true
+                        )
+                    }
+                } else {
+                    try await api.signOut()
+                }
+                var id: UUID?
+                for step in 0..<Self.profileLinksSlots {
+                    let slot = VisitPinAdjust.offset(
+                        Self.withdrawTreeSpot(screen), northM: 0,
+                        eastM: -Self.movePinSlotSpacingM * Double(step)
+                    )
+                    let taken = try await api.treesNear(
+                        slot, radiusM: Self.movePinSlotSpacingM, limit: 1
+                    )
+                    if taken.isEmpty {
+                        id = try await api.debugAddCommunityTree(near: slot, speciesQuery: "Platanus")
+                        break
+                    }
+                }
+                guard let id else { throw APIError.conflict }
+                switch screen {
+                case .withdrawTreeBuiltOn:
+                    try await api.debugRecordOthersVisit(treeID: id, accountID: Self.othersVisitAccount)
+                    router.push(.treeProfile(id))
+                case .withdrawTreeRefused:
+                    try await api.withdrawTree(treeID: id)
+                    try await api.debugRefuseTreeWithdrawal(treeID: id)
+                    router.tab = .you
+                    router.push(.outbox)
+                default:
+                    router.push(.treeProfile(id))
+                }
             case .recordDefect:
                 // Resolved-then-added, like `.communityPhotos` and unlike `.speciesClaim`, because
                 // this case is meant to be *run twice*: the second run is how the withdrawal is
@@ -863,14 +926,31 @@ enum DebugDeepLink {
     /// should not run this case.
     static let notSharingAccount = UUID(uuidString: "C3000000-0000-4000-8000-00000000AC01")!
 
-    /// The account `othersTreeSharing` and `othersTreeUnnamedSharing` sign in as (ROADMAP 144):
-    /// one that agreed to share tree records. Not a real account, for `notSharingAccount`'s reason.
+    /// The account `othersTreeSharing`, `othersTreeUnnamedSharing`, `withdrawTreeShared`, and
+    /// `withdrawTreeBuiltOn` sign in as (ROADMAP 144, the withdrawal round): one that agreed to
+    /// share tree records. Not a real account, for `notSharingAccount`'s reason.
     static let sharingAccount = UUID(uuidString: "C3000000-0000-4000-8000-00000000AC02")!
 
     /// ROADMAP 144's spots, on the same line north of round C3's.
     private static let othersSharingSpot = Coordinate(latitude: 37.7798, longitude: -122.5300)
     private static let othersUnnamedSharingSpot = Coordinate(latitude: 37.7816, longitude: -122.5300)
     private static let ownReportedSpot = Coordinate(latitude: 37.7834, longitude: -122.5300)
+
+    // ── The withdrawal round's spots, north of ROADMAP 144's, out at sea like the rest ───────
+
+    /// The start of each withdrawal case's line of slots, west to sea like `profileLinksSpot`'s,
+    /// `profileLinksSlots` long.
+    static func withdrawTreeSpot(_ screen: Screen) -> Coordinate {
+        switch screen {
+        case .withdrawTreeShared: return Coordinate(latitude: 37.7870, longitude: -122.5300)
+        case .withdrawTreeBuiltOn: return Coordinate(latitude: 37.7888, longitude: -122.5300)
+        case .withdrawTreeRefused: return Coordinate(latitude: 37.7906, longitude: -122.5300)
+        default: return Coordinate(latitude: 37.7852, longitude: -122.5300)
+        }
+    }
+
+    /// The other account whose visit `withdrawTreeBuiltOn` writes. Not a real account.
+    static let othersVisitAccount = UUID(uuidString: "C3000000-0000-4000-8000-00000000AC03")!
 
     /// The candidate window, **with this device's own status overrides laid over it**.
     ///

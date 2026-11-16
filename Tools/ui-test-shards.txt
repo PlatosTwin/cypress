@@ -371,7 +371,11 @@
 # `OthersTreeUITests` (round C3: other people's community trees, and the only-you line): NEVER
 # MEASURED on CI. PLACED ON SHARD 1, the only line no other branch of the round edits.
 
+# `WithdrawTreeUITests` (the adder withdraws a community tree, the owner's answers of 2026-11-16):
+# six tests, one launch each. NEVER MEASURED on CI. PLACED ON SHARD 3 by line count, for the reason
+# the `MovePinUITests` entry above gives.
+
 DeepLinkVoiceOverTests MapCenteredStateUITests FrameFinitenessGateTests IdentifyFABReachabilityTests AppleSignInUITests SeeAllOnMapUITests DialogCancelUITests OthersTreeUITests
 MapFilterAccessibilityTests AnonymizedPhotoNoticeUITests MapRecenterUITests PhotoBrowserReachabilityTests CityDisclaimerUITests AddReadingReachabilityTests MovePinUITests AddTreeNearbyUITests
-DeepLinkSweepTests PrimaryCTAReachabilityTests SheetHeightUITests AlmanacGroupTapTests StrandedPhotoHeroUITests CityCardContainmentUITests AreaPickerUITests ProfileLinkColumnUITests
+DeepLinkSweepTests PrimaryCTAReachabilityTests SheetHeightUITests AlmanacGroupTapTests StrandedPhotoHeroUITests CityCardContainmentUITests AreaPickerUITests ProfileLinkColumnUITests WithdrawTreeUITests
 SheetExitUITests MapSearchUITests MapSuggestionUITests MapPanTabSwitchUITests PhotoDeletionReachabilityTests AccessibilityTreeTests ReadingOrderAccessibilityTests RemoteGateComplaintUITests DataDisputeUITests

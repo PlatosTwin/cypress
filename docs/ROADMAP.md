@@ -711,8 +711,9 @@ or redeploy would change that (chip 12: merging server work changes nothing in p
   would key the tree on `client_uuid`. And it **rewrites the comments R45 made false** — "no
   author" and "nothing syncs anyone else's rows down" — re-verifying them rather than trusting this
   sentence. Chip 70 (`species_assertions` in both deletion doors) folds into it. **Left for the
-  rounds after it, and stated rather than implied:** the `tree_withdrawal` verb (the queue's CHECK
-  already admits the kind), a location-correction offer on the profile (C3), and the cache's
+  rounds after it, and stated rather than implied:** ~~the `tree_withdrawal` verb (the queue's CHECK
+  already admits the kind)~~ (**DONE in `feat/withdraw-tree`**, see the BUILT note at the end of
+  this section), a location-correction offer on the profile (C3), and the cache's
   fetching (C2; the store and its schema are in C1, unwired).
 - **C2 — sync down (`feat/community-trees-sync-down`). Open; no migration; merges after C1.**
   `RemoteAPI` decoders and tile-delta accessors; `GoldenWireFixtureTests` over the new wire files;
@@ -797,6 +798,15 @@ or redeploy would change that (chip 12: merging server work changes nothing in p
   run shows them: synced trees from a second account against the live service; the "Share my tree
   records" confirmation; the camera stopping under a profile opened from the "ALREADY ON RECORD"
   note and starting again after Back; and each control on a tree someone else added.
+
+- **Withdrawing a tree you added — BUILT, 2026-11-16, in `feat/withdraw-tree`; no migration, no
+  service change.** The last piece of F31. The owner's answers of 2026-11-16 are in
+  `docs/rulings-pending/community-trees-withdraw.md`: `Withdraw this tree` in the record controls,
+  an alert with two messages, the Outbox row `Tree withdrawn`, the tree back on the map with the
+  owner's sentence when the service refuses, and the tree off the Journal, My Grove and the Yours
+  map. No Journal row (the orchestrator's choice). The Journal and My Grove now drop a lead's
+  local withdrawal too (the planner's finding (g)1). **Owed on a physical phone with a second
+  account against the live service:** the tree leaving another phone, and a real `conflict`.
 
 ### Follow-up tickets from the 2026-08-30 rounds
 
@@ -2767,6 +2777,23 @@ into this section in the round that finds it, and nowhere else. Each item stands
     that raised it.** The line comes from the reporter's own open flag, and nothing on that phone
     closes it. Against release v17 the service's `species_reported` decides instead. Found by the
     phone author of 144, 2026-11-16; it matters only if the phone build ships before the deploy.
+172. **The adder can report their own tree as never having been there (owner's call).**
+    `recordDefectOffer` answers `.reportable` for a tree the reader added, so the profile of their
+    own tree shows `Report that there is no tree here` directly above `Withdraw this tree`. Whether
+    the adder should still see the report once they can withdraw is the owner's question. Found by
+    the withdrawal round's planner, 2026-11-16.
+173. **Rows and photographs on a withdrawn tree are kept with no end date (ROADMAP 61).** The
+    service keeps every contribution and photograph on a withdrawn or taken-down tree and hides it
+    from every read. Withdrawal (`feat/withdraw-tree`) adds more such rows. How long they are kept
+    is still undecided.
+174. **A photograph still queued for a tree its adder withdrew is uploaded, and the service stores
+    it unseen.** `POST /photos/begin` does not check for a hidden tree (`server/internal/api/photos.go`),
+    so a photo of the tree that was waiting for wi-fi when the person withdrew it still uploads.
+    Nobody can see it, and it adds to chip 173. Found by the withdrawal round's planner.
+175. **A refused tap on `Withdraw this tree` draws no sentence.** If the reader signs out between the
+    profile's read and the tap, the verb answers `forbidden`, and the profile reloads without the
+    control and without saying why. The owner has given no sentence for it, so none was written
+    (`docs/rulings-pending/community-trees-withdraw.md`). Owner's call.
 
 
 **Retire the format-1 manifest — DONE, 2026-08-23.** The owner overrode the trigger the day after

@@ -90,6 +90,8 @@ public enum OutboxPayload: Sendable, Hashable {
 
     /// The adder moving a community tree's pin (`correctLocation`, `AppSchema` v23).
     case locationCorrection(TreeLocationCorrection)
+    /// The adder withdrawing a community tree for everyone (`withdrawTree`).
+    case treeWithdrawal(TreeWithdrawal)
 
     public var kind: OutboxItem.Kind {
         switch self {
@@ -113,6 +115,7 @@ public enum OutboxPayload: Sendable, Hashable {
         case .dataDispute: return .dataDispute
         case .dataDisputeWithdrawal: return .dataDisputeWithdrawal
         case .locationCorrection: return .locationCorrection
+        case .treeWithdrawal: return .treeWithdrawal
         }
     }
 
@@ -139,7 +142,9 @@ public enum OutboxPayload: Sendable, Hashable {
              .dataDispute, .dataDisputeWithdrawal,
              // Written by `correctLocation` inside the transaction that appended the chain's new
              // head; re-applying it would be a second move.
-             .locationCorrection:
+             .locationCorrection,
+             // Written by `withdrawTree` inside the transaction that set `deleted_at`.
+             .treeWithdrawal:
             return true
         }
     }
@@ -169,6 +174,7 @@ public enum OutboxPayload: Sendable, Hashable {
         case let .dataDispute(value): return value.clientUUID
         case let .dataDisputeWithdrawal(value): return value.clientUUID
         case let .locationCorrection(value): return value.clientUUID
+        case let .treeWithdrawal(value): return value.clientUUID
         }
     }
 
@@ -204,6 +210,7 @@ public enum OutboxPayload: Sendable, Hashable {
         // The tree moved, never the correction's own `id`: `POST /sync` requires the two to
         // differ, and names the tree on every item.
         case let .locationCorrection(value): return value.treeID
+        case let .treeWithdrawal(value): return value.treeID
         }
     }
 
@@ -244,6 +251,7 @@ public enum OutboxPayload: Sendable, Hashable {
         case let .dataDispute(value): return value.occurredAt
         case let .dataDisputeWithdrawal(value): return value.occurredAt
         case let .locationCorrection(value): return value.occurredAt
+        case let .treeWithdrawal(value): return value.occurredAt
         }
     }
 
@@ -279,6 +287,7 @@ public enum OutboxPayload: Sendable, Hashable {
         case let .dataDispute(value): return value.attribution.userID
         case let .dataDisputeWithdrawal(value): return value.attribution.userID
         case let .locationCorrection(value): return value.attribution.userID
+        case let .treeWithdrawal(value): return value.attribution.userID
         }
     }
 
@@ -314,6 +323,7 @@ public enum OutboxPayload: Sendable, Hashable {
         case let .dataDispute(value): return value.attribution.deviceID
         case let .dataDisputeWithdrawal(value): return value.attribution.deviceID
         case let .locationCorrection(value): return value.attribution.deviceID
+        case let .treeWithdrawal(value): return value.attribution.deviceID
         }
     }
 
@@ -367,6 +377,7 @@ public enum OutboxPayload: Sendable, Hashable {
         case let .dataDispute(value): return try encoder.encode(value)
         case let .dataDisputeWithdrawal(value): return try encoder.encode(value)
         case let .locationCorrection(value): return try encoder.encode(value)
+        case let .treeWithdrawal(value): return try encoder.encode(value)
         }
     }
 
@@ -404,6 +415,8 @@ public enum OutboxPayload: Sendable, Hashable {
             return .dataDisputeWithdrawal(try decoder.decode(DataDisputeWithdrawal.self, from: data))
         case .locationCorrection:
             return .locationCorrection(try decoder.decode(TreeLocationCorrection.self, from: data))
+        case .treeWithdrawal:
+            return .treeWithdrawal(try decoder.decode(TreeWithdrawal.self, from: data))
         }
     }
 

@@ -312,6 +312,20 @@ struct JournalQueryPlanTests {
                 """
             )
 
+            // The four contribution arms carry the same check since the withdrawal round
+            // (`ContributionStore.notOnAWithdrawnTree`), so five arms each seek the index: one probe
+            // per candidate row, never a walk of `community_trees`.
+            let withdrawnSeeks = steps.filter {
+                $0.contains("SEARCH withdrawn") && $0.contains("idx_community_trees_id")
+            }
+            #expect(
+                withdrawnSeeks.count == 5,
+                """
+                \(withdrawnSeeks.count) arms seek idx_community_trees_id for the withdrawn-tree \
+                check, not all five — \(plan)
+                """
+            )
+
             // The tombstone lookup is still one indexed probe per candidate row, not a scan.
             #expect(
                 steps.contains(where: {

@@ -440,6 +440,15 @@ public actor LocalAPI: CypressAPI {
             let canMovePin = isAdder
                 ? try communityTrees.mayHaveReachedService(treeID: id, connection: connection)
                 : false
+            // `withdrawTree`'s own test, the adder's (a withdrawn tree threw above), narrowed by
+            // what this phone already knows (`TreeWithdrawalOffer`). The service's photographs
+            // narrow it further in `RoutedAPI.refreshedTreeProfile(id:)`.
+            let treeWithdrawal: TreeWithdrawalOffer = !isAdder
+                ? .unavailable
+                : try communityTrees.othersHaveAddedTo(
+                    treeID: id, readerUserID: attribution.userID, deviceID: deviceID,
+                    connection: connection
+                ) ? .othersHaveAddedToIt : .available
 
             // ROADMAP 144: on a tree in the community cache, the reader's own naming or correction
             // is laid over the cache's species while it is in force. The cache keeps its one writer.
@@ -534,6 +543,7 @@ public actor LocalAPI: CypressAPI {
                 // (`mayHaveReachedService`, which `correctLocation` does not apply). A withdrawn
                 // tree never reaches this line (it threw above).
                 canMovePin: canMovePin,
+                treeWithdrawal: treeWithdrawal,
                 // The phone's half of `added_by_you`: this phone's own record says the reader added
                 // it. `RoutedAPI.refreshedTreeProfile(id:)` adopts the service's yes on top.
                 addedByYou: isAdder,
@@ -783,6 +793,60 @@ public actor LocalAPI: CypressAPI {
             )
         }
         return try await treeProfile(id: treeID).tree
+    }
+
+    /// The adder withdraws a community tree for everyone (the owner's decision 8). `TreeWithdrawal`
+    /// carries the rule.
+    ///
+    /// `correctLocation`'s checks in `correctLocation`'s order, then one write: the tombstone, which
+    /// must match, and the queue row, born `local_applied = 1`. The tombstone and the row's
+    /// `created_at` are the same instant, which is what lets a refusal undo this tombstone and no
+    /// other (`CommunityTreeStore.restoreAfterRefusedWithdrawal`).
+    ///
+    /// **Not gated on `mayHaveReachedService`.** The service answers `applied` for a tree it never
+    /// received, and that tree's add then arrives already withdrawn (`treeWasWithdrawnBy`).
+    ///
+    /// The adder's own visits, photographs and favorite stay saved; the service keeps them too. The
+    /// reads that list trees drop a withdrawn one (the owner's answer of 2026-11-16).
+    public func withdrawTree(treeID: UUID) async throws {
+        let mine = attribution
+        let (subject, adder) = try await store.queue.read {
+            connection -> (Tree?, ContributionOwner?) in
+            (
+                try communityTrees.tree(id: treeID, connection: connection),
+                try communityTrees.adder(treeID: treeID, connection: connection)
+            )
+        }
+        guard let subject else {
+            // Not a tree this phone added: `correctLocation`'s distinction between "not yours"
+            // and "no such tree".
+            let isSomebodyElses = try await store.queue.read { connection -> Bool in
+                let city = try treeQueries.flatMap { try $0.tree(id: treeID, connection: connection) }
+                if city != nil { return true }
+                return try layer.exists(id: treeID, connection: connection)
+            }
+            throw isSomebodyElses ? APIError.forbidden : APIError.notFound
+        }
+        guard subject.deletedAt == nil else { throw APIError.notFound }
+        guard let adder, adder.isOwned(by: mine) else { throw APIError.forbidden }
+
+        let moment = now()
+        try await store.queue.write { connection in
+            guard try communityTrees.withdraw(treeID: treeID, at: moment, connection: connection) else {
+                // Withdrawn between the read above and this write.
+                throw APIError.notFound
+            }
+            // Spec §3.4, in the same transaction as the tombstone, and at the same instant.
+            try Self.queueAppliedMutation(
+                .treeWithdrawal(
+                    TreeWithdrawal(
+                        clientUUID: UUID(), treeID: treeID, attribution: mine, occurredAt: moment
+                    )
+                ),
+                at: moment,
+                connection: connection
+            )
+        }
     }
 
     /// Names the species on a community tree that has none. `SpeciesClaim` carries the argument for
@@ -1536,11 +1600,10 @@ public actor LocalAPI: CypressAPI {
     ///
     /// Gated on `userRole.canConfirmReviewFlag` (DECISIONS §3.7), and the gate is on the write, so a
     /// surface drawn in error cannot withdraw a record. There is no author's arm here the way the
-    /// species seam has one. `community_trees` records its adder since `AppSchema` v23, but the
-    /// adder's own withdrawal is a different act — the owner's decision 8, a withdrawal *for
-    /// everyone*, refused once anybody else has built on the tree, and sent as `tree_withdrawal` —
-    /// which this phone does not implement yet. This verb is the lead's answer to a report, and it
-    /// stays one.
+    /// species seam has one. The adder's own withdrawal is a different act, `withdrawTree`: the
+    /// owner's decision 8, a withdrawal *for everyone*, refused by the service once anybody else
+    /// has visited or photographed the tree, and sent as `tree_withdrawal`. This verb is the lead's
+    /// answer to a report, queues nothing, and stays one.
     public func withdrawRecord(flagID: UUID) async throws {
         guard userRole.canConfirmReviewFlag else { throw APIError.forbidden }
         let moment = now()
@@ -2546,7 +2609,9 @@ public actor LocalAPI: CypressAPI {
                  .dataDispute, .dataDisputeWithdrawal,
                  // Re-applying a moved pin would append a second head to a chain that has already
                  // moved.
-                 .locationCorrection:
+                 .locationCorrection,
+                 // Re-applying a withdrawal would queue a second one for a tree already gone.
+                 .treeWithdrawal:
                 throw APIError.validationFailed
             }
         }
@@ -3271,6 +3336,10 @@ public actor LocalAPI: CypressAPI {
         for row in rows {
             let seedRecord = seedRecords[row.treeID]
             guard let profileTree = seedRecord?.tree ?? community[row.treeID] else { continue }
+            // A withdrawn community tree leaves My Grove; the person's own rows on it stay saved
+            // (the owner's answer of 2026-11-16). `CommunityLayer.trees` does not filter it,
+            // because its other callers read a withdrawn row on purpose.
+            if seedRecord == nil, Self.isWithdrawnCommunityTree(profileTree) { continue }
             entries.append(
                 GroveEntry(
                     treeID: row.treeID,
@@ -3350,6 +3419,12 @@ public actor LocalAPI: CypressAPI {
     ///
     /// The first cut of this method collapsed the last two into one absence, so a D15 refusal
     /// reported as `.fellBackToLocal`. `RoutedAPI.CityFileRows` is where that is separated.
+    /// Whether a tree read through `CommunityLayer.trees` is a community tree this phone withdrew.
+    /// The layer returns this phone's own row withdrawn or not (its header says why).
+    static func isWithdrawnCommunityTree(_ tree: Tree) -> Bool {
+        tree.source == .community && tree.deletedAt != nil
+    }
+
     public func groveCityFileRows(for treeIDs: [UUID]) async -> RoutedAPI.CityFileRows {
         let nothing = RoutedAPI.CityFileRows(named: [:], unnamed: [])
         guard !treeIDs.isEmpty else { return nothing }
@@ -3370,6 +3445,13 @@ public actor LocalAPI: CypressAPI {
             // Absent from **both** answers: the installed inventories do not carry this tree. Left
             // out of both sets, which is what tells the caller the service's answer lost a row.
             guard let tree = seedRecord?.tree ?? community[treeID] else { continue }
+            // A tree this phone withdrew. The service's grove still lists it (it reads the
+            // person's contributions, which stay), and the owner's answer of 2026-11-16 takes it
+            // off My Grove. A rule applied, not a row lost, so it joins the unnamed set.
+            if seedRecord == nil, Self.isWithdrawnCommunityTree(tree) {
+                unnamed.insert(treeID)
+                continue
+            }
             guard let name = activeNames[treeID]?.name ?? seedRecord?.species?.commonName,
                   !name.isEmpty
             else {
@@ -3552,6 +3634,16 @@ public actor LocalAPI: CypressAPI {
     /// belonging to somebody else that a sync brought down, and there the scoped form withholds an
     /// unapproved one — which is E215, not a regression. `JournalBatchReadTests` holds both halves.
     public func journal(cursor: String?, limit: Int) async throws -> Page<JournalEntry> {
+        try await journalPage(cursor: cursor, limit: limit, includingWithdrawn: false)
+    }
+
+    /// `journal(cursor:limit:)`'s body. `includingWithdrawn` is true for the export only (see
+    /// `ContributionStore.exportJournalSQL`).
+    private func journalPage(
+        cursor: String?,
+        limit: Int,
+        includingWithdrawn: Bool
+    ) async throws -> Page<JournalEntry> {
         let position = cursor.flatMap(ContributionStore.JournalCursor.init(string:))
         // `grovePage`'s clamp, for its reason and on the same day: a negative `LIMIT` is no limit
         // in SQLite, so `journal(cursor: nil, limit: -1)` returned the whole journal through the
@@ -3564,6 +3656,7 @@ public actor LocalAPI: CypressAPI {
                 deviceID: deviceID,
                 before: position,
                 limit: capped,
+                includingWithdrawn: includingWithdrawn,
                 connection: connection
             )
         }
@@ -3903,8 +3996,11 @@ public actor LocalAPI: CypressAPI {
             return try flags.compactMap { flag -> ReviewQueueItem? in
                 // The tree may be a seed row or a community add; resolve through the same two-step the
                 // profile uses. A flag whose tree cannot be found is skipped rather than shown nameless.
+                // So is a flag on a community tree this phone withdrew: the layer returns that row,
+                // but the row opens the tree's profile, and a withdrawn tree has none.
                 let record = try treeQueries?.tree(id: flag.treeID, connection: connection)
-                guard let tree = try record?.tree ?? layer.tree(id: flag.treeID, connection: connection)
+                guard let tree = try record?.tree ?? layer.tree(id: flag.treeID, connection: connection),
+                      !Self.isWithdrawnCommunityTree(tree)
                 else { return nil }
                 let name = try contributions.activeName(treeID: flag.treeID, connection: connection)?.name
                     ?? Self.resolveSpecies(
@@ -4069,6 +4165,51 @@ public actor LocalAPI: CypressAPI {
             try cache.apply(
                 tile: tile, trees: [tree], withdrawnTreeIDs: [], nextCursor: cursor,
                 at: moment, connection: connection
+            )
+        }
+    }
+
+    /// Test seam (the withdrawal round): a visit on `treeID` by **another account**, written as a
+    /// row that has already reached the service (it has no queue row), so the profile draws the
+    /// reason line in place of the withdraw control (`CommunityTreeStore.othersHaveAddedTo`). The UI
+    /// suite runs with the remote gate shut, so no other account's row can arrive any other way.
+    public func debugRecordOthersVisit(treeID: UUID, accountID: UUID) async throws {
+        let visit = Visit(
+            treeID: treeID,
+            attribution: Attribution(userID: accountID, deviceID: deviceID),
+            capturedAt: now()
+        )
+        try await store.queue.write { try contributions.insert(visit, connection: $0) }
+    }
+
+    /// Test seam (the withdrawal round): the service's `conflict` answer to this tree's queued
+    /// withdrawal, so the Outbox row and the restored tree can be looked at. The UI suite runs with
+    /// no send sink, so no refusal can arrive. Writes the two things `OutboxQueue.settle` writes for
+    /// that answer, in one write: the failed row with the owner's sentence, and the tree put back.
+    public func debugRefuseTreeWithdrawal(treeID: UUID) async throws {
+        let moment = now()
+        let outbox = OutboxStore()
+        try await store.queue.write { connection in
+            let rows = try outbox.allItems(connection: connection).filter { record in
+                guard record.item.kind == .treeWithdrawal,
+                      case let .treeWithdrawal(withdrawal)? =
+                        try? OutboxPayload.decode(kind: record.item.kind, from: record.item.payload)
+                else { return false }
+                return withdrawal.treeID == treeID
+            }
+            guard let row = rows.last else { throw APIError.notFound }
+            try outbox.recordFailure(
+                row.id,
+                state: .failed,
+                failCount: row.item.failCount + 1,
+                reason: OutboxFailureReason.treeStaysOnTheMap,
+                code: .conflict,
+                nextAttemptAt: nil,
+                at: moment,
+                connection: connection
+            )
+            _ = try communityTrees.restoreAfterRefusedWithdrawal(
+                treeID: treeID, outboxID: row.id, at: moment, connection: connection
             )
         }
     }
@@ -4905,7 +5046,11 @@ public actor LocalAPI: CypressAPI {
         var entries: [JournalEntry] = []
         var cursor: String?
         repeat {
-            let page = try await journal(cursor: cursor, limit: Page<JournalEntry>.maximumLimit)
+            // Rows on a tree this phone withdrew are included: they stay saved, and the export
+            // promises everything this person recorded here (`ContributionStore.exportJournalSQL`).
+            let page = try await journalPage(
+                cursor: cursor, limit: Page<JournalEntry>.maximumLimit, includingWithdrawn: true
+            )
             entries.append(contentsOf: page.items)
             cursor = page.nextCursor
         } while cursor != nil

@@ -182,6 +182,24 @@ struct TreeProfileView: View {
                     Task { await model.withdrawDataDispute(disputeID: disputeID) }
                 }
             }
+            // "Withdraw this tree?" before the adder withdraws their tree for everyone (the owner's
+            // answers of 2026-11-16). An alert, for the reason the dispute take-back above gives:
+            // iOS 26 leaves a confirmation dialog's cancel button undrawn. The message is the
+            // shared one or the "only you" one (`TreeProfilePresentation.withdrawTreeMessage`).
+            .alert(
+                TreeProfileCopy.withdrawTreeConfirmTitle,
+                isPresented: $model.isConfirmingTreeWithdrawal
+            ) {
+                Button(TreeProfileCopy.withdrawTreeCancel, role: .cancel) {
+                    model.isConfirmingTreeWithdrawal = false
+                }
+                Button(TreeProfileCopy.withdrawTreeConfirmAction, role: .destructive) {
+                    model.isConfirmingTreeWithdrawal = false
+                    Task { await model.withdrawTree() }
+                }
+            } message: {
+                Text(model.presentation?.withdrawTreeMessage ?? TreeProfileCopy.withdrawTreeMessageShared)
+            }
     }
 
     @ViewBuilder
@@ -639,6 +657,36 @@ struct TreeProfileView: View {
                 .fixedSize(horizontal: false, vertical: true)
         }
         recordDefect(presentation)
+        treeWithdrawal(presentation)
+    }
+
+    /// The adder's withdraw control (the owner's answers of 2026-11-16): in the record controls,
+    /// below "Report that there is no tree here", drawn the way its neighbors are. Asks first: the
+    /// alert on `body` is what withdraws.
+    ///
+    /// Where this phone already knows the service would refuse, the owner's reason line is drawn in
+    /// the control's place, in the muted sentence style of the block's other notices. It sits
+    /// under the report link's caption, which is drawn in the same style, so it needs a gap above it
+    /// to read as its own line rather than as the caption's last line. The block's own note gap
+    /// (`latinTop`, 2 pt) was tried and did not separate it on screen, at the default size or at
+    /// AX5; the design system's row gap (`CypressSpacing.gapRows`) does.
+    @ViewBuilder
+    private func treeWithdrawal(_ presentation: TreeProfilePresentation) -> some View {
+        switch presentation.treeWithdrawal {
+        case .unavailable:
+            EmptyView()
+        case .available:
+            recordLinkAction(TreeProfileCopy.withdrawTreeAction) {
+                model.isConfirmingTreeWithdrawal = true
+            }
+            .accessibilityIdentifier("treeProfile.withdrawTree")
+        case .othersHaveAddedToIt:
+            Text(TreeProfileCopy.treeStaysOnTheMap)
+                .cypressBody135(color: CypressColor.textMuted)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.top, CypressSpacing.gapRows)
+                .accessibilityIdentifier("treeProfile.withdrawTree.staysOnTheMap")
+        }
     }
 
     /// The record-defect block (#125) — *is this record a tree at all?*

@@ -48,6 +48,15 @@ public enum OutboxFailureReason {
     /// fact that they disagree about where the contribution is.
     public static let refusedTerminally = "This couldn't be sent."
 
+    /// A tree withdrawal the service refused with `conflict`: somebody else has visited or
+    /// photographed the tree, so it stays, and the tree comes back on this phone
+    /// (`OutboxQueue.settle`).
+    ///
+    /// **The owner's words, chosen on 2026-11-16.** The same sentence is the service's own message
+    /// for that refusal, and the line a tree's profile shows in place of the withdraw control when
+    /// this phone already knows the refusal would come.
+    public static let treeStaysOnTheMap = "Other people have added to this tree, so it stays on the map."
+
     /// `moderation_rejected`: the item arrived, a person read it, and it will not be published.
     ///
     /// **Ruled verbatim by the owner on 2026-08-15**, correcting the widening that rulings 1 and 3

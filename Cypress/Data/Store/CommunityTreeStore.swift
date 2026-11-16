@@ -218,6 +218,10 @@ public struct CommunityTreeStore {
     /// Withdraws the record: the row is soft-deleted and stops being a tree anywhere in the app
     /// (task **#125**, `RULINGS R50`).
     ///
+    /// **Two callers.** A lead's `withdrawRecord`, which queues nothing, and the adder's
+    /// `withdrawTree`, which queues a `tree_withdrawal` in the same transaction. The second can be
+    /// undone by the service's refusal (`restoreAfterRefusedWithdrawal`); the first cannot.
+    ///
     /// **A soft delete, not a `DELETE`, and the difference is the whole claim being made.** Every
     /// read in this file already filters `deleted_at IS NULL` — `inBounds`, `near`, `claimSpecies`,
     /// `setSpecies` — so one column removes the pin, the profile and the correction routes in one
@@ -237,6 +241,58 @@ public struct CommunityTreeStore {
                AND deleted_at IS NULL
             """)
         _ = try statement.bind([":now": moment, ":id": treeID])
+        try statement.run()
+        let changed = connection.changes > 0
+        _ = try statement.reset()
+        return changed
+    }
+
+    /// Puts back a tree whose `tree_withdrawal` will not go through (`OutboxQueue.settle`).
+    ///
+    /// **Only the tombstone that withdrawal wrote.** `withdrawTree` stamps `deleted_at` with the
+    /// same instant it gives the queue row's `created_at`, in one transaction, so the two columns
+    /// hold the same text. A tree withdrawn some other way (a lead's `withdrawRecord`) carries
+    /// another instant and stays withdrawn.
+    ///
+    /// - Returns: whether a row came back.
+    public func restoreAfterRefusedWithdrawal(
+        treeID: UUID,
+        outboxID: UUID,
+        at moment: Date,
+        connection: SQLiteConnection
+    ) throws -> Bool {
+        let statement = try connection.cachedStatement("""
+            UPDATE community_trees
+               SET deleted_at = NULL, updated_at = :now
+             WHERE id = :id COLLATE NOCASE
+               AND deleted_at = (SELECT created_at FROM outbox WHERE id = :outbox)
+            """)
+        _ = try statement.bind([":now": moment, ":id": treeID, ":outbox": outboxID])
+        try statement.run()
+        let changed = connection.changes > 0
+        _ = try statement.reset()
+        return changed
+    }
+
+    /// Withdraws the tree again when the service accepts a `tree_withdrawal` the person retried
+    /// after a refusal put the tree back. Stamps the queue row's `created_at`, for
+    /// `restoreAfterRefusedWithdrawal`'s reason. A tree that is already withdrawn is left as it is.
+    ///
+    /// - Returns: whether a live row was withdrawn.
+    public func withdrawAgain(
+        treeID: UUID,
+        outboxID: UUID,
+        at moment: Date,
+        connection: SQLiteConnection
+    ) throws -> Bool {
+        let statement = try connection.cachedStatement("""
+            UPDATE community_trees
+               SET deleted_at = (SELECT created_at FROM outbox WHERE id = :outbox), updated_at = :now
+             WHERE id = :id COLLATE NOCASE
+               AND deleted_at IS NULL
+               AND EXISTS (SELECT 1 FROM outbox WHERE id = :outbox)
+            """)
+        _ = try statement.bind([":now": moment, ":id": treeID, ":outbox": outboxID])
         try statement.run()
         let changed = connection.changes > 0
         _ = try statement.reset()
@@ -349,6 +405,72 @@ public struct CommunityTreeStore {
         if let addRowState { return addRowState != .failed }
         if queuedOnce { return true }
         return createdAt >= firstQueuedAddsAt
+    }
+
+    /// Whether this phone's own tables already say the service would refuse the reader's withdrawal
+    /// of this tree (`TreeWithdrawalOffer.othersHaveAddedToIt`). True for either of these:
+    ///
+    /// - **A visit, check-in, measurement or care event by another account**, not deleted, whose
+    ///   queue row no longer owes a send. These are `MetSpeciesKinds`, the service's list. "Another
+    ///   account" is a `user_id` that is set and is not the reader's: the service never moves one
+    ///   account's rows to another. A row with no `user_id` is this device's, and a sign-in claims
+    ///   those for the account, so it is not counted. Neither is a row an account deletion
+    ///   anonymized, because this phone cannot tell whether it reached the service. Neither is a row
+    ///   of an account this phone made itself in builds 6 to 33
+    ///   (`CommunityTreeBackfill.phoneMadeAccounts`): such an account never reached the service, so
+    ///   its rows did not either, and the backfill moves them to the signed-in account.
+    /// - **A withdrawal of this tree that the service already refused with `conflict`.**
+    ///
+    /// Photographs are not read here: the service's own profile read is the one that can say a
+    /// photograph of somebody else's counts (`RoutedAPI.withdrawalOffer`).
+    public func othersHaveAddedTo(
+        treeID: UUID,
+        readerUserID: UUID?,
+        deviceID: UUID,
+        connection: SQLiteConnection
+    ) throws -> Bool {
+        // The reader is subtracted by the SQL below; `phoneMadeAccounts` needs some id to leave out.
+        let phoneMade = try CommunityTreeBackfill.phoneMadeAccounts(
+            device: deviceID, excluding: readerUserID ?? deviceID, connection: connection
+        )
+        let phoneMadeJSON = "[" + phoneMade.map { "\"\($0.uuidString)\"" }.sorted().joined(separator: ",") + "]"
+        let statement = try connection.cachedStatement("""
+            SELECT EXISTS (
+                SELECT 1 FROM (
+                    SELECT client_uuid, user_id FROM visits
+                     WHERE tree_uuid = :tree COLLATE NOCASE AND deleted_at IS NULL
+                    UNION ALL
+                    SELECT client_uuid, user_id FROM observations
+                     WHERE tree_uuid = :tree COLLATE NOCASE AND deleted_at IS NULL
+                    UNION ALL
+                    SELECT client_uuid, user_id FROM measurements
+                     WHERE tree_uuid = :tree COLLATE NOCASE AND deleted_at IS NULL
+                    UNION ALL
+                    SELECT client_uuid, user_id FROM care_events
+                     WHERE tree_uuid = :tree COLLATE NOCASE AND deleted_at IS NULL
+                ) met
+                 WHERE met.user_id IS NOT NULL
+                   AND (:user IS NULL OR met.user_id <> :user COLLATE NOCASE)
+                   AND upper(met.user_id) NOT IN (SELECT value FROM json_each(:phoneMade))
+                   AND NOT EXISTS (SELECT 1 FROM anonymized_contributions tomb
+                                    WHERE tomb.client_uuid = met.client_uuid)
+                   AND NOT EXISTS (SELECT 1 FROM outbox owed
+                                    WHERE owed.client_uuid = met.client_uuid
+                                      AND owed.remote_sent = 0 AND owed.state <> 'done')
+            ) OR EXISTS (
+                SELECT 1 FROM outbox refused
+                 WHERE refused.kind = 'tree_withdrawal'
+                   AND refused.state = 'failed'
+                   AND refused.last_error_code = 'conflict'
+                   AND upper(json_extract(refused.payload, '$.treeID')) = upper(:tree)
+            ) AS found
+            """)
+        _ = try statement.bind([
+            ":tree": treeID.uuidString, ":user": readerUserID?.uuidString, ":phoneMade": phoneMadeJSON
+        ])
+        let found = try statement.fetchOne { try $0.bool("found") } ?? false
+        _ = try statement.reset()
+        return found
     }
 
     /// `mayHaveReachedService` for a tree this phone added, read from its row and the outbox. False

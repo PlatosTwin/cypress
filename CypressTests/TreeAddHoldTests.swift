@@ -72,6 +72,9 @@ struct TreeAddHoldTests {
                 locationAccuracyM: nil
             )
             return
+        case .treeWithdrawal:
+            try await api.withdrawTree(treeID: tree.id)
+            return
         case .speciesClaim: payload = .speciesClaim(statement)
         case .speciesCorrection: payload = .speciesCorrection(statement)
         default:
@@ -89,8 +92,11 @@ struct TreeAddHoldTests {
         )
     }
 
-    /// The kinds that now wait. `locationCorrection` is #209's; the other two are new.
-    static let heldKinds: [OutboxItem.Kind] = [.speciesClaim, .speciesCorrection, .locationCorrection]
+    /// The kinds that now wait. `locationCorrection` is #209's; the two species kinds are ROADMAP
+    /// 115's; `treeWithdrawal` keeps the person's order (add, then the withdrawal).
+    static let heldKinds: [OutboxItem.Kind] = [
+        .speciesClaim, .speciesCorrection, .locationCorrection, .treeWithdrawal
+    ]
 
     /// ROADMAP 115. Red on today's code for the two species kinds: the first drain offers
     /// `[addTree, speciesClaim]`, and the test goes red on "a species claim was offered while its

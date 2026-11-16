@@ -188,6 +188,13 @@ public struct RemoteAPI: CypressAPI {
         throw RemoteSurface.noRouteOnThisService
     }
 
+    /// **No route.** A tree withdrawal is queued (`tree_withdrawal`) and reaches the service through
+    /// `/sync`; the service has no endpoint for it. Overrides `TreeWithdrawal.swift`'s `.notFound`
+    /// default, for `correctLocation`'s reason above.
+    public func withdrawTree(treeID: UUID) async throws {
+        throw RemoteSurface.noRouteOnThisService
+    }
+
     /// **No route.** A first species claim is one of spec §3.4's nine, and §3.4 rules them Class L
     /// "until they are queued" — which is a widened `outbox.kind` `CHECK`, its own ticket and its
     /// own migration author. The service was built to match and exposes nothing to call.
