@@ -2373,7 +2373,7 @@ into this section in the round that finds it, and nowhere else. Each item stands
     `AddReadingReachabilityTests.testAFullyMeasuredTreeReachesTheMeasureSheetInOneTap` failed with
     "Failed to get matching snapshots: Timed out while evaluating UI query" on #217's `ui (2)` (run
     43558019089), green on re-run. Both are slow-runner shapes; watch for a third sighting.
-139. **Send the community trees that predate syncing, with everything on them (owner's ruling,
+139. ~~**Send the community trees that predate syncing, with everything on them (owner's ruling,
     2026-11-14).** The owner reversed R77 for community trees: "trees that are community added
     should make it onto everyone's phone regardless of when they were added." Chosen in the decision
     round: the tree, its photographs, and every visit, measurement and care event recorded on it;
@@ -2383,7 +2383,14 @@ into this section in the round that finds it, and nowhere else. Each item stands
     these trees, a proximity conflict on an old add, which chip 140 removes, and whether the
     service keeps the phone's dates), are in `docs/rulings-pending/community-trees-old-trees.md`. Rows on a city tree are
     still under R77; the owner was not asked about them. Not built. It belongs with C2, because
-    nobody else sees any community tree until C2 lands.
+    nobody else sees any community tree until C2 lands.~~ **Built, 2026-11-15**, in two pieces: the
+    service keeps the phone's added day (`feat/community-tree-added-day-server`, server migration
+    008), and the phone sends each old tree once, with its rows and its photographs, retries once
+    each add refused under the 10 m rule, and sends every tree's add photo
+    (`feat/community-trees-send-old`; the reading and its limits are in
+    `docs/rulings-pending/community-trees-send-old.md`). The build that carries the phone piece
+    should ship only after `cypress-sync` runs the 10 m change and migration 008: the retry
+    happens once, so a refusal under the old rule would be final.
 140. **Stop refusing a tree that is within 10 m of another (owner's ruling, 2026-11-14).** The
     owner, on how far a pin may move: "can go anywhere, and also fine to go within 10m of another
     tree. sometimes they will be close together and that's fine". Asked how far that goes, the owner
