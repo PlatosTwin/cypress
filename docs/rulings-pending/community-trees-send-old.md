@@ -154,6 +154,9 @@ shared phone. What should the next build do?"
   phone two people used, this can mislabel records."
 - "Send them with no name".
 
+The owner chose "Send them under the current account", accepting that on a shared phone this can
+mislabel records.
+
 **The rule built.** A phone-made account is an id that appears as `user_id` on a row this phone
 made before 2026-08-14 07:27:48 UTC (`CommunityTreeBackfill.serviceSignInExisted`), other than the
 account signed in now. That instant is the commit time of `64a8d1e3` (#158 step 3), the first commit
@@ -199,6 +202,11 @@ sides.
 - Only old community trees (added before adds were queued) are covered. A phone-made account's row
   on a tree that is not old is not sent. No build could make one, because the local-account era
   ended before adds were queued.
+
+**A limit, not a ruling: a tree whose adder deleted their account.** Such a tree has no owner on
+the phone, so it is never sent. The rows that a different account, the one signed in now, made on
+that tree are not sent either, because they go only with their tree. The review measured it: one
+run over such a tree reported `Report(trees: 0, rows: 0)`.
 
 ### R??? — Move pin, and the deletion doors
 
