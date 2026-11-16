@@ -300,16 +300,15 @@ struct JournalQueryPlanTests {
                 """
             )
 
-            // The pin-move arm's withdrawn-tree check is one primary-key probe per move, not a walk
-            // of `community_trees`. A `COLLATE NOCASE` on that comparison is what would turn it
-            // into one, and `community_trees` is not on `scannable`.
+            // The pin-move arm's withdrawn-tree check is one indexed probe per move, not a walk of
+            // `community_trees`, which is not on `scannable`.
             #expect(
                 steps.contains(where: {
-                    $0.contains("SEARCH withdrawn") && $0.contains("sqlite_autoindex_community_trees_1")
+                    $0.contains("SEARCH withdrawn") && $0.contains("idx_community_trees_id")
                 }),
                 """
-                the pin-move arm's withdrawn-tree check no longer seeks community_trees' primary \
-                key — \(plan)
+                the pin-move arm's withdrawn-tree check no longer seeks idx_community_trees_id — \
+                \(plan)
                 """
             )
 
@@ -423,20 +422,20 @@ struct JournalQueryPlanTests {
     /// itself rather than assumed.
     ///
     /// `tree_locations` joined `scannable` with the pin-move arm. This is the known answer that says
-    /// the list did not become a licence: the same page query, with its withdrawn-tree probe made
-    /// `COLLATE NOCASE` so it can no longer seek `community_trees`' BINARY primary key, must walk
-    /// `community_trees`, and the gate must refuse that walk.
+    /// the list did not become a licence: the same page query, with its withdrawn-tree probe
+    /// rewritten as `lower(…) = lower(…)` so no index can answer it, must walk `community_trees`,
+    /// and the gate must refuse that walk.
     @Test("the page query's gate still refuses a walk of a relation not on the list")
     func theGateRefusesAnUnlistedWalk() async throws {
         let store = try await Self.store()
-        let probe = "withdrawn.id = tree_locations.tree_id"
+        let probe = "withdrawn.id = tree_locations.tree_id COLLATE NOCASE"
         #expect(
             ContributionStore.journalSQL.contains(probe),
             "the calibration's edit point is gone from journalSQL; rewrite this test against the new text"
         )
         let walking = ContributionStore.journalSQL.replacingOccurrences(
             of: probe,
-            with: probe + " COLLATE NOCASE"
+            with: "lower(withdrawn.id) = lower(tree_locations.tree_id)"
         )
 
         try await store.queue.read { connection in

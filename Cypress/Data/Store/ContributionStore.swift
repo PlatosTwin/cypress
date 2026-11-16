@@ -2242,10 +2242,10 @@ public struct ContributionStore {
     /// - **The owner predicate the other four arms use.** A move on this phone by another device or
     ///   account is not this person's act.
     /// - **Not on a withdrawn tree.** A withdrawal keeps the chain (it is the record, v23), but the
-    ///   tree's profile no longer opens, and every Journal row opens a profile. `NOT EXISTS` on a
-    ///   withdrawn row rather than `EXISTS` on a live one, and a BINARY match so the probe seeks the
-    ///   primary key: both ids are written as `UUID.uuidString`, and a case mismatch could only show
-    ///   a row, never hide one.
+    ///   tree's profile no longer opens, and every Journal row opens a profile. `NOCASE`, the
+    ///   collation every reader of `community_trees.id` compares in, so the probe seeks
+    ///   `idx_community_trees_id` (`AppSchema` v19). `NOT EXISTS` on a withdrawn row rather than
+    ///   `EXISTS` on a live one.
     /// - **`notAnonymized`**, the same tombstone check as the other arms.
     ///
     /// **This arm walks `tree_locations` and does not sort.** The table has no index on
@@ -2312,7 +2312,7 @@ public struct ContributionStore {
                AND (occurred_at, id COLLATE NOCASE)
                    < (COALESCE(:cursorAt, char(0x10FFFF)), COALESCE(:cursorID, char(0x10FFFF)))
                AND NOT EXISTS (SELECT 1 FROM community_trees withdrawn
-                                WHERE withdrawn.id = tree_locations.tree_id
+                                WHERE withdrawn.id = tree_locations.tree_id COLLATE NOCASE
                                   AND withdrawn.deleted_at IS NOT NULL)
                AND \(Self.notAnonymized("tree_locations"))
         )
