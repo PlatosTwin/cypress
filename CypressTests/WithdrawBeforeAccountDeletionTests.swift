@@ -287,7 +287,7 @@ struct WithdrawBeforeAccountDeletionTests {
         #expect(row.item.state == .failed)
         #expect(row.item.lastError == "Other people have added to this tree, so it stays on the map.",
                 "the row reads \(row.item.lastError ?? "nothing")")
-        #expect(try await Withdrawal.deletedAt(phone.store, tree.id) == nil, "the refused tree stays hidden")
+        #expect(try await Withdrawal.deletedAt(phone.store, tree.id) == nil, "the refused tree did not come back")
         #expect(try await Fixture.adder(phone.store, tree.id) == .nobody, "the deletion did not run")
     }
 
@@ -321,6 +321,49 @@ struct WithdrawBeforeAccountDeletionTests {
         try await phone.router.deleteAccount(choice)
 
         #expect(phone.service.log == ["DELETE /me"], "\(phone.service.log)")
+    }
+
+    /// Other rows are queued, in backoff, and no withdrawal is: the deletion makes only the request
+    /// it made before the send-first step, and leaves those rows' schedule alone (the orchestrator's
+    /// decision on the review of ROADMAP 192).
+    ///
+    /// Red-proof: remove the `queued > 0` check from `sendBeforeAccountDeletion` — red on "the
+    /// deletion sent other rows first" (`["sync add_tree", "DELETE /me"]`) and on the schedule.
+    @Test("a keep-records deletion with other rows queued and no withdrawal asks only DELETE /me")
+    func otherRowsQueuedAndNoWithdrawal() async throws {
+        let phone = try await Phone()
+        _ = try await Fixture.add(phone.local)
+        _ = try await phone.outbox.drain()
+        phone.clock.advance(by: 60)
+
+        // A second tree added with no connection: its add is pending, in backoff, and names the account.
+        phone.service.setOffline(true)
+        _ = try await Fixture.add(
+            phone.local, at: ProximityDedupeTests.diagonal(from: Fixture.offshore, meters: 400)
+        )
+        _ = try await phone.outbox.drain()
+        phone.service.setOffline(false)
+        let before = try await Self.nextAttemptOfThePendingAdd(phone.store)
+        #expect(before != nil, "fixture: the offline add is not in backoff")
+        phone.service.clearLog()
+
+        try await phone.router.deleteAccount(.leaveRecords)
+
+        #expect(phone.service.log == ["DELETE /me"], "the deletion sent other rows first: \(phone.service.log)")
+        let after = try await Self.nextAttemptOfThePendingAdd(phone.store)
+        #expect(after == before, "the deletion moved the add's schedule: \(before ?? "nil") to \(after ?? "nil")")
+    }
+
+    /// `outbox.next_attempt_at` of the one pending `add_tree` row, read straight from SQL. The test
+    /// that calls it has exactly one: the first add is `done`.
+    static func nextAttemptOfThePendingAdd(_ store: CypressStore) async throws -> String? {
+        try await store.queue.read { connection -> String? in
+            let statement = try connection.prepare("""
+                SELECT next_attempt_at FROM outbox WHERE kind = 'add_tree' AND state = 'pending'
+                """)
+            defer { statement.finalize() }
+            return try statement.fetchOne { try $0.stringIfPresent("next_attempt_at") } ?? nil
+        }
     }
 
     // MARK: - 6. A drain already running

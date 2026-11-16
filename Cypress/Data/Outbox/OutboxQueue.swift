@@ -374,6 +374,7 @@ public actor OutboxQueue {
     /// reaches the service while the account still owns the tree.
     ///
     /// **What it does.**
+    /// 0. Reads the account's unsent withdrawals first, and does nothing more when there are none.
     /// 1. Makes every row naming the account that the service has not accepted due now
     ///    (`OutboxStore.makeAccountRowsDueNow`), so a row in backoff is not skipped.
     /// 2. Calls `drain()` up to `passesBeforeAccountDeletion` times, and stops at the first drain
@@ -391,6 +392,17 @@ public actor OutboxQueue {
     ///   this is above zero. A row another drain holds `uploading` at the read counts as unsent,
     ///   which errs toward not deleting.
     public func sendBeforeAccountDeletion(userID: UUID) async throws -> Int {
+        // **Only when the account has a withdrawal to send** (the orchestrator's decision on the
+        // review of ROADMAP 192). With none, the deletion makes exactly the requests it made before
+        // this step existed: no drain, and no row made due. A drain sends every identity's due rows
+        // and, on wi-fi, every owed photograph, with no request timeout, so running it for nothing
+        // could hold the sheet for minutes on a connection that reaches nothing. A withdrawal a
+        // running drain holds `uploading` counts here, so that case still waits for it.
+        let queued = try await queue.read { connection in
+            try store.unsentTreeWithdrawals(userID: userID, connection: connection)
+        }
+        guard queued > 0 else { return 0 }
+
         try await queue.write { connection in
             _ = try store.makeAccountRowsDueNow(userID: userID, connection: connection)
         }
