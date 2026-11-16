@@ -163,7 +163,8 @@ final class OthersTreeUITests: XCTestCase, DeepLinkHarness {
     }
 
     private func scrollToHittable(_ element: XCUIElement, in app: XCUIApplication, upward: Bool = false) {
-        for _ in 0..<6 where !element.isHittable {
+        let screen = app.frame
+        for _ in 0..<6 where !element.isHittableWithoutRaising(onScreen: screen) {
             if upward { app.swipeDown() } else { app.swipeUp() }
         }
     }
