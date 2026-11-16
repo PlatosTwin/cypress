@@ -525,9 +525,17 @@ read_screen() {
     [ -n "$profile" ] || return 1
   fi
   DEVICE_NAME="$(basename "$profile" .simdevicetype)"
+  # Xcode 27.2's profile.plist carries no screen keys (chip 157). The width lives in
+  # capabilities.plist, under ScreenDimensionsCapability. The older profile.plist keys stay as
+  # the fallback for a toolchain that still writes them.
   local p="$profile/Contents/Resources/profile.plist"
-  SCREEN_PX="$(/usr/libexec/PlistBuddy -c 'Print :mainScreenWidth' "$p" 2>/dev/null)" || return 1
-  SCREEN_SCALE="$(/usr/libexec/PlistBuddy -c 'Print :mainScreenScale' "$p" 2>/dev/null)" || return 1
+  local c="$profile/Contents/Resources/capabilities.plist"
+  SCREEN_PX="$(/usr/libexec/PlistBuddy -c 'Print :capabilities:ScreenDimensionsCapability:main-screen-width' "$c" 2>/dev/null)" \
+    && SCREEN_SCALE="$(/usr/libexec/PlistBuddy -c 'Print :capabilities:ScreenDimensionsCapability:main-screen-scale' "$c" 2>/dev/null)" \
+    || {
+      SCREEN_PX="$(/usr/libexec/PlistBuddy -c 'Print :mainScreenWidth' "$p" 2>/dev/null)" || return 1
+      SCREEN_SCALE="$(/usr/libexec/PlistBuddy -c 'Print :mainScreenScale' "$p" 2>/dev/null)" || return 1
+    }
   SCREEN_PT="$(awk -v w="$SCREEN_PX" -v s="$SCREEN_SCALE" 'BEGIN{ if (s>0) printf "%d", w/s }')"
   [ -n "$SCREEN_PT" ] && [ "$SCREEN_PT" -gt 0 ] 2>/dev/null
 }

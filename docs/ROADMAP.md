@@ -2562,10 +2562,14 @@ into this section in the round that finds it, and nowhere else. Each item stands
     100 added trees today. The fix marks a tile complete only when a pass reaches the last page:
     either a new column on `community_tree_cache_tiles` (a migration, with a named author) or a
     mark kept in `app_state` in the same transaction. Do it before the community layer grows.
-157. **`Tools/run_tests.sh` prints `screen-width-pt unknown` on this Mac's simulators.** Seen in
+157. ~~**`Tools/run_tests.sh` prints `screen-width-pt unknown` on this Mac's simulators.** Seen in
     every local log of 2026-11-15 on the four iPhone 17-family devices (Xcode 27.2); CI's header
     prints 402. A width-sensitive UI result from a local log has to take its width from the device
-    table in CLAUDE.md until the probe is fixed.
+    table in CLAUDE.md until the probe is fixed.~~ **DONE** on `test/community-test-gaps`: Xcode
+    27.2's `profile.plist` has no `mainScreenWidth` or `mainScreenScale`; the numbers are in the
+    device type's `capabilities.plist` under `ScreenDimensionsCapability`. `read_screen` now reads
+    those first and keeps the old keys as a fallback. The fixed function resolves 440 (17 Pro Max),
+    402 (17 Pro), 390 (17e) and 420 (Air).
 158. **A photo taken between build 55 and F30 and never sent stays on the phone.** Found by the
     planner of chip 139, 2026-11-15, and outside that chip: the owner's ruling covers community
     trees and what is recorded on them, and these photos are on city trees.
