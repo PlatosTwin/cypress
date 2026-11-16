@@ -2555,11 +2555,18 @@ into this section in the round that finds it, and nowhere else. Each item stands
     still read "Right where you are standing." 10 s after the tap. The train changed only comments
     on that screen. The third train makes the first tap wait until the button can be tapped, which
     rules out one cause. Same family as chip 129. Strike each half if it does not come back.
-151. **A stripped photo's temporary file can stay on the phone.** `PhotoBinary` writes a hidden
+151. ~~**A stripped photo's temporary file can stay on the phone.** `PhotoBinary` writes a hidden
     `.<name>-<uuid>.clean` file beside the photo and swaps it in with one rename. Its cleanup is a
     `defer`, which does not run if the app is killed during the strip, and nothing sweeps the photo
     folder. It costs disk space only; nothing reads the file. Found by the reviewer of chip 139's
-    phone piece, 2026-11-15. A sweep at launch would remove them.
+    phone piece, 2026-11-15. A sweep at launch would remove them.~~
+    **DONE in the community gaps round of 2026-11-16 (`fix/community-phone-gaps`).**
+    `PhotoBinary.removeAbandonedCleanCopies` runs at each layer boot (`AppModel`) over the capture
+    folder and the photo folder. It removes only `.<name>-<UUID>.clean` and that copy's own
+    `.stripping` scratch, never a folder. A strip holds its copy's name from before the file exists
+    until it is gone, and the sweep skips a held name, so a reboot during a strip cannot break it.
+    `PhotoCleanCopySweepTests` covers a leftover, the photos and nine look-alike names, and a sweep
+    run inside a strip's rename.
 152. ~~**The Journal treats a pin move and a visit differently at sign-out (owner's call).** Sign-in
     moves a tree's location rows to the account (`user_id` set, `device_id` NULL), and visits keep
     their `device_id`. So after sign-out, pin moves leave the Journal and the export while visits
@@ -2573,13 +2580,31 @@ into this section in the round that finds it, and nowhere else. Each item stands
     too". Migration v24 adds `tree_locations.set_on_device`, the phone that set each position, and
     the Journal's pin-move part also matches it; the probe now reads 2 moves and 2 visits. The
     ruling is `docs/rulings-pending/journal-keeps-pin-moves.md`. The second side is chip 163.
-153. **Row text breaks badly at the largest text size.** At AX5, `ActivityRow` breaks inside words
+153. ~~**Row text breaks badly at the largest text size.** At AX5, `ActivityRow` breaks inside words
     ("Specie s", "drippi ng"): its timestamp is `.fixedSize()` and squeezes the label. The You tab's
     SYNC tile shows "…", and "Watered" breaks mid-word. All three predate C3; its authors and
-    reviewers saw them in screenshots, 2026-11-15.
+    reviewers saw them in screenshots, 2026-11-15.~~
+    **DONE in the community gaps round of 2026-11-16 (`fix/community-phone-gaps`), with the premise
+    corrected.** All three are `ActivityRow`. The SYNC tile is on screen 19 (the memorial), not on
+    the You tab, which draws no `ActivityRow`. "Watered" broke as "watere / d" in the Care row on 03.
+    At the accessibility sizes the timestamp now goes under the row, as screen 17's outbox row moves
+    its state word, and the SYNC word takes the outbox tile's line limit and scale floor. The renders
+    at the default size are byte-identical before and after. `AX5ReflowTests` measures a one-word
+    row against a one-letter row at six phone widths.
 154. **A community pin exactly under the reader's location dot does not draw.** MapKit hides it, so
     a person standing at a tree they or someone else added may not see its pin. Found when a C3 UI
     test put the reader on the tree, 2026-11-15; 67 m away the pin draws.
+    **Investigated in the community gaps round of 2026-11-16 (`fix/community-phone-gaps`); not
+    fixed, owner's call.** MapKit does not hide the pin. On a clean install on the iPhone 17e
+    simulator, with `CYPRESS_LOCATION` on the `othersTreeOnMap` tree, the pin's view is in the
+    accessibility tree on the first wait, at the dot's frame. It is covered: the dot and the pin are
+    both 18 pt, and the dot is drawn on top on purpose (`MapLayout.userDotZPriority`, task #150).
+    The dot takes no taps, so a tap on the dot selects the pin under it: the card opens and the
+    pin's selected scale and reticle show around the dot. Every fix changes how the dot or a pin
+    draws: (a) a pin under the dot draws above it, which hides the dot instead; (b) the dot drops
+    its core, or draws see-through, while a pin is under it; (c) the pin or the dot is drawn a few
+    points aside, which puts one of them off its true position; (d) no change, since the tap
+    already reaches the tree. Simulator only; not seen on a phone.
 155. ~~**Sign-out keeps `account_provider`.** A later sign-in that goes only through `claimDevice`
     (today, DEBUG paths) then reads as "declined to share" where it should read as unknown. Found
     by the reviewer of C3's profile package, 2026-11-15.~~ **DONE, 2026-11-16**, in
