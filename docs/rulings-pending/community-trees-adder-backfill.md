@@ -41,9 +41,13 @@ The owner can then move the pin of a tree they added before the update.
 
 **What is still wrong, stated rather than hidden.**
 
-- **A pruned add row falls back to a guess, and that is most trees.** `OutboxStore.pruneCompleted`
-  deletes a row 24 hours after it is `done` (`OutboxQueue.completedRetention`), so the add row
-  survives only for a tree added within a day of the update, or one whose add has not been sent.
+- **A missing add row falls back to a guess.** This paragraph first said a pruned add row "is most
+  trees", because `OutboxStore.pruneCompleted` deletes a row 24 hours after it is `done`. That was
+  not true when v23 ran: no build had ever called `pruneCompleted` (ROADMAP 184), so every add row
+  this phone had queued was still there. A row was missing only for a tree that was never queued,
+  or one whose row the erasing door of an account deletion removed. From the fix of ROADMAP 184 on,
+  `DataLayer.boot` sweeps `done` rows older than `OutboxQueue.completedRetention` (24 hours) once
+  per launch. That changes nothing v23 wrote, because the migration runs before the first sweep.
   For a tree whose row is gone, the phone cannot read who added it, and the fallback can name the
   wrong owner in the sign-out case above. Then the phone offers a move the service refuses. The phone and
   the service agree only where the add row survived, or where the current owner happens to be the

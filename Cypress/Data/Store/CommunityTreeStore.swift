@@ -388,7 +388,8 @@ public struct CommunityTreeStore {
     ///
     /// **When no row exists, the one-time send decides next**: yes when `CommunityTreeBackfill` (or
     /// `addTree`, since this build) queued the tree's add and recorded it in `app_state`. That record
-    /// outlives the add row, which `pruneCompleted` deletes a day after it is done. Without it a
+    /// outlives the add row, which `pruneCompleted` deletes at the first launch more than a day after
+    /// it is done (`DataLayer.boot`). Without it a
     /// tree added before syncing existed lost the Move pin offer again a day after it was sent.
     ///
     /// **Then the date decides**: yes for a tree added on or after `firstQueuedAddsAt`, whose add

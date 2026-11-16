@@ -94,11 +94,12 @@ final class AppModel {
         progress.onInstalled = { [weak self] in self?.reboot() }
     }
 
-    /// Removes the clean copies that photo strips killed part-way left behind, in the two folders
-    /// where a strip runs: the capture staging folder and the photo folder beside the database.
+    /// Removes the clean copies and scratch files that photo strips killed part-way left behind, in
+    /// the two folders where a strip runs: the capture staging folder and the photo folder beside
+    /// the database. An upload's `<UUID>.jpg.stripping` is written only in the photo folder.
     ///
     /// Run at every boot of the layer, a reboot included. That is safe while a strip of the old
-    /// layer is still running, because `PhotoBinary.removeAbandonedCleanCopies` keeps the copy of
+    /// layer is still running, because `PhotoBinary.removeAbandonedCleanCopies` keeps the files of
     /// any strip in progress in this process.
     nonisolated static func removeAbandonedCleanCopies() {
         var folders: [URL] = []
