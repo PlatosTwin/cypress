@@ -875,9 +875,9 @@ enum DebugDeepLink {
     private static let movePinSlotSpacingM: Double = 30
     private static let movePinSlots = 60
     /// The sixth, ~200 m north of the fifth, with a line of slots west of it the same way. One tree
-    /// per launch. `ProfileLinkColumnUITests` has two tests and each launches this case once, so one
-    /// run of that class takes two slots, and 200 slots is 100 runs on one simulator before
-    /// `.conflict` says the line is full.
+    /// per launch. `ProfileLinkColumnUITests` has three tests: two launch this case once each, and
+    /// the third launches it once at each of two text sizes. So one run of that class takes four
+    /// slots, and 200 slots is 50 runs on one simulator before `.conflict` says the line is full.
     private static let profileLinksSpot = Coordinate(latitude: 37.7690, longitude: -122.5300)
     private static let profileLinksSlots = 200
     /// The seventh, ~200 m north of the sixth's line, and the start of a line of slots running west,

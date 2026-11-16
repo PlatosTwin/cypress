@@ -2498,7 +2498,14 @@ into this section in the round that finds it, and nowhere else. Each item stands
     `ContributedCamera` breaks the tie on the newest contribution). On a fresh install the check-in
     is the newest, so `ProfileLinkColumnUITests` twice and then `SeeAllOnMapUITests` passes with or
     without the fix. Without the fix the second order fails on the camera assertion; with it, it passes.
-143. **`CameraZoomPinchTests` fails on main on this Mac's toolchain.** "05 and 09's camera hands the
+143. ~~**`CameraZoomPinchTests` fails on main on this Mac's toolchain.**~~ **DONE, 2026-11-16**, in
+    `fix/record-links-and-test-harness`. Cause: on Xcode 27.2 an initialized `@State` is stored as
+    `LazyState`, which a `Mirror` cannot read before the view is installed. `ContributionCameraView`
+    now has `init(camera:onCapture:onDone:)`, which seeds the state with the controller it is given
+    or a new one, and the test passes its own controller in. `VisitCameraController.init` starts
+    nothing (read by the reviewer), so the extra construction is silent. The full unit suite is
+    green locally again (2464 tests). Not run on Xcode 26.6 before CI. The original report
+    follows. "05 and 09's camera hands the
     pinch its own controller, armed, on its viewfinder" fails at `CameraZoomPinchTests.swift:162`,
     "Expectation failed: Self.stateModel(of: view, label: "_camera")": a `Mirror` lookup of
     `_camera` on `ContributionCameraView`, which is SwiftUI's internal state storage. Seen with
@@ -2857,7 +2864,12 @@ into this section in the round that finds it, and nowhere else. Each item stands
     explain it. Not investigated.
 182. **`server/testdata/README.md` says "the adder's own calendar day" for the "added" row.** That is
     approximate for a tree the backfill sent later. Found by the reviewer of chip 149, 2026-11-16.
-183. **Record links center their second line at the largest text size.** At AX5 "Report the species
+183. ~~**Record links center their second line at the largest text size.**~~ **DONE, 2026-11-16**,
+    in `fix/record-links-and-test-harness`: the `recordLinkAction` label and the `speciesClaim`
+    label take `.multilineTextAlignment(.leading)`. `ProfileLinkColumnUITests
+    .testEveryLineOfAColumnLinkStartsOnTheColumnEdge` reads the screenshot's pixels and holds every
+    line's first ink within 4 pt of the column edge, at AX5 and at the default size. Seen flush by
+    the reviewer on the 420 pt iPhone Air, light and dark. The original report follows. At AX5 "Report the species
     as wrong" and "Report that there is no tree here" wrap, and the second line is centered and
     sits a few points right of the column edge. It comes from the shared `recordLinkAction` Button
     label and is older than chip 144; the label probably needs `.multilineTextAlignment(.leading)`.
@@ -2927,7 +2939,14 @@ into this section in the round that finds it, and nowhere else. Each item stands
     `deleteAccountOnService`, so the withdrawal reaches the service while the account still owns
     the tree. Phone side run, service answer read, by the reviewer of the assembled train,
     2026-11-16. Next batch.
-193. **Two pairs of debug screens put a tree at the same spot.** `othersTreeSeat` puts
+193. ~~**Two pairs of debug screens put a tree at the same spot.**~~ **DONE, 2026-11-16**, in
+    `fix/record-links-and-test-harness`: `othersTree` sits at 37.7924 and `othersTreeUnnamed` at
+    37.7942. `DebugDeepLink.treeSpot(for:)` lists every screen's spot in a switch with no
+    `default`, and `DebugDeepLinkSpotTests` holds every two spots 100 m apart north to south. The
+    reviewer ran `OthersTreeUITests` and then `AddTreeNearbyUITests` on one install, and both
+    passed. One limit: `treeSpot` reads the same constants the screens read, but nothing forces a
+    screen's placement code to go through it, so a placement edited in place would pass the test.
+    The original report follows. `othersTreeSeat` puts
     `othersTreeUnnamed`'s cached tree exactly at `addTreeAloneSpot` and `othersTree`'s exactly at
     `addTreeNearbySpot` (`DebugDeepLink.swift`; on main since round C3). `addTreeAlone` throws when
     it finds any community tree within 10 m, cache included, so after `OthersTreeUITests` runs on a
@@ -2972,6 +2991,12 @@ into this section in the round that finds it, and nowhere else. Each item stands
     dark screenshot can be a light one; `DataDisputeUITests` may name its dark shots wrongly for
     that reason. (d) A system location prompt drew on a fresh install with `CYPRESS_LOCATION`
     pinned. Seen by authors and reviewers, 2026-11-16; none investigated.
+200. **The profile's link column starts 2 pt further right on a cached tree.** The pixel test of
+    chip 183 measured the column edge at 16 pt on `profileLinks` (the reader's own tree) and at
+    18 pt on `othersTreeSharing` (somebody else's tree from the cache), and the header text sits
+    about 2 pt further right there too. It may be an inset difference between the two profile
+    kinds. Measured by the reviewer of `fix/record-links-and-test-harness` on the iPhone Air,
+    2026-11-16; not investigated.
 
 
 **Retire the format-1 manifest — DONE, 2026-08-23.** The owner overrode the trigger the day after
