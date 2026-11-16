@@ -330,19 +330,6 @@ struct PhotoSourceResponse: Decodable {
     }
 }
 
-/// The `conflict` body's sibling of `error` — `{detail: {candidates: [NearbyTree]}}`.
-///
-/// `NearbyTree` decodes directly, because the service emits it in that type's own synthesized keys.
-/// The candidates travel beside the envelope rather than inside it because `APIError.Envelope`'s
-/// nested container decodes exactly `code`, `message` and `retryable` (`sync.go`).
-struct ProximityConflictDetail: Decodable {
-    struct Detail: Decodable {
-        let candidates: [NearbyTree]
-    }
-
-    let detail: Detail
-}
-
 /// `GET /me/grove` — the account's half of a grove row.
 ///
 /// **Not a `GroveEntry`**, and the missing fields are the point: there is no `display_name` and no

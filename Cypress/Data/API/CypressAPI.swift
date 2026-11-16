@@ -42,8 +42,9 @@ public protocol CypressAPI: Sendable {
     /// summary, photo timeline page 1, measurement series.
     func treeProfile(id: UUID) async throws -> TreeProfile
 
-    /// `POST /trees` — community add. Requires a photo, species optional; runs the 10 m proximity
-    /// dedupe against any species and returns `.conflict` with the candidate list when it trips.
+    /// `POST /trees` — community add. Requires a photo, species optional. A tree within 10 m of
+    /// another is added like any other (the owner's ruling of 2026-11-14): the screen shows the
+    /// trees nearby as a note through `treesNear`, and this method does not refuse on distance.
     func addTree(_ draft: TreeDraft) async throws -> Tree
 
     /// Moves a community tree's pin — the owner's decisions 2 and 5 of 2026-09-28: the move
@@ -62,8 +63,8 @@ public protocol CypressAPI: Sendable {
     ///   from the cache, or a tree this phone added whose adder is not whoever is asking, including
     ///   a tree whose adder is nobody (every tree an account deletion anonymized);
     ///   `.validationFailed` for a position off the map or a negative
-    ///   accuracy; `ProximityConflict` (`.conflict`) when the new position is within 10 m of another
-    ///   tree.
+    ///   accuracy. A new position within 10 m of another tree is not refused (the owner's ruling of
+    ///   2026-11-14).
     ///
     /// Defaulted in `LocationCorrection.swift` to `.notFound`. **Declared here and not only in an
     /// extension**, for the reason `photoData` gives below at length (ERRATA E125).
@@ -947,19 +948,14 @@ public enum MapContent: Hashable, Sendable {
 
 // MARK: - Shortlist
 
-/// A row of the what-tree-is-this shortlist (screen 02).
+/// A row of the what-tree-is-this shortlist (screen 02), and of the Add this tree screen's
+/// "ALREADY ON RECORD" note.
 ///
-/// **`Decodable` since #158 step 4, and the conformance is a contract rather than a convenience.**
-/// `POST /trees`' proximity `conflict` carries `detail.candidates` as an array of these, and it
-/// emits them in **this type's own synthesized keys** — `distanceM`, `speciesScientificName`, and a
-/// nested `Tree` spelling `speciesCurrentID` rather than `species_current_id`. That is deliberate on
-/// the service's side (`server/internal/api/wire.go`) and it only works if a plain `JSONDecoder`
-/// with no key strategy decodes this type, which is what the conformance says and what
-/// `CypressTests/GoldenWireFixtureTests` proves against `server/testdata/proximity_conflict.json`.
-///
-/// `id` is computed off `tree`, so it is not a stored property and not a coding key — which is why
-/// the fixture carries no `id` at the row level and is right not to.
-public struct NearbyTree: Hashable, Sendable, Identifiable, Decodable {
+/// **No longer `Decodable`.** It was from #158 step 4 to 2026-11-15, because the service's
+/// proximity `conflict` carried a list of these. The owner's ruling of 2026-11-14 removed that
+/// refusal on both sides, the service stopped sending the list, and nothing else decodes this type:
+/// the shortlist is answered on this phone.
+public struct NearbyTree: Hashable, Sendable, Identifiable {
     public var id: UUID { tree.id }
     public let tree: Tree
     /// Great-circle meters from the query point. Screen 02 renders this as `17 m S`.
@@ -1422,15 +1418,20 @@ public struct TreeDraft: Hashable, Sendable {
         self.landContext = landContext
     }
 
-    /// "runs the proximity dedupe check (10 m, any species)" (BUILD-PLAN §6).
+    /// The radius of the Add this tree screen's "ALREADY ON RECORD" note: the trees on record
+    /// within this many meters of the pin are listed under it. It was BUILD-PLAN §6's proximity
+    /// dedupe ("10 m, any species"), which refused the add; the owner's ruling of 2026-11-14
+    /// turned the refusal into a note that does not block. `DataDispute.positionResolutionRadiusM`
+    /// reuses the number for a different rule.
     public static let proximityDedupeRadiusM: Double = 10
-}
 
-/// Thrown alongside `APIError.conflict` when the 10 m dedupe trips, so the UI can show the
-/// candidate list rather than a bare error.
-public struct ProximityConflict: Error, Sendable {
-    public let candidates: [NearbyTree]
-    public init(candidates: [NearbyTree]) { self.candidates = candidates }
+    /// How far a tree already listed under that note may be before it leaves the list. The note
+    /// appears when a tree is within `proximityDedupeRadiusM`; a tree it lists stays listed until it
+    /// is more than this many meters away, and the note goes when none is left. The owner's decision
+    /// of 2026-11-15 ("Show at 10 m, hide past 15 m"): a GPS fix that drifts across 10 m no longer
+    /// makes the note appear and disappear. A listed tree can therefore show 11 to 15 m under the
+    /// words "within 10 m", which the owner accepted.
+    public static let proximityNoteKeepRadiusM: Double = 15
 }
 
 // MARK: - Photos

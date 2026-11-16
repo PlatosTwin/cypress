@@ -13,8 +13,8 @@ import Testing
 ///    moves the tree's read cache and queues a `location_correction`, in one transaction; somebody
 ///    else, nobody, a signed-out phone on its account's tree, a cached tree and an unknown id are
 ///    each refused with the answer the service would give.
-/// 3. **The move runs the 10 m dedupe against every other tree**, cached ones included, and not
-///    against the tree itself.
+/// 3. **A move may land within 10 m of another tree**, a cached one included (the owner's ruling of
+///    2026-11-14, which removed the 10 m refusal).
 /// 4. **`claimDevice` adopts the tree and its chain**, so the account moves it and the signed-out
 ///    phone no longer can.
 ///
@@ -420,12 +420,13 @@ struct LocationCorrectionTests {
         #expect(try await Self.corrections(store).isEmpty)
     }
 
-    // MARK: - 3. The dedupe
+    // MARK: - 3. No 10 m rule
 
-    /// Red-proof: remove `.filter { $0.tree.id != treeID }` from `correctLocation` — red on the first
-    /// move, with a `ProximityConflict` naming the tree itself.
-    @Test("a move within 10 m of another tree is a conflict, cached trees included, and a tree is not its own neighbor")
-    func theMoveRunsTheDedupe() async throws {
+    /// Red-proof: put back a refusal in `correctLocation` when `treesNear` at
+    /// `TreeDraft.proximityDedupeRadiusM`, less the tree itself, is not empty. The move 5 m from the
+    /// neighbor throws, and the test fails on that error.
+    @Test("a move within 10 m of another tree lands, a cached tree included")
+    func aMoveMayLandNearAnotherTree() async throws {
         let store = try await CypressStore.inMemory()
         let api = LocalAPI(store: store, deviceID: Self.deviceID)
         let tree = try await Self.add(api)
@@ -448,21 +449,20 @@ struct LocationCorrectionTests {
         )
         #expect(nudged.coordinate != Self.offshore)
 
-        for (target, expected) in [
+        for (target, other) in [
             (ProximityDedupeTests.diagonal(from: neighbor.coordinate, meters: 5), neighbor.id),
             (ProximityDedupeTests.diagonal(from: cachedSpot, meters: 5), cached.id)
         ] {
-            do {
-                _ = try await api.correctLocation(
-                    treeID: tree.id, to: target, placement: .contributorPlaced, locationAccuracyM: nil
-                )
-                Issue.record("a move 5 m from \(expected) was accepted")
-            } catch let conflict as ProximityConflict {
-                #expect(conflict.candidates.map(\.tree.id) == [expected], "\(conflict.candidates.map(\.tree.id))")
-            }
+            let moved = try await api.correctLocation(
+                treeID: tree.id, to: target, placement: .contributorPlaced, locationAccuracyM: nil
+            )
+            #expect(moved.coordinate == target, "the move 5 m from \(other) did not land where it was put")
+            // The other tree is still there and still within 10 m: the move went next to it.
+            let near = try await api.treesNear(target, radiusM: TreeDraft.proximityDedupeRadiusM, limit: 10)
+            #expect(near.map(\.tree.id).contains(other), "\(near.map(\.tree.id))")
         }
-        #expect(try await Self.corrections(store).count == 1, "a refused move was queued")
-        #expect(try await Self.chain(store, tree.id).count == 2)
+        #expect(try await Self.corrections(store).count == 3, "a move near another tree was not queued")
+        #expect(try await Self.chain(store, tree.id).count == 4)
     }
 
     // MARK: - The transaction

@@ -74,7 +74,7 @@ public struct OutboxStore {
     /// For the six original kinds the drain *is* the local commit: nothing has touched this device's
     /// tables when the row is written, `OutboxQueue`'s apply sink runs `LocalAPI.sync`, and that
     /// call is what puts the visit on the tree (ERRATA E261 §2). §3.4's nine are the other shape.
-    /// `LocalAPI.addTree` runs a proximity dedupe, strips a photograph's metadata, mints a tree and
+    /// `LocalAPI.addTree` requires a photograph, strips its metadata, mints a tree and
     /// returns it; `deletePhoto` tombstones a row behind two ownership gates and then removes files;
     /// `correctSpecies` supersedes an assertion chain. Each is performed **first**, because the
     /// caller needs the answer, and each writes its queue row inside its own transaction — so either

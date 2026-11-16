@@ -363,7 +363,14 @@
 # is two tests, each one launch: PLACED ON SHARD 3. Both by line count, for the reason the
 # `MovePinUITests` entry above gives.
 
+# `AddTreeNearbyUITests` (ROADMAP 140, the owner's ruling of 2026-11-14 that a tree within 10 m of
+# another is noted, not refused): four tests, one launch each. PLACED ON SHARD 2 by line count, for the
+# reason the `MovePinUITests` entry above gives.
+
+# `OthersTreeUITests` (round C3: other people's community trees, and the only-you line): NEVER
+# MEASURED on CI. PLACED ON SHARD 1, the only line no other branch of the round edits.
+
 DeepLinkVoiceOverTests MapCenteredStateUITests FrameFinitenessGateTests IdentifyFABReachabilityTests AppleSignInUITests SeeAllOnMapUITests DialogCancelUITests OthersTreeUITests
-MapFilterAccessibilityTests AnonymizedPhotoNoticeUITests MapRecenterUITests PhotoBrowserReachabilityTests CityDisclaimerUITests AddReadingReachabilityTests MovePinUITests
+MapFilterAccessibilityTests AnonymizedPhotoNoticeUITests MapRecenterUITests PhotoBrowserReachabilityTests CityDisclaimerUITests AddReadingReachabilityTests MovePinUITests AddTreeNearbyUITests
 DeepLinkSweepTests PrimaryCTAReachabilityTests SheetHeightUITests AlmanacGroupTapTests StrandedPhotoHeroUITests CityCardContainmentUITests AreaPickerUITests ProfileLinkColumnUITests
 SheetExitUITests MapSearchUITests MapSuggestionUITests MapPanTabSwitchUITests PhotoDeletionReachabilityTests AccessibilityTreeTests ReadingOrderAccessibilityTests RemoteGateComplaintUITests DataDisputeUITests

@@ -29,7 +29,8 @@ final class MovePinUITests: XCTestCase, DeepLinkHarness {
         static let unmoved = "The pin has not moved."
         static let movedFiveNorth = "5 m north of where it was."
         static let movedTenNorth = "10 m north of where it was."
-        static let rulePrefix = "Drag the map to put the pin on the tree."
+        /// The whole rule line since the owner's ruling of 2026-11-14, which removed its 10 m sentence.
+        static let rule = "Drag the map to put the pin on the tree."
         static let nudgeNorth = "Move the pin north"
         static let save = "Save"
         static let showWhere = "Show me where this is"
@@ -61,8 +62,9 @@ final class MovePinUITests: XCTestCase, DeepLinkHarness {
             app.staticTexts[Copy.unmoved].waitForExistence(timeout: 15),
             "the Move pin screen did not open on the tree's own spot"
         )
-        let rule = app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH %@", Copy.rulePrefix)).firstMatch
-        XCTAssertTrue(rule.exists, "the Move pin screen does not state its rule")
+        XCTAssertTrue(app.staticTexts[Copy.rule].exists, "the Move pin screen does not state its rule, exactly")
+        let tenMeterRule = app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "within 10 m")).firstMatch
+        XCTAssertFalse(tenMeterRule.exists, "the Move pin screen still states a 10 m rule: '\(tenMeterRule.label)'")
         let save = app.buttons[Copy.save]
         XCTAssertFalse(save.isEnabled, "Save is offered before the pin has moved")
 

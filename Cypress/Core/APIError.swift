@@ -17,9 +17,9 @@ public enum APIError: String, Error, Codable, Sendable, CaseIterable {
 
     /// Whether an outbox item that hit this error should be retried by the backoff schedule.
     ///
-    /// Only transient, server-side conditions are retryable. `conflict` is *not*: the proximity
-    /// dedupe on `POST /trees` returns it with a candidate list the user must resolve
-    /// (BUILD-PLAN §6), and re-sending would not change the answer.
+    /// Only transient, server-side conditions are retryable. `conflict` is *not*: it says the
+    /// record already stands in a state the request cannot apply to (BUILD-PLAN §6), and re-sending
+    /// would not change the answer.
     public var retryable: Bool {
         switch self {
         case .rateLimited, .serverError:

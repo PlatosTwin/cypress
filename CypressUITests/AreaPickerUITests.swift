@@ -111,6 +111,8 @@ final class AreaPickerUITests: XCTestCase {
             elsewhere.waitForExistence(timeout: 20),
             "“\(Self.otherNeighborhood)” is not in the picker, which reads the whole inventory"
         )
+        // The checks above pass while the sheet is still rising, so they are not a wait for it.
+        assertReachable(elsewhere, "the picker's “\(Self.otherNeighborhood)” row")
         elsewhere.tap()
 
         // The header pill is the screen naming its own subject, and it is what a reader checks.
@@ -272,6 +274,8 @@ final class AreaPickerUITests: XCTestCase {
         pick.tap()
         let elsewhere = app.buttons[Self.otherNeighborhood]
         XCTAssertTrue(elsewhere.waitForExistence(timeout: 20))
+        // The same gap as in the coarse-fix test below: the row exists before the sheet settles.
+        assertReachable(elsewhere, "the picker's “\(Self.otherNeighborhood)” row")
         elsewhere.tap()
         XCTAssertTrue(
             composition(app).waitForExistence(timeout: 20),
@@ -313,6 +317,9 @@ final class AreaPickerUITests: XCTestCase {
 
         let elsewhere = app.buttons[Self.otherNeighborhood]
         XCTAssertTrue(elsewhere.waitForExistence(timeout: 20))
+        // The row exists before BottomSheet's rise has finished (opacity 0 until it settles); CI failed
+        // this tap once as "Failed to not hittable" (2026-11-15), most likely in that gap.
+        assertReachable(elsewhere, "the picker's “\(Self.otherNeighborhood)” row")
         elsewhere.tap()
         XCTAssertTrue(
             composition(app).waitForExistence(timeout: 20),

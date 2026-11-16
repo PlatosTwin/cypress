@@ -44,6 +44,12 @@ the move through `RoutedAPI.correctLocation`: on this phone first, then queued a
 
 ### R??? — No distance limit on a pin move, because the service has none
 
+> **Superseded in part, 2026-11-14.** The owner's ruling of that day removed the 10 m rule: a moved
+> pin may land within 10 m of another tree (`community-trees-no-proximity-rule.md`). The phone stops
+> refusing such a move in `feat/no-proximity-refusal-phone` and the service in
+> `feat/no-proximity-refusal-server`. The text below is the record of 2026-11-12 and is kept as it
+> was; its "no other tree is within the 10 m dedupe radius" check no longer applies.
+
 The brief asked to read the limit from the server and enforce the same one. The service has none.
 Its `location_correction` handler (`server/internal/api/sync.go`) and
 `store.applyLocationCorrection` (`server/internal/store/community_trees.go`) check only that the
@@ -54,6 +60,12 @@ either. So the phone sets no bound, and refuses exactly what the service refuses
 distance bound" in `community-trees-core.md`. Whether to add a bound stays the owner's C3 question.
 
 ### R??? — The Move pin strings (drafts)
+
+> **Superseded in part, 2026-11-14.** The owner kept these drafts, except the two that state the
+> 10 m rule, which went with the rule (`community-trees-c3-answers.md`, "Move pin" item 2). The rule
+> line is now only "Drag the map to put the pin on the tree.", and the refusal "Another tree is
+> recorded within 10 m of that spot. Move the pin farther from it." is gone with the code that
+> showed it. The table below is kept as it was on 2026-11-12.
 
 | Where | Draft |
 |---|---|
