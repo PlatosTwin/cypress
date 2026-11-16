@@ -1405,6 +1405,9 @@ public struct ContributionStore {
     /// device-owned rows in front of them. There is no "everyone's reminders" query and no way to
     /// ask for another owner's: a caller states who it is, and privacy is the shape of the API
     /// rather than a filter someone can forget (D4, DECISIONS §3.11).
+    ///
+    /// A reminder on a community tree this phone withdrew is left out. The row stays saved, but the
+    /// You tab opens a reminder's tree, and a withdrawn tree has no profile to open.
     public func privateReminders(
         userID: UUID?,
         deviceID: UUID?,
@@ -1412,11 +1415,12 @@ public struct ContributionStore {
         connection: SQLiteConnection
     ) throws -> [PrivateReminder] {
         let statement = try connection.cachedStatement("""
-            SELECT * FROM private_reminders
-             WHERE deleted_at IS NULL
-               AND ((:user IS NOT NULL AND user_id = :user COLLATE NOCASE)
-                    OR (:device IS NOT NULL AND device_id = :device COLLATE NOCASE))
-             ORDER BY created_at DESC LIMIT :limit
+            SELECT r.* FROM private_reminders r
+             WHERE r.deleted_at IS NULL
+               AND ((:user IS NOT NULL AND r.user_id = :user COLLATE NOCASE)
+                    OR (:device IS NOT NULL AND r.device_id = :device COLLATE NOCASE))
+               AND \(Self.notOnAWithdrawnTree("r"))
+             ORDER BY r.created_at DESC LIMIT :limit
             """)
         _ = try statement.bind([
             ":user": userID?.uuidString,
@@ -2157,9 +2161,12 @@ public struct ContributionStore {
         deviceID: UUID,
         before cursor: JournalCursor?,
         limit: Int,
+        includingWithdrawn: Bool = false,
         connection: SQLiteConnection
     ) throws -> [(id: UUID, kind: JournalEntry.Kind, treeID: UUID, capturedAt: Date, summary: String)] {
-        let statement = try connection.cachedStatement(Self.journalSQL)
+        let statement = try connection.cachedStatement(
+            includingWithdrawn ? Self.exportJournalSQL : Self.journalSQL
+        )
         _ = try statement.bind([
             ":device": deviceID.uuidString,
             ":user": userID?.uuidString,
@@ -2265,7 +2272,26 @@ public struct ContributionStore {
     /// for each tree this phone added and one row per move, so both the walk and the extra rows in
     /// the merge are bounded by one person's own adds and moves. `JournalQueryPlanTests` allows the
     /// walk by name with that as the premise, as it allows `tree_names`.
-    static let journalSQL = """
+    static let journalSQL = journalStatement(includingWithdrawn: false)
+
+    /// The same read with the withdrawn-tree clauses left out, for the export only. The export's
+    /// promise is everything this person recorded on this phone, and the owner's answer of
+    /// 2026-11-16 says a withdrawn tree's rows stay saved; it names only the Journal, My Grove and
+    /// the Yours map as the places the tree leaves. Keeping the export whole is the orchestrator's
+    /// choice, recorded in `docs/rulings-pending/community-trees-withdraw.md`. Without the clauses
+    /// this is the statement the Journal ran before withdrawals existed.
+    static let exportJournalSQL = journalStatement(includingWithdrawn: true)
+
+    private static func journalStatement(includingWithdrawn: Bool) -> String {
+        func withdrawnClause(_ qualifier: String) -> String {
+            includingWithdrawn ? "1" : notOnAWithdrawnTree(qualifier)
+        }
+        let pinMoveWithdrawnClause = includingWithdrawn ? "1" : """
+            NOT EXISTS (SELECT 1 FROM community_trees withdrawn
+                                WHERE withdrawn.id = tree_locations.tree_id COLLATE NOCASE
+                                  AND withdrawn.deleted_at IS NOT NULL)
+            """
+        return """
         SELECT id, kind, tree_uuid, captured_at, summary FROM (
             SELECT id, 'visit' AS kind, tree_uuid, captured_at, COALESCE(note, '') AS summary
               FROM (SELECT * FROM visits e
@@ -2275,7 +2301,7 @@ public struct ContributionStore {
                        AND (captured_at, id COLLATE NOCASE)
                            < (COALESCE(:cursorAt, char(0x10FFFF)), COALESCE(:cursorID, char(0x10FFFF)))
                        AND \(Self.notAnonymized("e"))
-                       AND \(Self.notOnAWithdrawnTree("e"))
+                       AND \(withdrawnClause("e"))
                      ORDER BY captured_at DESC, id COLLATE NOCASE DESC
                      LIMIT :limit)
             UNION ALL
@@ -2289,7 +2315,7 @@ public struct ContributionStore {
                        AND (captured_at, id COLLATE NOCASE)
                            < (COALESCE(:cursorAt, char(0x10FFFF)), COALESCE(:cursorID, char(0x10FFFF)))
                        AND \(Self.notAnonymized("e"))
-                       AND \(Self.notOnAWithdrawnTree("e"))
+                       AND \(withdrawnClause("e"))
                      ORDER BY captured_at DESC, id COLLATE NOCASE DESC
                      LIMIT :limit)
             UNION ALL
@@ -2302,7 +2328,7 @@ public struct ContributionStore {
                        AND (captured_at, id COLLATE NOCASE)
                            < (COALESCE(:cursorAt, char(0x10FFFF)), COALESCE(:cursorID, char(0x10FFFF)))
                        AND \(Self.notAnonymized("e"))
-                       AND \(Self.notOnAWithdrawnTree("e"))
+                       AND \(withdrawnClause("e"))
                      ORDER BY captured_at DESC, id COLLATE NOCASE DESC
                      LIMIT :limit)
             UNION ALL
@@ -2314,7 +2340,7 @@ public struct ContributionStore {
                        AND (captured_at, id COLLATE NOCASE)
                            < (COALESCE(:cursorAt, char(0x10FFFF)), COALESCE(:cursorID, char(0x10FFFF)))
                        AND \(Self.notAnonymized("e"))
-                       AND \(Self.notOnAWithdrawnTree("e"))
+                       AND \(withdrawnClause("e"))
                      ORDER BY captured_at DESC, id COLLATE NOCASE DESC
                      LIMIT :limit)
             UNION ALL
@@ -2325,14 +2351,13 @@ public struct ContributionStore {
                     OR (:user IS NOT NULL AND user_id = :user COLLATE NOCASE))
                AND (occurred_at, id COLLATE NOCASE)
                    < (COALESCE(:cursorAt, char(0x10FFFF)), COALESCE(:cursorID, char(0x10FFFF)))
-               AND NOT EXISTS (SELECT 1 FROM community_trees withdrawn
-                                WHERE withdrawn.id = tree_locations.tree_id COLLATE NOCASE
-                                  AND withdrawn.deleted_at IS NOT NULL)
+               AND \(pinMoveWithdrawnClause)
                AND \(Self.notAnonymized("tree_locations"))
         )
         ORDER BY captured_at DESC, id COLLATE NOCASE DESC
         LIMIT :limit
         """
+    }
 
     /// `POST /devices/claim` — attributes this device's anonymous contributions to a user (D9).
     ///

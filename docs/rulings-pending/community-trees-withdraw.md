@@ -48,6 +48,17 @@ Q6 = 5, Q8 = 6. Q7 is the orchestrator's choice below.
 Recorded as the orchestrator's choice, never as the owner's: every Journal row opens a profile, and
 a withdrawn tree's profile cannot open.
 
+### R??? — The export keeps a withdrawn tree's rows (the orchestrator's choice, not the owner's)
+
+Recorded as the orchestrator's choice, never as the owner's. The owner said the adder's rows "stay
+saved" and named the Journal, My Grove and the Yours map as the places the tree leaves. The export
+promises everything this person recorded on this phone, and nothing in it opens a profile. So the
+CSV and the GeoJSON keep every visit, check-in, measurement, care event and pin move on a tree this
+phone withdrew. The export reads the Journal's statement without its withdrawn-tree clauses
+(`ContributionStore.exportJournalSQL`). A GeoJSON feature still has its position, because the
+export resolves the tree through the community layer, which returns this phone's own row withdrawn
+or not.
+
 ---
 
 ## Design notes (the author's)
@@ -70,6 +81,10 @@ transaction, at one instant. The queue row's `created_at` and the tombstone hold
 - **The withdrawal waits for the tree's add** (`waitsForItsTreeAdd`), so the person's order holds:
   add, then any move, then the withdrawal. A move held behind an add that arrived withdrawn would
   fail `not_found`.
+- **The erasing door of an account deletion puts the tree back before it discards the withdrawal**
+  (`OutboxStore.forgetAccount`), when the service has not accepted the withdrawal yet. The service
+  may keep the tree (another identity built on it), and the phone then keeps it too. A withdrawal
+  the service already accepted leaves the tree withdrawn.
 - **It is not gated on whether the service has the tree.** The service answers a withdrawal of a
   tree it never received with `applied`, and the add then arrives withdrawn.
 
@@ -94,7 +109,9 @@ The reason line is drawn only on a fact the phone holds. There are three, and no
 2. **A visit, check-in, measurement or care event in this phone's own tables, not deleted, by
    another account** (a `user_id` that is set and is not the reader's), whose queue row no longer
    owes a send. The service never moves one account's rows to another, so such a row is somebody
-   else's on the service too.
+   else's on the service too. An account this phone made itself in builds 6 to 33
+   (`CommunityTreeBackfill.phoneMadeAccounts`) does not count: it never reached the service, so
+   neither did its rows, and the backfill moves them to the signed-in account.
 3. **A withdrawal of this tree that the service already refused with `conflict`.**
 
 What the phone **cannot** know, and therefore never draws the line for:
@@ -119,8 +136,10 @@ say "only you" about a tree the profile says everyone sees, or the reverse.
 
 The tree leaves the map, the shortlist and the profile (they already filtered `deleted_at`), and
 now also the Journal's four contribution arms, the Yours map's four contribution arms, My Grove's
-local read, and the service's grove rows as the router resolves them. The adder's visits, photos and
-favorite stay saved. This also resolves the planner's finding (g)1 for community trees: the Journal
+local read, and the service's grove rows as the router resolves them. Two more lists on the You tab
+open a tree's profile, and they drop the tree too: the private reminders, and a lead's review
+queue. The adder's visits, photos, favorite and reminders stay saved, and the export keeps them
+(the orchestrator's choice above). This also resolves the planner's finding (g)1 for community trees: the Journal
 and My Grove ignored a lead's local withdrawal too, and they no longer do.
 
 ### R??? — After a withdrawal the profile closes

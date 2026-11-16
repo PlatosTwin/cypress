@@ -380,7 +380,10 @@ public struct CommunityTreeStore {
     ///   account" is a `user_id` that is set and is not the reader's: the service never moves one
     ///   account's rows to another. A row with no `user_id` is this device's, and a sign-in claims
     ///   those for the account, so it is not counted. Neither is a row an account deletion
-    ///   anonymized, because this phone cannot tell whether it reached the service.
+    ///   anonymized, because this phone cannot tell whether it reached the service. Neither is a row
+    ///   of an account this phone made itself in builds 6 to 33
+    ///   (`CommunityTreeBackfill.phoneMadeAccounts`): such an account never reached the service, so
+    ///   its rows did not either, and the backfill moves them to the signed-in account.
     /// - **A withdrawal of this tree that the service already refused with `conflict`.**
     ///
     /// Photographs are not read here: the service's own profile read is the one that can say a
@@ -388,8 +391,14 @@ public struct CommunityTreeStore {
     public func othersHaveAddedTo(
         treeID: UUID,
         readerUserID: UUID?,
+        deviceID: UUID,
         connection: SQLiteConnection
     ) throws -> Bool {
+        // The reader is subtracted by the SQL below; `phoneMadeAccounts` needs some id to leave out.
+        let phoneMade = try CommunityTreeBackfill.phoneMadeAccounts(
+            device: deviceID, excluding: readerUserID ?? deviceID, connection: connection
+        )
+        let phoneMadeJSON = "[" + phoneMade.map { "\"\($0.uuidString)\"" }.sorted().joined(separator: ",") + "]"
         let statement = try connection.cachedStatement("""
             SELECT EXISTS (
                 SELECT 1 FROM (
@@ -407,6 +416,7 @@ public struct CommunityTreeStore {
                 ) met
                  WHERE met.user_id IS NOT NULL
                    AND (:user IS NULL OR met.user_id <> :user COLLATE NOCASE)
+                   AND upper(met.user_id) NOT IN (SELECT value FROM json_each(:phoneMade))
                    AND NOT EXISTS (SELECT 1 FROM anonymized_contributions tomb
                                     WHERE tomb.client_uuid = met.client_uuid)
                    AND NOT EXISTS (SELECT 1 FROM outbox owed
@@ -420,7 +430,9 @@ public struct CommunityTreeStore {
                    AND upper(json_extract(refused.payload, '$.treeID')) = upper(:tree)
             ) AS found
             """)
-        _ = try statement.bind([":tree": treeID.uuidString, ":user": readerUserID?.uuidString])
+        _ = try statement.bind([
+            ":tree": treeID.uuidString, ":user": readerUserID?.uuidString, ":phoneMade": phoneMadeJSON
+        ])
         let found = try statement.fetchOne { try $0.bool("found") } ?? false
         _ = try statement.reset()
         return found

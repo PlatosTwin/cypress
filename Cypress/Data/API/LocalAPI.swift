@@ -441,7 +441,8 @@ public actor LocalAPI: CypressAPI {
             let treeWithdrawal: TreeWithdrawalOffer = !isAdder
                 ? .unavailable
                 : try communityTrees.othersHaveAddedTo(
-                    treeID: id, readerUserID: attribution.userID, connection: connection
+                    treeID: id, readerUserID: attribution.userID, deviceID: deviceID,
+                    connection: connection
                 ) ? .othersHaveAddedToIt : .available
 
             return TreeProfile(
@@ -3290,6 +3291,16 @@ public actor LocalAPI: CypressAPI {
     /// belonging to somebody else that a sync brought down, and there the scoped form withholds an
     /// unapproved one — which is E215, not a regression. `JournalBatchReadTests` holds both halves.
     public func journal(cursor: String?, limit: Int) async throws -> Page<JournalEntry> {
+        try await journalPage(cursor: cursor, limit: limit, includingWithdrawn: false)
+    }
+
+    /// `journal(cursor:limit:)`'s body. `includingWithdrawn` is true for the export only (see
+    /// `ContributionStore.exportJournalSQL`).
+    private func journalPage(
+        cursor: String?,
+        limit: Int,
+        includingWithdrawn: Bool
+    ) async throws -> Page<JournalEntry> {
         let position = cursor.flatMap(ContributionStore.JournalCursor.init(string:))
         // `grovePage`'s clamp, for its reason and on the same day: a negative `LIMIT` is no limit
         // in SQLite, so `journal(cursor: nil, limit: -1)` returned the whole journal through the
@@ -3302,6 +3313,7 @@ public actor LocalAPI: CypressAPI {
                 deviceID: deviceID,
                 before: position,
                 limit: capped,
+                includingWithdrawn: includingWithdrawn,
                 connection: connection
             )
         }
@@ -3567,8 +3579,11 @@ public actor LocalAPI: CypressAPI {
             return try flags.compactMap { flag -> ReviewQueueItem? in
                 // The tree may be a seed row or a community add; resolve through the same two-step the
                 // profile uses. A flag whose tree cannot be found is skipped rather than shown nameless.
+                // So is a flag on a community tree this phone withdrew: the layer returns that row,
+                // but the row opens the tree's profile, and a withdrawn tree has none.
                 let record = try treeQueries?.tree(id: flag.treeID, connection: connection)
-                guard let tree = try record?.tree ?? layer.tree(id: flag.treeID, connection: connection)
+                guard let tree = try record?.tree ?? layer.tree(id: flag.treeID, connection: connection),
+                      !Self.isWithdrawnCommunityTree(tree)
                 else { return nil }
                 let name = try contributions.activeName(treeID: flag.treeID, connection: connection)?.name
                     ?? Self.resolveSpecies(
@@ -4585,7 +4600,11 @@ public actor LocalAPI: CypressAPI {
         var entries: [JournalEntry] = []
         var cursor: String?
         repeat {
-            let page = try await journal(cursor: cursor, limit: Page<JournalEntry>.maximumLimit)
+            // Rows on a tree this phone withdrew are included: they stay saved, and the export
+            // promises everything this person recorded here (`ContributionStore.exportJournalSQL`).
+            let page = try await journalPage(
+                cursor: cursor, limit: Page<JournalEntry>.maximumLimit, includingWithdrawn: true
+            )
             entries.append(contentsOf: page.items)
             cursor = page.nextCursor
         } while cursor != nil

@@ -292,6 +292,134 @@ struct TreeWithdrawalTests {
         #expect(rows.unnamed.contains(tree.id), "the row was dropped as lost, which marks the read degraded")
     }
 
+    /// The erasing door discards a queued withdrawal. When the service keeps the tree (another
+    /// identity built on it, so the answer lists it as anonymized), the phone keeps it too, and the
+    /// discarded withdrawal must not leave it hidden here. A withdrawal the service already accepted
+    /// took the tree off the service, so its tree stays withdrawn.
+    ///
+    /// Red-proof: drop the restore loop in `OutboxStore.forgetAccount`'s erasing branch — red on
+    /// "the erasing door left the kept tree hidden".
+    @Test("the erasing door puts back a tree whose withdrawal it discards, and only an unsent one")
+    func theErasingDoorPutsBackAnUnsentWithdrawal() async throws {
+        let store = try await CypressStore.inMemory()
+        let api = LocalAPI(store: store, deviceID: Fixture.deviceID, userID: Fixture.userID)
+        let unsent = try await Fixture.add(api)
+        let accepted = try await Fixture.add(api, at: ProximityDedupeTests.diagonal(from: Fixture.offshore, meters: 400))
+        try await api.withdrawTree(treeID: unsent.id)
+        try await api.withdrawTree(treeID: accepted.id)
+        // The service accepted the second withdrawal: the row is sent and done.
+        try await store.queue.write { connection in
+            let statement = try connection.prepare("""
+                UPDATE outbox SET local_applied = 1, remote_sent = 1, state = 'done'
+                 WHERE kind = 'tree_withdrawal'
+                   AND upper(json_extract(payload, '$.treeID')) = upper(:tree)
+                """)
+            defer { statement.finalize() }
+            _ = try statement.bind(accepted.id.uuidString, forName: ":tree")
+            try statement.run()
+        }
+        #expect(try await Self.deletedAt(store, unsent.id) != nil, "fixture: the unsent tree is not withdrawn")
+        #expect(try await Self.deletedAt(store, accepted.id) != nil, "fixture: the accepted tree is not withdrawn")
+
+        _ = try await api.finishAccountDeletion(
+            .eraseEverything,
+            actingOn: AccountDeletion.ServiceTreeVerdicts(anonymized: [unsent.id, accepted.id])
+        )
+
+        #expect(try await Self.withdrawals(store).isEmpty, "the erasing door kept a queued withdrawal")
+        #expect(try await Self.deletedAt(store, unsent.id) == nil, "the erasing door left the kept tree hidden")
+        #expect(try await api.mapContent(in: Self.box(around: unsent.coordinate)).markerCount == 1,
+                "the kept tree is not on the map")
+        #expect(try await Self.deletedAt(store, accepted.id) != nil,
+                "the erasing door brought back a tree whose withdrawal the service had accepted")
+    }
+
+    /// The export keeps a withdrawn tree's rows (the orchestrator's choice, recorded in
+    /// `docs/rulings-pending/community-trees-withdraw.md`): the rows stay saved, and the export
+    /// promises everything recorded on this phone. Red-proof: point `exportLatest` back at the
+    /// Journal's own read — red on "the CSV lost the visit on the withdrawn tree".
+    @Test("the export keeps a visit on a withdrawn tree, with its position, while the Journal drops it")
+    func theExportKeepsAWithdrawnTreesRows() async throws {
+        let store = try await CypressStore.inMemory()
+        let api = LocalAPI(store: store, deviceID: Fixture.deviceID)
+        let tree = try await Fixture.add(api)
+        let visit = try await Self.visit(store, on: tree.id, by: .anonymous(deviceID: Fixture.deviceID))
+        #expect(try await Self.journal(api).map(\.id).contains(visit.id), "fixture: the Journal lists the visit")
+        let before = try await Self.exported(api, tree.id)
+        #expect(before.csvLines >= 1 && before.features.count == before.csvLines, "fixture: the export holds the tree")
+
+        try await api.withdrawTree(treeID: tree.id)
+
+        #expect(!(try await Self.journal(api).map(\.id)).contains(visit.id), "the Journal still lists the visit")
+        let after = try await Self.exported(api, tree.id)
+        #expect(after.csvLines == before.csvLines,
+                "the CSV lost the visit on the withdrawn tree: \(after.csvLines) of \(before.csvLines) rows")
+        #expect(after.features.count == before.features.count,
+                "the GeoJSON lost the visit on the withdrawn tree: \(after.features.count) of \(before.features.count)")
+        for feature in after.features {
+            let point = (feature["geometry"] as? [String: Any])?["coordinates"] as? [Double]
+            #expect(
+                point == [tree.coordinate.longitude, tree.coordinate.latitude],
+                "a withdrawn tree's feature has no position, or the wrong one: \(String(describing: point))"
+            )
+        }
+    }
+
+    /// The export's rows about one tree: the CSV's line count and the GeoJSON's features.
+    static func exported(_ api: LocalAPI, _ treeID: UUID) async throws -> (csvLines: Int, features: [[String: Any]]) {
+        let csv = String(decoding: try await api.exportLatest(.csv), as: UTF8.self)
+        let lines = csv.split(separator: "\n").filter { $0.contains(",\(treeID.uuidString),") }.count
+        let geojson = try await api.exportLatest(.geojson)
+        let root = try #require(try JSONSerialization.jsonObject(with: geojson) as? [String: Any])
+        let features = try #require(root["features"] as? [[String: Any]]).filter {
+            ($0["properties"] as? [String: Any])?["tree_id"] as? String == treeID.uuidString
+        }
+        return (lines, features)
+    }
+
+    /// The You tab's two lists open a tree's profile, and a withdrawn tree has none. Red-proofs:
+    /// - drop `notOnAWithdrawnTree` from `privateReminders` — red on "the You tab still lists a
+    ///   reminder";
+    /// - drop the `isWithdrawnCommunityTree` guard in `openReviews` — red on "the review queue still
+    ///   lists".
+    @Test("a reminder and a review flag on a withdrawn tree leave the You tab, and the reminder stays saved")
+    func theYouTabListsDropAWithdrawnTree() async throws {
+        let store = try await CypressStore.inMemory()
+        let api = LocalAPI(store: store, deviceID: Fixture.deviceID)
+        let tree = try await Fixture.add(api)
+        let kept = try await Fixture.add(api, at: ProximityDedupeTests.diagonal(from: Fixture.offshore, meters: 400))
+        for target in [tree.id, kept.id] {
+            _ = try await api.savePrivateReminder(
+                PrivateReminder(owner: .device(Fixture.deviceID), treeID: target, category: .uprooted)
+            )
+            try await store.queue.write { connection in
+                _ = try ContributionStore().insert(
+                    ReviewFlag(treeID: target, kind: .appearsRemoved, raisedBy: nil), connection: connection
+                )
+            }
+        }
+        #expect(Set(try await api.privateReminders().map(\.treeID)) == [tree.id, kept.id], "fixture: reminders")
+        #expect(Set(try await api.openReviews().map(\.treeID)) == [tree.id, kept.id], "fixture: reviews")
+
+        try await api.withdrawTree(treeID: tree.id)
+
+        let reminders = try await api.privateReminders().map(\.treeID)
+        #expect(reminders == [kept.id], "the You tab still lists a reminder on the withdrawn tree: \(reminders)")
+        let reviews = try await api.openReviews().map(\.treeID)
+        #expect(reviews == [kept.id], "the review queue still lists the withdrawn tree: \(reviews)")
+
+        // The reminder row itself stays saved (the owner's answer of 2026-11-16).
+        let saved = try await store.queue.read { connection -> Int in
+            let statement = try connection.prepare(
+                "SELECT COUNT(*) AS n FROM private_reminders WHERE tree_uuid = :id COLLATE NOCASE AND deleted_at IS NULL"
+            )
+            defer { statement.finalize() }
+            _ = try statement.bind(tree.id.uuidString, forName: ":id")
+            return try statement.fetchOne { try $0.int("n") } ?? 0
+        }
+        #expect(saved == 1, "the reminder on the withdrawn tree was deleted, not hidden")
+    }
+
     /// The phone's own row wins over the cache, withdrawn or not (`CommunityLayer`), so a tile that
     /// still carries the tree cannot bring it back. Red-proof: make `CommunityLayer` prefer the
     /// cache row — red on "a tile page brought the withdrawn tree back".
@@ -454,6 +582,50 @@ struct TreeWithdrawalTests {
         }
         #expect(try await api.treeProfile(id: tree.id).treeWithdrawal == .othersHaveAddedToIt,
                 "another account's sent visit did not draw the reason line")
+    }
+
+    /// A visit by an account this phone made itself in builds 6 to 33 never reached the service
+    /// (`CommunityTreeBackfill.phoneMadeAccounts`), so it is no fact about what the service holds.
+    /// The same visit written again after the service's sign-in existed belongs to a real account,
+    /// and counts. Red-proof: drop the `phoneMade` clause from `othersHaveAddedTo` — red on "a
+    /// phone-made account's visit drew the reason line".
+    @Test("a phone-made account's visit does not draw the reason line, and a real account's does")
+    func aPhoneMadeAccountsVisitIsNotAFact() async throws {
+        let store = try await CypressStore.inMemory()
+        let api = LocalAPI(store: store, deviceID: Fixture.deviceID, userID: Fixture.userID)
+        let tree = try await Fixture.add(api)
+        let old = CommunityTreeBackfill.serviceSignInExisted.addingTimeInterval(-86_400)
+        let visit = try await Self.visit(
+            store, on: tree.id, by: Attribution(userID: Self.otherUserID, deviceID: Fixture.deviceID), at: old
+        )
+        func stamp(_ moment: Date) async throws {
+            try await store.queue.write { connection in
+                let statement = try connection.prepare(
+                    "UPDATE visits SET created_at = :old, updated_at = :at WHERE id = :id"
+                )
+                defer { statement.finalize() }
+                _ = try statement.bind([":old": old, ":at": moment, ":id": visit.id.uuidString])
+                try statement.run()
+            }
+        }
+
+        // Made and last written before any build could sign in for real: a phone-made account.
+        try await stamp(old)
+        #expect(
+            try await store.queue.read {
+                try CommunityTreeBackfill.phoneMadeAccounts(
+                    device: Fixture.deviceID, excluding: Fixture.userID, connection: $0
+                )
+            } == [Self.otherUserID],
+            "fixture: the visit's account is not phone-made"
+        )
+        #expect(try await api.treeProfile(id: tree.id).treeWithdrawal == .available,
+                "a phone-made account's visit drew the reason line")
+
+        // Written after the cutoff: a real account's id, so the visit reached the service.
+        try await stamp(CommunityTreeBackfill.serviceSignInExisted.addingTimeInterval(86_400))
+        #expect(try await api.treeProfile(id: tree.id).treeWithdrawal == .othersHaveAddedToIt,
+                "a real account's sent visit did not draw the reason line")
     }
 
     /// **Q8 from the service's read.** Red-proof: return `local` from `RoutedAPI.withdrawalOffer`
