@@ -801,9 +801,18 @@ public actor LocalAPI: CypressAPI {
         case let .own(own):
             subject = own
         }
+        let mine = attribution
+        // A tree somebody else added on this phone follows the cached tree's rule (ROADMAP 144):
+        // the service applies a stranger's first answer only from an account that shares. The
+        // adder names their own tree whatever they agreed.
+        let isAdder = try await store.queue.read { connection in
+            try communityTrees.adder(treeID: treeID, connection: connection)?.isOwned(by: mine) ?? false
+        }
+        if !isAdder, ContributionSharing(userID: userID, link: try await accountLink()) != .sharing {
+            throw APIError.forbidden
+        }
         guard subject.speciesCurrentID == nil else { throw APIError.conflict }
 
-        let mine = attribution
         let owner = ContributionOwner(mine)
         try await store.queue.write { connection in
             guard try communityTrees.claimSpecies(
@@ -1016,6 +1025,8 @@ public actor LocalAPI: CypressAPI {
             case let .own(tree):
                 let isAdder = try communityTrees.adder(treeID: treeID, connection: connection)?
                     .isOwned(by: mine) ?? false
+                // A tree somebody else added on this phone: the cached tree's rule, sharers only.
+                guard isAdder || shares else { throw APIError.forbidden }
                 answers = try localSpeciesAnswers(tree: tree, addedHere: true, isAdder: isAdder, connection: connection)
                 guard answers.openFlag == nil else { throw APIError.conflict }
                 // The adder and the namer correct; neither reports.

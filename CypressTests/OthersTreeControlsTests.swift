@@ -148,6 +148,32 @@ struct OthersTreeControlsTests {
         #expect(try await Self.queued(store).isEmpty, "a refused report was queued")
     }
 
+    /// Signed in, with no answer on record about sharing (`ContributionSharing.unknown`: an account
+    /// linked before the record existed). It is not "shares", so nothing is offered and the verbs
+    /// refuse, on a named tree and on an unnamed one.
+    ///
+    /// Red-proof: make the reader's sharing gate read `!= .notSharing` in `SpeciesAnswerFacts`'
+    /// callers — red on "an unknown reader is offered a report".
+    @Test("a reader whose sharing answer is unknown gets no species control, and the verbs refuse")
+    func unknownSharing() async throws {
+        let store = try await Self.seededStore()
+        let api = LocalAPI(store: store, deviceID: Self.readerDevice)
+        try await Self.signIn(api)
+        try await store.clearAppState(.accountProvider)
+        let plane = try await Self.plane(api)
+        let named = try await Self.cached(api, species: plane.id)
+        let unnamed = try await Self.cached(api, species: nil, at: VisitPinAdjust.offset(Self.spot, northM: 40, eastM: 0))
+
+        let onNamed = TreeProfilePresentation(profile: try await api.treeProfile(id: named.id))
+        #expect(onNamed.profile.readerSharing == .unknown, "calibration: \(onNamed.profile.readerSharing)")
+        #expect(onNamed.speciesCorrection == .unavailable, "an unknown reader is offered a report: \(onNamed.speciesCorrection)")
+        let onUnnamed = TreeProfilePresentation(profile: try await api.treeProfile(id: unnamed.id))
+        #expect(!onUnnamed.offersSpeciesClaim, "an unknown reader is offered the claim")
+        await #expect(throws: APIError.forbidden) { try await api.flagWrongSpecies(treeID: named.id) }
+        await #expect(throws: APIError.forbidden) { _ = try await api.claimSpecies(treeID: unnamed.id, speciesID: plane.id) }
+        #expect(try await Self.queued(store).isEmpty, "a refused act was queued")
+    }
+
     /// The report: a flag, queued with the species it disputes, and the line on the profile. A
     /// second report while the first is still queued says nothing new; once the first is answered,
     /// a new one may be raised (the adder's keep makes room for "a later report").
@@ -350,21 +376,33 @@ struct OthersTreeControlsTests {
 
     /// The same rules on this phone's own table: a tree another person added here (another device
     /// id stands in for another account) offers a sharing reader the report on a named tree and
-    /// the claim on an unnamed one, and offers a reader who does not share neither.
+    /// the claim on an unnamed one, and offers a reader who does not share neither. The verbs say
+    /// what the screen says.
+    ///
+    /// Red-proof: drop the sharing check from the `.own` arm of `claimSpecies` — red on "a
+    /// signed-out stranger named the tree". Red-proof: drop `guard isAdder || shares` from the
+    /// `.own` arm of `flagWrongSpecies` — red on the report, which is not refused as forbidden.
     @Test("a tree another person added on this phone follows the same rules")
     func anotherPersonsTreeHere() async throws {
         let store = try await Self.seededStore()
         let adder = LocalAPI(store: store, deviceID: Self.otherDevice)
-        let named = try await Self.add(adder, device: Self.otherDevice, at: Self.spot, species: try await Self.plane(adder).id)
+        let plane = try await Self.plane(adder)
+        let named = try await Self.add(adder, device: Self.otherDevice, at: Self.spot, species: plane.id)
         let unnamed = try await Self.add(
             adder, device: Self.otherDevice, at: VisitPinAdjust.offset(Self.spot, northM: 40, eastM: 0)
         )
+        let queuedBefore = try await Self.queued(store).count
 
         let reader = LocalAPI(store: store, deviceID: Self.readerDevice)
         var onNamed = TreeProfilePresentation(profile: try await reader.treeProfile(id: named.id))
         #expect(onNamed.profile.isAddedHere, "calibration: the tree is in this phone's table")
         #expect(onNamed.speciesCorrection == .unavailable, "a signed-out reader is offered: \(onNamed.speciesCorrection)")
         #expect(!TreeProfilePresentation(profile: try await reader.treeProfile(id: unnamed.id)).offersSpeciesClaim)
+        await #expect(throws: APIError.forbidden, "a signed-out stranger named the tree") {
+            _ = try await reader.claimSpecies(treeID: unnamed.id, speciesID: plane.id)
+        }
+        await #expect(throws: APIError.forbidden) { try await reader.flagWrongSpecies(treeID: named.id) }
+        #expect(try await Self.queued(store).count == queuedBefore, "a refused act was queued")
 
         try await Self.signIn(reader)
         onNamed = TreeProfilePresentation(profile: try await reader.treeProfile(id: named.id))
@@ -388,6 +426,11 @@ struct OthersTreeControlsTests {
         presentation = TreeProfilePresentation(profile: try await api.treeProfile(id: tree.id))
         #expect(presentation.speciesCorrection == .correctable)
         #expect(presentation.offersMovePin)
+        // The adder who does not share still corrects; a report of their own tree is refused as
+        // the adder's (`.validationFailed`), not as a stranger's (`.forbidden`).
+        let oak = try await Self.oak(api, besides: plane)
+        _ = try await api.correctSpecies(treeID: tree.id, speciesID: oak.id)
+        await #expect(throws: APIError.validationFailed) { try await api.flagWrongSpecies(treeID: tree.id) }
         #expect(presentation.reportSpeciesNote == TreeProfileCopy.reportSpeciesNotice,
                 "the reader's own tree took the note for somebody else's")
     }
