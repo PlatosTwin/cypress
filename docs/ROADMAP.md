@@ -2510,10 +2510,11 @@ into this section in the round that finds it, and nowhere else. Each item stands
     the phone no longer knows the answer (`ContributionSharing.unknown`), so the row does not show
     and the only route is to sign out and sign in again. The service knows the answer; nothing reads
     it back.
-149. **`server/testdata/README.md` does not say that `tree_history.json`'s "added" row carries the
+149. ~~**`server/testdata/README.md` does not say that `tree_history.json`'s "added" row carries the
     day the tree was added.** Since migration 008 the row is dated by `added_on`, where it used to
     carry the day the tree went public. Found by the author of the service's added-day change,
-    2026-11-15.
+    2026-11-15.~~ **DONE** on `test/community-test-gaps`: the README row now says it, checked against
+    `server/migrations/008_community_tree_added_on.sql` and `server/internal/store/community_reads.go`.
 150. **Two test waits failed once in CI on a busy runner (run 43786913681, the second merge train
     of 2026-11-15, attempt 1; the rerun of the two jobs passed).** (a) Three `CommunityAddTests`
     ("a slow read for the old pin position…", "a read that answers after the add began…", "an older
