@@ -2566,7 +2566,9 @@ into this section in the round that finds it, and nowhere else. Each item stands
     **It takes effect only after `cypress-sync` is deployed with this change, which needs the
     owner's go-ahead and has not happened.** Until then the service sends no key and the phone
     behaves as before. Two behaviors are the orchestrator's choice, to be confirmed by the owner
-    (`docs/rulings-pending/account-agree-later.md`).
+    (`docs/rulings-pending/account-agree-later.md`). **Its release note
+    (`docs/whats-new/feat-account-license-readback.md`) is true only after that deploy, so the
+    same rule as chip 144 holds: deploy `cypress-sync` before the release resumes.**
 149. ~~**`server/testdata/README.md` does not say that `tree_history.json`'s "added" row carries the
     day the tree was added.** Since migration 008 the row is dated by `added_on`, where it used to
     carry the day the tree went public. Found by the author of the service's added-day change,
@@ -2735,7 +2737,10 @@ into this section in the round that finds it, and nowhere else. Each item stands
     "This couldn't be sent." A signed-out phone that withdraws or deletes one of the account's
     readings or photos meets the same refusal ("belongs to a different contributor"). Found by
     reading the code (`server/internal/api/sync.go`), by the planner of chip 152, 2026-11-16; not
-    run.
+    run. **Since the withdrawal round this has an effect a person can see:** a withdrawal queued
+    while signed in and still unsent at sign-out is refused the same way, and the tree comes back
+    on the phone with "This couldn't be sent." (read by the reviewer of the assembled train,
+    2026-11-16).
 165. **The Grove species ring skips the tombstone check.** `GroveQueries.ownContributions` has no
     `notAnonymized` clause. After a keep-records account deletion, the deleted account's visits keep
     `device_id`, so they still count in the species ring for whoever holds the phone. The comment on
@@ -2869,6 +2874,25 @@ into this section in the round that finds it, and nowhere else. Each item stands
     the load average reached 300 to 700 on 2026-11-16, and two `AddTreeNoteTests` hit their 300 s
     timeouts on a tree that passes alone. The cap in `CLAUDE.md` is three; two may be the real
     limit for full runs.
+192. **Under the keep-records door, a withdrawal that was not sent yet is lost, and the tree stays
+    public for good.** Steps: a sharing account adds a tree, the tree is published, the account
+    withdraws it while offline, and the account is then deleted with the keep-records door
+    (`RoutedAPI.deleteAccount` does not send the queue first). The withdrawal stays queued with no
+    account in its payload, the service has made the tree anonymous, and it answers the device
+    credential with `forbidden` (`withdrawCommunityTree`, `server/internal/store/community_trees.go`).
+    The row fails with "This couldn't be sent.", the tree comes back, and nobody can withdraw it.
+    The erasing door handles its own case (`OutboxStore.forgetAccount`). Fix: send the queue before
+    `deleteAccountOnService`, so the withdrawal reaches the service while the account still owns
+    the tree. Phone side run, service answer read, by the reviewer of the assembled train,
+    2026-11-16. Next batch.
+193. **Two pairs of debug screens put a tree at the same spot.** `othersTreeSeat` puts
+    `othersTreeUnnamed`'s cached tree exactly at `addTreeAloneSpot` and `othersTree`'s exactly at
+    `addTreeNearbySpot` (`DebugDeepLink.swift`; on main since round C3). `addTreeAlone` throws when
+    it finds any community tree within 10 m, cache included, so after `OthersTreeUITests` runs on a
+    simulator, the `addTreeAlone` case of `AddTreeNearbyUITests` fails there.
+    `CYPRESS_WITHDRAW_COMMUNITY_TREES` does not help, because it does not touch the cache. CI is
+    unaffected: the two classes run on different shards, each on a fresh simulator. Fix: give the
+    seats their own latitudes. Read by the reviewer of the assembled train, 2026-11-16.
 
 
 **Retire the format-1 manifest — DONE, 2026-08-23.** The owner overrode the trigger the day after
