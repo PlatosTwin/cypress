@@ -13,7 +13,8 @@ import Testing
 /// The sentences, one test each:
 /// 1. The reviewer's steps: the withdrawal is sent before `DELETE /me`, and the tree stays withdrawn.
 /// 2. Offline at the deletion: nothing is deleted anywhere, the withdrawal stays queued, and a
-///    later try sends both in order.
+///    later try sends both in order. The same when the service is up but does not take the
+///    withdrawal yet: the deletion stops before `DELETE /me`.
 /// 3. A `conflict` answer to the withdrawal during the deletion: the tree comes back with the
 ///    owner's sentence, and the deletion goes ahead.
 /// 4. The erasing door is unchanged: no send first, and its restore still runs.
@@ -31,6 +32,8 @@ struct WithdrawBeforeAccountDeletionTests {
         private let lock = NSLock()
         private var events: [String] = []
         private var offline = false
+        /// `POST /sync` answers `server_error` while every other route works.
+        private var syncDown = false
         private var deletedKeepingRecords = false
         private var withdrawalAnswer: APIError?
         private var anonymizedOnDeletion: [UUID] = []
@@ -41,6 +44,7 @@ struct WithdrawBeforeAccountDeletionTests {
         var isHolding: Bool { locked { held != nil } }
 
         func setOffline(_ value: Bool) { locked { offline = value } }
+        func setSyncDown(_ value: Bool) { locked { syncDown = value } }
         func answerWithdrawals(with error: APIError?) { locked { withdrawalAnswer = error } }
         func keepAnonymized(_ ids: [UUID]) { locked { anonymizedOnDeletion = ids } }
         func clearLog() { locked { events = [] } }
@@ -77,8 +81,12 @@ struct WithdrawBeforeAccountDeletionTests {
                 await withCheckedContinuation { park($0) }
             }
             return try locked { () throws -> [SyncResult] in
-                if offline { throw URLError(.notConnectedToInternet) }
+                if offline {
+                    events.append(contentsOf: items.map { "(offline) sync \($0.kind.rawValue)" })
+                    throw URLError(.notConnectedToInternet)
+                }
                 events.append(contentsOf: items.map { "sync \($0.kind.rawValue)" })
+                if syncDown { throw APIError.serverError }
                 return items.map { item in
                     guard item.kind == .treeWithdrawal else {
                         return SyncResult(clientUUID: item.clientUUID, status: .applied)
@@ -105,7 +113,10 @@ struct WithdrawBeforeAccountDeletionTests {
             let choice = (request.httpBody.flatMap { String(data: $0, encoding: .utf8) } ?? "")
                 .contains("eraseEverything") ? "eraseEverything" : "leaveRecords"
             return try locked { () throws -> Data in
-                if offline { throw URLError(.notConnectedToInternet) }
+                if offline {
+                    events.append("(offline) \(method) \(path)")
+                    throw URLError(.notConnectedToInternet)
+                }
                 events.append("\(method) \(path)")
                 guard method == "DELETE", path == "/me" else { throw APIError.notFound }
                 if choice == "leaveRecords" { deletedKeepingRecords = true }
@@ -207,19 +218,21 @@ struct WithdrawBeforeAccountDeletionTests {
 
     // MARK: - 2. Offline at the deletion
 
-    /// Red-proof: make `RoutedAPI.deleteAccount` ignore the unsent count — red on "the deletion went
-    /// ahead with the withdrawal unsent" (the throw does not happen, and the local half runs).
+    /// Red-proof: remove the send-first block from `RoutedAPI.deleteAccount` — red on "the
+    /// deletion did not try the withdrawal first, or asked to delete": the log is
+    /// `["(offline) DELETE /me"]`.
     @Test("offline at the deletion: nothing is deleted, the withdrawal stays queued, and a later try sends both in order")
     func offlineAtTheDeletion() async throws {
         let phone = try await Phone()
         let tree = try await phone.addThenWithdrawOffline()
 
         phone.service.setOffline(true)
-        await #expect(throws: RoutedAPI.WithdrawalNotSentBeforeDeletion(unsent: 1),
-                      "the deletion went ahead with the withdrawal unsent") {
+        await #expect(throws: RoutedAPI.WithdrawalNotSentBeforeDeletion(unsent: 1)) {
             try await phone.router.deleteAccount(.leaveRecords)
         }
-        #expect(phone.service.log.isEmpty, "the service was asked: \(phone.service.log)")
+        #expect(phone.service.log == ["(offline) sync tree_withdrawal"],
+                "the deletion did not try the withdrawal first, or asked to delete: \(phone.service.log)")
+        phone.service.clearLog()
         let row = try #require(try await Withdrawal.withdrawals(phone.store).first)
         #expect(row.item.state == .pending && !row.remoteSent, "the withdrawal is \(row.item.state)")
         #expect(try await Withdrawal.deletedAt(phone.store, tree.id) != nil, "the tree came back")
@@ -231,6 +244,30 @@ struct WithdrawBeforeAccountDeletionTests {
         try await phone.router.deleteAccount(.leaveRecords)
         #expect(phone.service.log == ["sync tree_withdrawal", "DELETE /me"], "\(phone.service.log)")
         #expect(try await Withdrawal.deletedAt(phone.store, tree.id) != nil, "the tree came back")
+    }
+
+    /// The service is up but will not take the withdrawal yet (`server_error`), while `DELETE /me`
+    /// would work. This is the case the unsent count is for: without it the account would go and
+    /// the withdrawal would then be refused for good.
+    ///
+    /// Red-proof: make `RoutedAPI.deleteAccount` ignore the unsent count — red on "the deletion
+    /// went ahead with the withdrawal unsent".
+    @Test("a withdrawal the service does not take yet stops the deletion before DELETE /me")
+    func aWithdrawalNotTakenYetStopsTheDeletion() async throws {
+        let phone = try await Phone()
+        let tree = try await phone.addThenWithdrawOffline()
+
+        phone.service.setSyncDown(true)
+        await #expect(throws: RoutedAPI.WithdrawalNotSentBeforeDeletion(unsent: 1),
+                      "the deletion went ahead with the withdrawal unsent") {
+            try await phone.router.deleteAccount(.leaveRecords)
+        }
+        #expect(phone.service.log == ["sync tree_withdrawal"], "\(phone.service.log)")
+        let row = try #require(try await Withdrawal.withdrawals(phone.store).first)
+        #expect(row.item.state == .pending && !row.remoteSent, "the withdrawal is \(row.item.state)")
+        #expect(try await Withdrawal.deletedAt(phone.store, tree.id) != nil, "the tree came back")
+        #expect(try await Fixture.adder(phone.store, tree.id) == .user(Fixture.userID),
+                "the phone deleted the account")
     }
 
     // MARK: - 3. Conflict
