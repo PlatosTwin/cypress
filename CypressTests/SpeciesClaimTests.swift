@@ -432,11 +432,16 @@ struct SpeciesClaimTests {
         #expect(!Self.presentation(source: .cityImport, species: nil).offersSpeciesClaim)
         #expect(!Self.presentation(source: .community, species: try Self.londonPlane()).offersSpeciesClaim)
 
-        // Round C3: a tree from the community cache (`claimSpecies` throws `notFound`), and a tree
-        // somebody else added on this phone (the owner's "Hide species controls for now").
+        // ROADMAP 144: on a tree somebody else added, cached or on this phone, only a reader who
+        // shares (the owner's "Only people who share"); never on a tree the reader added on
+        // another phone, which this phone holds only in the cache.
         let tree = Tree(source: .community, coordinate: Self.fix)
         #expect(!TreeProfilePresentation(profile: TreeProfile(tree: tree, addedByYou: true)).offersSpeciesClaim)
         #expect(!TreeProfilePresentation(profile: TreeProfile(tree: tree, isAddedHere: true)).offersSpeciesClaim)
+        #expect(!TreeProfilePresentation(profile: TreeProfile(tree: tree, readerSharing: .notSharing)).offersSpeciesClaim)
+        #expect(TreeProfilePresentation(profile: TreeProfile(tree: tree, readerSharing: .sharing)).offersSpeciesClaim)
+        #expect(TreeProfilePresentation(profile: TreeProfile(tree: tree, isAddedHere: true, readerSharing: .sharing)).offersSpeciesClaim)
+        #expect(!TreeProfilePresentation(profile: TreeProfile(tree: tree, addedByYou: true, readerSharing: .sharing)).offersSpeciesClaim)
 
         // A memorial and a vacant site refuse every other write on this screen (E95); naming the
         // species of a tree that is not there is the same kind of claim.

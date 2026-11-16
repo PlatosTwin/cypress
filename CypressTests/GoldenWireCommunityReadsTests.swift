@@ -248,6 +248,123 @@ extension GoldenWireFixtureTests {
         }
     }
 
+    // MARK: ROADMAP 144: the species keys
+
+    static let plane7c = UUID(uuidString: "7f3c1d22-5e6a-4b90-8c11-2d3e4f5a6b7c")!
+    static let servedFlag = UUID(uuidString: "4e7a2c10-9b3d-4f5e-8a6c-1d2e3f4a5b01")!
+
+    /// A stranger's view: the three keys arrive, nothing is reported, the flag id is withheld, and
+    /// the species is the tree's own.
+    ///
+    /// Red-proof: rename `speciesReported`'s coding key in `TreeCommunityHalfResponse` — red on
+    /// "no species answer", because the key is then absent and read as an older service.
+    @Test("tree_profile_community.json carries the species keys, with nothing reported")
+    func communitySpeciesKeysDecode() async throws {
+        let (remote, _) = try Self.remote(
+            answering: "GET /trees/\(Self.speciesTree.uuidString)", withFixture: "tree_profile_community.json"
+        )
+        let half = try await remote.treeCommunityHalf(id: Self.speciesTree)
+        let served = try #require(half.species, "no species answer")
+        #expect(served == RemoteAPI.TreeCommunityDelta.ServedSpecies(
+            speciesID: Self.plane7c, isReported: false, reportFlagID: nil, namedByYou: false
+        ))
+    }
+
+    /// The adder's view of a reported tree: the line's key, and the flag id the keep must name.
+    @Test("tree_profile_community_reported.json gives the adder the report and its flag id")
+    func reportedSpeciesDecodes() async throws {
+        let (remote, _) = try Self.remote(
+            answering: "GET /trees/\(Self.speciesTree.uuidString)", withFixture: "tree_profile_community_reported.json"
+        )
+        let half = try await remote.treeCommunityHalf(id: Self.speciesTree)
+        #expect(half.addedByYou)
+        let served = try #require(half.species)
+        #expect(served.isReported)
+        #expect(served.reportFlagID == Self.servedFlag, "the flag id is \(String(describing: served.reportFlagID))")
+        #expect(!served.namedByYou)
+        #expect(served.speciesID == Self.plane7c)
+    }
+
+    /// The namer's view: `species_named_by_you` is true, on tree `…5d02`.
+    @Test("tree_profile_community_named_by_you.json tells the namer the answer is theirs")
+    func namedByYouDecodes() async throws {
+        let (remote, _) = try Self.remote(
+            answering: "GET /trees/\(Self.unnamedTree.uuidString)", withFixture: "tree_profile_community_named_by_you.json"
+        )
+        let half = try await remote.treeCommunityHalf(id: Self.unnamedTree)
+        let served = try #require(half.species)
+        #expect(served.namedByYou)
+        #expect(!served.isReported)
+        #expect(served.reportFlagID == nil)
+        #expect(served.speciesID == UUID(uuidString: "7f3c1d22-5e6a-4b90-8c11-2d3e4f5a6b7e"))
+    }
+
+    /// The hidden and the unknown answers carry the keys, false and null, and no tree, so the phone
+    /// reads no species answer at all: their `false` is not a fact about any tree.
+    @Test("the hidden and unknown answers give no species answer")
+    func hiddenAndUnknownGiveNoSpeciesAnswer() async throws {
+        for (name, id) in [
+            ("tree_profile_hidden.json", "3c1e7a90-2b4d-4f6e-8a1c-0d9e8f7a6b03"),
+            ("tree_profile_unknown.json", "3c1e7a90-2b4d-4f6e-8a1c-0d9e8f7a6b02"),
+        ] {
+            let treeID = try #require(UUID(uuidString: id))
+            let wire = try Self.profileResponse(name)
+            #expect(wire.speciesReported == false, "\(name): calibration, the key is in the file")
+            let (remote, _) = try Self.remote(answering: "GET /trees/\(treeID.uuidString)", withFixture: name)
+            #expect(try await remote.treeCommunityHalf(id: treeID).species == nil, "\(name) gave a species answer")
+        }
+    }
+
+    /// A service without the keys (release v16) sends a tree and no species answer: the phone keeps
+    /// its own answers. A Swift-side body, because the fixtures now all carry the keys.
+    ///
+    /// Red-proof: read an absent `species_reported` as false in `treeCommunityHalf` — red, a
+    /// species answer from a service that gave none.
+    @Test("a profile with no species keys gives no species answer")
+    func anOlderServiceGivesNoSpeciesAnswer() async throws {
+        let id = Self.speciesTree
+        let transport = ScriptedTransport()
+        transport.answer("GET /trees/\(id.uuidString)", with: """
+            {"added_by_you":false,"community_tree":{"id":"\(id.uuidString.lowercased())","externalRef":null,
+             "idSpace":null,"source":"community","coordinate":{"latitude":37.7601,"longitude":-122.505},
+             "address":null,"siteType":null,"neighborhoodID":null,"status":"alive",
+             "speciesCurrentID":"\(Self.plane7c.uuidString.lowercased())","plantedYear":null,
+             "dbhCityCmRange":null,"siteLineage":null,"verificationState":"unverified",
+             "placement":"contributor_placed","cityRecord":null,"statedLandContext":null,
+             "createdAt":"2026-09-20T00:00:00Z","updatedAt":"2026-09-21T00:00:00Z","deletedAt":null},
+             "deletable_photo_ids":[],"is_published":true,"own_photo_ids":[],"photo_count":0,"photos":[],
+             "tree_uuid":"\(id.uuidString.lowercased())","visit_count":0}
+            """)
+        let remote = RemoteAPI(baseURL: URL(string: "https://service.invalid/api/v1")!, transport: transport, session: .shared)
+        let half = try await remote.treeCommunityHalf(id: id)
+        #expect(half.isPublished == true, "calibration: the tree decoded")
+        #expect(half.species == nil, "an older service gave a species answer: \(String(describing: half.species))")
+    }
+
+    /// `tree_history_contributor.json`: one event of each new kind, read as known kinds, and
+    /// `by_you` per event. `tree_history.json` carries `by_you` false on every event.
+    ///
+    /// Red-proof: drop the `species_named_by_contributor` arm of `Kind.init(wire:)` — red, the
+    /// event decodes as unrecognized.
+    @Test("tree_history_contributor.json decodes the three new kinds and by_you")
+    func contributorHistoryDecodes() async throws {
+        let (remote, _) = try Self.remote(
+            answering: "GET /trees/\(Self.unnamedTree.uuidString)/history", withFixture: "tree_history_contributor.json"
+        )
+        let history = try #require(try await remote.treeHistory(id: Self.unnamedTree))
+        #expect(history.events.map(\.kind) == [
+            .speciesCorrected, .speciesCorrectedByOperator, .speciesCorrectedByContributor,
+            .speciesNamedByContributor, .added,
+        ])
+        #expect(history.events.map(\.byYou) == [false, false, true, true, false])
+
+        let (plain, _) = try Self.remote(
+            answering: "GET /trees/\(Self.speciesTree.uuidString)/history", withFixture: "tree_history.json"
+        )
+        let older = try #require(try await plain.treeHistory(id: Self.speciesTree))
+        #expect(older.events.map(\.byYou) == [false, false, false])
+    }
+
     /// `tree_profile_city.json` pins the absence of `captured_on`, and `tree_profile.json` its
     /// presence on two rows of three. An absent date stays absent, so the row falls back to
     /// `captured_at` in the reader's zone.
