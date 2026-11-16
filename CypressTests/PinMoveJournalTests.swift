@@ -54,10 +54,16 @@ struct PinMoveJournalTests {
         )
     }
 
-    static func visit(_ store: CypressStore, _ tree: Tree, device: UUID, at moment: Date) async throws {
+    static func visit(
+        _ store: CypressStore,
+        _ tree: Tree,
+        device: UUID,
+        at moment: Date,
+        id: UUID = UUID()
+    ) async throws {
         try await store.queue.write { connection in
             try ContributionStore().insert(
-                Visit(treeID: tree.id, attribution: .anonymous(deviceID: device), capturedAt: moment),
+                Visit(id: id, treeID: tree.id, attribution: .anonymous(deviceID: device), capturedAt: moment),
                 connection: connection
             )
         }
@@ -188,12 +194,23 @@ struct PinMoveJournalTests {
 
     // MARK: - 5. Paging
 
-    /// A pin move and a visit at the same moment, read one row per page. Each must appear once:
-    /// the cursor is `(captured_at, id)`, and the fifth arm takes it as the other four do.
+    /// The highest id a `UUID` can have, so this visit sorts above every move at its moment. With
+    /// `lowestID` below every move, the two moves' random ids fall between two fixed ids, and the
+    /// order of the tie no longer depends on chance.
+    static let highestID = UUID(uuidString: "FFFFFFFF-FFFF-4FFF-BFFF-FFFFFFFFFFFF")!
+    static let lowestID = UUID(uuidString: "00000000-0000-4000-8000-000000000000")!
+
+    /// Two pin moves and two visits at one moment, and an older visit, read at page sizes 1, 2, 3,
+    /// 4, 5 and 7. Every paged read must equal the whole read: the cursor is `(captured_at, id)`,
+    /// and the fifth arm takes it as the other four do.
+    ///
+    /// One tied visit has the highest possible id and the other the lowest, so the two moves sit
+    /// between them in every run. A page that ends on the high visit leaves both moves after the
+    /// cursor at the same moment, which is the case the id half of the cursor exists for.
     ///
     /// Red-proof: make the fifth arm compare `occurred_at` alone (`occurred_at < COALESCE(:cursorAt,
-    /// …)`), and this goes red on the row the tie loses.
-    @Test("pages across a pin move and a visit that share one moment lose and repeat nothing")
+    /// …)`), and this goes red on every run, on the moves the tie loses.
+    @Test("pages across pin moves and visits that share one moment lose and repeat nothing")
     func pagesAcrossATie() async throws {
         let store = try await CypressStore.inMemory()
         let clock = OutboxTestSupport.Clock(Self.start)
@@ -202,17 +219,24 @@ struct PinMoveJournalTests {
         clock.advance(by: 60)
         let moment = clock.now
         try await Self.move(api, tree, meters: 30)
-        try await Self.visit(store, tree, device: Self.deviceID, at: moment)
+        try await Self.move(api, tree, meters: 60)
+        try await Self.visit(store, tree, device: Self.deviceID, at: moment, id: Self.highestID)
+        try await Self.visit(store, tree, device: Self.deviceID, at: moment, id: Self.lowestID)
         try await Self.visit(store, tree, device: Self.deviceID, at: moment.addingTimeInterval(-60))
 
         let all = try await Self.wholeJournal(api, limit: 25)
-        let paged = try await Self.wholeJournal(api, limit: 1)
+        #expect(all.count == 5, "the whole journal holds \(all.count) rows, not two moves and three visits")
+        #expect(all.filter { $0.kind == .pinMoved }.count == 2)
+        #expect(all.filter { $0.capturedAt == moment }.count == 4, "the whole read lost a row of the tie")
+        #expect(all.first?.id == Self.highestID, "the tie is not ordered by id: \(all.map(\.kind))")
 
-        #expect(all.count == 3, "the whole journal holds \(all.count) rows, not a move and two visits")
-        #expect(paged.map(\.id) == all.map(\.id), "one row per page read \(paged.map(\.kind)), whole read \(all.map(\.kind))")
-        #expect(Set(paged.map(\.id)).count == paged.count, "a row was read twice")
-        #expect(paged.filter { $0.kind == .pinMoved }.count == 1)
-        #expect(paged.filter { $0.capturedAt == moment }.count == 2, "the tie at \(moment) lost a row")
+        for limit in [1, 2, 3, 4, 5, 7] {
+            let paged = try await Self.wholeJournal(api, limit: limit)
+            #expect(
+                paged.map(\.id) == all.map(\.id),
+                "at \(limit) a page the read is \(paged.map(\.kind)), the whole read \(all.map(\.kind))"
+            )
+        }
     }
 
     // MARK: - 6. The square

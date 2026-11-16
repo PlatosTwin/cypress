@@ -422,7 +422,7 @@ struct JournalQueryPlanTests {
     /// itself rather than assumed.
     ///
     /// `tree_locations` joined `scannable` with the pin-move arm. This is the known answer that says
-    /// the list did not become a licence: the same page query, with its withdrawn-tree probe
+    /// the list did not become a license: the same page query, with its withdrawn-tree probe
     /// rewritten as `lower(…) = lower(…)` so no index can answer it, must walk `community_trees`,
     /// and the gate must refuse that walk.
     @Test("the page query's gate still refuses a walk of a relation not on the list")
