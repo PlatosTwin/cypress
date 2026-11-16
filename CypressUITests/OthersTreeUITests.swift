@@ -95,8 +95,11 @@ final class OthersTreeUITests: XCTestCase, DeepLinkHarness {
     /// screen or sheet, and the profile comes back after each. Visit goes last: it opens the
     /// camera, which this test closes and then ends.
     ///
-    /// Camera access is granted once per install (CLAUDE.md), and a visit opened from a profile
-    /// goes straight to the camera and never asks for location, so no system alert covers it.
+    /// Camera access is granted once per install (CLAUDE.md). On a clean install the system's
+    /// "Allow Cypress to use your location?" alert does appear in this test (the reviewer's logs
+    /// of 2026-11-15 show it at the first Favorite tap), and XCUITest's own interruption monitor
+    /// dismisses it on the next tap. The test passes because of that monitor, not because no
+    /// alert shows.
     func testEachControlOnSomebodyElsesTreeOpensItsScreen() {
         let app = launch("othersTree")
         let added = app.staticTexts[Copy.added]
@@ -195,8 +198,10 @@ final class OthersTreeUITests: XCTestCase, DeepLinkHarness {
         // The map opens on the reader when it has a fix (`MapCenteredStateUITests`), so the fix is
         // pinned (`DebugLocationOverride`, `CYPRESS_LOCATION`). It sits 67 m south of the tree and
         // inside the 150 m camera, never on the tree: MapKit hides a pin that sits exactly under
-        // the reader's location dot, and the pin then never draws on a clean install. A pinned
-        // fix also means the map never asks for location permission, so no system alert shows.
+        // the reader's location dot, and the pin then never draws on a clean install. The system's
+        // location alert can still appear on a clean install with the fix pinned (the reviewer's
+        // log of 2026-11-15 shows it during this test); XCUITest's interruption monitor dismisses
+        // it on the next tap.
         app.launchEnvironment["CYPRESS_LOCATION"] = "37.7738,-122.5300"
         app.launch()
 

@@ -390,6 +390,15 @@ final class AddTreeNearbyUITests: XCTestCase, DeepLinkHarness {
         // In the form: the reader scrolls to it, and it is then above the pinned button. Pinned
         // under the button, as at the drawn size, it would sit below the button's top edge.
         scroll(app, until: note, up: true)
+        // A note whose first line is on screen can still have its other lines behind the pinned
+        // button (iPhone Air, 2026-11-15: the scroll stopped with the note at y 718 to 1019 and the
+        // button at 754). Scroll on until the note clears the button or the form stops moving, so
+        // the assertion below is about where the form can put the note.
+        for _ in 0..<6 where note.frame.maxY > add.frame.minY {
+            let before = note.frame
+            app.swipeUp()
+            if note.frame == before { break }
+        }
         record(app, named: "signed-out-note-ax5-scrolled")
         assertReachable(note, "the note, after scrolling the form")
         XCTAssertLessThanOrEqual(
