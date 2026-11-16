@@ -2282,8 +2282,10 @@ public struct ContributionStore {
     /// promise is everything this person recorded on this phone, and the owner's answer of
     /// 2026-11-16 says a withdrawn tree's rows stay saved; it names only the Journal, My Grove and
     /// the Yours map as the places the tree leaves. Keeping the export whole is the orchestrator's
-    /// choice of 2026-11-16, not the owner's. Without the clauses this is the statement the Journal
-    /// ran before withdrawals existed.
+    /// choice of 2026-11-16, not the owner's. For the four contribution arms this is the statement
+    /// the Journal ran before withdrawals existed. The pin-move arm differs: before, it already left
+    /// out a pin move on a tree a lead withdrew, in the Journal and in the export, and the export
+    /// now lists it.
     static let exportJournalSQL = journalStatement(includingWithdrawn: true)
 
     private static func journalStatement(includingWithdrawn: Bool) -> String {

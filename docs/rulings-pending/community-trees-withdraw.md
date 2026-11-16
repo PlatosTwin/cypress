@@ -59,6 +59,11 @@ phone withdrew. The export reads the Journal's statement without its withdrawn-t
 export resolves the tree through the community layer, which returns this phone's own row withdrawn
 or not.
 
+One change reaches past the adder's own withdrawal. Before this round the pin-move part of the
+statement already left out a pin move on a tree a lead withdrew, in the Journal and in the export.
+The export now lists that pin move too, because it reads every part without a withdrawn-tree
+clause. The Journal still leaves it out. Found by the reviewer's re-check, 2026-11-16.
+
 ---
 
 ## Design notes (the author's)
