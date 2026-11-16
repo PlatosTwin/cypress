@@ -554,6 +554,22 @@ struct TreeProfilePresentation {
         }
     }
 
+    /// What the record controls draw about withdrawing this tree (the owner's answers of
+    /// 2026-11-16). Decided behind `CypressAPI` (`TreeProfile.treeWithdrawal`), because the
+    /// answer needs the adder and the reader.
+    var treeWithdrawal: TreeWithdrawalOffer {
+        tree.source == .community ? profile.treeWithdrawal : .unavailable
+    }
+
+    /// The alert's message: the "only you" one exactly when the profile tells the reader that only
+    /// they can see the tree (`onlyYouCanSeeNote`), and the shared one otherwise. One rule, so the
+    /// alert can never say "only you" about a tree the profile says everyone sees, or the reverse.
+    var withdrawTreeMessage: String {
+        onlyYouCanSeeNote == nil
+            ? TreeProfileCopy.withdrawTreeMessageShared
+            : TreeProfileCopy.withdrawTreeMessageOnlyYou
+    }
+
     /// What this screen offers about a species that has **already** been claimed — tickets #86 and
     /// #124, the correction half of the same block.
     ///
@@ -1681,6 +1697,29 @@ enum TreeProfileCopy {
     /// Signed in, and the account did not agree to share tree records.
     static let onlyYouNotSharing =
         "Only you can see this tree. Everyone can see it after you agree to share your tree records."
+
+    // MARK: - Withdrawing a tree you added (the owner's answers of 2026-11-16)
+
+    // Every string below is the owner's, character for character.
+
+    /// The control, in the record controls below "Report that there is no tree here".
+    static let withdrawTreeAction = "Withdraw this tree"
+    /// The alert's title.
+    static let withdrawTreeConfirmTitle = "Withdraw this tree?"
+    /// The alert's destructive button.
+    static let withdrawTreeConfirmAction = "Withdraw tree"
+    /// The alert's cancel button.
+    static let withdrawTreeCancel = "Keep it"
+    /// The alert's message for a tree other people can see.
+    static let withdrawTreeMessageShared = "Everyone using Cypress stops seeing this tree once this "
+        + "is sent. If someone else has visited or photographed it, it stays. This cannot be undone."
+    /// The alert's message for a tree only the reader can see.
+    static let withdrawTreeMessageOnlyYou =
+        "Only you can see this tree. It comes off the map. This cannot be undone."
+    /// The line drawn in place of the control when this phone already knows the service would
+    /// refuse (`TreeWithdrawalOffer.othersHaveAddedToIt`). The same sentence the Outbox row reads
+    /// after a refusal, so it is the one constant.
+    static let treeStaysOnTheMap = OutboxFailureReason.treeStaysOnTheMap
 
     // MARK: - The species the record never named (see `TreeProfilePresentation.unreadSpeciesNote`)
 

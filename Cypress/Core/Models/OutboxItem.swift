@@ -177,13 +177,16 @@ public struct OutboxItem: CoreEntity {
         /// `measurementWithdrawal` above gives: `outbox.kind` is what screen 17 groups by and what
         /// the service dispatches on, and a move arriving as an add would be a second tree.
         ///
-        /// `tree_withdrawal` — the adder withdrawing a tree for everyone, the owner's decision 8 — is
-        /// admitted by v23's `CHECK` and accepted by the service, and **has no case here**: the verb
-        /// that would write it is not in this round. The store binds `rawValue`, so nothing can
-        /// write the reserved value until a case exists.
-        ///
         /// Carries no photo binary. A position is two numbers.
         case locationCorrection = "location_correction"
+
+        /// The adder withdrawing a community tree for everyone (`withdrawTree`, the owner's
+        /// decision 8). v23's `CHECK` admitted the value ahead of this case, so no migration came
+        /// with it. See `TreeWithdrawal`.
+        ///
+        /// **Its own kind**, for `measurementWithdrawal`'s reason: `outbox.kind` is what screen 17
+        /// groups by and what the service dispatches on. Carries no photo binary.
+        case treeWithdrawal = "tree_withdrawal"
 
         /// What a deletion of the account that queued a row of this kind has to do to it (R3).
         ///
@@ -235,7 +238,11 @@ public struct OutboxItem: CoreEntity {
                  // A moved pin is the adder's contribution to a public object, like the add it
                  // follows: the leaving door keeps it and takes the name off, and the erasing door
                  // discards it with the tree it would have moved (`AccountDeletion`).
-                 .locationCorrection:
+                 .locationCorrection,
+                 // A withdrawal is the adder's act on a public object, like the move above. The
+                 // leaving door sends it without the name; the erasing door discards it with the
+                 // tree it would have withdrawn.
+                 .treeWithdrawal:
                 return .contribution
             }
         }
@@ -268,6 +275,12 @@ public struct OutboxItem: CoreEntity {
             // The service refuses a move on a tree it does not hold with `not_found`, which is
             // terminal (`store.applyLocationCorrection`).
             case .locationCorrection:
+                return true
+            // Held for the person's order: add, then any move, then the withdrawal. The service
+            // would answer a withdrawal that arrives first with `applied` and make the later add
+            // arrive withdrawn (`treeWasWithdrawnBy`), but a move held behind that add would then
+            // fail `not_found` on a tree that was born withdrawn.
+            case .treeWithdrawal:
                 return true
             // The service never refuses these, but it applies the species to the tree only when
             // it holds the tree (`store.materializeSpecies`). One that arrives first is recorded

@@ -529,3 +529,29 @@ public struct TreeLocationCorrection: Codable, Hashable, Sendable {
         self.occurredAt = occurredAt
     }
 }
+
+/// The adder withdrawing a community tree for everyone (the owner's decision 8; `withdrawTree`).
+///
+/// **A pointer, and nothing else.** The act names the tree, who acted and when. The service reads
+/// only `treeID` and requires it to equal the item's `tree_uuid` (`treeWithdrawalPayload` in
+/// `server/internal/api/sync.go`).
+///
+/// **No top-level `speciesID`, and none may be added**, for `TreeLocationCorrection`'s reason: the
+/// service reads `payload->>'speciesID'` across every kind as a species this contributor has met.
+///
+/// The shape is pinned by `server/testdata/sync_tree_withdrawal.json`, which the service's own test
+/// posts and `TreeWithdrawalFixtureTests` encodes this type against through
+/// `RemoteAPI.syncItemBody(for:)`.
+public struct TreeWithdrawal: Codable, Hashable, Sendable {
+    public let clientUUID: UUID
+    public let treeID: UUID
+    public let attribution: Attribution
+    public let occurredAt: Date
+
+    public init(clientUUID: UUID, treeID: UUID, attribution: Attribution, occurredAt: Date) {
+        self.clientUUID = clientUUID
+        self.treeID = treeID
+        self.attribution = attribution
+        self.occurredAt = occurredAt
+    }
+}

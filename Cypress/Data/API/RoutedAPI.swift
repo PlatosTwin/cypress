@@ -426,6 +426,12 @@ public struct RoutedAPI: CypressAPI {
         )
     }
 
+    /// Local, like every write: the tree leaves this phone at once and the withdrawal reaches the
+    /// service through the queue as a `tree_withdrawal`.
+    public func withdrawTree(treeID: UUID) async throws {
+        try await local.withdrawTree(treeID: treeID)
+    }
+
     public func claimSpecies(treeID: UUID, speciesID: UUID) async throws -> Tree {
         try await local.claimSpecies(treeID: treeID, speciesID: speciesID)
     }
@@ -1139,6 +1145,9 @@ public struct RoutedAPI: CypressAPI {
             // The local answer: who added a tree is this phone's `community_trees` row, and the
             // move it gates is a local write.
             canMovePin: mine.canMovePin,
+            // The local answer, narrowed by one fact only the service holds: a photograph of this
+            // tree that it served the reader as somebody else's (`TreeWithdrawalOffer`).
+            treeWithdrawal: Self.withdrawalOffer(mine.treeWithdrawal, community: community),
             // **The adder is adopted from the service when it says yes** (round C2): a tree the
             // reader's account added on another phone reaches this one only through the cache, and
             // only the service can say whose it is. Its "no" never overrides this phone's yes, for
@@ -1151,6 +1160,23 @@ public struct RoutedAPI: CypressAPI {
             // The service's answer, nil unless it sent the tree (`TreeCommunityDelta.isPublished`).
             isPublished: community.isPublished
         )
+    }
+
+    /// The withdraw offer after the service's profile read (the owner's answer of 2026-11-16, Q8).
+    ///
+    /// **Only a photograph the service served as somebody else's turns the control into the reason
+    /// line.** The service serves another identity's photograph only when it is approved, not
+    /// deleted and its bytes arrived (`store/reads.go`), and that is a photograph its withdrawal
+    /// rule counts (`othersHaveBuiltOn`). "Somebody else's" is the service's own `own_photo_ids`
+    /// answer, for the identity that will send the withdrawal. Nothing else on this read says
+    /// anybody else met the tree: it carries no visits.
+    static func withdrawalOffer(
+        _ local: TreeWithdrawalOffer,
+        community: RemoteAPI.TreeCommunityDelta
+    ) -> TreeWithdrawalOffer {
+        guard local == .available else { return local }
+        let othersPhotographed = community.photos.contains { !community.ownPhotoIDs.contains($0.id) }
+        return othersPhotographed ? .othersHaveAddedToIt : .available
     }
 
     /// A community tree's history from the service, or nil: a city tree (nothing is asked), the

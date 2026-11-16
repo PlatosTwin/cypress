@@ -754,6 +754,14 @@ public actor OutboxQueue {
                 }
                 try await queue.write { connection in
                     try store.markRemotelySent(record.id, at: settledAt, connection: connection)
+                    // A withdrawal the service took. After a first send this changes nothing: the
+                    // tree left this phone when the person withdrew it. After a refusal put the tree
+                    // back and the person retried, this is what takes it off again.
+                    if let treeID = Self.withdrawnTreeID(record) {
+                        _ = try CommunityTreeStore().withdrawAgain(
+                            treeID: treeID, outboxID: record.id, at: settledAt, connection: connection
+                        )
+                    }
                 }
                 report.sent += 1
             }
@@ -967,11 +975,18 @@ public actor OutboxQueue {
             ? date.addingTimeInterval(OutboxRetryPolicy.delay(afterFailures: failCount))
             : nil
 
+        // The one kind whose refusal has its own sentence (the owner's answer of 2026-11-16): the
+        // service refuses a withdrawal with `conflict` when somebody else has visited or
+        // photographed the tree, and the tree comes back (`settle`).
+        let reason = record.item.kind == .treeWithdrawal && state == .failed && apiError == .conflict
+            ? OutboxFailureReason.treeStaysOnTheMap
+            : OutboxFailureReason.describe(error: error, failCount: failCount, state: state)
+
         try await settle(
             record,
             state: state,
             failCount: failCount,
-            reason: OutboxFailureReason.describe(error: error, failCount: failCount, state: state),
+            reason: reason,
             code: apiError,
             nextAttemptAt: nextAttempt,
             at: date
@@ -1000,7 +1015,28 @@ public actor OutboxQueue {
                 at: date,
                 connection: connection
             )
+            // **A withdrawal that will not go through puts the tree back**, in the same write as the
+            // failure. The service still shows the tree to everyone, and without this step this
+            // phone alone would hide it for good: the phone's own row wins over the community
+            // cache, withdrawn or not (`CommunityLayer`). Every terminal failure counts, not only
+            // `conflict`: a `forbidden`, or 48 hours without a connection, also leaves the tree
+            // on the service.
+            if state == .failed, let treeID = Self.withdrawnTreeID(record) {
+                _ = try CommunityTreeStore().restoreAfterRefusedWithdrawal(
+                    treeID: treeID, outboxID: record.id, at: date, connection: connection
+                )
+            }
         }
+    }
+
+    /// The tree a queued `tree_withdrawal` names, or nil for every other kind and for a payload
+    /// that does not decode.
+    private static func withdrawnTreeID(_ record: OutboxStore.Record) -> UUID? {
+        guard record.item.kind == .treeWithdrawal,
+              case let .treeWithdrawal(withdrawal)? =
+                try? OutboxPayload.decode(kind: record.item.kind, from: record.item.payload)
+        else { return nil }
+        return withdrawal.treeID
     }
 }
 

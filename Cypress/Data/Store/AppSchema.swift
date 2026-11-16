@@ -2827,6 +2827,7 @@ public enum AppSchema {
     /// that writes it is not in this round, and SQLite cannot widen a CHECK in place, so admitting it
     /// now spares the round that builds the verb a second twelve-step rebuild. Nothing can write the
     /// value until that round adds `OutboxItem.Kind.treeWithdrawal`: the store binds `Kind.rawValue`.
+    /// That case now exists (`withdrawTree`), and needed no migration of its own.
     ///
     /// ── Idempotent by guard, per part ─────────────────────────────────────────────────────────
     ///
