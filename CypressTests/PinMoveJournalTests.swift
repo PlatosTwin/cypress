@@ -108,10 +108,9 @@ struct PinMoveJournalTests {
         #expect(move.id != tree.id)
 
         let row = try #require(JournalPresentation(entries: [move], nextCursor: nil).rows.first)
-        let name = move.treeDisplayName.isEmpty
-            ? TreeProfilePresentation.fallbackTitle
-            : move.treeDisplayName
-        #expect(row.title == "Moved the pin of \(name)")
+        // The tree was added with no species and no name: the app owner's words of 2026-11-16.
+        #expect(move.treeDisplayName == "", "fixture: the added tree has a name: \(move.treeDisplayName)")
+        #expect(row.title == "Moved a tree’s pin", "the row reads \(row.title)")
         #expect(row.subtitle == "")
         #expect(row.treeID == tree.id)
     }
@@ -123,6 +122,20 @@ struct PinMoveJournalTests {
             JournalCopy.rowTitle(kind: .pinMoved, treeName: "Grandmother Cypress")
                 == "Moved the pin of Grandmother Cypress"
         )
+    }
+
+    /// The app owner's words of 2026-11-16 for a tree with no name, over "Moved the pin of Tree".
+    /// Only the pin move changes: every other kind keeps the fallback title. Red-proof: drop the
+    /// `.pinMoved` early return from `JournalCopy.rowTitle` — red on "an unnamed tree's pin move
+    /// reads Moved the pin of Tree".
+    @Test("a pin move on a tree with no name reads \"Moved a tree’s pin\"; a named tree and other kinds are unchanged")
+    func anUnnamedTreesPinMoveReadsMovedATreesPin() {
+        let unnamed = JournalCopy.rowTitle(kind: .pinMoved, treeName: nil)
+        #expect(unnamed == "Moved a tree’s pin", "an unnamed tree's pin move reads \(unnamed)")
+        #expect(JournalCopy.rowTitle(kind: .pinMoved, treeName: "London plane")
+                == "Moved the pin of London plane")
+        #expect(JournalCopy.rowTitle(kind: .visit, treeName: nil)
+                == "Visited \(TreeProfilePresentation.fallbackTitle)")
     }
 
     // MARK: - 2-4. What is not a row

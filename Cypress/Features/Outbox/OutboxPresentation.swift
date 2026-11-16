@@ -337,8 +337,14 @@ enum OutboxCopy {
     ///
     /// The tree falls back to `TreeProfilePresentation.fallbackTitle`, the same word every other
     /// surface uses for a tree with no name in hand, rather than to a blank half-title.
+    ///
+    /// **One exception: a pin move on a tree with no name reads `Pin moved` alone**, the app owner's
+    /// words of 2026-11-16 over "Pin moved · Tree". `treeName` is nil exactly when no name was
+    /// resolved for the tree (`LocalAPI.displayNames` leaves out a tree with no given name and no
+    /// species).
     static func title(kind: OutboxItem.Kind, treeName: String?) -> String {
-        "\(kindLabel(kind)) · \(treeName ?? TreeProfilePresentation.fallbackTitle)"
+        if kind == .locationCorrection, treeName == nil { return kindLabel(kind) }
+        return "\(kindLabel(kind)) · \(treeName ?? TreeProfilePresentation.fallbackTitle)"
     }
 
     /// §2 names four of the six kinds it was written against. `Favorite` and `Reminder` are **NOT
