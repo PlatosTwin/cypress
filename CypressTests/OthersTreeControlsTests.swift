@@ -172,9 +172,13 @@ struct OthersTreeControlsTests {
         let store = try await Self.seededStore()
         let api = LocalAPI(store: store, deviceID: Self.readerDevice)
 
-        let leaked = await DebugDeepLink.open(.unsharedNotSharing, api: api, router: AppRouter())
-        #expect(leaked == nil, "unsharedNotSharing failed: \(String(describing: leaked))")
-        #expect(await api.userID == DebugDeepLink.notSharingAccount, "calibration: the link signed its account in")
+        // The state `unsharedNotSharing` leaves, set the way that link sets it. The link itself
+        // also adds a tree from a photograph, which the UI suite covers.
+        try await api.linkAccount(
+            deviceUUID: Self.readerDevice, userID: DebugDeepLink.notSharingAccount,
+            provider: "apple", acceptsLicense: false
+        )
+        #expect(await api.userID == DebugDeepLink.notSharingAccount, "calibration: the debug account is signed in")
 
         let next = await DebugDeepLink.open(.othersTree, api: api, router: AppRouter())
         #expect(next == nil, "othersTree failed: \(String(describing: next))")
