@@ -831,9 +831,25 @@ service for added trees over the 60 m around the reader:
    > held back.
    >
    > On a community tree somebody else added, the profile offers what a city tree offers (visit,
-   > check-in, care, favorite, share, measure). It offers no Move pin and, in this build, neither
-   > `Say what species you think this is` nor `Report the species as wrong` (the owner,
-   > 2026-11-15: "Hide species controls for now").
+   > check-in, care, favorite, share, measure). It offers no Move pin.
+   >
+   > **Changed by ROADMAP 144 (the owner's answers of 2026-11-15 and 2026-11-16).** The two species
+   > controls come back on such a tree, in the identity block's column under the species line, for
+   > a reader who is signed in and agreed to share tree records. For every other reader they stay
+   > hidden.
+   > - No species: `Say what species you think this is`. The first answer names the tree for
+   >   everyone, and the subtitle then carries `species named by a contributor`. The person who
+   >   named it sees `Correct the species` until the adder corrects or keeps the species.
+   > - A species: `Report the species as wrong`, and under it the muted note `This goes to the
+   >   person who added the tree and to a reviewer. The city is not notified.` A city tree keeps
+   >   `This goes to a community reviewer. The city is not notified.`
+   > - A report counts: every reader sees the muted line `Somebody has reported this species as
+   >   wrong.` The adder also sees `Correct the species` and `Keep the species`, and the keep clears
+   >   the line for everyone. The namer of a reported species sees the line and `Correct the
+   >   species`.
+   >
+   > History rows keep `Species named` and `Species corrected` whoever acted, and read `You …`
+   > only for the reader's own acts.
 9. **Stat grid** (C11) — `grid-template-columns:1fr 1fr; gap:8px; padding:10px 16px 30px; margin-top:auto`:
 
    | Label | Value | Badge |

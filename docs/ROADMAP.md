@@ -2493,12 +2493,19 @@ into this section in the round that finds it, and nowhere else. Each item stands
     operator routes are `POST /operator/community-trees/{id}/species` and
     `…/species-reports/clear`. The profile gains `species_reported`, `species_report_flag_id` (adder
     only) and `species_named_by_you`; the history gains `by_you` and three kinds
-    (`server/testdata/README.md`). **Still to do:** the `cypress-sync` deploy (owner's go-ahead),
-    then the phone half: bring the two controls back for sharing readers on a cached tree, send
-    `disputedSpeciesID` on a report, adopt a contributor's species on the adder's own row, read the
-    three profile keys and `by_you`, map the three history kinds, the namer's correct control, the
-    adder's keep through `species_report_flag_id`, and the owner's new note under "Report the
-    species as wrong". The phone PR must not merge before the deploy.
+    (`server/testdata/README.md`).
+    **Phone half built, not shipped** (branch `feat/species-for-everyone-phone`, no phone
+    migration, 2026-11-16): both controls are back for a sharing reader on somebody else's tree,
+    cached or on this phone; a report sends `disputedSpeciesID`; the adder's phone takes a
+    contributor's species onto its own row; the profile reads the three keys and `by_you` and maps
+    the three history kinds; the namer may correct; the adder keeps through
+    `species_report_flag_id`; the owner's note names the adder. The phone-only correction arms the
+    service never honored (the claim's author, and a lead) are removed. The design is in
+    `docs/rulings-pending/community-trees-species-for-everyone.md`. **Still to do:** the
+    `cypress-sync` deploy (owner's go-ahead), then a second account seen against the live service
+    (a naming reaching another phone, the adder's phone taking it, the line on a third phone and
+    the keep clearing it). This chip stays open until then. The phone PR must not merge before
+    the deploy.
 145. **`AreaPickerUITests.testACoarseFixNamesNoNeighborhoodAndOffersThePicker` failed once in CI on a
     tap.** PR 238, run 43775447999, attempt 1, shard 3, iPhone 17 Pro: "Failed to not hittable:
     Button, {{34.0, 293.0}, {111.3, 44.3}}, label: 'Sunset/Parkside'". The rerun of that shard
@@ -2601,6 +2608,33 @@ into this section in the round that finds it, and nowhere else. Each item stands
     fixture file checked in, so CI can test reading a HEIC without writing one; nobody has checked
     whether reading a HEIC works on the runner. Until then a HEIC add photo is tested on a
     physical Mac only.
+162. **Open for the owner: a namer's correction leaves the reported line, and old reports can come
+    back (ROADMAP 144).** On the service a report counts against the species it disputed. The
+    namer's own correction does not clear reports, but a report about the old name stops counting
+    once that name is gone; if the namer changes the name back, those reports count again. Only
+    the adder and the operator clear reports. Asked for by the service author of 144, 2026-11-16:
+    the owner may want to decide whether the line should stay after a namer's change.
+163. **The erase door disagrees about species on this phone's own trees.** When an account is
+    erased, the phone reverts the species that account named on its own trees
+    (`AccountDeletion.swift`), while the service keeps the species (the owner's "The species
+    stays", 2026-11-16). Found by the planner of 144 (finding h2); not changed by 144's phone half.
+164. **Naming or reporting a species puts somebody else's tree in your grove on the service.**
+    `TreeMembershipKinds` (`server/internal/store/reads.go`) counts species statements and reports,
+    so since 144 a stranger's tree joins the sender's "Yours" grove on the service. Found by the
+    planner of 144 (finding h4) and repeated by its service author. Owner's call whether that is
+    wanted.
+165. **A tree you added on another phone offers no species control on this one.** It reaches this
+    phone only through the community cache, and nothing here can act as its adder, so the profile
+    offers neither the claim nor the correction (`CommunitySpeciesMerge.offer`,
+    `TreeProfilePresentation.offersSpeciesClaim`). Found by the planner of 144 (finding h5).
+166. **A reader whose sharing answer the phone does not know gets no species control on somebody
+    else's tree.** After a reinstall `ContributionSharing` is `.unknown` (chip 148), and 144's
+    controls show only for `.sharing`. `feat/account-license-readback` may make this rare; check
+    after it merges. Found by the phone author of 144, 2026-11-16.
+167. **Against a service without 144's keys, a species report's line never clears on the phone
+    that raised it.** The line comes from the reporter's own open flag, and nothing on that phone
+    closes it. Against release v17 the service's `species_reported` decides instead. Found by the
+    phone author of 144, 2026-11-16; it matters only if the phone build ships before the deploy.
 
 
 **Retire the format-1 manifest — DONE, 2026-08-23.** The owner overrode the trigger the day after
