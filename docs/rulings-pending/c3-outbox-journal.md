@@ -34,4 +34,16 @@ nearest specified thing, not a new design.
 6. **No migration.** The Journal's fifth arm walks `tree_locations` (it has no index on
    `occurred_at` alone) and hands its rows to the outer sort without sorting them itself. The plan
    gate allows the walk by name, because the table holds only the chains of trees this phone added:
-   one root per add and one row per move.
+   one root per add and one row per move. That exemption rests on the premise that only this
+   phone's own adds and moves write `tree_locations`. It is true today: the cache of other people's
+   trees writes only `community_tree_cache` and `community_tree_cache_tiles`.
+
+#### A limit the round found (a fact, not a ruling)
+
+- **After sign-out, pin moves leave the Journal and the export, and visits stay.** Sign-in moves a
+  `tree_locations` row to the account (`user_id` set, `device_id` NULL), and visits keep their
+  `device_id`. A signed-out phone reads by `device_id`, so it no longer finds the moves. They come
+  back at the next sign-in. The review's probe: add a tree signed out, move it, visit it, sign in,
+  move and visit again, sign out; the Journal then reads 0 moves and 2 visits.
+- The arm has no column that could keep these moves after sign-out without a schema change. The
+  owner has not ruled on it. The arm's behavior was not changed.
