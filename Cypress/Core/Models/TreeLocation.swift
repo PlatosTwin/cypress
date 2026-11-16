@@ -25,6 +25,12 @@ public struct TreeLocation: CoreEntity {
     /// and every row an account deletion anonymized.
     public let movedByUser: UUID?
     public let movedByDevice: UUID?
+    /// The installation that set this position (`AppSchema` v24): provenance, not ownership.
+    /// `owner` does not read it, sign-in does not change it, and nothing that decides who may move
+    /// the pin reads it. It survives the claim that clears `movedByDevice`, which is how the
+    /// Journal still finds a move this phone made after the person signs out. Nil when the act did
+    /// not say, and on a row an account deletion anonymized.
+    public let setOnDevice: UUID?
     public var supersededBy: UUID?
     /// When the person did it.
     public let occurredAt: Date
@@ -39,6 +45,7 @@ public struct TreeLocation: CoreEntity {
         placement: TreePlacement,
         locationAccuracyM: Double? = nil,
         owner: ContributionOwner,
+        setOnDevice: UUID? = nil,
         supersededBy: UUID? = nil,
         occurredAt: Date,
         createdAt: Date,
@@ -52,6 +59,7 @@ public struct TreeLocation: CoreEntity {
         self.locationAccuracyM = locationAccuracyM
         self.movedByUser = owner.userID
         self.movedByDevice = owner.deviceID
+        self.setOnDevice = setOnDevice
         self.supersededBy = supersededBy
         self.occurredAt = occurredAt
         self.createdAt = createdAt

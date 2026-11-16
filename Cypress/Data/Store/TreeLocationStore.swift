@@ -22,9 +22,10 @@ public struct TreeLocationStore {
         let statement = try connection.cachedStatement("""
             INSERT INTO main.tree_locations
                 (id, tree_id, client_uuid, lat, lon, placement, location_accuracy_m,
-                 user_id, device_id, superseded_by, occurred_at, created_at, updated_at)
+                 user_id, device_id, set_on_device, superseded_by, occurred_at, created_at,
+                 updated_at)
             VALUES (:id, :tree, :client, :lat, :lon, :placement, :accuracy,
-                    :user, :device, :superseded, :occurred, :created, :updated)
+                    :user, :device, :setOn, :superseded, :occurred, :created, :updated)
             ON CONFLICT(id) DO NOTHING
             """)
         _ = try statement.bind([
@@ -37,6 +38,7 @@ public struct TreeLocationStore {
             ":accuracy": location.locationAccuracyM,
             ":user": location.movedByUser,
             ":device": location.movedByDevice,
+            ":setOn": location.setOnDevice,
             ":superseded": location.supersededBy,
             ":occurred": location.occurredAt,
             ":created": location.createdAt,
@@ -150,6 +152,7 @@ public struct TreeLocationStore {
             placement: try row.value("placement", TreePlacement.self),
             locationAccuracyM: try row.doubleIfPresent("location_accuracy_m"),
             owner: owner,
+            setOnDevice: try row.uuidIfPresent("set_on_device"),
             supersededBy: try row.uuidIfPresent("superseded_by"),
             occurredAt: try row.date("occurred_at"),
             createdAt: try row.date("created_at"),
