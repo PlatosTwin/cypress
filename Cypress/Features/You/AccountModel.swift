@@ -136,6 +136,21 @@ final class AccountModel {
     /// takes the whole account section with it.
     private(set) var deletionFailed = false
 
+    /// Whether the **last** attempt to agree to the license failed and changed nothing.
+    ///
+    /// `deletionFailed`'s rule: cleared at the start of every attempt, so it always describes the
+    /// attempt the person just made. A success leaves it false, and the row it is drawn under goes
+    /// away with the "did not agree" line.
+    private(set) var licenseAcceptanceFailed = false
+
+    /// How many attempts to agree have failed since this model was made. Only ever goes up.
+    ///
+    /// The view announces the failure line to VoiceOver when this rises. It cannot watch
+    /// `licenseAcceptanceFailed` for that: a retry that fails again clears the flag and sets it
+    /// again within one call, and SwiftUI need not see the moment it was false, so a second failure
+    /// could go unannounced.
+    private(set) var licenseAcceptanceFailures = 0
+
     init(api: LocalAPI?, session: AppSession? = nil, router: (any CypressAPI)? = nil) {
         self.api = api
         self.session = session
@@ -213,6 +228,58 @@ final class AccountModel {
             return
         }
         try? await session?.signOut()
+        await load()
+    }
+
+    /// Agree to the license after declining it at sign-in (the owner's decision of 2026-11-15:
+    /// "Share my tree records" on the You tab). Only ever called from behind the confirmation.
+    ///
+    /// **The service first, then this phone**, the order `deleteAccount` uses and for the same
+    /// reason: the phone must never say "You agreed" about an answer the service did not record. So
+    /// a failure of the service half writes nothing here. If the service half succeeds and the local
+    /// write then fails, the service has agreed and the phone still says "did not agree", with the
+    /// failure line; a second tap sends the same acceptance, which the service records again and
+    /// which publishes nothing new, so it converges.
+    ///
+    /// **`isBusy` is set before the first `await`.** This model is on the main actor, and every
+    /// `await` lets another call run. A guard that awaited before marking itself busy would let a
+    /// second tap pass the same guard and send a second request.
+    ///
+    /// **The account must still be this phone's when the service answers** (found in review of this
+    /// branch). The account can end while the request is in flight: `DataLayer.boot`'s
+    /// `onSessionEnded` signs the local half out when another request's refresh is refused.
+    /// `linkAccount` re-runs `claimDevice`, which writes `current_user_id` back, so writing the local
+    /// half after that would sign the phone back in to an account with no Keychain session. So a yes
+    /// that arrives for an account that is gone writes nothing here. The You tab then shows the
+    /// signed-out Account section, and no failure line: the row and its line belong to the signed-in
+    /// arm, and a flag left set would show after the next sign-in. The service did record the
+    /// agreement; the next sign-in on screen 15 sends that sign-in's own answer.
+    func acceptLicense() async {
+        guard let api, let session, !isBusy,
+              isSignedIn, let link, let provider = link.provider, !link.acceptsLicense
+        else { return }
+        isBusy = true
+        licenseAcceptanceFailed = false
+        defer { isBusy = false }
+
+        do {
+            guard let account = await api.userID else { throw SessionError.noCredential }
+            try await session.acceptLicense()
+            // Both halves must still name this account. See this method's comment.
+            guard await api.userID == account, await session.signedInUserID == account else {
+                await load()
+                return
+            }
+            try await api.linkAccount(
+                deviceUUID: api.deviceID,
+                userID: account,
+                provider: provider,
+                acceptsLicense: true
+            )
+        } catch {
+            licenseAcceptanceFailed = true
+            licenseAcceptanceFailures += 1
+        }
         await load()
     }
 

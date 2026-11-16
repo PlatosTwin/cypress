@@ -9,11 +9,19 @@
 //  `CypressAPI`'s own "two methods that were requirements and are not any more" note records paying
 //  once already.
 //
-//  `POST /devices/claim` is deliberately absent from this file: it *is* on `CypressAPI`
-//  (`claimDevice(deviceUUID:userID:)`), because it moves rows rather than minting credentials, and
-//  `RemoteAPI` implements it. `POST /auth/oidc` performs the claim in the same round trip when a
-//  device id is supplied, which is what makes D9's "keep your three visits" true at the moment the
-//  button is tapped rather than one drain later.
+//  `POST /auth/oidc` performs the device claim in the same round trip when a device id is supplied,
+//  which is what makes D9's "keep your three visits" true at the moment the button is tapped rather
+//  than one drain later.
+//
+//  `POST /devices/claim` appears here once, for one purpose: an account that declined the license
+//  at sign-in agreeing to it later, from the You tab (`licenseAcceptanceRequest`). The route is the
+//  one the service already has for a signed-in account; it records the answer and then re-runs the
+//  idempotent claim (`claimDevice` in `server/internal/api/auth.go`). This file only **builds** that
+//  request. It attaches no credential: `AppSession.acceptLicense()` sends it through
+//  `SessionTransport`, which attaches the account's token and owns the one-refresh rule.
+//
+//  The claim *as a row move* is still `CypressAPI.claimDevice(deviceUUID:userID:)`, a different
+//  body, and is not this.
 //
 
 import Foundation
@@ -76,7 +84,10 @@ public enum SyncService {
 public struct AuthClient: Sendable {
 
     public let baseURL: URL
-    private let http: any AuthHTTP
+    /// Internal rather than private so `AppSession.acceptLicense()` can hand the **same** wire to a
+    /// `SessionTransport`. When the remote gate is shut this is `OfflineSession.make()`
+    /// (`DataLayer.boot`), so a request built here and sent on it opens no socket.
+    let http: any AuthHTTP
 
     /// - Parameter http: **`SyncService.makeSession()`, and deliberately not `URLSession.shared`.**
     ///   The defect PR #144 closed was never "somebody chose 60 seconds" — it was that the wire was
@@ -158,7 +169,40 @@ public struct AuthClient: Sendable {
         return DeviceCredential(registration, deviceUUID: deviceUUID)
     }
 
+    // MARK: - POST /devices/claim, as a later license acceptance
+
+    /// The request that tells the service a signed-in account now agrees to the license.
+    ///
+    /// The service records the version and, in the same transaction, makes public every community
+    /// tree the account owns (`RecordLicenseConsent` in `server/internal/store/identity.go`). It
+    /// then re-runs the claim of this device, which is idempotent for a device that the sign-in
+    /// already claimed.
+    ///
+    /// **Built only, not sent.** It carries no `Authorization` header. The route refuses a device
+    /// token (`forbidden`), so it must go through `SessionTransport` with the account's token; see
+    /// `AppSession.acceptLicense()`.
+    ///
+    /// - Parameter version: the license version agreed to. Only an acceptance is built here; a
+    ///   decline is never sent from this path.
+    func licenseAcceptanceRequest(deviceUUID: UUID, version: String) throws -> URLRequest {
+        try post(
+            "devices/claim",
+            body: LicenseAcceptanceRequest(deviceUUID: deviceUUID, licenseVersion: version)
+        )
+    }
+
     // MARK: - Bodies
+
+    /// `claimRequest` in `server/internal/api/auth.go`, with `license_version` always a string.
+    /// Exactly these two keys: the service refuses an unknown one.
+    struct LicenseAcceptanceRequest: Encodable {
+        let deviceUUID: UUID
+        let licenseVersion: String
+        enum CodingKeys: String, CodingKey {
+            case deviceUUID = "device_uuid"
+            case licenseVersion = "license_version"
+        }
+    }
 
     /// Whether the person answered the license row, and what they said.
     ///
