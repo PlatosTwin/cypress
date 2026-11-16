@@ -393,6 +393,28 @@ public actor AppSession {
         return session.userID
     }
 
+    /// Tells the service that the signed-in account now agrees to the license (`POST /devices/claim`
+    /// with `license_version`).
+    ///
+    /// For a person who declined at sign-in and agrees later, from the You tab. The service records
+    /// the answer and makes the account's community trees public in one transaction. It writes
+    /// nothing on this phone: the caller writes the local half only after this returns, so a phone
+    /// never says "you agreed" about an answer the service did not record.
+    ///
+    /// **Through `SessionTransport`, on this client's own wire.** That gives the account's token,
+    /// the one refresh and replay on a 401, and, when the remote gate is shut, `OfflineSession`'s
+    /// refusal before any socket opens.
+    ///
+    /// - Throws: `SessionError.noCredential` when no account is signed in. The route refuses a
+    ///   device token, so there is nothing to send. Otherwise whatever the transport throws: a
+    ///   `URLError` offline, an `APIError` when the service refuses, a `SessionError` when the
+    ///   session cannot be used.
+    public func acceptLicense(version: String = LicenseConsent.currentVersion) async throws {
+        guard signedInUserID != nil else { throw SessionError.noCredential }
+        let request = try client.licenseAcceptanceRequest(deviceUUID: deviceUUID, version: version)
+        _ = try await SessionTransport(session: self, http: client.http).send(request)
+    }
+
     /// Forgets the account's credentials and keeps the device's.
     ///
     /// The device credential survives on purpose: signing out returns this installation to the

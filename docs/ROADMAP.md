@@ -2443,6 +2443,44 @@ into this section in the round that finds it, and nowhere else. Each item stands
     run; the orchestrator reports that four agents saw it on four simulators on 2026-11-15, on main
     itself among them. It is reported to pass on CI; this round did not check a CI log. Until it is fixed, every local full unit run ends `VERIFY-FAIL` with exactly this
     one issue, so read the failing test's name before treating a local red as anything else.
+144. **A species answer on a community tree someone else added counts for everyone.** Owner decision,
+    2026-11-15 (`docs/rulings-pending/community-trees-answers-2026-11-15.md`, second entry). Today
+    the service keeps a non-adder's species statement and applies it to nobody, and the phone
+    refuses the two species verbs on a tree the reader did not add, so C3 hides "Say what species
+    you think this is" and "Report the species as wrong" on such a profile. The round that builds
+    this brings both controls back, with the owner's two rules: on a tree with no species, the first
+    answer names the tree for everyone, marked "species named by a contributor", and the adder can
+    still correct it; on a tree that has a species, the name stays and the profile shows "Somebody
+    has reported this species as wrong." until the adder or the operator corrects it. It is a
+    service change, a deploy, and a phone change. No round has planned it.
+145. **`AreaPickerUITests.testACoarseFixNamesNoNeighborhoodAndOffersThePicker` failed once in CI on a
+    tap.** PR 238, run 43775447999, attempt 1, shard 3, iPhone 17 Pro: "Failed to not hittable:
+    Button, {{34.0, 293.0}, {111.3, 44.3}}, label: 'Sunset/Parkside'". The rerun of that shard
+    passed, which shows the failure is intermittent and not why it happened. The test tapped the
+    picker's row right after `waitForExistence`, and `BottomSheet` draws its card at opacity 0 until
+    its rise finishes, so the row exists before it can be tapped. The log does not show that the tap
+    came in that gap; it is the likely cause, not a proven one. The second merge train of 2026-11-15
+    added `assertReachable` before that tap and before the same tap in the class's two other tests
+    that use the picker. Strike this if the failure does not come back; if it does, the cause is
+    something else.
+146. **`RemoteAPI.claimDevice` sends a body the service refuses.** It sends `user_id`, and
+    `POST /devices/claim` decodes with unknown fields refused. Nothing ships through it today (the
+    live claim goes through `AuthClient` and `AppSession`), and its unit test pins the wrong body.
+    Found by the planner and the author of the "Share my tree records" row, 2026-11-15. Remove the
+    dead path or make it match `claimRequest`.
+147. **The app ships no license text to read.** Screen 15's "Read the short version" is drawn as a
+    link and is not a button (`AccountAskView.swift`), and the You tab's "Share my tree records" row
+    offers no link for the same reason. A person agrees to the open database license without a way
+    to read it in the app. Owner's call what the short version says and where it lives.
+148. **A person who declined to share, then reinstalled, cannot agree later.** The "Share my tree
+    records" row shows only when the phone holds the stored "declined" answer. After a reinstall
+    the phone no longer knows the answer (`ContributionSharing.unknown`), so the row does not show
+    and the only route is to sign out and sign in again. The service knows the answer; nothing reads
+    it back.
+149. **`server/testdata/README.md` does not say that `tree_history.json`'s "added" row carries the
+    day the tree was added.** Since migration 008 the row is dated by `added_on`, where it used to
+    carry the day the tree went public. Found by the author of the service's added-day change,
+    2026-11-15.
 
 
 **Retire the format-1 manifest — DONE, 2026-08-23.** The owner overrode the trigger the day after
