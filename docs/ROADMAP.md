@@ -2457,10 +2457,12 @@ into this section in the round that finds it, and nowhere else. Each item stands
     tap.** PR 238, run 43775447999, attempt 1, shard 3, iPhone 17 Pro: "Failed to not hittable:
     Button, {{34.0, 293.0}, {111.3, 44.3}}, label: 'Sunset/Parkside'". The rerun of that shard
     passed, which shows the failure is intermittent and not why it happened. The test tapped the
-    picker's row right after `waitForExistence`, while the sheet could still be presenting. The
-    second merge train of 2026-11-15 added `assertReachable` before that tap and before the same
-    tap in the out-of-range test. Strike this if the failure does not come back; if it does, the
-    cause is something else.
+    picker's row right after `waitForExistence`, and `BottomSheet` draws its card at opacity 0 until
+    its rise finishes, so the row exists before it can be tapped. The log does not show that the tap
+    came in that gap; it is the likely cause, not a proven one. The second merge train of 2026-11-15
+    added `assertReachable` before that tap and before the same tap in the class's two other tests
+    that use the picker. Strike this if the failure does not come back; if it does, the cause is
+    something else.
 146. **`RemoteAPI.claimDevice` sends a body the service refuses.** It sends `user_id`, and
     `POST /devices/claim` decodes with unknown fields refused. Nothing ships through it today (the
     live claim goes through `AuthClient` and `AppSession`), and its unit test pins the wrong body.
