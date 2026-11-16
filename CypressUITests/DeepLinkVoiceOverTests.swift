@@ -249,6 +249,10 @@ final class DeepLinkVoiceOverTests: XCTestCase, DeepLinkHarness {
         file: StaticString = #filePath,
         line: UInt = #line
     ) {
+        // CI run 43786913681 (ui shard 1) lost the first nudge: the pin still read "Right where you
+        // are standing." 10 s after the tap. The log does not say why. The first tap now waits until
+        // the button can be tapped, which rules out one cause: a tap sent before the screen settled.
+        assertReachable(north, "pinAdjust's 'Move the pin north' button", file: file, line: line)
         for step in 1...times {
             north.tap()
             let expected = "\(step * 5) m north of where you are standing."
