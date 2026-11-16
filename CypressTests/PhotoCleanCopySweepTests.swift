@@ -88,7 +88,7 @@ struct PhotoCleanCopySweepTests {
             "\(uuid)-trunk.jpg.stripping",          // a staged capture's name, not a photo id
             "x\(uuid).jpg.stripping",               // something before the UUID
             ".\(uuid).jpg.stripping",               // a leading dot
-            "not-a-uuid-at-all-but-thirty-six-ch.jpg.stripping",
+            "not-a-uuid-at-all-but-thirty-six-chr.jpg.stripping",
             "\(uuid).jpg.stripping.jpg",            // a different ending
             "\(uuid).jpg.Stripping",                // a different case
             ".DS_Store",
@@ -102,7 +102,7 @@ struct PhotoCleanCopySweepTests {
         try FileManager.default.createDirectory(at: scratchFolder, withIntermediateDirectories: true)
         #expect(PhotoBinary.uploadScratchName(of: scratchFolder.lastPathComponent) != nil,
                 "fixture: the folder has an upload scratch's name")
-        #expect("not-a-uuid-at-all-but-thirty-six-ch".count == 36, "fixture: the look-alike stem is UUID-length")
+        #expect("not-a-uuid-at-all-but-thirty-six-chr".count == 36, "fixture: the look-alike stem is UUID-length")
 
         let removed = PhotoBinary.removeAbandonedCleanCopies(in: directory)
 
