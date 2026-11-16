@@ -3735,6 +3735,51 @@ public actor LocalAPI: CypressAPI {
         }
     }
 
+    /// Test seam (the withdrawal round): a visit on `treeID` by **another account**, written as a
+    /// row that has already reached the service (it has no queue row), so the profile draws the
+    /// reason line in place of the withdraw control (`CommunityTreeStore.othersHaveAddedTo`). The UI
+    /// suite runs with the remote gate shut, so no other account's row can arrive any other way.
+    public func debugRecordOthersVisit(treeID: UUID, accountID: UUID) async throws {
+        let visit = Visit(
+            treeID: treeID,
+            attribution: Attribution(userID: accountID, deviceID: deviceID),
+            capturedAt: now()
+        )
+        try await store.queue.write { try contributions.insert(visit, connection: $0) }
+    }
+
+    /// Test seam (the withdrawal round): the service's `conflict` answer to this tree's queued
+    /// withdrawal, so the Outbox row and the restored tree can be looked at. The UI suite runs with
+    /// no send sink, so no refusal can arrive. Writes the two things `OutboxQueue.settle` writes for
+    /// that answer, in one write: the failed row with the owner's sentence, and the tree put back.
+    public func debugRefuseTreeWithdrawal(treeID: UUID) async throws {
+        let moment = now()
+        let outbox = OutboxStore()
+        try await store.queue.write { connection in
+            let rows = try outbox.allItems(connection: connection).filter { record in
+                guard record.item.kind == .treeWithdrawal,
+                      case let .treeWithdrawal(withdrawal)? =
+                        try? OutboxPayload.decode(kind: record.item.kind, from: record.item.payload)
+                else { return false }
+                return withdrawal.treeID == treeID
+            }
+            guard let row = rows.last else { throw APIError.notFound }
+            try outbox.recordFailure(
+                row.id,
+                state: .failed,
+                failCount: row.item.failCount + 1,
+                reason: OutboxFailureReason.treeStaysOnTheMap,
+                code: .conflict,
+                nextAttemptAt: nil,
+                at: moment,
+                connection: connection
+            )
+            _ = try communityTrees.restoreAfterRefusedWithdrawal(
+                treeID: treeID, outboxID: row.id, at: moment, connection: connection
+            )
+        }
+    }
+
     /// Test seam (ERRATA E170): read one flag back, including a resolved one.
     ///
     /// `openReviews` returns open flags only, so a dismissal is invisible through the shipping read —

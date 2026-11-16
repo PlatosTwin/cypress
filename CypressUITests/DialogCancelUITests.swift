@@ -26,7 +26,8 @@
 //  ── The one site with no test ──────────────────────────────────────────────────────────────
 //  `AccountDeletionSheet`'s *Erase everything you have added?* is drawn only for a signed-in
 //  account, and no deep link signs in (`AppleSignInUITests` says why: sign-in is a real
-//  `POST /auth/oidc`). It got the same change as the six below.
+//  `POST /auth/oidc`). It got the same change as the six below. The seventh, *Withdraw this tree?*,
+//  was an alert from the start.
 //
 
 import XCTest
@@ -68,6 +69,28 @@ final class DialogCancelUITests: XCTestCase, DeepLinkHarness {
         static let dismiss = "Dismiss"
         static let dismissTitle = "Dismiss this report?"
         static let moderationCancel = "Cancel"
+        // TreeProfileCopy: withdrawing a tree you added (the owner's answers of 2026-11-16)
+        static let withdrawTree = "Withdraw this tree"
+        static let withdrawTreeTitle = "Withdraw this tree?"
+    }
+
+    // MARK: - Screen 03: withdraw a tree you added
+
+    func testKeepItOnWithdrawingATreeKeepsTheTree() {
+        let app = launch("withdrawTree")
+        let action = app.buttons[Copy.withdrawTree]
+        guard action.waitForExistence(timeout: 60) else {
+            XCTFail(deepLinkFailure(app) ?? "the profile of a tree this phone added drew no Withdraw this tree")
+            return
+        }
+        reach(action, in: app)
+
+        openAndCancel(
+            app, trigger: action, title: Copy.withdrawTreeTitle, cancel: Copy.keepIt,
+            what: "Withdraw this tree"
+        )
+
+        XCTAssertTrue(action.waitForExistence(timeout: 5), "Keep it withdrew the tree anyway")
     }
 
     // MARK: - Screen 11: withdraw a reading

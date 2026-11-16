@@ -1,0 +1,19 @@
+{
+  "items": [
+    {
+      "client_uuid": "5E7A9C1B-3D2F-4B6A-8C0E-1F3A5B7C9D02",
+      "kind": "tree_withdrawal",
+      "tree_uuid": "C3A1F7E2-5D4B-4E8A-9B6C-2F1E0D9C8B7A",
+      "occurred_at": "2026-11-16T15:20:00Z",
+      "payload": {
+        "clientUUID": "5E7A9C1B-3D2F-4B6A-8C0E-1F3A5B7C9D02",
+        "treeID": "C3A1F7E2-5D4B-4E8A-9B6C-2F1E0D9C8B7A",
+        "attribution": {
+          "deviceID": "D1E2F3A4-B5C6-4D7E-8F90-A1B2C3D4E5F6"
+        },
+        "occurredAt": "2026-11-16T15:20:00Z"
+      },
+      "device_id": "D1E2F3A4-B5C6-4D7E-8F90-A1B2C3D4E5F6"
+    }
+  ]
+}

@@ -978,6 +978,10 @@ struct CommunityOutboxKindTests {
                 coordinate: Coordinate(latitude: 37.76015, longitude: -122.50505),
                 placement: .contributorPlaced, locationAccuracyM: 4.5,
                 attribution: who, occurredAt: moment
+            )),
+            // The adder's withdrawal: a pointer, every field set.
+            .treeWithdrawal(TreeWithdrawal(
+                clientUUID: UUID(), treeID: tree, attribution: who, occurredAt: moment
             ))
         ]
         // `uniqueKeysWithValues` rather than a merge: two specimens of one kind here would make the

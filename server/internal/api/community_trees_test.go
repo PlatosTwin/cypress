@@ -633,6 +633,88 @@ func TestTheLocationCorrectionFixtureIsCalibrated(t *testing.T) {
 	}
 }
 
+// treeWithdrawalFixture is `server/testdata/sync_tree_withdrawal.json`, the request the phone's
+// encoder must produce in structure (`TreeWithdrawalFixtureTests` is the Swift half). Its values
+// are read from the file rather than restated.
+type treeWithdrawalFixture struct {
+	Items []struct {
+		ClientUUID uuid.UUID `json:"client_uuid"`
+		TreeUUID   uuid.UUID `json:"tree_uuid"`
+		OccurredAt time.Time `json:"occurred_at"`
+		DeviceID   uuid.UUID `json:"device_id"`
+		Payload    struct {
+			TreeID uuid.UUID `json:"treeID"`
+		} `json:"payload"`
+	} `json:"items"`
+}
+
+func readTreeWithdrawalFixture(t *testing.T) ([]byte, treeWithdrawalFixture) {
+	t.Helper()
+	raw, err := os.ReadFile("../../testdata/sync_tree_withdrawal.json")
+	if err != nil {
+		t.Fatalf("reading the fixture: %v", err)
+	}
+	var fixture treeWithdrawalFixture
+	if err := json.Unmarshal(raw, &fixture); err != nil {
+		t.Fatalf("the fixture is not the shape this test reads: %v", err)
+	}
+	if len(fixture.Items) != 1 {
+		t.Fatalf("the fixture carries %d items, want 1", len(fixture.Items))
+	}
+	return raw, fixture
+}
+
+// seedWithdrawalFixtureTree registers the fixture's device and adds the fixture's tree from it.
+func seedWithdrawalFixtureTree(t *testing.T, h *harness, fixture treeWithdrawalFixture) string {
+	t.Helper()
+	item := fixture.Items[0]
+	token := h.registerDeviceToken(t, item.DeviceID)
+	mustApply(t, h.syncOne(t, token, addTreeAt(item.TreeUUID, ctLat, ctLon, item.OccurredAt.Add(-5*time.Minute))),
+		"seeding the fixture's tree")
+	return token
+}
+
+// TestTheTreeWithdrawalFixtureIsAccepted posts the fixture's bytes through the real handler against
+// Postgres: the adder's device withdraws its own tree, which nobody else has built on.
+func TestTheTreeWithdrawalFixtureIsAccepted(t *testing.T) {
+	h := newHarness(t)
+	raw, fixture := readTreeWithdrawalFixture(t)
+	item := fixture.Items[0]
+	if item.Payload.TreeID != item.TreeUUID {
+		t.Fatalf("the fixture's payload names %s and its item %s", item.Payload.TreeID, item.TreeUUID)
+	}
+	token := seedWithdrawalFixtureTree(t, h, fixture)
+
+	mustApply(t, postRaw(t, h, token, raw), "the fixture")
+
+	if state := stateOf(t, h, item.TreeUUID); !state.Deleted {
+		t.Fatalf("the fixture's tree is %+v; want it withdrawn", state)
+	}
+	if n := len(eventsOfKind(eventsOf(t, h, item.TreeUUID), "withdrawn")); n != 1 {
+		t.Fatalf("%d withdrawn events, want 1", n)
+	}
+}
+
+// TestTheTreeWithdrawalFixtureIsCalibrated is the fixture test's own control: the same bytes with
+// the payload's `treeID` renamed are refused, so the test above cannot pass against a handler that
+// ignored the payload.
+func TestTheTreeWithdrawalFixtureIsCalibrated(t *testing.T) {
+	h := newHarness(t)
+	raw, fixture := readTreeWithdrawalFixture(t)
+	token := seedWithdrawalFixtureTree(t, h, fixture)
+
+	if n := bytes.Count(raw, []byte(`"treeID":`)); n != 1 {
+		t.Fatalf("the fixture carries %d `\"treeID\":` keys, want exactly one", n)
+	}
+	drifted := bytes.Replace(raw, []byte(`"treeID":`), []byte(`"treeUUID":`), 1)
+
+	result := postRaw(t, h, token, drifted)
+	mustFail(t, result, apierr.ValidationFailed, "the fixture with treeID renamed to treeUUID")
+	if state := stateOf(t, h, fixture.Items[0].TreeUUID); state.Deleted {
+		t.Fatalf("a refused withdrawal withdrew the tree: %+v", state)
+	}
+}
+
 // ── location_correction ────────────────────────────────────────────────────────────────────────
 
 // TestOnlyTheAdderMovesThePin is decision 5.
