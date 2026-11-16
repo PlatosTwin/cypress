@@ -2468,6 +2468,14 @@ into this section in the round that finds it, and nowhere else. Each item stands
     app.cypress.Cypress` fixes a device: the same tree passed 23 of 23 map and profile UI tests after
     it. The fix belongs in the harness: fresh state for that test, or a "Yours" camera fit that leaves
     harness trees out.
+    **DONE** on `test/community-test-gaps`: the camera test launches with the DEBUG key
+    `CYPRESS_WITHDRAW_COMMUNITY_TREES`, which soft-deletes every community tree before the screen
+    opens (`LocalAPI.debugWithdrawAllCommunityTrees`); a real reader's "Yours" camera is unchanged.
+    The failure needs this order on one install: `SeeAllOnMapUITests` once (it writes its check-in
+    once), then `ProfileLinkColumnUITests` (its trees are now newer than that check-in, and
+    `ContributedCamera` breaks the tie on the newest contribution). On a fresh install the check-in
+    is the newest, so `ProfileLinkColumnUITests` twice and then `SeeAllOnMapUITests` passes with or
+    without the fix. Without the fix the second order fails on the camera assertion; with it, it passes.
 143. **`CameraZoomPinchTests` fails on main on this Mac's toolchain.** "05 and 09's camera hands the
     pinch its own controller, armed, on its viewfinder" fails at `CameraZoomPinchTests.swift:162`,
     "Expectation failed: Self.stateModel(of: view, label: "_camera")": a `Mirror` lookup of
