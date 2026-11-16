@@ -392,8 +392,11 @@ struct AccountDeletionCoverageTests {
             return timed(["id": tree, "client_uuid": fresh(), "lat": "37.76", "lon": "-122.5",
                     "user_id": who])
         case .treeLocations:
-            // `set_on_device` on both rows, so the stranger's byte-for-byte check also covers the
-            // door's clear of that column (`AppSchema` v24).
+            // `set_on_device` on both rows (`AppSchema` v24), so the stranger's byte-for-byte check
+            // proves the door does not clear it on a stranger's row. This suite reads only the
+            // account column of the owned row, so it does NOT prove the door clears
+            // `set_on_device` on the account's row: `PinMoveJournalTests
+            // .theKeepRecordsDeletionTakesTheMovesOffThisPhone` guards that.
             return timed(["id": fresh(), "tree_id": tree, "client_uuid": fresh(), "lat": "37.76",
                     "lon": "-122.5", "placement": "gps", "occurred_at": stamp, "user_id": who,
                     "set_on_device": device])

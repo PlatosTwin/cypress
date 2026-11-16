@@ -13,7 +13,8 @@ import Testing
 ///    owns, and on no other: not an anonymized row (neither owner), and not a row a different
 ///    installation owns;
 /// 3. the fill changes no row's owner;
-/// 4. a replay changes nothing, on a database that already has the column.
+/// 4. a replay changes nothing, on a database that already has the column;
+/// 5. a stored device id that is not a UUID fills nothing, so every chain still decodes.
 ///
 /// **When v25 lands**, filter this suite's ladder test to `<= 24` the way `SchemaV23Tests.ladder`
 /// is filtered, and move the `currentVersion` expectation below into v25's own file.
@@ -37,7 +38,10 @@ struct SchemaV24Tests {
     /// A v23 database holding the four positions, written as rows. The device-owned row stores this
     /// installation's id in **lowercase**, the spelling a JSON round trip produces, so the fill's
     /// `COLLATE NOCASE` is measured rather than assumed.
-    private static func v23Database(deviceUUID: UUID? = device) async throws -> CypressStore {
+    ///
+    /// `deviceValue` is what `app_state.device_uuid` holds, as text, so a corrupted value can be
+    /// stored; nil stores no row.
+    private static func v23Database(deviceValue: String? = device.uuidString) async throws -> CypressStore {
         let store = try await CypressStore.inMemory(
             migrations: AppSchema.migrations.filter { $0.version <= 23 }
         )
@@ -64,9 +68,9 @@ struct SchemaV24Tests {
                             '\(stamp)', '\(stamp)', '\(stamp)');
                     """)
             }
-            if let deviceUUID {
+            if let deviceValue {
                 try connection.execute("""
-                    INSERT INTO app_state (key, value) VALUES ('device_uuid', '\(deviceUUID.uuidString)');
+                    INSERT INTO app_state (key, value) VALUES ('device_uuid', '\(deviceValue)');
                     """)
             }
         }
@@ -158,7 +162,7 @@ struct SchemaV24Tests {
     /// The fresh-install case: no `device_uuid`, so nothing is named.
     @Test("with no device id stored, the fill names nobody")
     func noDeviceIDNamesNobody() async throws {
-        let store = try await Self.v23Database(deviceUUID: nil)
+        let store = try await Self.v23Database(deviceValue: nil)
         _ = try await store.queue.write { try SchemaMigrator.migrate(AppSchema.migrations, on: $0) }
         try await store.queue.read { connection in
             for id in [Self.ownedByThisDevice, Self.ownedByAccount, Self.anonymized, Self.ownedByOtherDevice] {
@@ -166,6 +170,55 @@ struct SchemaV24Tests {
                 #expect(value == .some(nil), "\(id) reads \(String(describing: value)) with no device id stored")
             }
         }
+    }
+
+    /// A stored id that is not a UUID: empty, short, and 36 characters of the wrong kind (which a
+    /// length check alone would let through).
+    static let malformedDeviceValues = ["", "not-a-uuid", "ZZZZZZZZ-ZZZZ-ZZZZ-ZZZZ-ZZZZZZZZZZZZ"]
+
+    /// The fill must never write a value the decoder refuses: `TreeLocationStore.decode` reads the
+    /// column through `uuidIfPresent`, and `correctLocation` reads the chain's head before every
+    /// move, so one bad value would make that tree's pin unmovable.
+    ///
+    /// Then a later launch with a good id (`DataLayer` mints one over a value it cannot parse).
+    /// The old rows were not filled, so the account's old move is in the Journal while the account
+    /// is signed in (by `user_id`) and not after sign-out. That is the known limit the header of
+    /// `applyV24` states.
+    ///
+    /// Red-proof: remove the `GLOB` guard from `applyV24`'s fill — red on the value written and on
+    /// the chain that no longer decodes.
+    @Test("a stored id that is not a UUID fills nothing, and the chain still decodes", arguments: malformedDeviceValues)
+    func aMalformedDeviceIDFillsNothing(value: String) async throws {
+        let store = try await Self.v23Database(deviceValue: value)
+        _ = try await store.queue.write { try SchemaMigrator.migrate(AppSchema.migrations, on: $0) }
+
+        try await store.queue.read { connection in
+            for id in [Self.ownedByThisDevice, Self.ownedByAccount, Self.anonymized, Self.ownedByOtherDevice] {
+                let written = try Self.provenance(id, connection)
+                #expect(written == .some(nil), "with device_uuid '\(value)' the row \(id) reads \(String(describing: written))")
+            }
+        }
+        let tree = try await store.queue.read { try Self.treeID(of: Self.ownedByAccount, $0) }
+        let chain: [TreeLocation]
+        do {
+            chain = try await store.queue.read { try TreeLocationStore().chain(treeID: tree, connection: $0) }
+        } catch {
+            Issue.record("with device_uuid '\(value)' the chain no longer decodes: \(error)")
+            return
+        }
+        #expect(chain.count == 1 && chain.first?.setOnDevice == nil)
+
+        // A later launch, with the good id `DataLayer` mints over the bad one.
+        let newDevice = UUID()
+        try await store.queue.write { connection in
+            try connection.execute("UPDATE app_state SET value = '\(newDevice.uuidString)' WHERE key = 'device_uuid'")
+        }
+        let signedOut = LocalAPI(store: store, deviceID: newDevice)
+        let signedIn = LocalAPI(store: store, deviceID: newDevice, userID: Self.account)
+        let movesSignedOut = try await signedOut.journal(cursor: nil, limit: 25).items.filter { $0.kind == .pinMoved }
+        let movesSignedIn = try await signedIn.journal(cursor: nil, limit: 25).items.filter { $0.kind == .pinMoved }
+        #expect(movesSignedIn.map(\.id) == [Self.ownedByAccount], "signed in, the account's old move reads \(movesSignedIn.map(\.id))")
+        #expect(movesSignedOut.isEmpty, "the known limit changed: signed out, old moves read \(movesSignedOut.map(\.id))")
     }
 
     // MARK: - 3. Owners

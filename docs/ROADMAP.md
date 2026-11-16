@@ -2599,9 +2599,16 @@ into this section in the round that finds it, and nowhere else. Each item stands
     rows still name the first account and this phone, with no tombstone. When a second account
     signs in, its Journal, My Grove, export, and species ring show the first account's visits and
     notes, and it can delete the first account's photos and withdraw its readings. Anyone holding
-    the signed-out phone sees the same rows before that. The fix belongs where the phone learns its
-    account was deleted elsewhere: make that account's rows on this phone anonymous, as the
-    keep-records door does. Found by reading, by the planner of chip 152, 2026-11-16; not run.
+    the signed-out phone sees the same rows before that. **Since migration v24
+    (`feat/journal-keeps-pin-moves`) the exposure includes the first account's pin moves:** the
+    second account's Journal and export show them through `tree_locations.set_on_device`, and it
+    cannot move those pins, because `correctLocation` and the move control read the tree adder's
+    `user_id`. The reviewer of that branch measured it with `claimDevice`: A signs in, adds a tree,
+    moves it, visits it, signs out; B's Journal then shows 1 move and 1 visit (0 moves on main). The
+    fix belongs where the phone learns its account was deleted elsewhere: make that account's rows
+    on this phone anonymous, as the keep-records door does, **and clear `set_on_device` on its
+    `tree_locations` rows in the same statement, as that door does.** Found by reading, by the
+    planner of chip 152, 2026-11-16; the pin-move half was run by the reviewer.
 163. **A queued item made while signed in is refused after sign-out.** Sign-out keeps the outbox
     sending with the device credential. The service answers an item whose payload names an account
     with `forbidden` ("Sign in to send this."), which is final, so the row fails for good with

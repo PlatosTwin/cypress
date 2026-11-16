@@ -42,4 +42,16 @@ visits stayed and the pin moves left, and they came back at the next sign-in.
 
 **What this does not decide.** Whether a second account that signs in on the same phone should see
 the first account's work. Today that is reachable only when the first account was deleted from a
-different phone. It is a separate ROADMAP item.
+different phone. It is a separate ROADMAP item. Since v24 that exposure includes the first
+account's pin moves: the second account's Journal and export show them, and it cannot move those
+pins, because who may move a pin is read from the tree's adder. This follows from the owner's
+choice ("Everything, pin moves too"): the Journal shows what was recorded on this phone.
+
+#### A known limit (a fact, not a ruling)
+
+- **A corrupted `device_uuid` fills nothing.** v24 writes `set_on_device` only when the stored
+  `app_state.device_uuid` has a UUID's shape (8-4-4-4-12 hex digits). Otherwise it writes nothing,
+  so every position stays readable and every pin stays movable. `DataLayer` then mints a new id at
+  launch. In that case a move an account made before the update is in the Journal while that
+  account is signed in, and not after sign-out. Moves made after the update carry the new id. This
+  needs an `app_state` that the app itself never writes. `SchemaV24Tests` measures it.

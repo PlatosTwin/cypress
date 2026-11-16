@@ -3138,8 +3138,20 @@ public enum AppSchema {
     /// COLUMN` has no `IF NOT EXISTS`. The fill runs unconditionally, also v16's reason: a database
     /// that has the column and was never filled must still be filled.
     ///
-    /// **When `app_state` has no `device_uuid`** the subquery is NULL and the fill writes NULL,
-    /// which is a no-op. Only a fresh install has no `device_uuid`, and it has no positions yet.
+    /// **When `app_state` has no `device_uuid`** the fill writes nothing. Only a fresh install has
+    /// no `device_uuid`, and it has no positions yet.
+    ///
+    /// **When the stored `device_uuid` is not a UUID** the fill writes nothing either. The decoder
+    /// (`TreeLocationStore.decode`, through `uuidIfPresent`) refuses a value `UUID(uuidString:)`
+    /// cannot parse, so writing one would make the tree's chain unreadable, and `correctLocation`
+    /// reads the chain's head before every move. The guard is a `GLOB` on the shape
+    /// `UUID(uuidString:)` accepts: 36 characters, hex digits in groups of 8-4-4-4-12 joined by
+    /// hyphens, either case. It catches an empty value, a short or long value, a non-hex character
+    /// and a misplaced hyphen. It does not check the version or variant digits, and neither does
+    /// `UUID(uuidString:)`. `DataLayer` writes only `uuidString` and mints a new id over a value it
+    /// cannot parse, so this case needs a corrupted `app_state`. The rows then keep NULL, and a move
+    /// an account made before the update is not in the Journal after sign-out (moves made after
+    /// the update carry the new id).
     ///
     /// **No index.** The Journal's pin-move arm already walks the table (`journalSQL`), and the
     /// table holds one row per tree this phone added plus one per move.
@@ -3152,15 +3164,28 @@ public enum AppSchema {
         }
         try connection.execute("""
             -- Owned rows that this installation owns or that an account owns. Not an anonymized row,
-            -- not another installation's row, and not a row that already says who set it.
+            -- not another installation's row, and not a row that already says who set it. Nothing
+            -- at all when the stored id does not have a UUID's shape: see the header.
             UPDATE tree_locations
                SET set_on_device = (SELECT upper(value) FROM app_state WHERE key = 'device_uuid')
              WHERE set_on_device IS NULL
+               AND EXISTS (SELECT 1 FROM app_state
+                            WHERE key = 'device_uuid' AND value GLOB '\(uuidShapeGlob)')
                AND NOT (user_id IS NULL AND device_id IS NULL)
                AND (device_id IS NULL
                     OR device_id = (SELECT value FROM app_state WHERE key = 'device_uuid') COLLATE NOCASE);
             """)
     }
+
+    /// A `GLOB` pattern that matches exactly the strings `UUID(uuidString:)` parses: 8-4-4-4-12
+    /// hex digits, either case, joined by hyphens. `GLOB` is case-sensitive, so each class names
+    /// both cases. Used by v24's fill.
+    static let uuidShapeGlob: String = {
+        let hex = "[0-9A-Fa-f]"
+        return [8, 4, 4, 4, 12]
+            .map { String(repeating: hex, count: $0) }
+            .joined(separator: "-")
+    }()
 
     /// The `CREATE TABLE` text SQLite holds for `outbox`, which is where the `kind` vocabulary
     /// actually lives — `pragma_table_info` reports columns, not their CHECKs.
