@@ -240,8 +240,9 @@ public struct OutboxItem: CoreEntity {
                  // discards it with the tree it would have moved (`AccountDeletion`).
                  .locationCorrection,
                  // A withdrawal is the adder's act on a public object, like the move above. The
-                 // leaving door sends it without the name; the erasing door discards it with the
-                 // tree it would have withdrawn.
+                 // leaving door sends it without the name. The erasing door discards it, and first
+                 // puts back the tree it hid on this phone (`OutboxStore.forgetAccount`): the
+                 // service may keep that tree, if another identity built on it.
                  .treeWithdrawal:
                 return .contribution
             }
