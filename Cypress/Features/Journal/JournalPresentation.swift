@@ -453,7 +453,9 @@ enum JournalCopy {
     /// entry this app can have — every row opens a profile — and it is still what its own page calls
     /// it, fallback included.
     ///
-    /// `treeName` is nil when no name was resolved for the tree (no given name and no species).
+    /// `treeName` is nil when no name was resolved for the tree: no given name and no species
+    /// (`LocalAPI.displayNames`, which names an added tree by its species since the owner's answer
+    /// of 2026-11-16, "Use the species").
     /// Every kind then reads the fallback title, except a pin move, which reads `unnamedPinMove`.
     static func rowTitle(kind: JournalEntry.Kind, treeName: String?) -> String {
         guard let treeName else {

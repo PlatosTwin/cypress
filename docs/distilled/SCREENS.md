@@ -1512,8 +1512,18 @@ scrim `rgba(14,24,17,.3)`.
    `This couldn't be sent.` (the owner's answers of 2026-11-16). **The row refused because others
    added to the tree is the one failed row with no `retry`**: it keeps the amber card and its
    reason, draws no state word, and stays in the list for good (the owner's answers of 2026-11-16,
-   "Remove Retry there" and "Row stays, reason only"). It leaves only through an account deletion
-   that erases everything. A withdrawal refused for any other reason keeps `retry`.
+   "Remove Retry there" and "Row stays, reason only"). An account deletion that erases everything
+   removes it when the withdrawal names that account; a withdrawal made signed out, on a tree this
+   phone added signed out, names no account, and no deletion removes it. A deletion that keeps
+   records keeps the row and takes the account out of it. A withdrawal refused for any other reason
+   keeps `retry`.
+
+   Not in the mock: **the tree in a row title is named as its profile names it** (the owner's
+   answer of 2026-11-16, "Use the species"). A given name wins; else the species' common name, for
+   a tree someone added as for a city tree, for example `Pin moved · Sycamore, London Plane`. A
+   tree with neither reads `Tree`, except a pin move, which reads `Pin moved` alone. My Grove's
+   Trees list does not follow this yet: an added tree with a species and no given name has no name
+   there.
 3. **Wifi setting row** — `margin:10px 16px 0`, fill `#fff`, `1px #E3E8D9`, radius 14px,
    `padding:13px 15px`, `gap:12px`:
    - `Sync photos on wifi only` — 13.5px/700.

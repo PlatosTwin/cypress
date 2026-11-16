@@ -14,7 +14,8 @@
 //     place of the control, below the report link that comes back in this state, and the profile
 //     does not say only the reader can see the tree.
 //  4. After the service refuses (`debugRefuseTreeWithdrawal`), the Outbox row reads
-//     `Tree withdrawn · …` with the owner's sentence, and that row draws no Retry.
+//     `Tree withdrawn · Sycamore, London Plane` with the owner's sentence, and that row draws no
+//     Retry.
 //  5. A city tree offers no control.
 //
 //  The "Keep it" press is in `DialogCancelUITests`, with the app's other cancels.
@@ -44,7 +45,10 @@ final class WithdrawTreeUITests: XCTestCase, DeepLinkHarness {
         static let reportNoTree = "Report that there is no tree here"
         static let cityRecordReport = "Report a mistake in the city’s record"
         static let showWhere = "Show me where this is"
-        static let outboxRowPrefix = "Tree withdrawn · "
+        /// The debug tree is added with the seed's first `Platanus` match, whose common name is
+        /// "Sycamore, London Plane". Rows name an added tree by its species (the owner's answer of
+        /// 2026-11-16, "Use the species"), as its profile title does.
+        static let outboxRowTitle = "Tree withdrawn · Sycamore, London Plane"
         /// `OutboxCopy.retryAction`, the retry control's accessibility label.
         static let retry = "Retry"
     }
@@ -187,12 +191,12 @@ final class WithdrawTreeUITests: XCTestCase, DeepLinkHarness {
     func testARefusedWithdrawalReadsTheOwnersSentenceInTheOutbox() {
         let app = launchPinned("withdrawTreeRefused")
         let row = app.staticTexts
-            .matching(NSPredicate(format: "label BEGINSWITH %@", Copy.outboxRowPrefix))
+            .matching(NSPredicate(format: "label == %@", Copy.outboxRowTitle))
             .firstMatch
         guard row.waitForExistence(timeout: 60) else {
             XCTFail(
                 deepLinkFailure(app).map { "withdrawTreeRefused: \($0)" }
-                    ?? "the Outbox drew no row titled '\(Copy.outboxRowPrefix)…'"
+                    ?? "the Outbox drew no row titled '\(Copy.outboxRowTitle)'"
             )
             return
         }

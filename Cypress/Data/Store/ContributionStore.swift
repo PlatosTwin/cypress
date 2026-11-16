@@ -1756,7 +1756,7 @@ public struct ContributionStore {
 
     /// The active nicknames for a set of trees, keyed by tree — one statement instead of one per
     /// tree, for `LocalAPI.grove()` and, since PR #143, for
-    /// `LocalAPI.displayNames(for:treeQueries:contributions:connection:)` — which is the name rule
+    /// `LocalAPI.resolvedDisplayNames(for:connection:)` — which is the name rule
     /// behind `journal()`, `AccountModel` and `DataLayer.treeNameResolver`.
     ///
     /// **Dropping the `LIMIT 1` loses nothing, and that is a property of the schema rather than of

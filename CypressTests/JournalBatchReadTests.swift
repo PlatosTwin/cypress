@@ -17,8 +17,8 @@ import Testing
 /// visible on a row that is not the common case:
 ///
 /// 1. the display name is the tree's one active nickname, else the **seed** species' common name,
-///    else nothing — and the second fallback is `TreeQueries`-only, so a community tree with no
-///    nickname is nameless even when its row carries a self-asserted species (D15);
+///    else, for a community tree, the common name of the species its profile shows (the owner's
+///    answer of 2026-11-16, "Use the species"; `aCommunityTreeIsNamedByItsSpecies`), else nothing;
 /// 2. the nickname match is case-insensitive on `tree_uuid`, which is what `activeNamesSQL`'s
 ///    `COLLATE NOCASE` is for and what a `lower()` "optimization" would silently change.
 ///
@@ -280,6 +280,106 @@ struct JournalBatchReadTests {
             )
         }
         #expect(batched[Self.phantom] == nil, "an id with no name must be absent, not present and empty")
+    }
+
+    /// **The owner's answer of 2026-11-16, "Use the species": rows name a community tree as its
+    /// profile does.** Four trees the coordinator named, plus a withdrawn one:
+    ///
+    /// - an added tree with a species reads that species' common name;
+    /// - an added tree with none reads nothing (the caller draws the owner's nameless words);
+    /// - an added tree with a given name and a species reads the given name;
+    /// - a cached tree of somebody else's with a species reads that species;
+    /// - an added tree this phone withdrew still reads its species, so its Outbox rows name it.
+    ///
+    /// Each is checked on the data layer (the page, the set form and the per-tree form agree) and
+    /// on the two row titles, for a pin move and a visit. Red-proof: in
+    /// `LocalAPI.resolvedDisplayNames`, drop the community arm (`guard !unresolved.isEmpty …` made
+    /// to return `names` always); this goes red on "an added tree with a species read ''".
+    @Test("an added or cached tree with a species is named by it in the Journal and the Outbox")
+    func aCommunityTreeIsNamedByItsSpecies() async throws {
+        let (api, store) = try await Self.openSeeded()
+        let candidates = try await api.treesNear(
+            Coordinate(latitude: 37.7694, longitude: -122.4862), radiusM: 900, limit: 200
+        )
+        let source = try #require(
+            candidates.first(where: { $0.speciesCommonName != nil && $0.tree.speciesCurrentID != nil }),
+            "no seed tree near the opening center carries a species id and a common name"
+        )
+        let speciesID = try #require(source.tree.speciesCurrentID)
+        let common = try #require(source.speciesCommonName)
+        let attribution = await api.attribution
+
+        func add(_ suffix: String, _ latitude: Double, species: UUID?) async throws -> UUID {
+            try await api.addTree(
+                TreeDraft(
+                    coordinate: Coordinate(latitude: latitude, longitude: -122.4870),
+                    speciesID: species,
+                    photoLocalPath: "/tmp/cypress-journal-species-\(suffix).jpg",
+                    attribution: attribution
+                )
+            ).id
+        }
+        let withSpecies = try await add("a", 37.7700, species: speciesID)
+        let withNone = try await add("b", 37.7701, species: nil)
+        let givenAndSpecies = try await add("c", 37.7702, species: speciesID)
+        let withdrawn = try await add("d", 37.7703, species: speciesID)
+        try await Self.name(givenAndSpecies, "The Named Plane", store: store)
+        try await api.withdrawTree(treeID: withdrawn)
+
+        // Somebody else's tree, as the tile refresher writes it: only the cache holds it.
+        let cached = UUID(uuidString: "C0000000-0000-4000-8000-0000000000CA")!
+        let stamp = SQLiteTimestamp.string(from: Self.moment)
+        try await store.queue.write { connection in
+            try connection.execute("""
+                INSERT INTO community_tree_cache
+                    (id, lat, lon, placement, status, verification_state, species_current,
+                     created_at, updated_at, tile, fetched_at)
+                VALUES ('\(cached.uuidString)', 37.7704, -122.4870, 'gps', 'alive', 'unverified',
+                        '\(speciesID.uuidString.lowercased())', '\(stamp)', '\(stamp)', 't', '\(stamp)');
+                """)
+        }
+
+        let expected: [(UUID, String?, String)] = [
+            (withSpecies, common, "an added tree with a species"),
+            (withNone, nil, "an added tree with no species"),
+            (givenAndSpecies, "The Named Plane", "an added tree with a given name and a species"),
+            (cached, common, "somebody else's cached tree with a species"),
+            (withdrawn, common, "a withdrawn added tree with a species")
+        ]
+        for (offset, (id, _, _)) in expected.enumerated() {
+            try await Self.visit(id, at: Self.moment.addingTimeInterval(Double(offset) * 60), api: api, store: store)
+        }
+
+        let batched = await api.displayNames(for: expected.map(\.0))
+        let page = try await api.journal(cursor: nil, limit: JournalLimits.pageSize)
+        for (id, name, what) in expected {
+            #expect(batched[id] == name, "\(what) read '\(batched[id] ?? "")' in the set form")
+            let perTree = try await api.displayNameIfPresent(for: id)
+            #expect(perTree == name, "\(what) read '\(perTree ?? "")' in the per-tree form")
+            // A visit on a withdrawn tree leaves the Journal (`journal()` hides it), so only the
+            // trees still standing are looked for on the page.
+            if id != withdrawn {
+                let row = page.items.first { $0.treeID == id }
+                #expect(row?.treeDisplayName == (name ?? ""), "\(what) read '\(row?.treeDisplayName ?? "<no row>")' on the page")
+            }
+
+            // The two row titles, for a pin move and a visit.
+            let journalMove = JournalCopy.rowTitle(kind: .pinMoved, treeName: batched[id])
+            let journalVisit = JournalCopy.rowTitle(kind: .visit, treeName: batched[id])
+            let outboxMove = OutboxCopy.title(kind: .locationCorrection, treeName: batched[id])
+            let outboxVisit = OutboxCopy.title(kind: .visit, treeName: batched[id])
+            if let name {
+                #expect(journalMove == "Moved the pin of \(name)", "\(what): \(journalMove)")
+                #expect(journalVisit == "Visited \(name)", "\(what): \(journalVisit)")
+                #expect(outboxMove == "Pin moved · \(name)", "\(what): \(outboxMove)")
+                #expect(outboxVisit == "Visit · \(name)", "\(what): \(outboxVisit)")
+            } else {
+                #expect(journalMove == "Moved a tree’s pin", "\(what): \(journalMove)")
+                #expect(journalVisit == "Visited Tree", "\(what): \(journalVisit)")
+                #expect(outboxMove == "Pin moved", "\(what): \(outboxMove)")
+                #expect(outboxVisit == "Visit · Tree", "\(what): \(outboxVisit)")
+            }
+        }
     }
 
     /// **An empty page asks for nothing.** `json_each('[]')` is legal but `IN ()` is not, and a

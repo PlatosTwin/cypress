@@ -361,6 +361,23 @@ public struct CommunityLayer {
         return trees
     }
 
+    /// `trees(ids:)` with `row(id:)`'s answer to which table holds each tree. The same statement.
+    /// Like both, this does not filter a withdrawal.
+    public func rows(ids: [UUID], connection: SQLiteConnection) throws -> [UUID: Row] {
+        guard !ids.isEmpty else { return [:] }
+        let statement = try connection.cachedStatement(Self.treesSQL)
+        _ = try statement.bind(
+            "[\(ids.map { "\"\($0.uuidString)\"" }.joined(separator: ","))]", forName: ":ids"
+        )
+        var rows: [UUID: Row] = [:]
+        for row in try statement.fetchAll({ row in
+            Row(tree: try CommunityTreeStore.decode(row), isAddedHere: try row.int("cached") == 0)
+        }) {
+            rows[row.tree.id] = row
+        }
+        return rows
+    }
+
     /// The text `trees(ids:)` runs, as a property, so `GroveStatementCensusTests` pins the statement
     /// the app prepares rather than a copy of it (PR #143's review).
     static let treesSQL = """

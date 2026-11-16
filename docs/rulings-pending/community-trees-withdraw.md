@@ -203,10 +203,22 @@ is also what keeps the reason line on the tree's profile, so that line stays cor
 Not chosen: "Keep Retry after all"; "Add a way to clear it".
 
 **The consequence, stated plainly: that row never leaves the Outbox.** Nothing sweeps a failed
-row, and the row has no control. It leaves only through an account deletion that erases
-everything (`OutboxStore.forgetAccount`, `.eraseEverything`). While it stays, the tree's profile
-draws `Other people have added to this tree, so it stays on the map.`, because
+row, and the row has no control. An account deletion that erases everything removes it
+(`OutboxStore.forgetAccount`, `.eraseEverything`) **when the withdrawal's payload names that
+account** (`$.attribution.userID`). A withdrawal can name no account: `LocalAPI.withdrawTree`
+accepts the adder by device as well as by account (`ContributionOwner.isOwned(by:)`), so a person
+who added a tree signed out can withdraw it signed out, and that payload carries only the device.
+No deletion matches such a row, and it stays. While the row stays, the tree's profile draws
+`Other people have added to this tree, so it stays on the map.`, because
 `CommunityTreeStore.othersHaveAddedTo` reads that row.
+
+**A deletion that keeps records keeps the row.** `forgetAccount`'s `.leaveRecords` arm treats a
+withdrawal as a contribution: it tombstones the payload's `clientUUID` and removes the account
+from the payload (`json_remove` of `$.userID` and `$.attribution.userID`), and the row keeps its
+state, its `conflict` code and its reason. `othersHaveAddedTo` still matches it by tree, but the
+profile no longer draws the reason line: `AccountDeletion.forgetCommunityTrees` sets the tree's
+`user_id` to NULL, so this phone no longer counts the reader as the adder, and the withdraw offer
+is `.unavailable` (no control and no reason line). Read from the code; no test covers this path.
 
 How the branch `feat/withdraw-owner-answers` built it (the author's notes):
 
