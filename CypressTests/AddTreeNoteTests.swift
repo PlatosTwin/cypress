@@ -334,6 +334,66 @@ struct AddTreeNoteTests {
         )
     }
 
+    /// **The answer belongs to the content on screen, not to where the camera is heading.** The
+    /// review's sequence: the map settles on A (no tile fetched, so not asked) and A's community
+    /// refresh is held open. The camera moves to B, whose tile is fetched (asked). A's refresh then
+    /// ends without changing the cache, before B's read publishes after the debounce. The card
+    /// still shows A's empty content, so it must keep the first body.
+    ///
+    /// B holds a tree, so its read, once it publishes, takes the card away. That makes the race
+    /// visible: if B published first, the `#require` fails and says so, rather than the test
+    /// passing without checking anything.
+    ///
+    /// Red-proof: in `MapModel.startCommunityRefresh`'s `!changed` branch, read the answer for
+    /// `self.viewport` instead of `publishedViewport` — red on "the card showed the new body over
+    /// A's content".
+    @MainActor
+    @Test("a refresh that ends after the camera moved does not give the old content the new body")
+    func aRefreshEndingAfterAMoveKeepsTheShownBody() async throws {
+        let store = try await CypressStore.inMemory()
+        let bBox = BoundingBox(
+            minLatitude: 37.7600, maxLatitude: 37.7610, minLongitude: -122.4900, maxLongitude: -122.4890
+        )
+        let bTile = try #require(CommunityTile.covering(bBox.expanded(by: 0.5), limit: 16))
+        #expect(bTile == [CommunityRefresherTests.otherTile], "B is not inside one tile: \(bTile)")
+        // `apply` writes the tile's row with the tree, so B is asked and B is not empty.
+        try await CommunityRefresherTests.cache(
+            UUID(), at: Coordinate(latitude: 37.7605, longitude: -122.4895),
+            tile: CommunityRefresherTests.otherTile.path, store
+        )
+
+        let (held, release) = AsyncStream.makeStream(of: Void.self)
+        let model = MapModel(
+            api: LocalAPI(store: store, deviceID: Self.deviceID),
+            refreshCommunity: { _ in
+                for await _ in held { break }
+                return false
+            },
+            communityAsked: CommunityTreeCacheStore.askedReader(queue: store.queue)
+        )
+        model.cameraDidChange(bounds: CommunityRefresherTests.box, zoom: 18)
+        await TestWait.settle(model) { model.inventoryIsEmptyHere }
+        #expect(model.inventoryNoticeMessage == MapInventoryCopy.notOnTheCityInventory)
+        let refreshA = try #require(model.communityRefresh, "A's read started no community refresh")
+
+        model.cameraDidChange(bounds: bBox, zoom: 18)
+        release.finish()
+        await refreshA.value
+
+        try #require(
+            model.inventoryIsEmptyHere,
+            "B's read published before A's refresh ended; the test lost its race and checked nothing"
+        )
+        #expect(
+            model.inventoryNoticeMessage == MapInventoryCopy.notOnTheCityInventory,
+            "the card showed the new body over A's content: \(model.inventoryNoticeMessage)"
+        )
+
+        // B's read then publishes its tree, and the card goes.
+        await TestWait.settle(model) { !model.inventoryIsEmptyHere }
+        for task in model.outstandingTasks { await task.value }
+    }
+
     /// The owner's two sentences, each with the number taken from the radius the list is read at.
     /// The second is the text as it shipped before round C3 (`e5b11dba`), character for character.
     ///
