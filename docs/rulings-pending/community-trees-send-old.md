@@ -130,17 +130,75 @@ key written, and the run after that account signs in on this phone sends it. A r
 whose owner is another account, or another device, is left behind. A tree with no adder (anonymized
 by an account deletion) is never sent.
 
-**Known limit: ids from the local-account era stay behind.** Builds 6 to 33 (2026-08-03 to
-2026-08-14) signed people in locally and minted the account id on the phone (`85467c18`; removed
-by `ff7e19d1`, #158 step 5). E277 records that such an account can never be signed into again and
-that `claimDevice` does not adopt its rows. On such a phone today, visits, check-ins,
-measurements, care events and photographs carry that local id. A tree carries it only when the
-phone went from build 35 or earlier straight to a build with migration v23 while signed in. These
-rows and trees are never sent: once a real account has signed in, nothing on the phone tells the
-local id apart from a real account another person signed out of, so sending them under the account
-signed in now could hand one person's work to another. A tree that sends while some of its rows
-carry such an id gets its key, and those rows are not tried again. Sending them needs an owner's
-ruling that the phone's holder may claim them (E277's open question).
+### R??? — The accounts the phone made itself (owner's ruling, 2026-11-16)
+
+**The case.** Builds 6 to 33 (2026-08-03 to 2026-08-14) signed people in on the phone alone and
+minted the account id there (`85467c18`; removed by `ff7e19d1`, #158 step 5). E277 records that
+such an account can never be signed into again and that `claimDevice` does not adopt its rows. On
+such a phone today, visits, check-ins, measurements, care events and photographs carry that id. A
+tree carries it only when the phone went from build 35 or earlier straight to a build with
+migration v23 while signed in.
+
+**The question, as put to the owner (AskUserQuestion, 2026-11-16).** "Chip 139 sends old community
+trees with everything recorded on them. One case cannot be sent safely: builds 6 to 33 (August 3 to
+14) created accounts on the phone itself, and such an account can never sign in again. On a phone
+from that time, visits, check-ins, measurements, care, and photos recorded under that old account
+stay behind; the tree itself is still sent. Your own phone is the likeliest to hold such records.
+The phone cannot tell that old account from another real person's account, so sending those
+records under the account signed in now could put one person's work under another's name on a
+shared phone. What should the next build do?"
+
+- "Leave those records" (recommended).
+- **"Send them under the current account"** (chosen): "Records under any account that is not the
+  one signed in now, and that the phone made itself, go out under the account signed in now. On a
+  phone two people used, this can mislabel records."
+- "Send them with no name".
+
+**The rule built.** A phone-made account is an id that appears as `user_id` on a row this phone
+made before 2026-08-14 07:27:48 UTC (`CommunityTreeBackfill.serviceSignInExisted`), other than the
+account signed in now. That instant is the commit time of `64a8d1e3` (#158 step 3), the first commit
+with any code that reaches the service's sign-in (`/auth/oidc`). The Apple button reached it later
+that day (`ff7e19d1`, first in `build-34`, tagged 2026-08-15 03:26 UTC). So no build before that
+instant could hold a service account's id, and an id on an earlier row was minted on the phone. The
+rows read to learn the ids are visits, check-ins, measurements and care events whose `device_id` is
+this device, photographs whose `taken_on_device` is this device, and this phone's own
+`community_trees`, city trees included. Other people's trees live in the community cache and are not
+read. A row of any later date counts once its owner is in the set.
+
+While an account is signed in, the tree of such an account, and such an account's live rows and
+photographs on an old community tree, become the signed-in account's on the phone in the same
+transaction that queues them, and go under it. On a signed-out phone they wait. On a tree that went
+before they could (a signed-out run, or a build of this branch before this ruling), a second pass
+in the same run sends exactly those rows and photographs: a visit's photograph on its visit's row,
+and a photograph with no visit on the tree's add (the one still queued, or a new one under the
+tree's own key, which the service answers `duplicate`). Moving a row to the signed-in account is
+what marks it done, so nothing goes twice. City-tree rows stay on the phone (R77), with their owner
+unchanged. An anonymized row has no owner and is never one of these.
+
+**Why the rows change owner on the phone, rather than only being sent.** The service stores a
+synced row as the sender's. A row sent as B but still owned by the old id here would be B's on the
+service and nobody's to edit or withdraw on the phone (E277), and the two deletion doors would
+disagree: erasing B would delete it on the service and keep it here. Changed here, it is B's on both
+sides.
+- **"Delete my records"** (`eraseEverything`) deletes these rows and photographs on the phone with
+  B's other rows, and the service's `DELETE /me` deletes them there, because the service holds them
+  as B's.
+- **"Leave my records"** (`leaveRecords`) un-names them on both sides: the phone sets `user_id` to
+  NULL and tombstones each row (E157), and the photographs become nobody's.
+
+**Limits.**
+- On a phone two people used in the local-account era, one person's work goes out under whoever
+  signs in. The owner accepted this.
+- A phone whose clock was set before 2026-08-14 while a real account was signed in would count that
+  account as phone-made. Its rows would then go under whoever signs in next on that phone.
+- A phone-made account with no row before that instant is not found. Such an account would have
+  had to be made on 2026-08-14 between 07:27 and the phone's update to build 34. Its later rows,
+  from builds 34 and 35, count when the account has any earlier row, because the set is of ids.
+  Build 36 signs a stored local account out at launch (`SessionRestore.reconcile`), so no later
+  build made rows under one.
+- Only old community trees (added before adds were queued) are covered. A phone-made account's row
+  on a tree that is not old is not sent. No build could make one, because the local-account era
+  ended before adds were queued.
 
 ### R??? — Move pin, and the deletion doors
 

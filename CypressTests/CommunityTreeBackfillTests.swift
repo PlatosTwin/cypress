@@ -29,6 +29,11 @@ struct CommunityTreeBackfillTests {
     static let old = CommunityTreeStore.firstQueuedAddsAt.addingTimeInterval(-30 * 24 * 60 * 60)
     /// Thirty days after builds started queuing adds: a tree the service has.
     static let later = CommunityTreeStore.firstQueuedAddsAt.addingTimeInterval(30 * 24 * 60 * 60)
+    /// A day after the first build that could reach the service's sign-in, and still before any
+    /// build queued adds: an old tree, whose account ids can be real ones.
+    static let afterSignIn = CommunityTreeBackfill.serviceSignInExisted.addingTimeInterval(24 * 60 * 60)
+    /// An account this phone made itself in the local-account era (builds 6 to 33).
+    static let phoneMade = UUID(uuidString: "0E000000-0000-4000-8000-00000000AA33")!
     /// The day the update runs.
     static let today = Date(timeIntervalSince1970: 1_794_000_000)
 
@@ -587,10 +592,11 @@ struct CommunityTreeBackfillTests {
     /// Red-proof: make `Identity.maySend` answer true for any account — red on "signed out".
     @Test("an account's old tree waits while the phone is signed out, and goes when that account signs in")
     func anAccountsTreeWaitsForItsAccount() async throws {
+        // A real account: its tree and rows date from after the service's sign-in existed.
         let phone = try await Self.phone(userID: Self.accountA)
-        let (tree, _) = try await Self.addTree(on: phone, at: Self.old)
+        let (tree, _) = try await Self.addTree(on: phone, at: Self.afterSignIn)
         _ = try await Self.addRows(
-            on: phone, tree: tree.id, owner: Attribution(userID: Self.accountA, deviceID: Self.deviceID), at: Self.old
+            on: phone, tree: tree.id, owner: Attribution(userID: Self.accountA, deviceID: Self.deviceID), at: Self.afterSignIn
         )
 
         let signedOut = try await phone.run(phone.signedOut)
@@ -1087,5 +1093,206 @@ struct CommunityTreeBackfillTests {
             .flatMap { CGImageSourceCopyPropertiesAtIndex($0, 0, nil) as? [CFString: Any] }?[kCGImagePropertyOrientation]
         #expect(orientation as? Int == 6)
         #expect(try FileManager.default.contentsOfDirectory(atPath: folder.path) == ["photo.jpg"])
+    }
+
+    // MARK: - 17. A phone-made account's work (the owner's ruling of 2026-11-16)
+
+    /// The owner of one row, read back from its table.
+    static func owner(_ phone: Phone, _ table: String, _ id: UUID) async throws -> UUID? {
+        try await phone.store.queue.read { connection in
+            let statement = try connection.cachedStatement("SELECT user_id FROM \(table) WHERE id = :id COLLATE NOCASE")
+            _ = try statement.bind(id.uuidString, forName: ":id")
+            defer { _ = try? statement.reset() }
+            return try statement.fetchOne { try $0.uuidIfPresent("user_id") } ?? nil
+        }
+    }
+
+    /// The five rows `addRows` writes that a run sends, by client key.
+    static func sentKeys(_ rows: Rows) -> Set<UUID> {
+        [rows.visitWithPhoto.clientUUID, rows.otherVisit.clientUUID, rows.checkIn.clientUUID,
+         rows.measurement.clientUUID, rows.care.clientUUID]
+    }
+
+    /// Red-proof: make `Identity.mayAdopt` answer false — red on the five rows.
+    @Test("a phone-made account's rows and photograph on an old tree go out once, under the account signed in now")
+    func aPhoneMadeAccountsWorkGoesUnderTheSignedInAccount() async throws {
+        let phone = try await Self.phone(userID: Self.accountB)
+        let (tree, _) = try await Self.addTree(on: phone, at: Self.old)
+        let made = Attribution(userID: Self.phoneMade, deviceID: Self.deviceID)
+        let rows = try await Self.addRows(on: phone, tree: tree.id, owner: made, at: Self.old)
+        // The same account's visit on a city tree: R77 still holds for it.
+        let cityVisit = Visit(treeID: UUID(), attribution: made, capturedAt: Self.old, createdAt: Self.old, updatedAt: Self.old)
+        try await phone.write { _ = try ContributionStore().insert(cityVisit, connection: $0) }
+
+        let report = try await phone.run(phone.signedIn(Self.accountB))
+        let queued = try await phone.outbox()
+        let keys = Set(queued.map(\.item.clientUUID))
+        #expect(keys.isSuperset(of: Self.sentKeys(rows)), "a phone-made account's row was not queued: \(report)")
+        #expect(!keys.contains(cityVisit.clientUUID), "a city tree's row was queued (R77)")
+        #expect(try await Self.owner(phone, "visits", cityVisit.id) == Self.phoneMade, "a city tree's row changed owner")
+        for record in queued where record.item.kind != .addTree {
+            let body = try RemoteAPI.syncItemBody(for: record.item)
+            #expect(body.userID == Self.accountB, "\(record.item.kind) is sent as \(String(describing: body.userID))")
+        }
+        let visitRow = try #require(queued.first { $0.item.clientUUID == rows.visitWithPhoto.clientUUID })
+        #expect(try await phone.sendable(visitRow.id).map(\.id) == [rows.visitPhotoID], "the photograph is not on its visit")
+        #expect(try await Self.owner(phone, "visits", rows.visitWithPhoto.id) == Self.accountB, "the visit is not B's on the phone")
+        #expect(try await Self.owner(phone, "photos", rows.visitPhotoID) == Self.accountB, "the photograph is not B's on the phone")
+        #expect(try await Self.owner(phone, "care_events", rows.care.id) == Self.accountB)
+        #expect(try await Self.owner(phone, "measurements", rows.withdrawnMeasurement.id) == Self.phoneMade,
+                "a withdrawn row changed owner")
+
+        let again = try await phone.run(phone.signedIn(Self.accountB))
+        #expect(again == CommunityTreeBackfill.Report(), "a second run did something: \(again)")
+        #expect(try await phone.outbox().count == queued.count)
+    }
+
+    /// Red-proof: return before the second pass in `run` (`sentTreesWithPhoneMadeWork`) — red on
+    /// "after sign-in".
+    @Test("a phone-made account's rows stay on a signed-out phone and go once after sign-in, on a tree already sent")
+    func aPhoneMadeAccountsWorkWaitsForASignIn() async throws {
+        let phone = try await Self.phone()
+        let (tree, _) = try await Self.addTree(on: phone, at: Self.old)
+        let rows = try await Self.addRows(
+            on: phone, tree: tree.id, owner: Attribution(userID: Self.phoneMade, deviceID: Self.deviceID), at: Self.old
+        )
+
+        let signedOut = try await phone.run(phone.signedOut)
+        let first = try await phone.outbox()
+        #expect(first.map(\.item.kind) == [.addTree], "a signed-out phone sent \(first.map(\.item.kind))")
+        #expect(signedOut.rowsSkipped == 5 && signedOut.adopted == 0, "\(signedOut)")
+        #expect(try await phone.isQueuedOnce(tree.id), "fixture: the tree did not go")
+        #expect(try await Self.owner(phone, "visits", rows.visitWithPhoto.id) == Self.phoneMade)
+
+        let signedIn = try await phone.run(phone.signedIn(Self.accountA))
+        let queued = try await phone.outbox()
+        let keys = Set(queued.map(\.item.clientUUID))
+        #expect(keys.isSuperset(of: Self.sentKeys(rows)), "the rows did not go after sign-in: \(signedIn)")
+        #expect(queued.filter { $0.item.kind == .addTree }.count == 1, "the tree's add was queued again")
+        let visitRow = try #require(queued.first { $0.item.clientUUID == rows.visitWithPhoto.clientUUID })
+        #expect(try await phone.sendable(visitRow.id).map(\.id) == [rows.visitPhotoID], "the photograph did not go with its visit")
+        #expect(signedIn.adopted == 6 && signedIn.rows == 5 && signedIn.photos == 1, "\(signedIn)")
+
+        let again = try await phone.run(phone.signedIn(Self.accountA))
+        #expect(again == CommunityTreeBackfill.Report(), "a second run did something: \(again)")
+        #expect(try await phone.outbox().count == queued.count)
+    }
+
+    /// Red-proof: drop `AND julianday(created_at) < julianday(:cutoff)` from the visits arm of
+    /// `phoneMadeAccounts` — red on account A's visit.
+    @Test("a real account's rows, made after the service's sign-in existed, are not sent under another account")
+    func aRealAccountsWorkIsNotAdopted() async throws {
+        let phone = try await Self.phone(userID: Self.accountB)
+        let (tree, _) = try await Self.addTree(on: phone, at: Self.old)
+        let made = try await Self.addRows(
+            on: phone, tree: tree.id, owner: Attribution(userID: Self.phoneMade, deviceID: Self.deviceID), at: Self.old
+        )
+        // Account A signed in on this phone after sign-in existed and visited the same tree.
+        let real = Visit(
+            treeID: tree.id, attribution: Attribution(userID: Self.accountA, deviceID: Self.deviceID),
+            capturedAt: Self.afterSignIn, createdAt: Self.afterSignIn, updatedAt: Self.afterSignIn
+        )
+        try await phone.write { _ = try ContributionStore().insert(real, connection: $0) }
+
+        try await phone.run(phone.signedIn(Self.accountB))
+        let keys = Set(try await phone.outbox().map(\.item.clientUUID))
+        #expect(keys.isSuperset(of: Self.sentKeys(made)), "fixture: the phone-made rows did not go")
+        #expect(!keys.contains(real.clientUUID), "account A's visit was sent under account B")
+        #expect(try await Self.owner(phone, "visits", real.id) == Self.accountA, "account A's visit changed owner")
+    }
+
+    /// Red-proof: make `Identity.mayAdopt` answer false — red on "the tree did not go". The
+    /// signed-out half has two guards (`run` fills `phoneMade` only for a signed-in identity, and
+    /// `mayAdopt` refuses one with no account).
+    @Test("a phone-made account's own old tree goes under the signed-in account, never while signed out")
+    func aPhoneMadeAccountsTreeGoesUnderTheSignedInAccount() async throws {
+        let phone = try await Self.phone()
+        let (tree, _) = try await Self.addTree(on: phone, at: Self.old)
+        try await phone.write { connection in
+            let statement = try connection.cachedStatement(
+                "UPDATE community_trees SET user_id = :user, device_id = NULL"
+            )
+            _ = try statement.bind(Self.phoneMade.uuidString, forName: ":user")
+            try statement.run()
+            _ = try statement.reset()
+            let photo = try connection.cachedStatement("UPDATE photos SET user_id = :user, device_id = NULL")
+            _ = try photo.bind(Self.phoneMade.uuidString, forName: ":user")
+            try photo.run()
+            _ = try photo.reset()
+        }
+        let signedOut = try await phone.run(phone.signedOut)
+        #expect(try await phone.outbox().isEmpty, "a phone-made account's tree went on a signed-out phone")
+        #expect(signedOut.treesWaiting == 1, "\(signedOut)")
+
+        try await phone.run(phone.signedIn(Self.accountA))
+        let add = try #require(try await phone.outbox().first { $0.item.kind == .addTree }, "the tree did not go")
+        #expect(try Self.addition(add).attribution.userID == Self.accountA, "the add is not sent as the signed-in account")
+        #expect(try await Self.owner(phone, "community_trees", tree.id) == Self.accountA)
+        let addPhoto = try #require(try await Self.addPhotoID(phone, tree.id))
+        #expect(try await phone.sendable(add.id).map(\.id) == [addPhoto], "the add photo did not go")
+    }
+
+    /// Red-proof: widen `ownedByPhoneMade` to `(user_id IS NULL OR …)` — red on the anonymized
+    /// visit. The leaving door leaves `user_id` NULL, and only an owner in `phoneMade` is moved.
+    @Test("an anonymized row stays unsent when a phone-made account's work goes")
+    func anAnonymizedRowStaysWhenPhoneMadeWorkGoes() async throws {
+        let phone = try await Self.phone(userID: Self.accountB)
+        let (tree, _) = try await Self.addTree(on: phone, at: Self.old)
+        let made = try await Self.addRows(
+            on: phone, tree: tree.id, owner: Attribution(userID: Self.phoneMade, deviceID: Self.deviceID), at: Self.old
+        )
+        let gone = try await Self.addRows(
+            on: phone, tree: tree.id, owner: Attribution(userID: Self.accountA, deviceID: Self.deviceID), at: Self.afterSignIn
+        )
+        try await phone.write { connection in
+            _ = try AccountDeletion().delete(
+                userID: Self.accountA, choice: .leaveRecords, at: Self.afterSignIn.addingTimeInterval(3600), connection: connection
+            )
+        }
+        try await phone.run(phone.signedIn(Self.accountB))
+        let keys = Set(try await phone.outbox().map(\.item.clientUUID))
+        #expect(keys.isSuperset(of: Self.sentKeys(made)), "fixture: the phone-made rows did not go")
+        #expect(keys.isDisjoint(with: Self.sentKeys(gone)), "an anonymized row was sent")
+        #expect(try await Self.owner(phone, "visits", gone.visitWithPhoto.id) == nil, "an anonymized visit was given an owner")
+    }
+
+    /// Red-proof: leave the rows with the phone-made owner and send them as B (drop the `UPDATE` in
+    /// `adopt`) — red on the erasing door's count and the leaving door's tombstone.
+    @Test("deleting the signed-in account takes the adopted rows with it, by either door")
+    func theDeletionDoorsTreatAdoptedRowsAsTheAccounts() async throws {
+        for choice in [AccountDeletionChoice.eraseEverything, .leaveRecords] {
+            let phone = try await Self.phone(userID: Self.accountB)
+            let (tree, _) = try await Self.addTree(on: phone, at: Self.old)
+            let rows = try await Self.addRows(
+                on: phone, tree: tree.id, owner: Attribution(userID: Self.phoneMade, deviceID: Self.deviceID), at: Self.old
+            )
+            try await phone.run(phone.signedIn(Self.accountB))
+            #expect(try await Self.owner(phone, "visits", rows.visitWithPhoto.id) == Self.accountB, "fixture")
+
+            _ = try await phone.api.deleteAccount(choice)
+            let state = try await phone.store.queue.read { connection -> (live: Int, tombstoned: Bool, photoOwner: String?) in
+                let statement = try connection.cachedStatement("""
+                    SELECT (SELECT COUNT(*) FROM visits WHERE id = :visit AND deleted_at IS NULL) AS live,
+                           EXISTS (SELECT 1 FROM anonymized_contributions WHERE client_uuid = :client) AS tombstoned,
+                           (SELECT coalesce(user_id, device_id) FROM photos WHERE id = :photo) AS photo_owner
+                    """)
+                _ = try statement.bind([
+                    ":visit": rows.visitWithPhoto.id, ":client": rows.visitWithPhoto.clientUUID,
+                    ":photo": rows.visitPhotoID
+                ])
+                defer { _ = try? statement.reset() }
+                return try #require(try statement.fetchOne { row in
+                    (try row.int("live"), try row.bool("tombstoned"), try row.stringIfPresent("photo_owner"))
+                })
+            }
+            switch choice {
+            case .eraseEverything:
+                #expect(state.live == 0, "erasing the account kept its adopted visit")
+            case .leaveRecords:
+                #expect(state.live == 1 && state.tombstoned, "leaving the records did not un-name the adopted visit")
+                #expect(state.photoOwner == nil, "leaving the records left an owner on the adopted photograph")
+                #expect(try await Self.owner(phone, "visits", rows.visitWithPhoto.id) == nil)
+            }
+        }
     }
 }

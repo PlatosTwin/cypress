@@ -73,6 +73,14 @@
 //  So such a tree, and any row or photograph owned by an account that is not signed in now, waits:
 //  nothing is queued and no key is written, and the next run after that account signs in sends it.
 //
+//  **The accounts this phone made itself** (the owner's ruling of 2026-11-16). Builds 6 to 33 signed
+//  people in on the phone alone, and such an account can never sign in again (ERRATA E277). A
+//  `user_id` on a row this phone made before `serviceSignInExisted` can only be one of these. While
+//  an account is signed in, that account's tree, rows and photographs on an old tree become the
+//  signed-in account's, in the same transaction that queues them, and go under it. Signed out,
+//  they wait. On a tree that went before they could, a second pass sends exactly them; moving
+//  them is what marks them done.
+//
 //  ── Once, and safe to stop at any point ───────────────────────────────────────────────────────
 //
 //  One write transaction per tree, with the key written last in it. A failure anywhere in a tree
@@ -98,10 +106,21 @@ public struct CommunityTreeBackfill: Sendable {
     /// build, which is the one fact this cutoff has to be sure of.
     public static let photoSendPathExisted = Date(timeIntervalSince1970: 1_787_464_641)
 
+    /// The first commit with any code that reaches the service's sign-in, `/auth/oidc`:
+    /// `64a8d1e3` (#158 step 3), 2026-08-14 07:27:48 UTC. The Apple button reached it later the same
+    /// day (`ff7e19d1`, #158 step 5, first in `build-34`). Before that instant no build could hold
+    /// a service account's id, so a `user_id` on a row this phone made before it was minted on the
+    /// phone (`85467c18`, the local-account era, ERRATA E277). The earlier commit is used because
+    /// this cutoff has to be sure of exactly that.
+    public static let serviceSignInExisted = Date(timeIntervalSince1970: 1_786_692_468)
+
     /// Who the drain will send as: the signed-in account, if any, and this installation.
     public struct Identity: Sendable, Equatable {
         public let userID: UUID?
         public let deviceID: UUID
+        /// Accounts this phone made itself in the local-account era, other than `userID`. Filled
+        /// by `run` and only while an account is signed in (`phoneMadeAccounts`).
+        var phoneMade: Set<UUID> = []
 
         public init(userID: UUID?, deviceID: UUID) {
             self.userID = userID
@@ -114,6 +133,14 @@ public struct CommunityTreeBackfill: Sendable {
             if let user { return user == userID }
             guard let device else { return false }
             return device == deviceID
+        }
+
+        /// Whether a row owned by `user` is a phone-made account's, which the owner's ruling of
+        /// 2026-11-16 sends under the account signed in now. Never while signed out, and never for a
+        /// row with no owner (anonymized).
+        func mayAdopt(user: UUID?) -> Bool {
+            guard userID != nil, let user else { return false }
+            return phoneMade.contains(user)
         }
     }
 
@@ -135,6 +162,8 @@ public struct CommunityTreeBackfill: Sendable {
         public var photosSkipped = 0
         /// Trees whose transaction threw and rolled back; each is tried again on the next run.
         public var treesFailed = 0
+        /// Rows, photographs and trees of a phone-made account moved to the signed-in account.
+        public var adopted = 0
 
         public init() {}
 
@@ -147,6 +176,7 @@ public struct CommunityTreeBackfill: Sendable {
             rowsSkipped += other.rowsSkipped
             photosSkipped += other.photosSkipped
             treesFailed += other.treesFailed
+            adopted += other.adopted
         }
     }
 
@@ -211,9 +241,14 @@ public struct CommunityTreeBackfill: Sendable {
     /// `community_trees` and one key lookup per tree.
     @discardableResult
     public func run(identity: Identity, queue: DatabaseQueue) async throws -> Report {
-        let candidates = try await queue.read { connection in
-            try Self.candidateTreeIDs(connection: connection)
+        let (candidates, phoneMade) = try await queue.read { connection -> ([UUID], Set<UUID>) in
+            // Only while an account is signed in: a phone-made account's work goes out under it.
+            let phoneMade = try identity.userID.map { current in
+                try Self.phoneMadeAccounts(device: identity.deviceID, excluding: current, connection: connection)
+            } ?? []
+            return (try Self.candidateTreeIDs(connection: connection), phoneMade)
         }
+        let who: Identity = { var who = identity; who.phoneMade = phoneMade; return who }()
         var report = Report()
         for treeID in candidates {
             // One tree's failure is that tree's alone. Its transaction rolls back, so it keeps no
@@ -224,7 +259,28 @@ public struct CommunityTreeBackfill: Sendable {
             do {
                 let tree = try await queue.write { connection -> Report in
                     var tree = Report()
-                    try queueTree(treeID, identity: identity, report: &tree, connection: connection)
+                    try queueTree(treeID, identity: who, report: &tree, connection: connection)
+                    return tree
+                }
+                report.absorb(tree)
+            } catch {
+                report.treesFailed += 1
+            }
+        }
+
+        // Trees that went before a phone-made account's rows could: on a signed-out phone, or
+        // under a build of this branch before the owner's ruling of 2026-11-16. Their key is
+        // written, so the loop above never sees them again. Moving a row to the signed-in account
+        // is what marks it done here: the next run finds no phone-made owner on it.
+        guard !who.phoneMade.isEmpty else { return report }
+        let sentTrees = try await queue.read { connection in
+            try Self.sentTreesWithPhoneMadeWork(who.phoneMade, connection: connection)
+        }
+        for treeID in sentTrees {
+            do {
+                let tree = try await queue.write { connection -> Report in
+                    var tree = Report()
+                    try adoptOnSentTree(treeID, identity: who, report: &tree, connection: connection)
                     return tree
                 }
                 report.absorb(tree)
@@ -233,6 +289,207 @@ public struct CommunityTreeBackfill: Sendable {
             }
         }
         return report
+    }
+
+    // MARK: - Phone-made accounts (the owner's ruling of 2026-11-16)
+
+    /// The accounts this phone made itself: every `user_id` on a row this phone made before
+    /// `serviceSignInExisted`, other than `current`. Rows of any kind are read here, city trees
+    /// included, only to learn the ids. The contribution tables and photographs are read only where
+    /// this device made the row; `community_trees` holds only this phone's own trees (other
+    /// people's trees live in the community cache).
+    static func phoneMadeAccounts(
+        device: UUID, excluding current: UUID, connection: SQLiteConnection
+    ) throws -> Set<UUID> {
+        let contributions = ["visits", "observations", "measurements", "care_events"].map { table in
+            """
+            SELECT upper(user_id) AS u FROM \(table)
+             WHERE user_id IS NOT NULL AND upper(device_id) = upper(:device)
+               AND julianday(created_at) < julianday(:cutoff)
+            """
+        }
+        let statement = try connection.cachedStatement("""
+            \(contributions.joined(separator: "\nUNION\n"))
+            UNION
+            SELECT upper(user_id) AS u FROM photos
+             WHERE user_id IS NOT NULL AND upper(taken_on_device) = upper(:device)
+               AND julianday(created_at) < julianday(:cutoff)
+            UNION
+            SELECT upper(user_id) AS u FROM community_trees
+             WHERE user_id IS NOT NULL AND julianday(created_at) < julianday(:cutoff)
+            """)
+        _ = try statement.bind([":device": device.uuidString, ":cutoff": Self.serviceSignInExisted])
+        let ids = try statement.fetchAll { try $0.string("u") }
+        _ = try statement.reset()
+        return Set(ids.compactMap(UUID.init(uuidString:))).subtracting([current])
+    }
+
+    /// The ids as a JSON array, for `IN (SELECT value FROM json_each(:ids))`.
+    private static func jsonIDs(_ ids: Set<UUID>) -> String {
+        "[" + ids.map { "\"\($0.uuidString)\"" }.sorted().joined(separator: ",") + "]"
+    }
+
+    private static let ownedByPhoneMade = "upper(user_id) IN (SELECT value FROM json_each(:ids))"
+
+    /// What one adoption moved, by table.
+    private struct Adopted {
+        var rows: Set<UUID> = []
+        var photos: Set<UUID> = []
+        var tree = false
+        var count: Int { rows.count + photos.count + (tree ? 1 : 0) }
+    }
+
+    /// Moves the live work of a phone-made account on one tree to the signed-in account: the tree
+    /// itself, its visits, check-ins, measurements, care events and photographs. In the caller's
+    /// transaction, before anything on the tree is queued, so the queued rows name that account and
+    /// the phone and the service agree on whose they are. An anonymized row has no owner and is
+    /// not touched.
+    private static func adopt(
+        onTree treeID: UUID, identity: Identity, at moment: Date, connection: SQLiteConnection
+    ) throws -> Adopted {
+        var adopted = Adopted()
+        guard let current = identity.userID, !identity.phoneMade.isEmpty else { return adopted }
+        let ids = jsonIDs(identity.phoneMade)
+        let bindings: [String: SQLiteBindable?] = [
+            ":tree": treeID.uuidString, ":ids": ids, ":user": current.uuidString, ":now": moment
+        ]
+        for table in ["visits", "observations", "measurements", "care_events", "photos"] {
+            let select = try connection.cachedStatement("""
+                SELECT id FROM \(table)
+                 WHERE tree_uuid = :tree COLLATE NOCASE AND deleted_at IS NULL AND \(ownedByPhoneMade)
+                """)
+            _ = try select.bind([":tree": treeID.uuidString, ":ids": ids])
+            let found = try select.fetchAll { try $0.uuid("id") }
+            _ = try select.reset()
+            guard !found.isEmpty else { continue }
+            let update = try connection.cachedStatement("""
+                UPDATE \(table) SET user_id = :user, updated_at = :now
+                 WHERE tree_uuid = :tree COLLATE NOCASE AND deleted_at IS NULL AND \(ownedByPhoneMade)
+                """)
+            _ = try update.bind(bindings)
+            try update.run()
+            _ = try update.reset()
+            if table == "photos" { adopted.photos.formUnion(found) } else { adopted.rows.formUnion(found) }
+        }
+        let tree = try connection.cachedStatement("""
+            UPDATE community_trees SET user_id = :user, updated_at = :now
+             WHERE id = :tree COLLATE NOCASE AND \(ownedByPhoneMade)
+            """)
+        _ = try tree.bind([":tree": treeID.uuidString, ":ids": ids, ":user": current.uuidString, ":now": moment])
+        try tree.run()
+        // Read before `reset`, while `sqlite3_changes` is still this statement's.
+        adopted.tree = connection.changes > 0
+        _ = try tree.reset()
+        return adopted
+    }
+
+    /// Old trees already sent (their key is written) that still hold live work of a phone-made
+    /// account.
+    static func sentTreesWithPhoneMadeWork(
+        _ phoneMade: Set<UUID>, connection: SQLiteConnection
+    ) throws -> [UUID] {
+        let owned = ["visits", "observations", "measurements", "care_events", "photos"].map { table in
+            """
+            EXISTS (SELECT 1 FROM \(table) x
+                     WHERE x.tree_uuid = community_trees.id COLLATE NOCASE AND x.deleted_at IS NULL
+                       AND upper(x.user_id) IN (SELECT value FROM json_each(:ids)))
+            """
+        }.joined(separator: "\n OR ")
+        let statement = try connection.cachedStatement("""
+            SELECT id FROM community_trees
+             WHERE deleted_at IS NULL
+               AND julianday(created_at) < julianday(:old)
+               AND EXISTS (SELECT 1 FROM app_state
+                            WHERE app_state.key = :prefix || upper(community_trees.id))
+               AND (\(owned))
+             ORDER BY created_at, id
+            """)
+        _ = try statement.bind([
+            ":ids": jsonIDs(phoneMade), ":old": CommunityTreeStore.firstQueuedAddsAt,
+            ":prefix": CommunityTreeStore.queuedOnceKeyPrefix
+        ])
+        let ids = try statement.fetchAll { try $0.uuid("id") }
+        _ = try statement.reset()
+        return ids
+    }
+
+    /// A tree already sent: moves its phone-made rows and photographs to the signed-in account and
+    /// queues exactly those, with the photographs on their visit's row, or on the tree's add for a
+    /// photograph with no visit.
+    private func adoptOnSentTree(
+        _ treeID: UUID, identity: Identity, report: inout Report, connection: SQLiteConnection
+    ) throws {
+        guard try Self.isQueued(treeID: treeID, connection: connection),
+              let tree = try Self.tree(treeID, connection: connection),
+              tree.tree.createdAt < CommunityTreeStore.firstQueuedAddsAt,
+              identity.maySend(user: tree.adderUser, device: tree.adderDevice)
+        else { return }
+        let moment = now()
+        let adopted = try Self.adopt(onTree: treeID, identity: identity, at: moment, connection: connection)
+        guard adopted.count > 0 else { return }
+        report.adopted += adopted.count
+
+        let visitRows = try queueRows(
+            on: treeID, identity: identity, only: adopted.rows, at: moment, report: &report,
+            connection: connection
+        )
+        // A photograph with no visit rides on the tree's add: the one still queued, or a new one
+        // under the tree's own key, which the service answers `duplicate`.
+        var addRowID: UUID?
+        if try Self.hasVisitlessPhoto(adopted.photos, connection: connection) {
+            switch try Self.latestAddRow(treeID: treeID, connection: connection) {
+            case let .waiting(id):
+                addRowID = id
+            case .none:
+                let item = try OutboxPayload.addTree(
+                    addition(for: tree, identity: identity)
+                ).makeItem(createdAt: moment)
+                if try OutboxStore().enqueueLocallyApplied(item, connection: connection) {
+                    addRowID = item.id
+                    report.adds += 1
+                }
+            case .refused, .leftAlone:
+                break
+            }
+        }
+        try stageOldPhotos(
+            on: treeID, addRowID: addRowID, visitRows: visitRows, identity: identity,
+            only: adopted.photos, at: moment, report: &report, connection: connection
+        )
+    }
+
+    private static func hasVisitlessPhoto(_ ids: Set<UUID>, connection: SQLiteConnection) throws -> Bool {
+        guard !ids.isEmpty else { return false }
+        let statement = try connection.cachedStatement("""
+            SELECT 1 AS p FROM photos
+             WHERE visit_id IS NULL AND upper(id) IN (SELECT value FROM json_each(:ids))
+             LIMIT 1
+            """)
+        _ = try statement.bind(jsonIDs(ids), forName: ":ids")
+        let found = try statement.fetchOne { _ in true } ?? false
+        _ = try statement.reset()
+        return found
+    }
+
+    /// The add for a tree, as the service should record it: its adder, its head position, and the
+    /// instant and local day of the add.
+    private func addition(for tree: TreeRow, identity: Identity) -> TreeAddition {
+        TreeAddition(
+            clientUUID: tree.clientUUID,
+            treeID: tree.tree.id,
+            attribution: Attribution(
+                userID: tree.adderUser, deviceID: tree.adderDevice ?? identity.deviceID
+            ),
+            coordinate: tree.tree.coordinate,
+            address: tree.tree.address,
+            placement: tree.tree.placement,
+            speciesID: tree.tree.speciesCurrentID,
+            landContext: tree.tree.statedLandContext,
+            // The instant of the add, not of this run: the service keeps `addedOn` only when it
+            // is within a day of this instant's UTC date (`store.addedDay`).
+            occurredAt: tree.tree.createdAt,
+            addedOn: TreeAddition.addedDay(of: tree.tree.createdAt, in: timeZone())
+        )
     }
 
     /// Live trees this phone added, with an adder, and with no key yet.
@@ -275,8 +532,11 @@ public struct CommunityTreeBackfill: Sendable {
     ) throws {
         // Read again inside the write: two runs (the launch and a sign-in) must not both queue it.
         guard !(try Self.isQueued(treeID: treeID, connection: connection)) else { return }
-        guard let tree = try Self.tree(treeID, connection: connection) else { return }
-        guard identity.maySend(user: tree.adderUser, device: tree.adderDevice) else {
+        guard var tree = try Self.tree(treeID, connection: connection) else { return }
+        // A tree a phone-made account added goes under the account signed in now (the owner's
+        // ruling of 2026-11-16).
+        let adopting = identity.mayAdopt(user: tree.adderUser)
+        guard identity.maySend(user: tree.adderUser, device: tree.adderDevice) || adopting else {
             report.treesWaiting += 1
             return
         }
@@ -300,9 +560,28 @@ public struct CommunityTreeBackfill: Sendable {
         case .leftAlone:
             return
         }
+        let sendsEverything: Bool
+        switch plan {
+        case let .newAdd(everything): sendsEverything = everything
+        case .stageOn: sendsEverything = false
+        case .retry: sendsEverything = true
+        }
+        // A phone-made account's tree is always an old one. Any other case is not one this rule
+        // knows, so the tree waits rather than being sent under a name it does not have.
+        if adopting, !sendsEverything {
+            report.treesWaiting += 1
+            return
+        }
 
         let moment = now()
         let store = OutboxStore()
+        // Before anything on the tree is read for sending: the phone-made account's tree, rows and
+        // photographs become the signed-in account's, so what is queued names that account.
+        if sendsEverything {
+            let adopted = try Self.adopt(onTree: treeID, identity: identity, at: moment, connection: connection)
+            report.adopted += adopted.count
+            if adopted.tree, let reread = try Self.tree(treeID, connection: connection) { tree = reread }
+        }
         // Only a file that is there and is an image, the same test a new tree's add photo passes
         // (`queueAddition`).
         let addPhoto = try Self.addPhoto(treeID: treeID, identity: identity, connection: connection)
@@ -320,23 +599,8 @@ public struct CommunityTreeBackfill: Sendable {
                 report.trees += 1
                 return
             }
-            let addition = TreeAddition(
-                clientUUID: tree.clientUUID,
-                treeID: treeID,
-                attribution: Attribution(
-                    userID: tree.adderUser, deviceID: tree.adderDevice ?? identity.deviceID
-                ),
-                coordinate: tree.tree.coordinate,
-                address: tree.tree.address,
-                placement: tree.tree.placement,
-                speciesID: tree.tree.speciesCurrentID,
-                landContext: tree.tree.statedLandContext,
-                // The instant of the add, not of this run: the service keeps `addedOn` only when it
-                // is within a day of this instant's UTC date (`store.addedDay`).
-                occurredAt: tree.tree.createdAt,
-                addedOn: TreeAddition.addedDay(of: tree.tree.createdAt, in: timeZone())
-            )
-            let item = try OutboxPayload.addTree(addition).makeItem(createdAt: moment)
+            let item = try OutboxPayload.addTree(addition(for: tree, identity: identity))
+                .makeItem(createdAt: moment)
             // A tree with no add row has nothing queued under its key. If a row exists anyway the
             // tree is left for the person rather than guessed at.
             guard try store.enqueueLocallyApplied(item, connection: connection) else { return }
@@ -390,6 +654,7 @@ public struct CommunityTreeBackfill: Sendable {
     private func queueRows(
         on treeID: UUID,
         identity: Identity,
+        only: Set<UUID>? = nil,
         at moment: Date,
         report: inout Report,
         connection: SQLiteConnection
@@ -397,7 +662,10 @@ public struct CommunityTreeBackfill: Sendable {
         let store = OutboxStore()
         var visitRows: [UUID: UUID] = [:]
 
-        func queue(_ payload: OutboxPayload, owner: Attribution) throws -> UUID? {
+        // `only`: the rows this run moved to the signed-in account on a tree already sent; the
+        // rest of that tree went when it was sent.
+        func queue(_ payload: OutboxPayload, id: UUID, owner: Attribution) throws -> UUID? {
+            if let only, !only.contains(id) { return nil }
             guard identity.maySend(user: owner.userID, device: owner.deviceID) else {
                 report.rowsSkipped += 1
                 return nil
@@ -413,22 +681,22 @@ public struct CommunityTreeBackfill: Sendable {
         for visit in try Self.live(
             "visits", treeID: treeID, connection: connection, ContributionStore.decodeVisit
         ) {
-            if let id = try queue(.visit(visit), owner: visit.attribution) { visitRows[visit.id] = id }
+            if let id = try queue(.visit(visit), id: visit.id, owner: visit.attribution) { visitRows[visit.id] = id }
         }
         for observation in try Self.live(
             "observations", treeID: treeID, connection: connection, ContributionStore.decodeObservation
         ) {
-            _ = try queue(.observation(observation), owner: observation.attribution)
+            _ = try queue(.observation(observation), id: observation.id, owner: observation.attribution)
         }
         for measurement in try Self.live(
             "measurements", treeID: treeID, connection: connection, ContributionStore.decodeMeasurement
         ) {
-            _ = try queue(.measurement(measurement), owner: measurement.attribution)
+            _ = try queue(.measurement(measurement), id: measurement.id, owner: measurement.attribution)
         }
         for careEvent in try Self.live(
             "care_events", treeID: treeID, connection: connection, ContributionStore.decodeCareEvent
         ) {
-            _ = try queue(.careEvent(careEvent), owner: careEvent.attribution)
+            _ = try queue(.careEvent(careEvent), id: careEvent.id, owner: careEvent.attribution)
         }
         return visitRows
     }
@@ -491,6 +759,7 @@ public struct CommunityTreeBackfill: Sendable {
         addRowID: UUID?,
         visitRows: [UUID: UUID],
         identity: Identity,
+        only: Set<UUID>? = nil,
         at moment: Date,
         report: inout Report,
         connection: SQLiteConnection
@@ -520,6 +789,7 @@ public struct CommunityTreeBackfill: Sendable {
         // Only photographs no build could have sent. A later one was sent, or is still queued, or
         // was sent keyed by a row id this phone no longer holds (before report F30's fix).
         for photo in photos where photo.created < Self.photoSendPathExisted {
+            if let only, !only.contains(photo.id) { continue }
             let carrier = photo.visit.flatMap { visitRows[$0] } ?? (photo.visit == nil ? addRowID : nil)
             // `storage_key` is a file name in the photo directory (`LocalAPI.uploadPhoto` writes
             // `lastPathComponent`); anything else is not followed.
