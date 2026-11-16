@@ -125,6 +125,9 @@ struct VisitFlowView: View {
     /// `onOpenTree`: that one closes this flow, which is right for a tree the flow just added and
     /// wrong for a tree the reader only wants to look at before adding theirs.
     let openExisting: ExistingTreeScreen
+    /// Whether this phone's account shares its tree records, read by the add screen each time it
+    /// appears for the note under its button. The composition root's, like `userID`.
+    let contributionSharing: ContributionSharingReader
 
     @State private var location = VisitLocationProvider()
     @State private var ledger = VisitSaveLedger()
@@ -216,6 +219,7 @@ struct VisitFlowView: View {
                 api: api,
                 location: location,
                 attribution: attribution,
+                sharing: contributionSharing,
                 onAdded: onOpenTree,
                 openExisting: openExisting,
                 onBack: { step = .identify }

@@ -356,6 +356,9 @@ struct RootView: View {
                 // `VisitFlowView`'s own attribution: this device, with no user, which is what the
                 // flow the composition root presents passes today.
                 attribution: Attribution(userID: nil, deviceID: data.deviceID),
+                // The shipping read, so the harness shows the note for the account this phone
+                // really has: signed out on a fresh install.
+                sharing: contributionSharing(),
                 debugPhoto: LocalAPI.debugTreePhoto,
                 onAdded: { id in
                     debugStandalone = nil
@@ -601,7 +604,9 @@ struct RootView: View {
                 onOpenGrove: { router.goToTab(.grove) },
                 // A tree the add screen's note lists opens over the add screen, so the draft
                 // survives (the owner's decision of 2026-11-15). See `existingTreeScreen`.
-                openExisting: existingTreeScreen
+                openExisting: existingTreeScreen,
+                // The note under the add screen's button. See `contributionSharing`.
+                contributionSharing: contributionSharing()
             )
 
         case let .photoViewer(id, caption, treeID):
@@ -894,6 +899,15 @@ struct RootView: View {
         guard data.reconcileFavorite != nil else { return nil }
         let writer = favoriteWriter
         return { treeID in await writer.reconciledState(treeID: treeID) }
+    }
+
+    /// Whether this phone's account shares its tree records, for the note under the add screen's
+    /// button (`VisitAddTreeCopy.footnote(for:)`). See `ContributionSharing.reader(local:)`.
+    ///
+    /// `nonisolated` for `accountLink()`'s reason: the `@Sendable` closure captures one actor and
+    /// nothing of this view.
+    nonisolated func contributionSharing() -> ContributionSharingReader {
+        ContributionSharing.reader(local: data.local)
     }
 
     /// Screen 15's sign-in: the real Sign in with Apple exchange (spec §5.2 and §10 step 5,
@@ -1509,6 +1523,21 @@ struct ProfileFavoriteWriter: Sendable {
         guard let reconcile else { return nil }
         if (try? await outbox.pendingFavoriteState(treeID: treeID)) != nil { return nil }
         return await reconcile(treeID)
+    }
+}
+
+extension ContributionSharing {
+    /// The read the add screen makes each time it appears: who is signed in (`LocalAPI.userID`) and
+    /// what that account agreed to (`LocalAPI.accountLink()`), both from the phone's own database.
+    /// Neither is a `CypressAPI` requirement, so the composition root reads them, as it does for
+    /// `AccountModel`. A link that cannot be read counts as no answer, which `init(userID:link:)`
+    /// turns into `.unknown` for a signed-in account and `.signedOut` otherwise.
+    static func reader(local: LocalAPI) -> ContributionSharingReader {
+        return {
+            let userID = await local.userID
+            let link = try? await local.accountLink()
+            return ContributionSharing(userID: userID, link: link)
+        }
     }
 }
 
