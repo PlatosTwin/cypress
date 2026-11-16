@@ -86,8 +86,12 @@ public actor LocalAPI: CypressAPI {
         self.almanacQueries = store.seed.map { AlmanacQueries(schema: $0) }
         self.cityQueries = store.seed.map { CityQueries(schema: $0) }
         self.areaQueries = store.seed.map { AreaQueries(schema: $0) }
-        self.photoDirectory = photoDirectory
-            ?? store.databaseURL.deletingLastPathComponent().appendingPathComponent("Photos", isDirectory: true)
+        self.photoDirectory = photoDirectory ?? Self.defaultPhotoDirectory(besideDatabaseAt: store.databaseURL)
+    }
+
+    /// Where photographs live when the caller names no folder: `Photos`, beside the database.
+    static func defaultPhotoDirectory(besideDatabaseAt databaseURL: URL) -> URL {
+        databaseURL.deletingLastPathComponent().appendingPathComponent("Photos", isDirectory: true)
     }
 
     public func setUserID(_ id: UUID?) {

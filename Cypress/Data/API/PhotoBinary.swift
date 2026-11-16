@@ -232,10 +232,77 @@ enum PhotoBinary {
         // The clean copy is made next to the file, so the swap is a rename inside one folder: the
         // temporary directory `write` uses may be on another volume, where `rename` cannot replace.
         let clean = file.deletingLastPathComponent()
-            .appendingPathComponent(".\(file.lastPathComponent)-\(UUID().uuidString).clean")
-        defer { try? FileManager.default.removeItem(at: clean) }
+            .appendingPathComponent(".\(file.lastPathComponent)-\(UUID().uuidString)\(cleanCopySuffix)")
+        // Registered before the file exists and released after it is gone, so a sweep that runs while
+        // this strip is in progress leaves its copy alone (`removeAbandonedCleanCopies`).
+        stripsInProgress.insert(clean.lastPathComponent)
+        defer {
+            try? FileManager.default.removeItem(at: clean)
+            stripsInProgress.remove(clean.lastPathComponent)
+        }
         try writeStrippingMetadata(from: file, to: clean)
         try install(clean, over: file, rename: rename)
+    }
+
+    /// The end of the name `stripMetadataInPlace` gives its clean copy.
+    private static let cleanCopySuffix = ".clean"
+
+    /// The end of the name `writeStrippingMetadata` gives its own scratch file, beside its
+    /// destination. When the destination is a clean copy, that scratch is part of the same strip.
+    private static let strippingScratchSuffix = ".stripping"
+
+    /// The clean copies of strips running in this process now, by file name.
+    private static let stripsInProgress = InProgressNames()
+
+    /// Removes the clean copies that strips killed part-way left in `directory`, and returns the
+    /// files it removed.
+    ///
+    /// `stripMetadataInPlace` removes its copy in a `defer`, which does not run when the process is
+    /// killed during the strip. Nothing reads such a file; it only takes disk space.
+    ///
+    /// A file is removed only when its name has the exact shape that method gives its copy,
+    /// `.<name>-<UUID>.clean`, or that copy's own scratch, `.<name>-<UUID>.clean.stripping`, and only
+    /// when no strip in this process holds that name. A strip holds its name from before the file
+    /// is created until after it is removed or renamed, and every name carries a fresh UUID, so a
+    /// copy that is in progress is never removed, whenever this runs. The app is one process, so a
+    /// copy no strip in this process holds is one a killed process left. Folders, and names that
+    /// only look similar, are kept.
+    @discardableResult
+    static func removeAbandonedCleanCopies(in directory: URL) -> [URL] {
+        let manager = FileManager.default
+        guard let names = try? manager.contentsOfDirectory(atPath: directory.path) else { return [] }
+        var removed: [URL] = []
+        for name in names {
+            guard let copyName = cleanCopyName(of: name) else { continue }
+            let file = directory.appendingPathComponent(name)
+            var isDirectory: ObjCBool = false
+            guard manager.fileExists(atPath: file.path, isDirectory: &isDirectory), !isDirectory.boolValue
+            else { continue }
+            // Checked and removed under the lock, so a strip cannot take this name in between. It
+            // never would: the name carries a UUID that only the strip that made it ever used.
+            let didRemove = stripsInProgress.unlessHeld(copyName) {
+                (try? manager.removeItem(at: file)) != nil
+            }
+            if didRemove == true { removed.append(file) }
+        }
+        return removed
+    }
+
+    /// The clean copy's file name when `name` is a clean copy or its scratch, and nil otherwise.
+    static func cleanCopyName(of name: String) -> String? {
+        let copyName = name.hasSuffix(cleanCopySuffix + strippingScratchSuffix)
+            ? String(name.dropLast(strippingScratchSuffix.count))
+            : name
+        guard copyName.hasPrefix("."), copyName.hasSuffix(cleanCopySuffix) else { return nil }
+        // `.<name>-<UUID>.clean`: a UUID is 36 characters, after a hyphen, after at least one
+        // character of the photo's own name.
+        let body = copyName.dropFirst().dropLast(cleanCopySuffix.count)
+        let uuidLength = 36
+        guard body.count >= uuidLength + 2 else { return nil }
+        let uuid = body.suffix(uuidLength)
+        let hyphen = body.dropLast(uuidLength).last
+        guard hyphen == "-", UUID(uuidString: String(uuid)) != nil else { return nil }
+        return copyName
     }
 
     /// One container-level rewrite, source to destination, under the given ImageIO options.
@@ -308,5 +375,32 @@ enum PhotoBinary {
             kCGImagePropertyTIFFCopyright,
         ]
         return tiffKeys.contains { tiff[$0] != nil }
+    }
+}
+
+/// A set of file names behind a lock: the clean copies `PhotoBinary` is writing now.
+final class InProgressNames: @unchecked Sendable {
+    private let lock = NSLock()
+    private var names: Set<String> = []
+
+    func insert(_ name: String) {
+        lock.lock()
+        names.insert(name)
+        lock.unlock()
+    }
+
+    func remove(_ name: String) {
+        lock.lock()
+        names.remove(name)
+        lock.unlock()
+    }
+
+    /// Runs `body` while holding the lock, and returns its result, unless `name` is held. Returns
+    /// nil when it is held.
+    func unlessHeld<T>(_ name: String, _ body: () -> T) -> T? {
+        lock.lock()
+        defer { lock.unlock() }
+        guard !names.contains(name) else { return nil }
+        return body()
     }
 }

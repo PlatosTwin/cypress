@@ -2525,11 +2525,18 @@ into this section in the round that finds it, and nowhere else. Each item stands
     still read "Right where you are standing." 10 s after the tap. The train changed only comments
     on that screen. The third train makes the first tap wait until the button can be tapped, which
     rules out one cause. Same family as chip 129. Strike each half if it does not come back.
-151. **A stripped photo's temporary file can stay on the phone.** `PhotoBinary` writes a hidden
+151. ~~**A stripped photo's temporary file can stay on the phone.** `PhotoBinary` writes a hidden
     `.<name>-<uuid>.clean` file beside the photo and swaps it in with one rename. Its cleanup is a
     `defer`, which does not run if the app is killed during the strip, and nothing sweeps the photo
     folder. It costs disk space only; nothing reads the file. Found by the reviewer of chip 139's
-    phone piece, 2026-11-15. A sweep at launch would remove them.
+    phone piece, 2026-11-15. A sweep at launch would remove them.~~
+    **DONE in the community gaps round of 2026-11-16 (`fix/community-phone-gaps`).**
+    `PhotoBinary.removeAbandonedCleanCopies` runs at each layer boot (`AppModel`) over the capture
+    folder and the photo folder. It removes only `.<name>-<UUID>.clean` and that copy's own
+    `.stripping` scratch, never a folder. A strip holds its copy's name from before the file exists
+    until it is gone, and the sweep skips a held name, so a reboot during a strip cannot break it.
+    `PhotoCleanCopySweepTests` covers a leftover, the photos and nine look-alike names, and a sweep
+    run inside a strip's rename.
 152. **The Journal treats a pin move and a visit differently at sign-out (owner's call).** Sign-in
     moves a tree's location rows to the account (`user_id` set, `device_id` NULL), and visits keep
     their `device_id`. So after sign-out, pin moves leave the Journal and the export while visits
