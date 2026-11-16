@@ -18,6 +18,10 @@ import Testing
 @Suite("Outbox · finished rows are swept at launch (ROADMAP 184)")
 struct OutboxCompletedSweepTests {
 
+    /// A folder in the simulator's temporary directory. It is not removed at the end of a case: the
+    /// layers booted over it still hold the database open then, and removing an open SQLite file
+    /// makes SQLite log an API violation. `CommunityTreeBackfillTests`' launch case leaves its
+    /// folder for the same reason.
     private static func temporaryDirectory() throws -> URL {
         let url = URL(fileURLWithPath: NSTemporaryDirectory())
             .appendingPathComponent("cypress-184-sweep-\(UUID().uuidString)", isDirectory: true)
@@ -64,7 +68,6 @@ struct OutboxCompletedSweepTests {
     @Test("a launch sweeps done rows older than a day, and keeps newer done rows and every unfinished row")
     func theLaunchSweepsOldDoneRows() async throws {
         let directory = try Self.temporaryDirectory()
-        defer { try? FileManager.default.removeItem(at: directory) }
         let url = directory.appendingPathComponent("cypress.sqlite")
 
         let first = try await Self.boot(url)
@@ -102,11 +105,11 @@ struct OutboxCompletedSweepTests {
     /// `duplicate`) with the add photo on it, and writes the tree's key.
     ///
     /// Red-proof: remove `_ = try? await outbox.pruneCompleted()` from `DataLayer.boot` — red on
-    /// "the launch did not send the add photo of a tree whose done add row is a day old".
+    /// "the done add row was not swept", "the add photo is not on the new add: 0" and "the tree's
+    /// key was not written": the backfill left the tree alone.
     @Test("a launch that sweeps an older build's done add row sends that tree's add photo once")
     func theSweptAddRowLetsTheBackfillSendTheAddPhoto() async throws {
         let directory = try Self.temporaryDirectory()
-        defer { try? FileManager.default.removeItem(at: directory) }
         let url = directory.appendingPathComponent("cypress.sqlite")
 
         let first = try await Self.boot(url)
