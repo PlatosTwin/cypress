@@ -1149,7 +1149,7 @@ struct CommunityTreeBackfillTests {
     func aLibraryAddPhotoIsSentAsAJPEG(_ type: UTType) async throws {
         try await Self.assertAddPhotoIsSentAsAJPEG(
             named: type.identifier, fileExtension: type.preferredFilenameExtension ?? ""
-        ) { try Self.image(type, at: $0) }
+        ) { _ = try Self.image(type, at: $0) }
     }
 
     /// The body of the test above, for a picked photograph that `place` writes over the add photo's
