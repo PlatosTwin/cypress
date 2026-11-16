@@ -879,18 +879,29 @@ func (s *Server) applyOne(r *http.Request, raw json.RawMessage, who caller, owne
 	//
 	// Both were recorded and nothing else until migration 009, and neither is refused for its shape
 	// now: a body that does not decode, or names another tree, is recorded exactly as before and
-	// materializes nothing. See `speciesReportPayload` for the one new field.
+	// materializes nothing. See `readSpeciesReport` for the one new field.
 	var speciesReport *store.SpeciesReport
 	if item.Kind == "wrong_species_report" {
 		if tree, disputed, ok := readSpeciesReport(item.Payload); ok && tree == item.TreeUUID {
 			speciesReport = &store.SpeciesReport{TreeID: tree, DisputedSpeciesID: disputed}
 		}
 	}
+	// The keep needs `treeID` and `flagID` (`ReviewDismissal`, unchanged): the flag names the report
+	// the adder kept the species against, and only it and older reports are cleared
+	// (`store.keepSpecies`). A body whose `flagID` is missing or not a uuid clears nothing.
 	var speciesKeep *store.SpeciesKeep
 	if item.Kind == "species_review_dismissal" {
-		var payload treeWithdrawalPayload // `{"treeID": …}` is all a keep needs; the flag is not matched
+		var payload struct {
+			TreeID uuid.UUID `json:"treeID"`
+		}
 		if err := json.Unmarshal(item.Payload, &payload); err == nil && payload.TreeID == item.TreeUUID {
 			speciesKeep = &store.SpeciesKeep{TreeID: payload.TreeID}
+			var flag struct {
+				FlagID *uuid.UUID `json:"flagID"`
+			}
+			if json.Unmarshal(item.Payload, &flag) == nil && flag.FlagID != nil && !flag.FlagID.IsNil() {
+				speciesKeep.FlagID = flag.FlagID
+			}
 		}
 	}
 

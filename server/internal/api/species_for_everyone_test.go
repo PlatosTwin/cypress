@@ -47,6 +47,18 @@ func keepItem(tree, flag uuid.UUID) map[string]any {
 	}
 }
 
+// keepServedReport is the adder's phone doing "Keep the species" the way the phone half will: it
+// reads `species_report_flag_id` from the adder's profile and sends a dismissal naming it.
+func keepServedReport(t *testing.T, h *harness, adder string, tree uuid.UUID) uuid.UUID {
+	t.Helper()
+	served := speciesViewOf(t, h, adder, tree).FlagID
+	if served == nil {
+		t.Fatal("fixture: the adder is served no report to keep the species against")
+	}
+	mustApply(t, h.syncOne(t, adder, keepItem(tree, *served)), "the adder's keep")
+	return *served
+}
+
 // speciesView is what one viewer's `GET /trees/{id}` says about the species.
 type speciesView struct {
 	Species    *uuid.UUID
@@ -233,6 +245,11 @@ func TestTheFirstCommittedNamingWins(t *testing.T) {
 	if speciesViewOf(t, h, second, tree).NamedByYou {
 		t.Fatal("the loser is told the naming is theirs")
 	}
+	// And the loser cannot correct the winner's naming: only the namer in force can.
+	mustApply(t, h.syncOne(t, second, speciesItem("species_correction", tree, loser, time.Now())), "the loser's correction")
+	if got := stateOf(t, h, tree).SpeciesID; !sameSpecies(got, winner) {
+		t.Fatalf("the loser's correction moved the winner's naming to %v", got)
+	}
 }
 
 // TestANamingOnATreeTheSenderCannotSeeChangesNothing: an unpublished tree (its adder declined) and a
@@ -289,7 +306,14 @@ func TestTheNamerCorrectsTheirOwnAnswerUntilTheAdderActs(t *testing.T) {
 				adderSpecies = uuid.New()
 				mustApply(t, h.syncOne(t, adder.AccessToken, speciesItem("species_correction", tree, adderSpecies, time.Now())), "the adder's correction")
 			} else {
-				mustApply(t, h.syncOne(t, adder.AccessToken, keepItem(tree, uuid.New())), "the adder's keep")
+				// A keep acts only against a report the adder was served, so one is made first. A
+				// keep naming no report is the control: it must leave the namer's right in place.
+				mustApply(t, h.syncOne(t, adder.AccessToken, keepItem(tree, uuid.New())), "a keep naming no report")
+				if !speciesViewOf(t, h, namer, tree).NamedByYou {
+					t.Fatal("a keep that named no report ended the namer's right to correct")
+				}
+				mustApply(t, h.syncOne(t, other, reportItem(tree, uuid.New(), nil)), "another sharer's report")
+				keepServedReport(t, h, adder.AccessToken, tree)
 			}
 			if speciesViewOf(t, h, namer, tree).NamedByYou {
 				t.Fatal("the namer is still told the naming is theirs after the adder acted")
@@ -419,9 +443,14 @@ func TestTheMarkClearsAndComesBack(t *testing.T) {
 	cleared("the adder's correction", true)
 
 	report("a report after the correction")
-	mustApply(t, h.syncOne(t, stranger, keepItem(tree, uuid.New())), "a stranger's keep")
+	// The stranger names the very report the adder is served, so only "who" differs.
+	served := speciesViewOf(t, h, adder.AccessToken, tree).FlagID
+	if served == nil {
+		t.Fatal("fixture: the adder is served no report")
+	}
+	mustApply(t, h.syncOne(t, stranger, keepItem(tree, *served)), "a stranger's keep")
 	cleared("a stranger's keep", false)
-	mustApply(t, h.syncOne(t, adder.AccessToken, keepItem(tree, uuid.New())), "the adder's keep")
+	keepServedReport(t, h, adder.AccessToken, tree)
 	cleared("the adder's keep", true)
 
 	report("a report after the keep")
@@ -534,7 +563,7 @@ func TestTheAddersEraseDoesNotReopenClearedReports(t *testing.T) {
 	reporter := signInAs(t, h, "sp.erase.reporter", nil, accepted()).AccessToken
 	mustApply(t, h.syncOne(t, reporter, visitItem(tree)), "the reporter's visit, which keeps the tree")
 	mustApply(t, h.syncOne(t, reporter, reportItem(tree, uuid.New(), nil)), "a report")
-	mustApply(t, h.syncOne(t, adder.AccessToken, keepItem(tree, uuid.New())), "the adder's keep")
+	keepServedReport(t, h, adder.AccessToken, tree)
 	third := h.registerDeviceToken(t, uuid.New())
 	if speciesViewOf(t, h, third, tree).Reported {
 		t.Fatal("fixture: the keep did not clear the report")
