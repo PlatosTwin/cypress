@@ -185,6 +185,7 @@ struct AX5ReflowTests {
                 location: VisitLocationProvider(
                     pinnedFix: .located(VisitPreviewFixtures.origin, accuracyM: 9)
                 ),
+                communityAsked: nil,
                 onPick: { _ in },
                 onAddTree: {},
                 onBack: {}

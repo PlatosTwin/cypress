@@ -39,8 +39,9 @@ author of this round writes. None of these choices adds a string beyond the owne
    city's. So the card draws only where neither has a pin or cluster in view, unnarrowed. Measured at
    AX5 on the 393 pt phone `MapEmptyInventoryTests.theNoticeFitsTheSlotAtAX5` uses: 357.0 pt, against
    a budget of 402.7 pt (the tallest location notice in the same slot).
-2. **The empty list.** The words moved into `VisitIdentifyCopy.emptyMessage`, with the number taken
-   from `VisitShortlist.searchRadiusM` (60 m). The list is `LocalAPI.treesNear`, which reads the seed
+2. **The empty list.** The words moved into `VisitIdentifyCopy.emptyNeitherKind`, with the number
+   taken from `VisitShortlist.searchRadiusM` (60 m). Where the phone has not asked for added trees
+   the list keeps the old text (the last entry). The list is `LocalAPI.treesNear`, which reads the seed
    and the whole community layer, so it is empty only when neither kind is within 60 m.
 3. **Both texts are about the trees this phone holds**: its own, and other people's in its cache.
    Other people's trees reach the cache only when `CommunityTileRefresher` fetches them, and the
@@ -59,10 +60,10 @@ author of this round writes. None of these choices adds a string beyond the owne
    the first body, which says only that the ground is not on the city inventory. "Neither has a tree
    here" is drawn only where every tile in view was fetched.
 
-   **The "What tree is this?" list does not, yet.** It fetches nothing itself and reads the cache
-   that map viewports have filled, so over ground the map has not fetched it can say "No city tree
-   and no added tree is within 60 m of you" while the service holds an added tree there. Whether it
-   gets the map card's rule is a question for the owner.
+   **The "What tree is this?" list handles it the same way** (the owner's second answer, the last
+   entry). It fetches nothing itself and reads the cache that map viewports have filled, so it says
+   "No city tree and no added tree is within 60 m of you" only where every tile under those 60 m was
+   fetched, and the old text everywhere else.
 
 ### R??? — The map card where the phone has not asked for added trees
 
@@ -92,9 +93,38 @@ there". **Chosen: "Show the old text there".**
    added. Neither has a tree here." Not asked: "Cypress draws a city street-tree inventory, and this
    ground is not on it. Trees may stand here without being listed." (the body as it shipped before
    round C3, copied from main at `e5b11dba`).
-4. **For a second caller.** `CommunityTreeCacheStore.askedReader(queue:)` answers the same question
-   for any box, so the "What tree is this?" list can use it for the 60 m around the reader if the
-   owner gives it the same rule.
+4. **A second caller.** `CommunityTreeCacheStore.askedReader(queue:)` answers the same question
+   for any box. The "What tree is this?" list uses it for the 60 m around the reader (the next
+   entry).
 5. **AX5.** On the 393 pt phone `MapEmptyInventoryTests.theNoticeFitsTheSlotAtAX5` uses, against a
    budget of 402.7 pt: the new body measures 357.0 pt and the first body 402.7 pt, which fits with
    no room to spare (the test allows equal). It is the same height it had when it shipped.
+
+### R??? — The empty list where the phone has not asked for added trees
+
+**The question (AskUserQuestion, 2026-11-15).** "The empty "What tree is this?" list has the same
+gap as the map card, because it reads only the added trees the phone has already downloaded; where
+the phone has not asked the service for added trees around you (offline or a failed download), what
+should the empty list say?"
+
+**Offered:** "Show the old text there (Recommended)"; "Keep the new text everywhere". **Chosen:
+"Show the old text there".**
+
+**How it is built.**
+1. **The same function as the map card.** `VisitIdentifyModel` reads
+   `CommunityTreeCacheStore.askedReader(queue:)` for the box of `VisitShortlist.searchRadiusM`
+   (60 m) around the fix the list was read at. It reads it only when the list came back empty, and
+   before it publishes the list, so the empty state and its message change together. The
+   composition root passes the reader through `VisitFlowView`; a flow built without one answers
+   "not asked".
+2. **The list picks its message.** `VisitIdentifyCopy.emptyMessage(communityAsked:)` returns
+   `emptyNeitherKind` when asked and `emptyNotOnTheCityInventory` when not. The title, "No trees on
+   record here", did not change.
+3. **The two messages.** Asked: "No city tree and no added tree is within 60 m of you. If there is a
+   tree in front of you, it is not on the map yet." Not asked: "Nothing in the city inventory is
+   within 60 m of you. If there is a tree in front of you, it is not on the map yet." (the message as
+   it shipped before round C3, copied from main at `e5b11dba`). In both, the number is
+   `VisitShortlist.searchRadiusM`.
+4. **What counts as asked** is the map card's rule: every zoom-14 tile under the 60 m has a row in
+   `community_tree_cache_tiles`. At the default radius the area is one or, near a tile border, up to
+   four tiles, far below the 16-tile limit.

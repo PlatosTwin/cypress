@@ -748,12 +748,17 @@ The trigger is unchanged: the card draws only when no pin or cluster of either k
 **States:** selected (2px `#2F6B4F` border + shadow + eyebrow + confidence bar) vs. idle.
 
 **ADDED — round C3, owner ruling 2026-11-15** (see `docs/rulings-pending/community-trees-c3-answers.md`,
-"Places with no city inventory"). The built empty state, `No trees on record here`, names both
-kinds of tree the list reads: `No city tree and no added tree is within 60 m of you. If there is a
-tree in front of you, it is not on the map yet.` The number is the list's search radius. It
-replaces `Nothing in the city inventory is within 60 m of you. …`. The list reads the city
-inventory and every added tree on the phone, this phone's and other people's, so it is empty only
-when neither has a tree within the radius.
+"Places with no city inventory", and `docs/rulings-pending/c3-add-note.md`, "The empty list where
+the phone has not asked for added trees"). The built empty state, `No trees on record here`, has
+two messages. The number in each is the list's search radius. The list reads the city inventory and
+every added tree on the phone, this phone's and other people's, so it is empty only when neither
+has a tree within the radius. Which message shows depends on whether the phone has asked the
+service for added trees over the 60 m around the reader:
+- **Asked** (every zoom-14 tile under that area has been fetched): `No city tree and no added tree
+  is within 60 m of you. If there is a tree in front of you, it is not on the map yet.`
+- **Not asked** (a tile under it was never fetched, the fetch failed, or the remote gate is shut):
+  `Nothing in the city inventory is within 60 m of you. If there is a tree in front of you, it is
+  not on the map yet.` This is the message as it shipped before round C3.
 
 ---
 

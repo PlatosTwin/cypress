@@ -32,9 +32,28 @@ final class VisitIdentifyModel {
     /// tree refreshes it.
     private let requeryDistanceM: Double = 5
 
-    init(api: any CypressAPI, location: VisitLocationProvider) {
+    /// Whether this phone has asked the service for added trees over a box
+    /// (`CommunityTreeCacheStore.askedReader(queue:)`, from the composition root). Nil answers
+    /// "not asked", which is what previews and tests that build this model without it get.
+    private let communityAsked: ((BoundingBox) async -> Bool)?
+
+    /// Whether this phone has asked for added trees over the area the last list was read from
+    /// (`searchRadiusM` around the fix). Picks the empty list's message
+    /// (`VisitIdentifyCopy.emptyMessage(communityAsked:)`, the owner's answer of 2026-11-15).
+    /// Read only when the list came back empty, because only the empty state says it.
+    private(set) var communityAskedHere = false
+
+    /// The empty list's message for the area the list was read from.
+    var emptyMessage: String { VisitIdentifyCopy.emptyMessage(communityAsked: communityAskedHere) }
+
+    init(
+        api: any CypressAPI,
+        location: VisitLocationProvider,
+        communityAsked: ((BoundingBox) async -> Bool)? = nil
+    ) {
         self.api = api
         self.location = location
+        self.communityAsked = communityAsked
     }
 
     // MARK: - Derived
@@ -118,6 +137,11 @@ final class VisitIdentifyModel {
                 radiusM: VisitShortlist.searchRadiusM,
                 limit: VisitShortlist.maximumCandidates
             )
+            // Before the list is published, so the empty state and its message change together.
+            if rows.isEmpty {
+                let area = BoundingBox(around: coordinate, radiusM: VisitShortlist.searchRadiusM)
+                communityAskedHere = await communityAsked?(area) ?? false
+            }
             shortlist = VisitShortlist.rank(rows, accuracyM: accuracyM)
             loadError = nil
             // A re-rank must not silently keep a selection that is no longer on the list.

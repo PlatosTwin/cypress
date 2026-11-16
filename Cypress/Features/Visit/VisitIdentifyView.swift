@@ -26,14 +26,19 @@ struct VisitIdentifyView: View {
     let onAddTree: () -> Void
     let onBack: () -> Void
 
+    /// - Parameter communityAsked: whether this phone has asked the service for added trees over a
+    ///   box, for the empty list's message. Nil answers "not asked". The composition root's.
     init(
         api: any CypressAPI,
         location: VisitLocationProvider,
+        communityAsked: ((BoundingBox) async -> Bool)?,
         onPick: @escaping (VisitCandidate) -> Void,
         onAddTree: @escaping () -> Void,
         onBack: @escaping () -> Void
     ) {
-        _model = State(wrappedValue: VisitIdentifyModel(api: api, location: location))
+        _model = State(
+            wrappedValue: VisitIdentifyModel(api: api, location: location, communityAsked: communityAsked)
+        )
         self.onPick = onPick
         self.onAddTree = onAddTree
         self.onBack = onBack
@@ -98,7 +103,7 @@ struct VisitIdentifyView: View {
             // BUILD-PLAN §9 empty state.
             VisitIdentifyNotice(
                 title: VisitIdentifyCopy.emptyTitle,
-                message: VisitIdentifyCopy.emptyMessage
+                message: model.emptyMessage
             )
 
         case .ranked, .lowAccuracy:
@@ -437,13 +442,32 @@ enum VisitIdentifyCopy {
     /// inventory). The list is `LocalAPI.treesNear`, which reads the city inventory and the whole
     /// community layer this phone holds (its own trees and other people's cached ones), so an
     /// empty list means none of those is within the radius. The list fetches nothing itself: other
-    /// people's trees are here only where the map has fetched them, and
-    /// `MapInventoryCopy.message(communityAsked:)` lists the cases where it has not.
-    /// `CommunityTreeCacheStore.askedReader(queue:)` answers the same question for any box. The number is `VisitShortlist.searchRadiusM`, not a
-    /// literal, because the sentence is a claim about the radius the list was read at.
-    static var emptyMessage: String {
+    /// people's trees are here only where the map has fetched them. So this message is drawn only
+    /// where the phone has asked for them (`emptyMessage(communityAsked:)`).
+    ///
+    /// The number is `VisitShortlist.searchRadiusM`, not a literal, in both messages, because each
+    /// is a claim about the radius the list was read at.
+    static var emptyNeitherKind: String {
         "No city tree and no added tree is within \(Int(VisitShortlist.searchRadiusM)) m of you. "
             + "If there is a tree in front of you, it is not on the map yet."
+    }
+
+    /// The message as it shipped before round C3, for the ground where this phone has not asked
+    /// the service for added trees (the owner's answer of 2026-11-15, "Show the old text there").
+    /// It says only what the city inventory holds, which the phone does know.
+    static var emptyNotOnTheCityInventory: String {
+        "Nothing in the city inventory is within "
+            + "\(Int(VisitShortlist.searchRadiusM)) m of you. If there is a tree in front "
+            + "of you, it is not on the map yet."
+    }
+
+    /// The empty list's message, from whether this phone has asked for added trees over the
+    /// `searchRadiusM` around the reader
+    /// (`CommunityTreeCacheStore.hasAsked(covering:maxTiles:connection:)`, the map card's rule). It
+    /// has not when a covering tile was never fetched (offline, a failed fetch, ground the map has
+    /// not shown) or the remote gate is shut.
+    static func emptyMessage(communityAsked: Bool) -> String {
+        communityAsked ? emptyNeitherKind : emptyNotOnTheCityInventory
     }
 }
 

@@ -610,7 +610,11 @@ struct RootView: View {
                 // survives (the owner's decision of 2026-11-15). See `existingTreeScreen`.
                 openExisting: existingTreeScreen,
                 // The note under the add screen's button. See `contributionSharing`.
-                contributionSharing: contributionSharing()
+                contributionSharing: contributionSharing(),
+                // The empty shortlist's message: the new text where this phone has asked for added
+                // trees around the reader, the old one where it has not (the owner's answer of
+                // 2026-11-15). The map card reads the same function.
+                communityAsked: CommunityTreeCacheStore.askedReader(queue: data.store.queue)
             )
 
         case let .photoViewer(id, caption, treeID):
