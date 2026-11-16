@@ -166,6 +166,10 @@ public actor OutboxQueue {
     /// Set when a drain is asked for while one is running; the running drain passes again before
     /// it returns. See `drain(photoUploadsAllowed:)`.
     private var drainRequested = false
+    /// Callers waiting for the running drain to end (`sendBeforeAccountDeletion`). `drain` drops a
+    /// call that arrives while it runs, which is right for a trigger and wrong for a caller that
+    /// must know the queue was sent before it goes on.
+    private var idleWaiters: [CheckedContinuation<Void, Never>] = []
 
     /// One row's progress through a single drain.
     ///
@@ -325,7 +329,7 @@ public actor OutboxQueue {
             return DrainReport()
         }
         isDraining = true
-        defer { isDraining = false }
+        defer { endDraining() }
 
         let report = try await passReleasingMoves(photoUploadsAllowed: photoUploadsAllowed)
         // A drain asked for while this one ran gets its pass now, deciding about photographs
@@ -336,6 +340,73 @@ public actor OutboxQueue {
             _ = try await passReleasingMoves(photoUploadsAllowed: await photoUploadsAllowedNow())
         }
         return report
+    }
+
+    /// Clears `isDraining` and wakes every caller waiting for it.
+    private func endDraining() {
+        isDraining = false
+        let waiters = idleWaiters
+        idleWaiters = []
+        for waiter in waiters { waiter.resume() }
+    }
+
+    /// Suspends until no drain is running. A woken caller checks again, because another caller
+    /// may have taken the queue first.
+    private func waitUntilIdle() async {
+        while isDraining {
+            await withCheckedContinuation { idleWaiters.append($0) }
+        }
+    }
+
+    // MARK: - Before a keep-records account deletion (ROADMAP 192)
+
+    /// How many passes `sendBeforeAccountDeletion` makes at most. A pass takes `batchSize` rows,
+    /// so this covers 200 due rows; a row a longer queue leaves unsent is counted in the answer,
+    /// not lost.
+    static let passesBeforeAccountDeletion = 8
+
+    /// Sends what this account queued, now, before `DELETE /me` under the keep-records door.
+    ///
+    /// **Why.** The keep-records door makes the account's published trees anonymous on the service,
+    /// and nobody may withdraw an anonymous tree (`withdrawCommunityTree` answers `ErrNotTheAdder`,
+    /// `forbidden`). A withdrawal still queued at the deletion would then be refused, its tree would
+    /// come back on this phone, and nobody could ever withdraw it (ROADMAP 192). Sent first, it
+    /// reaches the service while the account still owns the tree.
+    ///
+    /// **What it does.**
+    /// 1. Waits for a running drain to end, so a row that drain holds `uploading` is settled
+    ///    before this reads it, and then holds the queue itself, so no other drain runs meanwhile.
+    /// 2. Makes every row naming the account that the service has not accepted due now
+    ///    (`OutboxStore.makeAccountRowsDueNow`), so a row in backoff is not skipped.
+    /// 3. Makes up to `passesBeforeAccountDeletion` ordinary passes, the drain's own, with the
+    ///    wi-fi toggle honored, and stops at the first pass that finds nothing due. A row that fails
+    ///    in a pass is settled as any drain settles it: a `conflict` on a withdrawal fails it and
+    ///    brings the tree back with the owner's sentence; a failure that can be retried leaves it
+    ///    pending.
+    ///
+    /// - Returns: how many `tree_withdrawal` rows naming the account are still unsent and not
+    ///   failed (`OutboxStore.unsentTreeWithdrawals`). The caller does not delete the account while
+    ///   this is above zero.
+    public func sendBeforeAccountDeletion(userID: UUID) async throws -> Int {
+        await waitUntilIdle()
+        isDraining = true
+        defer { endDraining() }
+
+        try await queue.write { connection in
+            _ = try store.makeAccountRowsDueNow(userID: userID, connection: connection)
+        }
+        for _ in 0..<Self.passesBeforeAccountDeletion {
+            let report = try await passReleasingMoves(photoUploadsAllowed: await photoUploadsAllowedNow())
+            if report.attempted == 0 { break }
+        }
+        // A drain asked for while this ran gets its pass, as `drain(photoUploadsAllowed:)` gives it.
+        while drainRequested {
+            drainRequested = false
+            _ = try await passReleasingMoves(photoUploadsAllowed: await photoUploadsAllowedNow())
+        }
+        return try await queue.read { connection in
+            try store.unsentTreeWithdrawals(userID: userID, connection: connection)
+        }
     }
 
     /// One pass, and up to two more if it released a pin move.
