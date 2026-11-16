@@ -45,26 +45,40 @@ struct ActivityRow: View {
         }
     }
 
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+
+    /// Whether the timestamp moves under the row instead of sitting beside the label.
+    ///
+    /// §2 draws `[thumb] [label] [timestamp]` in one line. At the accessibility sizes the timestamp
+    /// holds its one mono line at its full width, and the label was left a column narrower than
+    /// one of its own words: "Specie / s", "drippi / ng", "watere / d". So above the accessibility
+    /// threshold the timestamp goes under the row it dates, as screen 17's outbox row moves its
+    /// state word. It is still the last thing in reading order. A value, so a test can read it.
+    static func stacksTimestamp(isAccessibilitySize: Bool) -> Bool {
+        isAccessibilitySize
+    }
+
     private var row: some View {
-        HStack(spacing: CypressSpacing.Component.activitySpacing) {
-            thumb
-            cypressLeadInText(
-                label,
-                detail,
-                leadInFont: CypressFont.body135Bold,
-                restFont: CypressFont.body135,
-                leadInColor: CypressColor.textInk,
-                restColor: CypressColor.textBody
-            )
-            .fixedSize(horizontal: false, vertical: true)
+        Group {
+            if Self.stacksTimestamp(isAccessibilitySize: dynamicTypeSize.isAccessibilitySize) {
+                VStack(alignment: .leading, spacing: CypressSpacing.gapDense) {
+                    HStack(spacing: CypressSpacing.Component.activitySpacing) {
+                        thumb
+                        labelText
+                        Spacer(minLength: 0)
+                    }
+                    timestampText
+                }
+            } else {
+                HStack(spacing: CypressSpacing.Component.activitySpacing) {
+                    thumb
+                    labelText
 
-            Spacer(minLength: CypressSpacing.gapDense)
+                    Spacer(minLength: CypressSpacing.gapDense)
 
-            Text(timestamp)
-                .font(CypressFont.mono11)
-                .foregroundStyle(CypressColor.textFaint)
-                .lineLimit(1)
-                .fixedSize()
+                    timestampText
+                }
+            }
         }
         .padding(.vertical, CypressSpacing.Component.activityPaddingV)
         .padding(.horizontal, CypressSpacing.Component.activityPaddingH)
@@ -75,6 +89,26 @@ struct ActivityRow: View {
         .cypressBorder(CypressColor.borderCool, radius: CypressRadius.cardSm)
         .cypressCardShadow()
         .contentShape(Rectangle())
+    }
+
+    private var labelText: some View {
+        cypressLeadInText(
+            label,
+            detail,
+            leadInFont: CypressFont.body135Bold,
+            restFont: CypressFont.body135,
+            leadInColor: CypressColor.textInk,
+            restColor: CypressColor.textBody
+        )
+        .fixedSize(horizontal: false, vertical: true)
+    }
+
+    private var timestampText: some View {
+        Text(timestamp)
+            .font(CypressFont.mono11)
+            .foregroundStyle(CypressColor.textFaint)
+            .lineLimit(1)
+            .fixedSize()
     }
 
     @ViewBuilder
@@ -92,9 +126,19 @@ struct ActivityRow: View {
             case .sync:
                 CypressColor.memorialBannerFill
                     .overlay {
+                        // The word is a mark inside a tile §2 sizes at 38 pt, like the leaf
+                        // beside it, and the tile does not grow with the text. Without a line
+                        // limit and a scale floor it scaled past the tile at the accessibility
+                        // sizes and drew as "…". This is the outbox tile's treatment of its
+                        // reading (screen 17), with a floor low enough for four mono letters at
+                        // AX5: 0.4 still drew "SY…" there. At the drawn size the word fits and
+                        // nothing scales.
                         Text("SYNC")
                             .font(CypressFont.mono10SemiBold)
                             .foregroundStyle(CypressColor.removedBadgeText)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.3)
+                            .padding(.horizontal, CypressSpacing.Component.hairlineStrong)
                     }
             case let .vitality(vitality):
                 (CypressColor.Vitality(rawValue: vitality.rawValue) ?? .fair).gradient

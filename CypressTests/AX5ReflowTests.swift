@@ -332,6 +332,48 @@ struct AX5ReflowTests {
         )
     }
 
+    // MARK: - ROADMAP chip 153 · the timeline row's label kept breaking inside words
+
+    /// The timestamp moves under the row at the accessibility sizes, and stays beside the label
+    /// at every other size, where §2 draws it.
+    @Test("the activity row's timestamp is beside the label drawn, under it at accessibility sizes")
+    func activityRowStacksItsTimestamp() {
+        #expect(ActivityRow.stacksTimestamp(isAccessibilitySize: false) == false)
+        #expect(ActivityRow.stacksTimestamp(isAccessibilitySize: true) == true)
+    }
+
+    /// Chip 153: at AX5 the row's `.fixedSize()` timestamp took its whole width beside the label,
+    /// and the label column was left narrower than one word. The renders showed "Specie / s",
+    /// "drippi / ng", "watere / d" and "Firs / t".
+    ///
+    /// **How a word break is measured.** A row whose label is one word is one line tall when the
+    /// word fits its column, and two or more when the word breaks. So the row with the word must
+    /// measure the same height as the row with one letter in its place, at every phone width. Each
+    /// word is one the timeline draws, and the timestamp is the widest one it draws (screen 19's
+    /// `May 2026`). The row is offered the phone's width less the screen's gutters, as 03, 13 and
+    /// 19 place it.
+    @Test("an activity row's label keeps every word whole at AX5, on every phone width")
+    func activityRowKeepsWordsWholeAtAX5() async {
+        func height(_ label: String, width: CGFloat) async -> CGFloat {
+            await Self.ax5Size(
+                of: ActivityRow(leading: .sync, label: label, detail: "", timestamp: "May 2026"),
+                width: width,
+                settleIterations: 2
+            ).height
+        }
+        for phone in Self.heightBoundWidths {
+            let width = phone - 2 * CypressSpacing.gutter
+            let oneLetter = await height("S", width: width)
+            for word in ["Species", "dripping", "watered", "First", "corrected"] {
+                let measured = await height(word, width: width)
+                #expect(
+                    measured == oneLetter,
+                    "at \(phone) pt the row with \"\(word)\" is \(measured) pt tall and the row with one letter \(oneLetter) pt: the word broke across lines"
+                )
+            }
+        }
+    }
+
     // MARK: - Task #14 item 2 · screen 10's link releases its clamp at AX5 (E60)
 
     /// **The reflow decision, as a value.** `StatGrid.columnCount` and `QuadActionRow.rows` are the

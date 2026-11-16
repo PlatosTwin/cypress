@@ -2546,10 +2546,17 @@ into this section in the round that finds it, and nowhere else. Each item stands
     nobody checked whether sign-out changes the device id. Found by the reviewer of C3's Outbox and
     Journal package, 2026-11-15 (the probe read 0 moves and 2 visits). Keeping the moves needs a
     column `tree_locations` does not have, so it is a schema change with a named migration author.
-153. **Row text breaks badly at the largest text size.** At AX5, `ActivityRow` breaks inside words
+153. ~~**Row text breaks badly at the largest text size.** At AX5, `ActivityRow` breaks inside words
     ("Specie s", "drippi ng"): its timestamp is `.fixedSize()` and squeezes the label. The You tab's
     SYNC tile shows "…", and "Watered" breaks mid-word. All three predate C3; its authors and
-    reviewers saw them in screenshots, 2026-11-15.
+    reviewers saw them in screenshots, 2026-11-15.~~
+    **DONE in the community gaps round of 2026-11-16 (`fix/community-phone-gaps`), with the premise
+    corrected.** All three are `ActivityRow`. The SYNC tile is on screen 19 (the memorial), not on
+    the You tab, which draws no `ActivityRow`. "Watered" broke as "watere / d" in the Care row on 03.
+    At the accessibility sizes the timestamp now goes under the row, as screen 17's outbox row moves
+    its state word, and the SYNC word takes the outbox tile's line limit and scale floor. The renders
+    at the default size are byte-identical before and after. `AX5ReflowTests` measures a one-word
+    row against a one-letter row at six phone widths.
 154. **A community pin exactly under the reader's location dot does not draw.** MapKit hides it, so
     a person standing at a tree they or someone else added may not see its pin. Found when a C3 UI
     test put the reader on the tree, 2026-11-15; 67 m away the pin draws.
