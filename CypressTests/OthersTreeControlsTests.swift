@@ -164,13 +164,13 @@ struct OthersTreeControlsTests {
         let named = try await Self.cached(api, species: plane.id)
         let unnamed = try await Self.cached(api, species: nil, at: VisitPinAdjust.offset(Self.spot, northM: 40, eastM: 0))
 
-        let onNamed = TreeProfilePresentation(profile: try await api.treeProfile(id: named.id))
-        #expect(onNamed.profile.readerSharing == .unknown, "calibration: \(onNamed.profile.readerSharing)")
+        let onNamed = TreeProfilePresentation(profile: try await api.treeProfile(id: named))
+        #expect(onNamed.profile.readerSharing == .unknown, "calibration: \(String(describing: onNamed.profile.readerSharing))")
         #expect(onNamed.speciesCorrection == .unavailable, "an unknown reader is offered a report: \(onNamed.speciesCorrection)")
-        let onUnnamed = TreeProfilePresentation(profile: try await api.treeProfile(id: unnamed.id))
+        let onUnnamed = TreeProfilePresentation(profile: try await api.treeProfile(id: unnamed))
         #expect(!onUnnamed.offersSpeciesClaim, "an unknown reader is offered the claim")
-        await #expect(throws: APIError.forbidden) { try await api.flagWrongSpecies(treeID: named.id) }
-        await #expect(throws: APIError.forbidden) { _ = try await api.claimSpecies(treeID: unnamed.id, speciesID: plane.id) }
+        await #expect(throws: APIError.forbidden) { try await api.flagWrongSpecies(treeID: named) }
+        await #expect(throws: APIError.forbidden) { _ = try await api.claimSpecies(treeID: unnamed, speciesID: plane.id) }
         #expect(try await Self.queued(store).isEmpty, "a refused act was queued")
     }
 

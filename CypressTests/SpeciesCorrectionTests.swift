@@ -24,7 +24,16 @@ struct SpeciesCorrectionTests {
 
     private static let deviceID = UUID(uuidString: "D0000000-0000-4000-8000-00000000AD14")!
     private static let strangerDeviceID = UUID(uuidString: "D0000000-0000-4000-8000-00000000AD15")!
+    private static let strangerUserID = UUID(uuidString: "0E000000-0000-4000-8000-00000000AD15")!
     private static let moment = Date(timeIntervalSince1970: 1_800_000_000)
+
+    /// Signs the stranger in on its device, sharing tree records unless told otherwise. Since
+    /// ROADMAP 144 only a sharer may name or report a tree somebody else added on this phone.
+    private static func share(_ stranger: LocalAPI, _ shares: Bool = true) async throws {
+        try await stranger.linkAccount(
+            deviceUUID: strangerDeviceID, userID: strangerUserID, provider: "apple", acceptsLicense: shares
+        )
+    }
 
     /// West of Ocean Beach: the seed is the city's *street*-tree inventory, so nothing is inside the
     /// 10 m dedupe radius and the only trees a test contends with are its own
@@ -164,6 +173,7 @@ struct SpeciesCorrectionTests {
         _ = try await namer.claimSpecies(treeID: tree.id, speciesID: plane.id)
 
         let stranger = LocalAPI(store: store, deviceID: Self.strangerDeviceID)
+        try await Self.share(stranger)
         try await stranger.flagWrongSpecies(treeID: tree.id)
 
         let flags = try await store.queue.read { connection in
@@ -244,6 +254,7 @@ struct SpeciesCorrectionTests {
         _ = try await namer.claimSpecies(treeID: tree.id, speciesID: plane.id)
 
         let lead = LocalAPI(store: store, deviceID: Self.strangerDeviceID, role: .moderator)
+        try await Self.share(lead)
         try await lead.flagWrongSpecies(treeID: tree.id)
         await #expect(throws: APIError.forbidden, "a lead corrected somebody else's tree") {
             _ = try await lead.correctSpecies(treeID: tree.id, speciesID: oak.id)
@@ -271,7 +282,10 @@ struct SpeciesCorrectionTests {
         let (plane, oak) = try await Self.twoSpecies(adder)
         let tree = try await Self.addTree(through: adder, at: Self.offshore)
         let contributor = LocalAPI(store: store, deviceID: Self.strangerDeviceID)
+        // The contributor names it while sharing, then declines.
+        try await Self.share(contributor)
         _ = try await contributor.claimSpecies(treeID: tree.id, speciesID: plane.id)
+        try await Self.share(contributor, false)
 
         await #expect(throws: APIError.forbidden) {
             _ = try await contributor.correctSpecies(treeID: tree.id, speciesID: oak.id)
@@ -292,6 +306,7 @@ struct SpeciesCorrectionTests {
         _ = try await namer.claimSpecies(treeID: tree.id, speciesID: plane.id)
 
         let stranger = LocalAPI(store: store, deviceID: Self.strangerDeviceID)
+        try await Self.share(stranger)
         try await stranger.flagWrongSpecies(treeID: tree.id)
         let flagID = try await #require(
             store.queue.read { connection in
@@ -347,6 +362,7 @@ struct SpeciesCorrectionTests {
         _ = try await namer.claimSpecies(treeID: tree.id, speciesID: plane.id)
 
         let lead = LocalAPI(store: store, deviceID: Self.strangerDeviceID, role: .moderator)
+        try await Self.share(lead)
         try await lead.flagWrongSpecies(treeID: tree.id)
         let flagID = try await #require(
             store.queue.read { connection in
@@ -538,14 +554,18 @@ struct SpeciesCorrectionTests {
         #expect(!presentation.offersSpeciesClaim)
 
         // Somebody who did not add the tree and does not share is offered no species control (the
-        // owner's answer of 2026-11-16, "Only people who share"). The verb on this phone's own
-        // table is unchanged, so a report raised another way still reaches the adder.
+        // owner's answer of 2026-11-16, "Only people who share"), and the verb refuses them too.
         let stranger = LocalAPI(store: store, deviceID: Self.strangerDeviceID)
         presentation = TreeProfilePresentation(profile: try await stranger.treeProfile(id: tree.id))
         #expect(presentation.speciesCorrection == .unavailable, "a stranger is offered a species control")
         #expect(!presentation.offersSpeciesClaim)
+        await #expect(throws: APIError.forbidden) { try await stranger.flagWrongSpecies(treeID: tree.id) }
 
-        // Once raised, everybody sees the line; only the adder may answer it.
+        // A stranger who shares is offered the report. Once raised, everybody sees the line; only
+        // the adder may answer it.
+        try await Self.share(stranger)
+        presentation = TreeProfilePresentation(profile: try await stranger.treeProfile(id: tree.id))
+        #expect(presentation.speciesCorrection == .reportable, "a sharing stranger is not offered the report")
         try await stranger.flagWrongSpecies(treeID: tree.id)
         presentation = TreeProfilePresentation(profile: try await stranger.treeProfile(id: tree.id))
         guard case let .underReview(_, strangerCanResolve) = presentation.speciesCorrection else {
