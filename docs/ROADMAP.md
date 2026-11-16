@@ -746,7 +746,16 @@ or redeploy would change that (chip 12: merging server work changes nothing in p
   one box, 43 ms for pins and 1.9 ms for clusters; with 50,000, 80 ms and 23 ms (the table is in the
   rulings file's cache-limit entry). **A shared link to a community tree the phone never fetched** cannot
   open: `LocalAPI.treeProfile` throws `notFound` for a tree in neither table before the service is
-  asked. ~~**Left for C3:** drawing the history and `addedByYou`; the DEBUG seam that seeds the cache;
+  asked. **Investigated 2026-11-16 (`fix/community-tile-complete`), not built:** no shared link
+  reaches the app today, for any tree. The app has no URL scheme, no associated domains and no
+  `onOpenURL`; the share sheet's link (`ShareCopy.publicURLPrefix`) is a web address, so a tapped
+  link opens the browser. The service already answers the tree: `GET /trees/{id}` returns
+  `community_tree` for a published tree to any device, and `RemoteAPI` decodes it but carries it no
+  further, because C2 refused writing a profile read into the cache (it is not ordered against the
+  tile cursor, so a late answer could put back a tree a removal list had just dropped). An in-app
+  open of an id in neither table draws "No record for this tree." with no retry. Building it needs
+  the owner's choices: the link's entry into the app (a scheme, or associated domains on the web
+  host), whether a fetched tree is cached or only shown, and what the profile draws while it asks. ~~**Left for C3:** drawing the history and `addedByYou`; the DEBUG seam that seeds the cache;
   and **the cache keeps `createdAt` as an instant, so C3 must draw "Added" dates with
   `CalendarDay(utcDayOf:)`**, never in the reader's zone.~~ **DONE in C3, 2026-11-15**
   (`feat/c3-profile`): the profile draws the history, the DEBUG seam is
@@ -2549,7 +2558,7 @@ into this section in the round that finds it, and nowhere else. Each item stands
 155. **Sign-out keeps `account_provider`.** A later sign-in that goes only through `claimDevice`
     (today, DEBUG paths) then reads as "declined to share" where it should read as unknown. Found
     by the reviewer of C3's profile package, 2026-11-15.
-156. **A partly fetched community tile counts as asked (a gap in the owner's ruling of 2026-11-15
+156. ~~**A partly fetched community tile counts as asked (a gap in the owner's ruling of 2026-11-15
     on the map card and the empty list).** The cache writes a tile's row with each page it applies,
     the service sends at most 100 trees a page, and the "has this phone asked" check reads that
     row. So in a tile with more than 100 added trees, a fetch that fails after its first page (or
@@ -2560,7 +2569,12 @@ into this section in the round that finds it, and nowhere else. Each item stands
     the reviewer of C3's add-note package (probe: `ending=stoppedOnError asked=true`). No tile holds
     100 added trees today. The fix marks a tile complete only when a pass reaches the last page:
     either a new column on `community_tree_cache_tiles` (a migration, with a named author) or a
-    mark kept in `app_state` in the same transaction. Do it before the community layer grows.
+    mark kept in `app_state` in the same transaction. Do it before the community layer grows.~~
+    **DONE in `fix/community-tile-complete`, 2026-11-16:** a tile counts as asked only after a pass
+    reached its last page once. The mark is an `app_state` row per tile
+    (`CommunityTreeCacheStore.completeKey(tile:)`), written with the last page in its transaction,
+    kept through a delta that fails or stops part way, and removed only by `dropTile`. No migration.
+    The reasoning is in `docs/rulings-pending/c3-add-note.md` (the map card entry).
 157. **`Tools/run_tests.sh` prints `screen-width-pt unknown` on this Mac's simulators.** Seen in
     every local log of 2026-11-15 on the four iPhone 17-family devices (Xcode 27.2); CI's header
     prints 402. A width-sensitive UI result from a local log has to take its width from the device
