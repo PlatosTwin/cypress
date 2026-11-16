@@ -2576,6 +2576,18 @@ into this section in the round that finds it, and nowhere else. Each item stands
     the community-tree rounds and from earlier ones, and SCREENS.md cites several by filename. The splice is its own docs-only change: it
     replaces the `R???` and `E???` placeholders, rewrites those citations to numbers, and runs
     `DocumentCitationGuardTests` red and green before it merges.
+161. **CI does not read a HEIC, because writing one stalls the unit suite there.** CI run 43806821528
+    (the third merge train of 2026-11-15) was the first to run chip 139's three tests that write a
+    HEIC with `CGImageDestinationFinalize`. On the GitHub runner, a virtual machine with three
+    worker threads, the unit suite stopped a few lines after those three cases started: no test
+    finished in 33 minutes and the job was cancelled at its time limit. The same tree passes on a
+    physical Mac. The log does not name the blocked call; three threads and three HEIC writers is
+    the evidence. `CommunityTreeBackfillTests` now runs its HEIC cases only where
+    `kern.hv_vmm_present` is 0, and prints the value it read (`CYPRESS-TEST:` in the unit log). The
+    PNG cases run everywhere and take the same path through the app's code. Owed: a small HEIC
+    fixture file checked in, so CI can test reading a HEIC without writing one; nobody has checked
+    whether reading a HEIC works on the runner. Until then a HEIC add photo is tested on a
+    physical Mac only.
 
 
 **Retire the format-1 manifest — DONE, 2026-08-23.** The owner overrode the trigger the day after

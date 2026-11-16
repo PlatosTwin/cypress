@@ -936,6 +936,32 @@ struct CommunityTreeBackfillTests {
 
     // MARK: - 15. Photographs that are not JPEGs
 
+    /// Whether this Mac is a virtual machine (`kern.hv_vmm_present`; a simulator process reads its
+    /// host's value). The value is printed once, so a CI log shows what the runner answered.
+    ///
+    /// **Why the HEIC cases need it.** These tests make their HEIC with `CGImageDestinationFinalize`.
+    /// CI run 43806821528 (2026-11-16 UTC) was the first to run them on a GitHub runner, which is a
+    /// virtual machine with three worker threads. The unit suite stopped a few lines after the three
+    /// HEIC-writing cases started: no test finished in 33 minutes and the job was cancelled at its
+    /// time limit. The same tree passes on a physical Mac in about 100 s. The log does not name the
+    /// call that blocked; three threads and three HEIC writers is the evidence, and a HEIC write
+    /// that never returns on a machine with no hardware HEVC encoder is the likely cause. So on a
+    /// virtual machine no test here writes a HEIC. The PNG case still runs there, and it takes the
+    /// same path through the code under test (a file that is not a JPEG is sent as a JPEG copy).
+    /// What CI then does not cover is reading a HEIC; that is covered on a physical Mac only
+    /// (ROADMAP 161).
+    static let onAVirtualMachine: Bool = {
+        var value: Int32 = 0
+        var size = MemoryLayout<Int32>.size
+        let read = sysctlbyname("kern.hv_vmm_present", &value, &size, nil, 0)
+        print("CYPRESS-TEST: kern.hv_vmm_present read=\(read) value=\(value)")
+        return read == 0 && value == 1
+    }()
+
+    /// The picked-photo types the two parameterized tests run: HEIC and PNG on a physical Mac, PNG
+    /// alone on a virtual machine.
+    static var pickedTypes: [UTType] { onAVirtualMachine ? [.png] : [.heic, .png] }
+
     /// A real HEIC or PNG, 400 × 300, with a GPS fix, a capture time and orientation 6 (the way an
     /// iPhone stores a portrait photograph).
     static func image(_ type: UTType, at url: URL) throws -> URL {
@@ -954,7 +980,13 @@ struct CommunityTreeBackfillTests {
 
     /// Fact-finding for the library path: a HEIC goes through the ingest that `VisitAddTreeModel`
     /// uses (`PhotoBinary.write`) and comes out a HEIC, which is not a JPEG.
-    @Test("a HEIC through the ingest stays a HEIC, so it is not a JPEG")
+    @Test(
+        "a HEIC through the ingest stays a HEIC, so it is not a JPEG",
+        .enabled(
+            if: !CommunityTreeBackfillTests.onAVirtualMachine,
+            "writing a HEIC stalls on a virtual machine (CI run 43806821528)"
+        )
+    )
     func aHEICStaysAHEICThroughTheIngest() throws {
         let folder = URL(fileURLWithPath: NSTemporaryDirectory())
             .appendingPathComponent("cypress-139-heic-\(UUID().uuidString)", isDirectory: true)
@@ -970,7 +1002,10 @@ struct CommunityTreeBackfillTests {
 
     /// Red-proof: make `sendableFile` require a JPEG again — red on "not staged"; and drop the JPEG
     /// copy from `APIOutboxSendSink.uploadPhoto` — red on the sent type.
-    @Test("an add photo picked as HEIC or PNG is staged and sent as a clean, upright JPEG", arguments: [UTType.heic, .png])
+    @Test(
+        "an add photo picked as HEIC or PNG is staged and sent as a clean, upright JPEG",
+        arguments: CommunityTreeBackfillTests.pickedTypes
+    )
     func aLibraryAddPhotoIsSentAsAJPEG(_ type: UTType) async throws {
         let phone = try await Self.phone()
         let (tree, _) = try await Self.addTree(on: phone, at: Self.old)
@@ -1021,7 +1056,10 @@ struct CommunityTreeBackfillTests {
     }
 
     /// Red-proof: make `sendableFile` require a JPEG again — red on "not staged on the add".
-    @Test("a new tree whose photo was picked as HEIC or PNG queues it on its add", arguments: [UTType.heic, .png])
+    @Test(
+        "a new tree whose photo was picked as HEIC or PNG queues it on its add",
+        arguments: CommunityTreeBackfillTests.pickedTypes
+    )
     func aNewTreeWithALibraryPhotoQueuesIt(_ type: UTType) async throws {
         let phone = try await Self.phone()
         phone.clock.set(Self.later)
