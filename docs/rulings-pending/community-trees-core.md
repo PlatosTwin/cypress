@@ -5,7 +5,11 @@ orchestrator or owner to confirm or reverse. No code comment cites this filename
 
 ---
 
-### R??? — `tree_withdrawal` is reserved in the queue's vocabulary and has no verb yet
+### ~~R??? — `tree_withdrawal` is reserved in the queue's vocabulary and has no verb yet~~
+
+**Superseded by the owner's answers of 2026-11-16, in `community-trees-withdraw.md`: the verb is
+built, the phone withdraws first, and a refusal brings the tree back.** Do not splice this entry. The
+original text follows for the record.
 
 The service accepts `tree_withdrawal` (decision 8) and its Go guard expects a Swift `treeWithdrawal`
 case. `outbox.kind`'s CHECK admits the value in v23 so that adding the verb later is not another

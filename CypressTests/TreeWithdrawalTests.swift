@@ -448,7 +448,9 @@ struct TreeWithdrawalTests {
 
         // The same visit once it has reached the service.
         try await store.queue.write { connection in
-            try connection.execute("UPDATE outbox SET remote_sent = 1, state = 'done'")
+            try connection.execute(
+                "UPDATE outbox SET local_applied = 1, remote_sent = 1, state = 'done'"
+            )
         }
         #expect(try await api.treeProfile(id: tree.id).treeWithdrawal == .othersHaveAddedToIt,
                 "another account's sent visit did not draw the reason line")
