@@ -597,6 +597,9 @@ public actor LocalAPI: CypressAPI {
                 tree,
                 clientUUID: draft.clientUUID,
                 adder: ContributionOwner(attribution),
+                // Which phone put the pin there (`AppSchema` v24). The adder may be the account,
+                // which sign-in and deletion change; this does not follow them.
+                setOnDevice: attribution.deviceID,
                 connection: connection
             )
             // The "at the same time" half of the species request opens the chain, exactly as
@@ -729,6 +732,10 @@ public actor LocalAPI: CypressAPI {
                     placement: placement,
                     locationAccuracyM: locationAccuracyM,
                     owner: ContributionOwner(mine),
+                    // Provenance, so the Journal still reads this move as this phone's after the
+                    // person signs out (`AppSchema` v24). Not sent: the payload below is built
+                    // from its own fields.
+                    setOnDevice: mine.deviceID,
                     occurredAt: moment,
                     createdAt: moment,
                     updatedAt: moment

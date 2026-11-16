@@ -36,11 +36,15 @@ public struct CommunityTreeStore {
     ///   v23 — test fixtures, and `debugAddCommunityTree` through `addTree` passes its own — did not
     ///   say, and nobody is the honest value for "not said" (R45 arm 3). `LocalAPI.addTree` passes
     ///   the attribution of the act.
+    /// - Parameter setOnDevice: the installation that added it, written on the root as its
+    ///   provenance (`AppSchema` v24). Nil by default for `adder`'s reason. `LocalAPI.addTree`
+    ///   passes this phone's device id.
     @discardableResult
     public func insert(
         _ tree: Tree,
         clientUUID: UUID,
         adder: ContributionOwner = .nobody,
+        setOnDevice: UUID? = nil,
         connection: SQLiteConnection
     ) throws -> ContributionStore.WriteOutcome {
         let statement = try connection.cachedStatement("""
@@ -99,6 +103,7 @@ public struct CommunityTreeStore {
                 coordinate: tree.coordinate,
                 placement: tree.placement,
                 owner: adder,
+                setOnDevice: setOnDevice,
                 occurredAt: tree.createdAt,
                 createdAt: tree.createdAt,
                 updatedAt: tree.createdAt

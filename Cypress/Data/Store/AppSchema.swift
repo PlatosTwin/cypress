@@ -53,7 +53,8 @@ public enum AppSchema {
         Migration(version: 20, name: "the species chain and the community rows are reachable by the identity their readers bind", sql: v20),
         Migration(version: 21, name: "a reading can be taken back, so the outbox learns measurement_withdrawal", migrate: applyV21),
         Migration(version: 22, name: "a city record's data can be disputed, and the outbox learns both dispute kinds", migrate: applyV22),
-        Migration(version: 23, name: "a community tree has an adder, a location chain and other people's copies", migrate: applyV23)
+        Migration(version: 23, name: "a community tree has an adder, a location chain and other people's copies", migrate: applyV23),
+        Migration(version: 24, name: "a pin position remembers which installation set it", migrate: applyV24)
     ]
 
     /// The version a freshly migrated database reports.
@@ -3103,6 +3104,61 @@ public enum AppSchema {
                    );
 
             DROP TABLE outbox_photos_parked_v23;
+            """)
+    }
+
+    // MARK: - v24
+
+    /// `tree_locations` learns **which installation set each position**, v16's question asked of a
+    /// pin instead of a photograph (the owner's decision of 2026-11-16, ROADMAP chip 152).
+    ///
+    /// **The defect.** Sign-in (`ContributionStore.claimDevice`) gives this installation's pin
+    /// moves to the account and clears their `device_id`, because the table allows at most one
+    /// owner. Visits keep their `device_id` through the claim. After sign-out, the Journal and the
+    /// export ask for "this device, or the signed-in account", so the visits stayed and the moves
+    /// left. The owner chose that both stay: "Everything, pin moves too".
+    ///
+    /// **Provenance, not a second owner**, on v16's terms. `set_on_device` answers one question:
+    /// did this installation write this row. Nothing that decides who may move a pin reads it
+    /// (`correctLocation` asks `community_trees`' adder), `claimDevice` does not touch it, nothing
+    /// sent to the service carries it, and the "at most one owner" CHECK is unchanged. Only the
+    /// Journal's pin-move arm reads it.
+    ///
+    /// **The backfill names this installation for the rows it can vouch for, and no others.**
+    /// Every row here was written on this phone today: `LocalAPI.addTree` and
+    /// `LocalAPI.correctLocation` are the only writers, and nothing syncs positions down. The fill
+    /// still skips two kinds of row, so it stays true once that changes:
+    /// - a row with neither owner, which an account deletion anonymized. It is nobody's for ever
+    ///   (R3, E157), and naming this phone on it would hand it to whoever holds the phone;
+    /// - a row a different installation owns (`device_id` set to another id).
+    ///
+    /// A row that already has a value keeps it, so a replay changes nothing.
+    ///
+    /// **`ALTER TABLE ADD COLUMN`, guarded on the column list**, v16's shape and reason: `ADD
+    /// COLUMN` has no `IF NOT EXISTS`. The fill runs unconditionally, also v16's reason: a database
+    /// that has the column and was never filled must still be filled.
+    ///
+    /// **When `app_state` has no `device_uuid`** the subquery is NULL and the fill writes NULL,
+    /// which is a no-op. Only a fresh install has no `device_uuid`, and it has no positions yet.
+    ///
+    /// **No index.** The Journal's pin-move arm already walks the table (`journalSQL`), and the
+    /// table holds one row per tree this phone added plus one per move.
+    ///
+    /// **Readable by v23 code?** No, the ordinary answer: a v24 file opened by a v23 build refuses
+    /// on `MigrationError.databaseIsAhead`.
+    private static func applyV24(_ connection: SQLiteConnection) throws {
+        if try !connection.columnNames(ofTable: "tree_locations").contains("set_on_device") {
+            try connection.execute("ALTER TABLE tree_locations ADD COLUMN set_on_device TEXT")
+        }
+        try connection.execute("""
+            -- Owned rows that this installation owns or that an account owns. Not an anonymized row,
+            -- not another installation's row, and not a row that already says who set it.
+            UPDATE tree_locations
+               SET set_on_device = (SELECT upper(value) FROM app_state WHERE key = 'device_uuid')
+             WHERE set_on_device IS NULL
+               AND NOT (user_id IS NULL AND device_id IS NULL)
+               AND (device_id IS NULL
+                    OR device_id = (SELECT value FROM app_state WHERE key = 'device_uuid') COLLATE NOCASE);
             """)
     }
 
