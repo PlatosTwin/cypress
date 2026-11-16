@@ -453,7 +453,10 @@ struct TreeWithdrawalTests {
     /// - remove the `treeStaysOnTheMap` branch in `recordFailure` — red on the row's reason, which
     ///   reads "This couldn't be sent.";
     /// - remove `withdrawAgain` from the send settlement — red on "the accepted retry left the tree
-    ///   on the map".
+    ///   on the map";
+    /// - make the refused-withdrawal clause of `CommunityTreeStore.othersHaveAddedTo` match nothing —
+    ///   red on the profile's `treeWithdrawal == .othersHaveAddedToIt`. The phone holds no row by
+    ///   anybody else here, so the refusal alone draws the reason line (the owner's answer 7).
     @Test("a refused withdrawal brings the tree back with the owner's reason, and an accepted retry takes it off again")
     func aRefusalBringsTheTreeBack() async throws {
         let store = try await CypressStore.inMemory()
@@ -680,8 +683,9 @@ struct TreeWithdrawalTests {
     /// brings the report back. The rule is the presentation's (`TreeProfilePresentation
     /// .recordDefect`), so the API's own offer is unchanged.
     ///
-    /// Red-proof: return `profile.recordDefect` unchanged from the presentation — red on "the adder
-    /// who can withdraw is still offered the report".
+    /// Red-proof: in the presentation, hide `.reportable` on `.othersHaveAddedToIt` instead of on
+    /// `.available` — red on `drawn.recordDefect == .unavailable` ("the adder who can withdraw is
+    /// still offered the report").
     @Test("the adder who can withdraw is not offered the report, and the API's own offer is unchanged")
     func theAdderWhoCanWithdrawIsNotOfferedTheReport() async throws {
         let store = try await CypressStore.inMemory()
@@ -697,8 +701,8 @@ struct TreeWithdrawalTests {
                 "the adder who can withdraw is still offered the report: \(drawn.recordDefect)")
     }
 
-    /// Red-proof: make the presentation hide `.reportable` for every adder (drop the
-    /// `treeWithdrawal == .available` test) — red on "the reason line did not bring the report back".
+    /// Red-proof: the same swapped condition — red on `local.recordDefect == .reportable` and on the
+    /// routed profile's `.reportable` ("the reason line did not bring the report back").
     @Test("the reason line brings the report back, from the phone's own facts and from the service's")
     func theReasonLineBringsTheReportBack() async throws {
         let store = try await CypressStore.inMemory()
@@ -733,7 +737,8 @@ struct TreeWithdrawalTests {
 
     /// A report the adder already raised keeps its line; a reader who did not add the tree, and a
     /// city tree, see what they saw before. Red-proof: make the presentation return `.unavailable`
-    /// for every arm while withdrawal is `.available` — red on "the adder's own report lost its line".
+    /// for every arm while withdrawal is `.available` — red on "the adder's own report lost its line:
+    /// .unavailable".
     @Test("a report already raised keeps its line, and a stranger and a city tree are unaffected")
     func everyOtherOfferPassesThrough() async throws {
         let store = try await CypressStore.inMemory()
