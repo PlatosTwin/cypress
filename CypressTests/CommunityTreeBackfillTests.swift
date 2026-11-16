@@ -1095,7 +1095,7 @@ struct CommunityTreeBackfillTests {
         #expect(try FileManager.default.contentsOfDirectory(atPath: folder.path) == ["photo.jpg"])
     }
 
-    // MARK: - 17. A phone-made account's work (the owner's ruling of 2026-11-16)
+    // MARK: - 17. A phone-made account's work (the owner's ruling of 2026-11-15)
 
     /// The owner of one row, read back from its table.
     static func owner(_ phone: Phone, _ table: String, _ id: UUID) async throws -> UUID? {
@@ -1113,7 +1113,10 @@ struct CommunityTreeBackfillTests {
          rows.measurement.clientUUID, rows.care.clientUUID]
     }
 
-    /// Red-proof: make `Identity.mayAdopt` answer false — red on the five rows.
+    /// Red-proof: skip the `adopt` call in `queueTree` **and** return before the second pass in
+    /// `run` — red on the five rows. Either one alone still sends them: the second pass picks up
+    /// what the first did not move. (`mayAdopt` answering false does not turn this test red: the
+    /// tree here is the device's, and `adopt` does not ask `mayAdopt`.)
     @Test("a phone-made account's rows and photograph on an old tree go out once, under the account signed in now")
     func aPhoneMadeAccountsWorkGoesUnderTheSignedInAccount() async throws {
         let phone = try await Self.phone(userID: Self.accountB)
@@ -1232,8 +1235,10 @@ struct CommunityTreeBackfillTests {
         #expect(try await phone.sendable(add.id).map(\.id) == [addPhoto], "the add photo did not go")
     }
 
-    /// Red-proof: widen `ownedByPhoneMade` to `(user_id IS NULL OR …)` — red on the anonymized
-    /// visit. The leaving door leaves `user_id` NULL, and only an owner in `phoneMade` is moved.
+    /// Red-proof: widen `ownedByPhoneMade` to `(user_id IS NULL OR …)` — red on "an anonymized visit
+    /// was given an owner": the widened match gives the NULL-owner visit the signed-in account. No
+    /// constraint stops that for a visit. Only a row with a single owner column pair (a photograph,
+    /// a tree) refuses it through its at-most-one-owner CHECK, when it already has a device owner.
     @Test("an anonymized row stays unsent when a phone-made account's work goes")
     func anAnonymizedRowStaysWhenPhoneMadeWorkGoes() async throws {
         let phone = try await Self.phone(userID: Self.accountB)
@@ -1315,5 +1320,92 @@ struct CommunityTreeBackfillTests {
                 #expect(try await Self.owner(phone, "visits", rows.visitWithPhoto.id) == nil)
             }
         }
+    }
+
+    // MARK: - 18. Real accounts on old rows are not phone-made
+
+    /// Red-proof: drop `AND julianday(updated_at) < julianday(:cutoff)` from both arms of
+    /// `phoneMadeAccounts` — red on account A's work adopted under B.
+    @Test("a real account that claimed this device's old work is not phone-made, and its tree waits for it")
+    func aClaimedRealAccountIsNotPhoneMade() async throws {
+        // Signed-out work before real sign-in existed.
+        let phone = try await Self.phone()
+        let (tree, _) = try await Self.addTree(on: phone, at: Self.old)
+        let rows = try await Self.addRows(on: phone, tree: tree.id, owner: .anonymous(deviceID: Self.deviceID), at: Self.old)
+        // Real account A signs in later, on a build with no backfill: the claim gives A the tree,
+        // the rows and the photographs, keeping their `created_at`.
+        phone.clock.set(Self.later)
+        try await phone.api.claimDevice(deviceUUID: Self.deviceID, userID: Self.accountA)
+        #expect(try await Self.owner(phone, "community_trees", tree.id) == Self.accountA, "fixture: the claim did not give A the tree")
+        #expect(try await Self.owner(phone, "visits", rows.visitWithPhoto.id) == Self.accountA, "fixture")
+        // A signs out, and B signs in on the same phone.
+        try await phone.api.claimDevice(deviceUUID: Self.deviceID, userID: Self.accountB)
+
+        let asB = try await phone.run(phone.signedIn(Self.accountB))
+        #expect(asB.adopted == 0, "account A's work was moved to B: \(asB)")
+        #expect(try await phone.outbox().isEmpty, "account A's work was queued under B")
+        #expect(asB.treesWaiting == 1, "A's tree does not wait for A: \(asB)")
+        #expect(try await Self.owner(phone, "visits", rows.visitWithPhoto.id) == Self.accountA, "A's visit changed owner")
+        #expect(try await Self.owner(phone, "community_trees", tree.id) == Self.accountA, "A's tree changed owner")
+
+        // A signs in again: the tree and its rows go under A.
+        let asA = try await phone.run(phone.signedIn(Self.accountA))
+        #expect(asA.trees == 1 && asA.rows == 5 && asA.adopted == 0, "\(asA)")
+        let add = try #require(try await phone.outbox().first { $0.item.kind == .addTree })
+        #expect(try Self.addition(add).attribution.userID == Self.accountA)
+    }
+
+    /// Red-proof: put the `community_trees` arm back into `phoneMadeAccounts` — red on A's tree
+    /// adopted under B.
+    @Test("a real account that migration v23 wrote onto an old tree is not phone-made")
+    func aMigrationStampedRealAccountIsNotPhoneMade() async throws {
+        let phone = try await Self.phone()
+        let (tree, _) = try await Self.addTree(on: phone, at: Self.old)
+        // What v23 writes when real account A is signed in and the old tree has no add row: A as the
+        // adder, with the tree's old timestamps left as they were.
+        try await phone.write { connection in
+            let statement = try connection.cachedStatement(
+                "UPDATE community_trees SET user_id = :user, device_id = NULL"
+            )
+            _ = try statement.bind(Self.accountA.uuidString, forName: ":user")
+            try statement.run()
+            _ = try statement.reset()
+        }
+        phone.clock.set(Self.later)
+        try await phone.api.claimDevice(deviceUUID: Self.deviceID, userID: Self.accountB)
+
+        let asB = try await phone.run(phone.signedIn(Self.accountB))
+        #expect(asB.adopted == 0, "A's v23-stamped tree was moved to B: \(asB)")
+        #expect(try await phone.outbox().isEmpty, "A's tree was queued under B")
+        #expect(asB.treesWaiting == 1, "\(asB)")
+        #expect(try await Self.owner(phone, "community_trees", tree.id) == Self.accountA)
+    }
+
+    /// Red-proof: drop `AND julianday(updated_at) < julianday(:cutoff)` from both arms — red on the
+    /// edited rows adopted. The stated cost of the `updated_at` test.
+    @Test("a phone-made account whose rows were all edited after real sign-in existed is not found, and its work waits")
+    func aPhoneMadeAccountEditedLaterWaits() async throws {
+        let phone = try await Self.phone(userID: Self.accountB)
+        let (tree, _) = try await Self.addTree(on: phone, at: Self.old)
+        let rows = try await Self.addRows(
+            on: phone, tree: tree.id, owner: Attribution(userID: Self.phoneMade, deviceID: Self.deviceID), at: Self.old
+        )
+        try await phone.write { connection in
+            for table in ["visits", "observations", "measurements", "care_events", "photos"] {
+                let statement = try connection.cachedStatement(
+                    "UPDATE \(table) SET updated_at = :later WHERE user_id = :user COLLATE NOCASE"
+                )
+                _ = try statement.bind([":later": Self.afterSignIn, ":user": Self.phoneMade.uuidString])
+                try statement.run()
+                _ = try statement.reset()
+            }
+        }
+
+        let report = try await phone.run(phone.signedIn(Self.accountB))
+        let keys = Set(try await phone.outbox().map(\.item.clientUUID))
+        #expect(report.adopted == 0, "an account with no row last written before real sign-in was adopted: \(report)")
+        #expect(keys.isDisjoint(with: Self.sentKeys(rows)), "the edited rows were sent")
+        #expect(report.trees == 1 && report.rowsSkipped == 5, "the tree did not go with its rows waiting: \(report)")
+        #expect(try await Self.owner(phone, "visits", rows.visitWithPhoto.id) == Self.phoneMade)
     }
 }

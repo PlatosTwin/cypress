@@ -130,7 +130,7 @@ key written, and the run after that account signs in on this phone sends it. A r
 whose owner is another account, or another device, is left behind. A tree with no adder (anonymized
 by an account deletion) is never sent.
 
-### R??? — The accounts the phone made itself (owner's ruling, 2026-11-16)
+### R??? — The accounts the phone made itself (owner's ruling, 2026-11-15)
 
 **The case.** Builds 6 to 33 (2026-08-03 to 2026-08-14) signed people in on the phone alone and
 minted the account id there (`85467c18`; removed by `ff7e19d1`, #158 step 5). E277 records that
@@ -139,7 +139,7 @@ such a phone today, visits, check-ins, measurements, care events and photographs
 tree carries it only when the phone went from build 35 or earlier straight to a build with
 migration v23 while signed in.
 
-**The question, as put to the owner (AskUserQuestion, 2026-11-16).** "Chip 139 sends old community
+**The question, as put to the owner (AskUserQuestion, 2026-11-15).** "Chip 139 sends old community
 trees with everything recorded on them. One case cannot be sent safely: builds 6 to 33 (August 3 to
 14) created accounts on the phone itself, and such an account can never sign in again. On a phone
 from that time, visits, check-ins, measurements, care, and photos recorded under that old account
@@ -158,15 +158,33 @@ The owner chose "Send them under the current account", accepting that on a share
 mislabel records.
 
 **The rule built.** A phone-made account is an id that appears as `user_id` on a row this phone
-made before 2026-08-14 07:27:48 UTC (`CommunityTreeBackfill.serviceSignInExisted`), other than the
-account signed in now. That instant is the commit time of `64a8d1e3` (#158 step 3), the first commit
-with any code that reaches the service's sign-in (`/auth/oidc`). The Apple button reached it later
-that day (`ff7e19d1`, first in `build-34`, tagged 2026-08-15 03:26 UTC). So no build before that
-instant could hold a service account's id, and an id on an earlier row was minted on the phone. The
-rows read to learn the ids are visits, check-ins, measurements and care events whose `device_id` is
-this device, photographs whose `taken_on_device` is this device, and this phone's own
-`community_trees`, city trees included. Other people's trees live in the community cache and are not
-read. A row of any later date counts once its owner is in the set.
+made **and last wrote** before 2026-08-14 07:27:48 UTC (`CommunityTreeBackfill.serviceSignInExisted`),
+other than the account signed in now. That instant is the commit time of `64a8d1e3` (#158 step 3),
+the first commit with any code that reaches the service's sign-in (`/auth/oidc`). The Apple button
+reached it later that day (`ff7e19d1`, first in `build-34`, tagged 2026-08-15 03:26 UTC). So no build
+before that instant could **write** a service account's id onto a row.
+
+An old row can still carry a real account's id, written later, and the first version of this rule
+missed that. Two writers do it:
+- **`claimDevice`.** When a real account signs in, it adopts the device's unclaimed rows, trees and
+  photographs, keeps their `created_at`, and stamps `updated_at` with the time of the claim. The
+  review showed the result: a device's signed-out work from before 2026-08-14, claimed later by real
+  account A, was queued under account B when B signed in after A.
+- **Migration v23.** It wrote `current_user_id` onto every old tree that had no add row, and left the
+  tree's timestamps as they were. An old tree can therefore name a real account with old dates.
+
+So the rule reads `updated_at` as well as `created_at`, and it no longer reads `community_trees` at
+all. A real account's id on an old row always comes with an `updated_at` after the cutoff, because
+the claim that wrote it ran after real sign-in existed. A phone-made account's sign-in ran its own
+claim before the cutoff, so its rows keep an old `updated_at`. The other writers of `user_id` on the
+tables read cannot put a real id on an old row: migration v12 ran in `build-6`, before real sign-in,
+and every insert dates its row at capture. The rows read to learn the ids are visits, check-ins,
+measurements and care events whose `device_id` is this device, and photographs whose
+`taken_on_device` is this device, city trees included. A phone-made account's own tree is found
+through its rows and photographs. A row of any later date counts once its owner is in the set.
+
+**The cost.** A phone-made account whose every row and photograph was edited after the cutoff is not
+found. Its work waits, as it did before this rule.
 
 While an account is signed in, the tree of such an account, and such an account's live rows and
 photographs on an old community tree, become the signed-in account's on the phone in the same
@@ -195,11 +213,13 @@ sides.
 **Limits.**
 - On a phone two people used in the local-account era, one person's work goes out under whoever
   signs in. The owner accepted this.
-- A phone whose clock was set before 2026-08-14 while a real account was signed in would count that
-  account as phone-made. Its rows would then go under whoever signs in next on that phone.
-- A phone-made account with no row before that instant is not found. Such an account would have
-  had to be made on 2026-08-14 between 07:27 and the phone's update to build 34. Its later rows,
-  from builds 34 and 35, count when the account has any earlier row, because the set is of ids.
+- A phone whose clock was set before 2026-08-14 while a real account was signed in, or when one
+  claimed the device, would count that account as phone-made. Its rows would then go under whoever
+  signs in next on that phone.
+- A phone-made account with no row last written before that instant is not found. That happens
+  when every one of its rows was edited later (the cost above), or when the account was made on
+  2026-08-14 between 07:27 and the phone's update to build 34. Its later rows, from builds 34 and
+  35, count when the account has any earlier row, because the set is of ids.
   Build 36 signs a stored local account out at launch (`SessionRestore.reconcile`), so no later
   build made rows under one.
 - Only old community trees (added before adds were queued) are covered. A phone-made account's row

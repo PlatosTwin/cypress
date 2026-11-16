@@ -73,9 +73,10 @@
 //  So such a tree, and any row or photograph owned by an account that is not signed in now, waits:
 //  nothing is queued and no key is written, and the next run after that account signs in sends it.
 //
-//  **The accounts this phone made itself** (the owner's ruling of 2026-11-16). Builds 6 to 33 signed
+//  **The accounts this phone made itself** (the owner's ruling of 2026-11-15). Builds 6 to 33 signed
 //  people in on the phone alone, and such an account can never sign in again (ERRATA E277). A
-//  `user_id` on a row this phone made before `serviceSignInExisted` can only be one of these. While
+//  `user_id` on a row this phone made and last wrote before `serviceSignInExisted` can only be one
+//  of these (`phoneMadeAccounts` says why `updated_at` matters). While
 //  an account is signed in, that account's tree, rows and photographs on an old tree become the
 //  signed-in account's, in the same transaction that queues them, and go under it. Signed out,
 //  they wait. On a tree that went before they could, a second pass sends exactly them; moving
@@ -109,9 +110,10 @@ public struct CommunityTreeBackfill: Sendable {
     /// The first commit with any code that reaches the service's sign-in, `/auth/oidc`:
     /// `64a8d1e3` (#158 step 3), 2026-08-14 07:27:48 UTC. The Apple button reached it later the same
     /// day (`ff7e19d1`, #158 step 5, first in `build-34`). Before that instant no build could hold
-    /// a service account's id, so a `user_id` on a row this phone made before it was minted on the
-    /// phone (`85467c18`, the local-account era, ERRATA E277). The earlier commit is used because
-    /// this cutoff has to be sure of exactly that.
+    /// a service account's id, so an account id **written** onto a row before it was minted on the
+    /// phone (`85467c18`, the local-account era, ERRATA E277). A row *created* before it can still
+    /// carry a real id written later, which is why `phoneMadeAccounts` reads `updated_at` too. The
+    /// earlier commit is used because this cutoff has to be sure of exactly that.
     public static let serviceSignInExisted = Date(timeIntervalSince1970: 1_786_692_468)
 
     /// Who the drain will send as: the signed-in account, if any, and this installation.
@@ -136,7 +138,7 @@ public struct CommunityTreeBackfill: Sendable {
         }
 
         /// Whether a row owned by `user` is a phone-made account's, which the owner's ruling of
-        /// 2026-11-16 sends under the account signed in now. Never while signed out, and never for a
+        /// 2026-11-15 sends under the account signed in now. Never while signed out, and never for a
         /// row with no owner (anonymized).
         func mayAdopt(user: UUID?) -> Bool {
             guard userID != nil, let user else { return false }
@@ -269,7 +271,7 @@ public struct CommunityTreeBackfill: Sendable {
         }
 
         // Trees that went before a phone-made account's rows could: on a signed-out phone, or
-        // under a build of this branch before the owner's ruling of 2026-11-16. Their key is
+        // under a build of this branch before the owner's ruling of 2026-11-15. Their key is
         // written, so the loop above never sees them again. Moving a row to the signed-in account
         // is what marks it done here: the next run finds no phone-made owner on it.
         guard !who.phoneMade.isEmpty else { return report }
@@ -291,13 +293,26 @@ public struct CommunityTreeBackfill: Sendable {
         return report
     }
 
-    // MARK: - Phone-made accounts (the owner's ruling of 2026-11-16)
+    // MARK: - Phone-made accounts (the owner's ruling of 2026-11-15)
 
-    /// The accounts this phone made itself: every `user_id` on a row this phone made before
-    /// `serviceSignInExisted`, other than `current`. Rows of any kind are read here, city trees
-    /// included, only to learn the ids. The contribution tables and photographs are read only where
-    /// this device made the row; `community_trees` holds only this phone's own trees (other
-    /// people's trees live in the community cache).
+    /// The accounts this phone made itself: every `user_id` on a visit, check-in, measurement,
+    /// care event or photograph this device made **and last wrote** before `serviceSignInExisted`,
+    /// other than `current`. City-tree rows count, only to learn the ids.
+    ///
+    /// **Why `updated_at` as well as `created_at`.** An old row can carry a real account's id: a
+    /// real account that signs in later adopts the device's unclaimed rows through `claimDevice`,
+    /// which keeps `created_at` and stamps `updated_at` with the time of the claim. So a real
+    /// account's id on an old row always comes with an `updated_at` after the cutoff, while a
+    /// phone-made account's sign-in ran its `claimDevice` before it. The other writers of `user_id`
+    /// on these five tables cannot put a real id on an old row: migration v12 ran in `build-6`,
+    /// before any build could sign in for real, and every insert dates its row at capture.
+    ///
+    /// **`community_trees` is not read.** Migration v23 wrote `current_user_id` onto old trees with
+    /// no add row and left their timestamps alone, so an old tree can name a real account with old
+    /// dates. A phone-made account's tree is still found through its rows and photographs.
+    ///
+    /// **The cost.** A phone-made account whose every row and photograph was edited after the cutoff
+    /// is not found, and its work waits, as it did before this rule.
     static func phoneMadeAccounts(
         device: UUID, excluding current: UUID, connection: SQLiteConnection
     ) throws -> Set<UUID> {
@@ -306,6 +321,7 @@ public struct CommunityTreeBackfill: Sendable {
             SELECT upper(user_id) AS u FROM \(table)
              WHERE user_id IS NOT NULL AND upper(device_id) = upper(:device)
                AND julianday(created_at) < julianday(:cutoff)
+               AND julianday(updated_at) < julianday(:cutoff)
             """
         }
         let statement = try connection.cachedStatement("""
@@ -314,9 +330,7 @@ public struct CommunityTreeBackfill: Sendable {
             SELECT upper(user_id) AS u FROM photos
              WHERE user_id IS NOT NULL AND upper(taken_on_device) = upper(:device)
                AND julianday(created_at) < julianday(:cutoff)
-            UNION
-            SELECT upper(user_id) AS u FROM community_trees
-             WHERE user_id IS NOT NULL AND julianday(created_at) < julianday(:cutoff)
+               AND julianday(updated_at) < julianday(:cutoff)
             """)
         _ = try statement.bind([":device": device.uuidString, ":cutoff": Self.serviceSignInExisted])
         let ids = try statement.fetchAll { try $0.string("u") }
@@ -540,7 +554,7 @@ public struct CommunityTreeBackfill: Sendable {
         guard !(try Self.isQueued(treeID: treeID, connection: connection)) else { return }
         guard var tree = try Self.tree(treeID, connection: connection) else { return }
         // A tree a phone-made account added goes under the account signed in now (the owner's
-        // ruling of 2026-11-16).
+        // ruling of 2026-11-15).
         let adopting = identity.mayAdopt(user: tree.adderUser)
         guard identity.maySend(user: tree.adderUser, device: tree.adderDevice) || adopting else {
             report.treesWaiting += 1
