@@ -437,8 +437,9 @@ enum VisitIdentifyCopy {
     /// inventory). The list is `LocalAPI.treesNear`, which reads the city inventory and the whole
     /// community layer this phone holds (its own trees and other people's cached ones), so an
     /// empty list means none of those is within the radius. The list fetches nothing itself: other
-    /// people's trees are here only where the map has fetched them, and `MapInventoryCopy.message`
-    /// lists the cases where it has not. The number is `VisitShortlist.searchRadiusM`, not a
+    /// people's trees are here only where the map has fetched them, and
+    /// `MapInventoryCopy.message(communityAsked:)` lists the cases where it has not.
+    /// `CommunityTreeCacheStore.askedReader(queue:)` answers the same question for any box. The number is `VisitShortlist.searchRadiusM`, not a
     /// literal, because the sentence is a claim about the radius the list was read at.
     static var emptyMessage: String {
         "No city tree and no added tree is within \(Int(VisitShortlist.searchRadiusM)) m of you. "

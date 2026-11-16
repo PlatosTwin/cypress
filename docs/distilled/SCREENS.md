@@ -677,11 +677,17 @@ empty/no-GPS state.
 
 **ADDED — round C3, owner ruling 2026-11-15** (see `docs/rulings-pending/community-trees-c3-answers.md`,
 "Places with no city inventory"). The built map's empty-inventory card (title `No trees on record
-here`, drawn when a settled, unnarrowed read has nothing to draw) now names both kinds of tree the
-map draws. Its body reads: `Cypress draws a city street-tree inventory and trees people have added.
-Neither has a tree here.` It replaces `Cypress draws a city street-tree inventory, and this ground is
-not on it. Trees may stand here without being listed.` The trigger is unchanged: the card draws
-only when no pin or cluster of either kind is in view.
+here`, drawn when a settled, unnarrowed read has nothing to draw) has two bodies, by whether this
+phone has asked the service for added trees over the viewport (the owner's answer of 2026-11-15,
+"Show the old text there"; see `docs/rulings-pending/c3-add-note.md`):
+- **Asked** (the viewport touches at most 16 zoom-14 tiles, and every one has been fetched):
+  `Cypress draws a city street-tree inventory and trees people have added. Neither has a tree here.`
+- **Not asked** (zoomed out past 16 tiles, a tile in view never fetched because the phone was
+  offline, a fetch failed, or the first fetch has not answered, or the remote gate is shut): the body
+  as it shipped before round C3, `Cypress draws a city street-tree inventory, and this ground is not
+  on it. Trees may stand here without being listed.`
+
+The trigger is unchanged: the card draws only when no pin or cluster of either kind is in view.
 
 ---
 

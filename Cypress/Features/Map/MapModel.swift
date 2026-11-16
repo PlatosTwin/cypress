@@ -66,6 +66,12 @@ final class MapModel {
     /// The read a community refresh asked for, or nil (`startCommunityRefresh`).
     @ObservationIgnored private(set) var communityReread: Task<Void, Never>?
 
+    /// Whether this phone has asked the service for the community trees over a box
+    /// (`CommunityTreeCacheStore.askedReader(queue:)`, from the composition root). Nil answers
+    /// "not asked", which is what every preview and unit test that builds this model without it
+    /// gets.
+    private let communityAsked: ((BoundingBox) async -> Bool)?
+
     init(
         api: any CypressAPI,
         calendar: Calendar = .current,
@@ -73,7 +79,8 @@ final class MapModel {
         needsCareToastDuration: Duration = MapModel.defaultNeedsCareToastDuration,
         refreshProfile: ((UUID) async -> TreeProfile?)? = nil,
         refreshMembership: ((MapMembership) async -> Set<UUID>?)? = nil,
-        refreshCommunity: ((BoundingBox) async -> Bool)? = nil
+        refreshCommunity: ((BoundingBox) async -> Bool)? = nil,
+        communityAsked: ((BoundingBox) async -> Bool)? = nil
     ) {
         self.api = api
         self.calendar = calendar
@@ -82,6 +89,7 @@ final class MapModel {
         self.refreshProfile = refreshProfile
         self.refreshMembership = refreshMembership
         self.refreshCommunity = refreshCommunity
+        self.communityAsked = communityAsked
     }
 
     // MARK: - State
@@ -221,6 +229,18 @@ final class MapModel {
     /// frame of a pan, and this is read from it. The three things that can change the answer all
     /// write it — a completed read, a filter, a search.
     private(set) var inventoryIsEmptyHere = false
+
+    /// Whether this phone has asked the service for added trees over the settled viewport: picks
+    /// the empty-inventory card's body (`MapInventoryCopy.message(communityAsked:)`, the owner's
+    /// answer of 2026-11-15). Read with each completed map read, and again when a community
+    /// refresh ends without changing the cache, because a tile served with no trees changes no
+    /// pin but is now asked.
+    private(set) var communityAskedHere = false
+
+    /// The empty-inventory card's body for the settled viewport.
+    var inventoryNoticeMessage: String {
+        MapInventoryCopy.message(communityAsked: communityAskedHere)
+    }
 
     /// Whether anything at all is narrowing the map — the filter row, the drawer, the legend, or
     /// the search bar.
@@ -702,6 +722,11 @@ final class MapModel {
         do {
             let content = try await api.mapContent(in: viewport)
             guard !Task.isCancelled else { return }
+            // Read before `content` is published, so the card's body and its trigger change in
+            // the same pass and the card never shows one body and then the other for one read.
+            let asked = await communityAsked?(viewport.bounds) ?? false
+            guard !Task.isCancelled else { return }
+            communityAskedHere = asked
             self.content = content
             #if DEBUG
             MapFrameProbe.shared.noteFetch()
@@ -908,7 +933,16 @@ final class MapModel {
         communityRefresh?.cancel()
         communityRefresh = Task { [weak self] in
             let changed = await refreshCommunity(refreshed.bounds)
-            guard changed, let self, self.viewport != nil else { return }
+            guard let self else { return }
+            if !changed {
+                // Nothing to draw, but tiles served with no trees are now asked: read the answer
+                // for the viewport on screen, unless the camera moved on while it was read.
+                guard let current = self.viewport else { return }
+                let asked = await self.communityAsked?(current.bounds) ?? false
+                if self.viewport == current { self.communityAskedHere = asked }
+                return
+            }
+            guard self.viewport != nil else { return }
             self.communityReread?.cancel()
             self.communityReread = Task { [weak self] in
                 await self?.fetch(refreshingCommunity: false)

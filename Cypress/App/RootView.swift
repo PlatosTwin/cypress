@@ -192,7 +192,11 @@ struct RootView: View {
                 api: data.api,
                 refreshProfile: data.refreshTreeProfile,
                 refreshMembership: data.refreshMapMembership,
-                refreshCommunity: data.refreshCommunityTrees
+                refreshCommunity: data.refreshCommunityTrees,
+                // Which body the empty-inventory card draws. Over the phone's own cache, with the
+                // gate open or shut: a shut gate leaves no fetched tiles, so the answer is "not
+                // asked" there.
+                communityAsked: CommunityTreeCacheStore.askedReader(queue: data.store.queue)
             )
         )
     }

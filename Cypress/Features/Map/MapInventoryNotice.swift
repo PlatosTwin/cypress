@@ -93,9 +93,10 @@ enum MapInventoryCopy {
     /// Park has upwards of a hundred thousand trees in it and the app knows about none of them.
     static let title = "No trees on record here"
 
-    /// **The history of this body.** The numbered points and the next two paragraphs argued for the
-    /// first body, which named only the city inventory. They are kept because what they say about
-    /// promises, the subject and the AX5 budget still holds; the last paragraph says what changed.
+    /// **The two bodies.** The numbered points and the next two paragraphs argued for the first
+    /// body, `notOnTheCityInventory`, which named only the city inventory and is still drawn where
+    /// the phone has not asked for added trees. What they say about promises, the subject and the
+    /// AX5 budget holds for both. The paragraphs after them are about `neitherHasATree`.
     /// The first body made three points, in the order a reader needs them.
     ///
     /// 1. *What the map is drawing* — a city street-tree inventory. That is the inventory's own
@@ -131,31 +132,43 @@ enum MapInventoryCopy {
     ///
     /// **Since the community trees are drawn for everyone, the map draws two things, and the body
     /// names both** (the owner's ruling of 2026-11-15 on places with no city inventory, "name both
-    /// kinds"). It replaces the body above, which named only the city inventory and then hedged
-    /// "Trees may stand here without being listed." The owner chose the new words over keeping
-    /// that one. Its subject is still the record, never the ground: "Neither has a tree here" says
+    /// kinds"). It replaces the first body wherever this phone has asked for added trees. Its
+    /// subject is still the record, never the ground: "Neither has a tree here" says
     /// what the two sources hold, and leaves the reader free to see the trees in front of them.
     ///
     /// **"Neither has a tree here" is about the trees this phone holds.** `isOwed` reads
     /// `MapContent.markerCount`, and `LocalAPI.mapContent` merges the community layer (this phone's
     /// own trees and other people's trees in its cache) into the same content as the city's. So the
-    /// card draws only where none of those has a pin or a cluster in view, unnarrowed.
+    /// card draws only where none of those has a pin or a cluster in view, unnarrowed. Other
+    /// people's trees are in the cache only where this phone asked the service for them, so this
+    /// body is drawn only there. See `message(communityAsked:)`.
     ///
-    /// **A known limit: other people's trees are in the cache only after this phone asked for
-    /// them.** The service may hold added trees here that the phone never fetched. Then the card
-    /// stays up and the sentence is wrong. The phone asks for nothing in these cases:
-    /// - The viewport touches more than `CommunityTileRefresher.Policy.maxTiles` (16) zoom-14
-    ///   tiles, which is a zoomed-out map: `refresh(covering:)` returns `.tooManyTiles`.
-    /// - The phone is offline, or a fetch fails. The pass stops, and a tile that was tried is not
-    ///   asked again until `Policy.minimumInterval` (120 s) has passed.
-    /// - The remote gate is shut. `DataLayer.refreshCommunityTrees` is nil unless
-    ///   `RemoteAccess.allowsNetwork`, and a DEBUG build is shut unless `CYPRESS_REMOTE` opens it.
-    ///   Release builds are always open.
-    /// - The time between a map read and the first fetch for its tiles. The read that follows a
-    ///   fetch that changed the cache corrects this one.
-    ///
-    /// The same AX5 budget holds the body.
-    static let message =
+    /// The same AX5 budget holds both bodies.
+    static let neitherHasATree =
         "Cypress draws a city street-tree inventory and trees people have added. "
         + "Neither has a tree here."
+
+    /// The first body, kept for the ground where this phone has not asked the service for added
+    /// trees (the owner's answer of 2026-11-15: "Show the old text there"). It names only the city
+    /// inventory, and its hedge, "Trees may stand here", stays true when the phone cannot know
+    /// about trees other people added. The words are the body as it shipped before round C3.
+    static let notOnTheCityInventory =
+        "Cypress draws a city street-tree inventory, and this ground is not on it. "
+        + "Trees may stand here without being listed."
+
+    /// The body for a settled viewport, from whether this phone has asked the service for the
+    /// community trees over it (`CommunityTreeCacheStore.hasAsked(covering:maxTiles:connection:)`).
+    ///
+    /// The phone has not asked, and gets `notOnTheCityInventory`, when:
+    /// - the viewport touches more than `CommunityTileRefresher.Policy.maxTiles` (16) zoom-14
+    ///   tiles, a zoomed-out map the refresher never asks about (`.tooManyTiles`);
+    /// - a tile in view was never fetched: the phone is offline, a fetch failed, a refused cursor
+    ///   dropped the tile and its snapshot has not arrived, or the first fetch has not answered;
+    /// - the remote gate is shut (`DataLayer.refreshCommunityTrees` is nil unless
+    ///   `RemoteAccess.allowsNetwork`; a DEBUG build is shut unless `CYPRESS_REMOTE` opens it).
+    ///
+    /// A tile fetched earlier and not refreshed since still counts as asked.
+    static func message(communityAsked: Bool) -> String {
+        communityAsked ? neitherHasATree : notOnTheCityInventory
+    }
 }
