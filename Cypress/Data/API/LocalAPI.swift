@@ -370,6 +370,11 @@ public actor LocalAPI: CypressAPI {
 
     public func treeProfile(id: UUID) async throws -> TreeProfile {
         let moment = now()
+        // Who can see the reader's trees (round C3): the profile tells the adder of a tree that is
+        // not public yet. Two `app_state` reads, taken before the tree's own read because
+        // `accountLink()` is its own read; the account cannot change between them except by a
+        // sign-in, which reloads the profile anyway.
+        let sharing = ContributionSharing(userID: userID, link: try await accountLink())
         return try await store.queue.readConsistently { connection -> TreeProfile in
             let record = try treeQueries?.tree(id: id, connection: connection)
             // A community tree is either one this phone added or one the service sent down
@@ -500,7 +505,7 @@ public actor LocalAPI: CypressAPI {
                 // moment's answer against another moment's species is a control that offers to
                 // correct something that has already been corrected.
                 speciesCorrection: try speciesCorrectionOffer(
-                    tree: tree, addedHere: addedHere, connection: connection
+                    tree: tree, addedHere: addedHere, isAdder: isAdder, connection: connection
                 ),
                 // Same transaction, same reason (task #125): the offer is a statement about the
                 // open reports against this record, and a control drawn from one moment's answer
@@ -518,7 +523,11 @@ public actor LocalAPI: CypressAPI {
                 canMovePin: canMovePin,
                 // The phone's half of `added_by_you`: this phone's own record says the reader added
                 // it. `RoutedAPI.refreshedTreeProfile(id:)` adopts the service's yes on top.
-                addedByYou: isAdder
+                addedByYou: isAdder,
+                isAddedHere: addedHere,
+                // A fact about the reader, carried only on a community tree, which is the one kind
+                // of tree whose visibility depends on it.
+                readerSharing: tree.source == .community ? sharing : nil
             )
         }
     }
@@ -1084,6 +1093,7 @@ public actor LocalAPI: CypressAPI {
     private func speciesCorrectionOffer(
         tree: Tree,
         addedHere: Bool,
+        isAdder: Bool,
         connection: SQLiteConnection
     ) throws -> SpeciesCorrectionOffer {
         // **A city row answers R79's surface, not this one.** It answered `.unavailable` until
@@ -1098,6 +1108,12 @@ public actor LocalAPI: CypressAPI {
         // one the tap is refused behind. Stated rather than left to fall out of the missing chain
         // below, which answers the same today for a reason that is not this one.
         guard addedHere else { return .unavailable }
+        // A tree this phone holds that another person on this phone added (another account, or
+        // this device before a different account signed in). The owner's ruling of 2026-11-15
+        // ("Hide species controls for now"): the profile of a tree somebody else added offers
+        // neither species control, because the service records a non-adder's species statement
+        // and applies it to nobody. The verbs themselves are unchanged.
+        guard isAdder else { return .unavailable }
         guard tree.speciesCurrentID != nil else { return .unavailable }
         let head = try assertions.current(treeID: tree.id, connection: connection)
         let isMine = head?.isSupersedable(by: attribution) ?? false
