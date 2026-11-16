@@ -63,6 +63,12 @@ enum DebugDeepLink {
     /// have to name a screen it does not want opened to get one.
     static let clearStatusOverridesEnvironmentKey = "CYPRESS_CLEAR_STATUS_OVERRIDES"
 
+    /// Set (to anything non-empty) to have this launch withdraw every community tree the phone
+    /// holds **before** it opens the screen `CYPRESS_SCREEN` names (ROADMAP chip 142). Unlike the
+    /// key above it does not stop: the launch carries on to its screen. For a test that needs a
+    /// reader with no community trees on a simulator that earlier runs have filled with them.
+    static let withdrawCommunityTreesEnvironmentKey = "CYPRESS_WITHDRAW_COMMUNITY_TREES"
+
     /// What `RootView` renders once the clear above has actually run, so the launching process has
     /// something in the accessibility tree to wait on rather than a fixed sleep. Mirrors
     /// `Failure.message`'s role for a deep link: proof the seam did its one job, not just that the

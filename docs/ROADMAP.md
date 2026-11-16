@@ -2477,6 +2477,14 @@ into this section in the round that finds it, and nowhere else. Each item stands
     app.cypress.Cypress` fixes a device: the same tree passed 23 of 23 map and profile UI tests after
     it. The fix belongs in the harness: fresh state for that test, or a "Yours" camera fit that leaves
     harness trees out.
+    **DONE** on `test/community-test-gaps`: the camera test launches with the DEBUG key
+    `CYPRESS_WITHDRAW_COMMUNITY_TREES`, which soft-deletes every community tree before the screen
+    opens (`LocalAPI.debugWithdrawAllCommunityTrees`); a real reader's "Yours" camera is unchanged.
+    The failure needs this order on one install: `SeeAllOnMapUITests` once (it writes its check-in
+    once), then `ProfileLinkColumnUITests` (its trees are now newer than that check-in, and
+    `ContributedCamera` breaks the tie on the newest contribution). On a fresh install the check-in
+    is the newest, so `ProfileLinkColumnUITests` twice and then `SeeAllOnMapUITests` passes with or
+    without the fix. Without the fix the second order fails on the camera assertion; with it, it passes.
 143. **`CameraZoomPinchTests` fails on main on this Mac's toolchain.** "05 and 09's camera hands the
     pinch its own controller, armed, on its viewfinder" fails at `CameraZoomPinchTests.swift:162`,
     "Expectation failed: Self.stateModel(of: view, label: "_camera")": a `Mirror` lookup of
@@ -2540,10 +2548,11 @@ into this section in the round that finds it, and nowhere else. Each item stands
     owner's go-ahead and has not happened.** Until then the service sends no key and the phone
     behaves as before. Two behaviors are the orchestrator's choice, to be confirmed by the owner
     (`docs/rulings-pending/account-agree-later.md`).
-149. **`server/testdata/README.md` does not say that `tree_history.json`'s "added" row carries the
+149. ~~**`server/testdata/README.md` does not say that `tree_history.json`'s "added" row carries the
     day the tree was added.** Since migration 008 the row is dated by `added_on`, where it used to
     carry the day the tree went public. Found by the author of the service's added-day change,
-    2026-11-15.
+    2026-11-15.~~ **DONE** on `test/community-test-gaps`: the README row now says it, checked against
+    `server/migrations/008_community_tree_added_on.sql` and `server/internal/store/community_reads.go`.
 150. **Two test waits failed once in CI on a busy runner (run 43786913681, the second merge train
     of 2026-11-15, attempt 1; the rerun of the two jobs passed).** (a) Three `CommunityAddTests`
     ("a slow read for the old pin position…", "a read that answers after the add began…", "an older
@@ -2629,10 +2638,14 @@ into this section in the round that finds it, and nowhere else. Each item stands
     (`CommunityTreeCacheStore.completeKey(tile:)`), written with the last page in its transaction,
     kept through a delta that fails or stops part way, and removed only by `dropTile`. No migration.
     The reasoning is in `docs/rulings-pending/c3-add-note.md` (the map card entry).
-157. **`Tools/run_tests.sh` prints `screen-width-pt unknown` on this Mac's simulators.** Seen in
+157. ~~**`Tools/run_tests.sh` prints `screen-width-pt unknown` on this Mac's simulators.** Seen in
     every local log of 2026-11-15 on the four iPhone 17-family devices (Xcode 27.2); CI's header
     prints 402. A width-sensitive UI result from a local log has to take its width from the device
-    table in CLAUDE.md until the probe is fixed.
+    table in CLAUDE.md until the probe is fixed.~~ **DONE** on `test/community-test-gaps`: Xcode
+    27.2's `profile.plist` has no `mainScreenWidth` or `mainScreenScale`; the numbers are in the
+    device type's `capabilities.plist` under `ScreenDimensionsCapability`. `read_screen` now reads
+    those first and keeps the old keys as a fallback. The fixed function resolves 440 (17 Pro Max),
+    402 (17 Pro), 390 (17e) and 420 (Air).
 158. **A photo taken between build 55 and F30 and never sent stays on the phone.** Found by the
     planner of chip 139, 2026-11-15, and outside that chip: the owner's ruling covers community
     trees and what is recorded on them, and these photos are on city trees.
@@ -2656,6 +2669,22 @@ into this section in the round that finds it, and nowhere else. Each item stands
     fixture file checked in, so CI can test reading a HEIC without writing one; nobody has checked
     whether reading a HEIC works on the runner. Until then a HEIC add photo is tested on a
     physical Mac only.
+    **Partly done** on `test/community-test-gaps`; **not struck until CI has run the new tests.**
+    `CypressTests/Fixtures/camera-portrait.heic` (1.7 KB, 400 × 300, orientation 6, GPS, capture
+    time, serial numbers) is checked in, and two tests read it on every machine, each on a `Thread`
+    of its own under a 30 s `ContinuousClock` deadline that records "reading a HEIC did not finish
+    in 30 s" and prints a `CYPRESS-TEST: reading the checked-in HEIC took N ms` line:
+    `aCheckedInHEICIsReadAndCopiedAsAJPEG` (the ingest keeps a HEIC; the JPEG copy is clean and
+    upright) and `aCheckedInHEICAddPhotoIsSentAsAJPEG` (the add photo is staged and sent as a clean,
+    upright JPEG). Still tested on a physical Mac only: the cases that *write* a HEIC
+    (`aHEICStaysAHEICThroughTheIngest` and the HEIC arm of the two picked-type cases). Read the new
+    line in CI's unit log: if it says "did not finish", reading stalls on the runner too. Local note:
+    the read took 97 ms alone and about 24 s inside the full suite (the two new tests and the
+    HEIC-writing cases ran together), so a CI run near 30 s is a contention reading, not a hang.
+    **Found while doing it, not fixed (it is app behavior):** the ingest (`PhotoBinary.write`) leaves
+    the Exif, TIFF, Apple and GPS blocks in a staged HEIC (`carriesIdentifyingMetadata` is true after
+    it), where it removes them from a JPEG. The JPEG copy that is sent is clean. The staged HEIC stays
+    on the phone with its location in it.
 162. **A refresh that finishes after a sign-out stores a session again.** `AppSession.performMint`
     calls `persist` after `client.refresh` returns, with no check that the person is still signed
     in. So a refresh in flight across a sign-out writes the account's session back into the
