@@ -1514,9 +1514,11 @@ scrim `rgba(14,24,17,.3)`.
    reason, draws no state word, and stays in the list for good (the owner's answers of 2026-11-16,
    "Remove Retry there" and "Row stays, reason only"). An account deletion that erases everything
    removes it when the withdrawal names that account; a withdrawal made signed out, on a tree this
-   phone added signed out, names no account, and no deletion removes it. A deletion that keeps
-   records keeps the row and takes the account out of it. A withdrawal refused for any other reason
-   keeps `retry`.
+   phone added signed out, names only the device, and no deletion removes it. A deletion that keeps
+   records keeps the row and takes the account out of it, so no later deletion removes it either;
+   the tree's adder becomes nobody, the profile loses the reason line, and it offers
+   `Report that there is no tree here` instead. A withdrawal refused for any other reason keeps
+   `retry`.
 
    Not in the mock: **the tree in a row title is named as its profile names it** (the owner's
    answer of 2026-11-16, "Use the species"). A given name wins; else the species' common name, for

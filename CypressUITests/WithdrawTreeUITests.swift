@@ -200,14 +200,26 @@ final class WithdrawTreeUITests: XCTestCase, DeepLinkHarness {
             )
             return
         }
-        let reason = app.staticTexts[Copy.staysOnTheMap]
-        XCTAssertTrue(reason.waitForExistence(timeout: 10),
+        // The refused row stays for good (the owner's answer of 2026-11-16, "Row stays, reason
+        // only"), so a second run on one install finds several rows carrying the same sentence.
+        // Match them as a set, then take the one that belongs to the row found above: the first
+        // sentence below its title, within the row (the time line sits between the two).
+        let sentences = app.staticTexts.matching(NSPredicate(format: "label == %@", Copy.staysOnTheMap))
+        XCTAssertTrue(sentences.firstMatch.waitForExistence(timeout: 10),
                       "the refused row does not carry the owner's sentence")
-        // No Retry in that row (the owner's answers of 2026-11-16, "Row stays, reason only"). The
-        // row's state word sits at the top of the row, beside its title, about 45 pt above the
-        // reason at this size; 60 pt covers it and stops short of the row above.
-        reach(reason, in: app)
-        let band = (reason.frame.minY - 60)...(reason.frame.maxY + 4)
+        reach(row, in: app)
+        let title = row.frame
+        let reason = sentences.allElementsBoundByIndex
+            .map(\.frame)
+            .filter { $0.minY > title.maxY }
+            .min { $0.minY < $1.minY }
+        guard let reason, reason.minY - title.maxY < 60 else {
+            XCTFail("no owner's sentence sits directly below the row titled '\(Copy.outboxRowTitle)'")
+            return
+        }
+        // No Retry in that row. The row's state word sits at the top of the row, beside its title,
+        // so the band runs from the title's top to the sentence's bottom: one row, never the next.
+        let band = (title.minY - 4)...(reason.maxY + 4)
         let retries = app.buttons
             .matching(NSPredicate(format: "label == %@", Copy.retry))
             .allElementsBoundByIndex

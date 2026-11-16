@@ -632,8 +632,11 @@ enum DebugDeepLink {
                 router.push(.treeProfile(id))
             case .withdrawTree, .withdrawTreeShared, .withdrawTreeBuiltOn, .withdrawTreeRefused:
                 // The withdrawal round. The account state first, through the shipping verbs, then a
-                // fresh tree through `addTree` on this case's own slot line. A withdrawn tree is in
-                // no read, so the slot it stood on is free again for the next run.
+                // fresh tree through `addTree` on this case's own slot line, in its first free slot.
+                // A tree that ends withdrawn is in no read, so its slot is free again for the next
+                // run. On the `withdrawTreeBuiltOn` and `withdrawTreeRefused` lines the tree stays
+                // (nothing withdraws it, or the refusal puts it back on the map), so every launch
+                // takes a new slot, and a line holds `profileLinksSlots` (200) launches.
                 if screen == .withdrawTreeShared || screen == .withdrawTreeBuiltOn {
                     if await api.userID != Self.sharingAccount {
                         try await api.signOut()
