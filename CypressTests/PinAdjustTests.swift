@@ -22,7 +22,7 @@ struct PinAdjustTests {
     private static var attribution: Attribution { .anonymous(deviceID: deviceID) }
 
     /// A corner of the Mission with nothing of ours on it. The seed is not attached in these tests,
-    /// so the only trees within any dedupe radius are the ones a test adds.
+    /// so the only trees within the note's 10 m radius are the ones a test adds.
     private static let fix = Coordinate(latitude: 37.7599, longitude: -122.4148)
 
     @MainActor
@@ -110,7 +110,7 @@ struct PinAdjustTests {
         #expect(VisitPinAdjust.isWithinBound(VisitPinAdjust.offset(Self.fix, northM: 40, eastM: 21), of: Self.fix))
         // Three blocks away is not a tree anybody is looking at.
         #expect(!VisitPinAdjust.isWithinBound(VisitPinAdjust.offset(Self.fix, northM: 250, eastM: 0), of: Self.fix))
-        // And the ordering that keeps the dedupe meaningful.
+        // And the ordering that lets a pin reach past the note's 10 m circle.
         #expect(VisitPinAdjust.radiusM > TreeDraft.proximityDedupeRadiusM)
     }
 
@@ -291,8 +291,7 @@ struct PinAdjustTests {
         )
     }
 
-    /// The other half of the row-of-trees case, and the thing a widened pin could have broken: the
-    /// 10 m dedupe follows the pin.
+    /// The other half of the row-of-trees case: each tree goes where its pin was placed.
     @MainActor
     @Test("five trees placed along one block from one standing spot are five trees")
     func aRowOfTreesAddedFromOneSpot() async throws {
@@ -325,10 +324,15 @@ struct PinAdjustTests {
         }
     }
 
-    /// And the refusal still works — widening the pin's reach must not widen the hole in the dedupe.
+    /// And the note follows the pin: a pin moved onto a tree already on record lists that tree under
+    /// the "ALREADY ON RECORD" note, and the add still happens (the owner's ruling of 2026-11-14,
+    /// which turned the refusal into a note).
+    ///
+    /// Red-proof: make `refreshNearby` read `location.fix.coordinate` instead of `coordinate` — red on
+    /// "the note did not list the tree the pin was moved onto".
     @MainActor
-    @Test("moving the pin onto a tree already on record is still refused, with its candidates")
-    func theDedupeFollowsThePin() async throws {
+    @Test("moving the pin onto a tree already on record lists it under the note, and still adds")
+    func theNoteFollowsThePin() async throws {
         let store = try await CypressStore.inMemory()
         let api = LocalAPI(store: store, deviceID: Self.deviceID)
 
@@ -346,13 +350,15 @@ struct PinAdjustTests {
         let subject = Self.model(api: api)
         subject.useLibraryImage(try Self.jpeg())
         subject.beginPlacingPin()
-        subject.confirmPin(VisitPinAdjust.offset(occupied, northM: 3, eastM: 0))
+        let pin = VisitPinAdjust.offset(occupied, northM: 3, eastM: 0)
+        subject.confirmPin(pin)
 
-        #expect(await subject.add() == nil, "a second tree was added 3 m from an existing one")
-        guard case let .duplicate(candidates) = subject.phase else {
-            Issue.record("the screen is in \(subject.phase) rather than showing the duplicate warning")
-            return
-        }
-        #expect(candidates.contains { $0.tree.id == first.id })
+        await subject.refreshNearby()
+        #expect(
+            subject.nearby.map(\.tree.id) == [first.id],
+            "the note did not list the tree the pin was moved onto"
+        )
+        let id = try #require(await subject.add(), "a tree 3 m from another was refused: \(subject.phase)")
+        #expect(try await api.treeProfile(id: id).tree.coordinate.distance(to: pin) < 0.5)
     }
 }

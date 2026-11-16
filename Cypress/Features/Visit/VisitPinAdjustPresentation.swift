@@ -11,8 +11,8 @@
 //  was too narrow, and the project owner said why: you photograph a tree from across the street, from
 //  a car, from a window; a fix in a San Francisco street canyon is routinely 20–40 m off the truth;
 //  and a whole row of trees photographed from one standing spot all land on one point, where the 10 m
-//  dedupe then refuses every tree after the first. Three different ways of ending up with a record
-//  whose coordinate is not the tree's.
+//  dedupe of the time refused every tree after the first. Three different ways of ending up with a
+//  record whose coordinate is not the tree's.
 //
 //  ── What is invented, and what it is borrowed from ────────────────────────────────────────
 //  `docs/ARCHITECTURE.md` rule 8: a screen in neither SCREENS.md nor BUILD-PLAN §9 is not specified,
@@ -68,11 +68,10 @@ enum VisitPinAdjust {
     ///   away is two or three of these; at that range you are pointing at a rooftop on a map, not at a
     ///   trunk, and the record would be a guess wearing a coordinate.
     ///
-    /// It is deliberately far larger than `TreeDraft.proximityDedupeRadiusM`, and that ordering is
-    /// load-bearing rather than incidental: moving a pin *onto* a tree already on record still trips
-    /// the 10 m refusal, because the dedupe runs on whatever coordinate the draft carries. Widening
-    /// the pin's reach does not widen the hole in the dedupe — it makes the dedupe reachable, which is
-    /// what the row-of-trees case needed.
+    /// It is far larger than `TreeDraft.proximityDedupeRadiusM`. Moving a pin *onto* a tree already
+    /// on record lists that tree under the Add this tree screen's "ALREADY ON RECORD" note, because
+    /// the note is read for whatever coordinate the draft carries. Since the owner's ruling of
+    /// 2026-11-14 the note does not refuse the add.
     static let radiusM: Double = 75
 
     /// Half a meter of slack on the bound.

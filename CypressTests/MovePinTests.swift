@@ -10,8 +10,9 @@ import Testing
 ///    service, and no for a pre-v23-style tree whose adder is nobody.
 /// 2. **Save moves the tree everywhere it is read** (the profile, the shortlist, the map) and queues
 ///    one `location_correction`, placed by hand.
-/// 3. **A refusal is said, not swallowed**: a spot within 10 m of another tree keeps the pin where it
-///    was, writes nothing and queues nothing, and the screen says why.
+/// 3. **A spot within 10 m of another tree saves** (the owner's ruling of 2026-11-14), and the screen
+///    states no 10 m rule. **A refusal that remains is said, not swallowed**: a tree that is not the
+///    reader's keeps its pin, writes nothing and queues nothing, and the screen says why.
 ///
 /// `LocationCorrectionTests` covers the verb itself; this covers the control built on it.
 @MainActor
@@ -122,12 +123,13 @@ struct MovePinTests {
         #expect(correction.locationAccuracyM == nil, "a hand-placed pin claims an accuracy")
     }
 
-    // MARK: - 3. A refusal
+    // MARK: - 3. Near another tree, and the refusal that remains
 
-    /// Red-proof: make `MovePinModel.save` ignore a `ProximityConflict` (catch it and set
-    /// `didSave`) — red on "a refused move closed the screen".
-    @Test("a spot within 10 m of another tree is refused out loud, and nothing moves")
-    func aSpotTooCloseIsRefused() async throws {
+    /// Red-proof: put back a refusal in `LocalAPI.correctLocation` for a spot within
+    /// `TreeDraft.proximityDedupeRadiusM` of another tree. Save then fails, and the test goes red on
+    /// "a move 4 m from another tree did not save".
+    @Test("a spot 4 m from another tree saves, and the tree moves there")
+    func aSpotNearAnotherTreeSaves() async throws {
         let store = try await CypressStore.inMemory()
         let api = LocalAPI(store: store, deviceID: Fixture.deviceID)
         let tree = try await Fixture.add(api)
@@ -135,13 +137,44 @@ struct MovePinTests {
         _ = try await Fixture.add(api, at: neighborSpot)
 
         let model = MovePinModel(treeID: tree.id, original: tree.coordinate, api: api)
-        model.pin = VisitPinAdjust.offset(neighborSpot, northM: -4, eastM: 0)
+        let destination = VisitPinAdjust.offset(neighborSpot, northM: -4, eastM: 0)
+        model.pin = destination
+        await model.save()
+
+        #expect(model.didSave, "a move 4 m from another tree did not save: \(model.failure ?? "no failure")")
+        #expect(model.failure == nil)
+        let profile = try await api.treeProfile(id: tree.id)
+        #expect(profile.tree.coordinate == destination, "the tree did not move: \(profile.tree.coordinate)")
+        #expect(try await Fixture.corrections(store).count == 1, "the move was not queued")
+    }
+
+    /// Red-proof: make `MovePinModel.save` set `didSave` in its `forbidden` catch — red on "a
+    /// refused move closed the screen".
+    @Test("a tree that is not the reader's is refused out loud, and nothing moves")
+    func somebodyElsesTreeIsRefused() async throws {
+        let store = try await CypressStore.inMemory()
+        let adder = LocalAPI(store: store, deviceID: Fixture.deviceID)
+        let tree = try await Fixture.add(adder)
+        let somebodyElse = LocalAPI(store: store, deviceID: Fixture.otherDeviceID)
+
+        let model = MovePinModel(treeID: tree.id, original: tree.coordinate, api: somebodyElse)
+        model.pin = VisitPinAdjust.offset(tree.coordinate, northM: 20, eastM: 0)
         await model.save()
 
         #expect(!model.didSave, "a refused move closed the screen")
-        #expect(model.failure == MovePinCopy.tooClose, "the refusal said: \(model.failure ?? "nothing")")
-        let profile = try await api.treeProfile(id: tree.id)
+        #expect(model.failure == MovePinCopy.notYours, "the refusal said: \(model.failure ?? "nothing")")
+        let profile = try await adder.treeProfile(id: tree.id)
         #expect(profile.tree.coordinate == tree.coordinate, "a refused move moved the tree")
         #expect(try await Fixture.corrections(store).isEmpty, "a refused move was queued")
+    }
+
+    /// The owner's answers of 2026-11-14: the rule line keeps only its first sentence, and the
+    /// refusal about trees within 10 m is gone with the rule.
+    @Test("the rule line is exactly how to move the pin, with no 10 m rule")
+    func theRuleLineStatesNoTenMeterRule() {
+        #expect(MovePinCopy.rule == "Drag the map to put the pin on the tree.")
+        for string in [MovePinCopy.rule, MovePinCopy.notYours, MovePinCopy.failed, MovePinCopy.unmoved] {
+            #expect(!string.contains("10 m"), "'\(string)' still states the 10 m rule")
+        }
     }
 }

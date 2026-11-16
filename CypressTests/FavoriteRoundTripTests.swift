@@ -58,7 +58,7 @@ struct FavoriteRoundTripTests {
         return (api, outbox, tree)
     }
 
-    /// A model wired exactly as `RootView.destination(for:)` wires it — the write **and** the
+    /// A model wired exactly as `RootView.destination(for:in:)` wires it — the write **and** the
     /// re-read both through `ProfileFavoriteWriter`, because the re-read that only saw applied
     /// rows is the whole of #167.
     private static func model(api: LocalAPI, outbox: OutboxQueue, treeID: UUID) -> TreeProfileModel {

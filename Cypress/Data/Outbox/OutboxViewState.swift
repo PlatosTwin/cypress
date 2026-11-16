@@ -143,11 +143,9 @@ public enum OutboxFailureReason {
         if let sqliteError = error as? SQLiteError { return sqliteError.asAPIError }
         // `APIError.Envelope` is the decoded `{error: {code, message, retryable}}` body, not an
         // `Error` — `RemoteAPI` will decode it and throw its `.error` member, which the first line
-        // above catches.
-        // The 10 m proximity dedupe on `POST /trees` carries its candidate list in a dedicated
-        // error type, but its taxonomy code is `conflict` — and `conflict` is not retryable, so the
-        // item fails immediately instead of spending 48 h on an answer only the user can give.
-        if error is ProximityConflict { return .conflict }
+        // above catches. A `conflict` from the service arrives that way too, and `conflict` is not
+        // retryable, so the item fails at once instead of spending 48 h on an answer that will not
+        // change.
         return nil
     }
 

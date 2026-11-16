@@ -16,8 +16,10 @@
 //    control when a user action would fill it;
 //  - the two photo sources are screen 04's, in the order screen 04 puts them (live session first,
 //    photo library as BUILD-PLAN §9 M1's fallback and the only path a simulator can take);
-//  - the duplicate warning is C24, which is the component for "this needs something before it can
-//    go on", and 02's own `VisitLowAccuracyPanel` is the neighboring use of it.
+//  - the "ALREADY ON RECORD" note is C24, which is the component for "this needs something before it
+//    can go on", and 02's own `VisitLowAccuracyPanel` is the neighboring use of it. Since the owner's
+//    ruling of 2026-11-14 it is a note that does not block: it draws before the tap, and the CTA
+//    stays active under it.
 //
 //  Every decision about *whether* something draws is `VisitAddTreeModel`'s, and every string is
 //  `VisitAddTreeCopy`'s, so both halves are testable without a renderer.
@@ -33,10 +35,26 @@
 import PhotosUI
 import SwiftUI
 
+/// The screen for a tree the "ALREADY ON RECORD" note lists, built by the composition root:
+/// that tree's profile, with a way back. `close` takes it off the add screen again.
+///
+/// A builder rather than an `(UUID) -> Void`, because the profile has to open **over** the add
+/// screen, and only this screen can present over itself without tearing the flow down (the owner's
+/// decision of 2026-11-15). Which profile, and how its own controls navigate, is still the
+/// composition root's: a feature does not construct another feature's screen (`AppRouter`).
+typealias ExistingTreeScreen = (_ treeID: UUID, _ close: @escaping () -> Void) -> AnyView
+
+/// The tree a row of the note opened. `Identifiable` for `fullScreenCover(item:)`.
+struct OpenedTree: Identifiable, Equatable {
+    let id: UUID
+}
+
 struct VisitAddTreeView: View {
 
     @State private var model: VisitAddTreeModel
     @State private var libraryItem: PhotosPickerItem?
+    /// The tree a row of the note opened, presented over this screen. Nil when none is open.
+    @State private var openedTree: OpenedTree?
 
     /// Read for one decision: where the empty well's sentence is drawn. See `wellEmptyNotice`.
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
@@ -47,16 +65,23 @@ struct VisitAddTreeView: View {
 
     /// The tree was created — its id, so the caller can open it.
     let onAdded: (UUID) -> Void
-    /// The dedupe found a tree already on record here and the reader chose it instead.
-    let onOpenExisting: (UUID) -> Void
+    /// The screen for one of the trees the "ALREADY ON RECORD" note lists, which this screen
+    /// presents over itself. See `ExistingTreeScreen`.
+    let openExisting: ExistingTreeScreen
     let onBack: () -> Void
+
+    #if DEBUG
+    /// A photograph the screen takes as if the reader had chosen it from the library, for the
+    /// deep-link harness (`DebugDeepLink.Screen.addTreeNearby`). Nil on every shipping path.
+    private let debugPhoto: Data?
+    #endif
 
     init(
         api: any CypressAPI,
         location: VisitLocationProvider,
         attribution: Attribution,
         onAdded: @escaping (UUID) -> Void,
-        onOpenExisting: @escaping (UUID) -> Void,
+        openExisting: @escaping ExistingTreeScreen,
         onBack: @escaping () -> Void
     ) {
         _model = State(
@@ -64,9 +89,34 @@ struct VisitAddTreeView: View {
         )
         self.api = api
         self.onAdded = onAdded
-        self.onOpenExisting = onOpenExisting
+        self.openExisting = openExisting
         self.onBack = onBack
+        #if DEBUG
+        self.debugPhoto = nil
+        #endif
     }
+
+    #if DEBUG
+    /// The deep-link harness's entrance: the shipping initializer, plus a photograph already chosen.
+    init(
+        api: any CypressAPI,
+        location: VisitLocationProvider,
+        attribution: Attribution,
+        debugPhoto: Data,
+        onAdded: @escaping (UUID) -> Void,
+        openExisting: @escaping ExistingTreeScreen,
+        onBack: @escaping () -> Void
+    ) {
+        _model = State(
+            wrappedValue: VisitAddTreeModel(api: api, location: location, attribution: attribution)
+        )
+        self.api = api
+        self.onAdded = onAdded
+        self.openExisting = openExisting
+        self.onBack = onBack
+        self.debugPhoto = debugPhoto
+    }
+    #endif
 
     var body: some View {
         // The pin screen replaces this one rather than covering it, and that is the same decision as
@@ -93,8 +143,35 @@ struct VisitAddTreeView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .background(CypressColor.surfaceScreen)
-        .task { await model.load() }
+        .task {
+            #if DEBUG
+            // Only when there is no photograph yet, so the harness never replaces one the reader
+            // chose. (This task does not run again when a listed tree's profile closes; see
+            // `VisitAddTreeModel.isShowingListedTree`.)
+            if let debugPhoto, !model.hasPhoto { model.useLibraryImage(debugPhoto) }
+            #endif
+            await model.load()
+        }
+        // The "ALREADY ON RECORD" note, read again whenever the pin's position changes: the first
+        // fix, a moving fix while the pin is the GPS, and a pin the reader placed. `id:` cancels the
+        // read for the old position when a new one arrives (`refreshNearby` drops its answer too).
+        .task(id: model.coordinate) { await model.refreshNearby() }
         .onDisappear { model.stop() }
+        // A row of the note opens that tree's profile **over** this screen, not in place of it: the
+        // owner's decision of 2026-11-15 ("Keep the draft"). This view, and the model it holds in
+        // `@State`, stay where they are under the cover, so Back returns to the same photograph, pin,
+        // ground and species.
+        //
+        // The cover leaves this screen in place, so `onDisappear` above does not fire when it opens
+        // and the `.task`s above do not run again when it closes (second review, 2026-11-15). The
+        // row's tap therefore stops the camera itself (`openListedTree`), and the dismissal reads
+        // the note again and starts the camera again (`closeListedTree`). Two capture sessions at
+        // once were never observed on a phone; this closes the path to them.
+        .fullScreenCover(item: $openedTree, onDismiss: {
+            Task { await model.closeListedTree() }
+        }) { opened in
+            openExisting(opened.id) { openedTree = nil }
+        }
         .onChange(of: libraryItem) { _, item in
             guard let item else { return }
             Task {
@@ -137,6 +214,11 @@ struct VisitAddTreeView: View {
     /// 247 on the iPhone 16e this was reported against), which is the whole of it. The chip
     /// is a statement about the screen rather than a row of the form (it is screen 02's status row,
     /// and 02 does not scroll it either), so pinning it is what it was always describing.
+    ///
+    /// **The one exception is the "ALREADY ON RECORD" note.** The owner put it above the photo on
+    /// 2026-11-15, so when a tree is within 10 m the well starts below the note and the form under
+    /// the well is pushed down by the note's height. That is the owner's trade: the note is seen
+    /// first. With no tree within 10 m the note is not drawn and the ceiling means what it says.
     private var composer: some View {
         VStack(spacing: 0) {
             ScreenHeader(title: VisitAddTreeCopy.title, bottomInset: .wide, onBack: onBack)
@@ -164,6 +246,13 @@ struct VisitAddTreeView: View {
 
     private func composerColumn(wellWidthCeiling: CGFloat) -> some View {
         VStack(alignment: .leading, spacing: CypressSpacing.gapRows) {
+            // The top of the form, above the photo: the owner's decision of 2026-11-15, so the
+            // reader sees it without scrolling, before they can add a second copy of a tree. Drawn
+            // only when a tree is within 10 m, so with none the form starts at the photo as before.
+            if !model.nearby.isEmpty {
+                nearbyNote(model.nearby)
+            }
+
             photoWell(widthCeiling: wellWidthCeiling)
 
             wellEmptyNotice
@@ -175,10 +264,6 @@ struct VisitAddTreeView: View {
             landRow
 
             speciesRow
-
-            if case let .duplicate(candidates) = model.phase {
-                duplicateWarning(candidates)
-            }
 
             if case let .failed(message) = model.phase {
                 Text(message)
@@ -492,24 +577,26 @@ struct VisitAddTreeView: View {
         }
     }
 
-    // MARK: - BUILD-PLAN §9 M2 · the duplicate-proximity warning
+    // MARK: - The trees already on record nearby
 
-    /// What `POST /trees` said, in its own words and with its own candidates.
+    /// The trees on record within 10 m of the pin, under a note that does not block (the owner's
+    /// ruling of 2026-11-14).
     ///
-    /// C24, not C14: Signal Amber is "this tree needs something" (§1.1), and a refused add with a
-    /// list of trees to choose between is precisely a thing needing attention before it goes on the
-    /// record. The rows lead to the tree the API found, because the reader's next move — "oh, that
-    /// one" — is the whole reason the endpoint returns the list instead of a bare error.
-    private func duplicateWarning(_ candidates: [NearbyTree]) -> some View {
+    /// C24, not C14: Signal Amber is "this tree needs something" (§1.1), and a tree already on
+    /// record a few meters away is a thing to look at before adding another. The rows still lead to
+    /// each tree, because the reader's next move may be "oh, that one". The CTA below stays active
+    /// either way.
+    private func nearbyNote(_ candidates: [NearbyTree]) -> some View {
         AttentionCard {
             VStack(alignment: .leading, spacing: CypressSpacing.gapRows) {
-                AttentionCard<EmptyView>.sectionLabel(VisitAddTreeCopy.duplicateLabel)
-                Text(VisitAddTreeCopy.duplicateBody)
+                AttentionCard<EmptyView>.sectionLabel(VisitAddTreeCopy.nearbyLabel)
+                Text(VisitAddTreeCopy.nearbyBody)
                     .cypressBody135(color: CypressColor.textBody)
                     .fixedSize(horizontal: false, vertical: true)
                 ForEach(candidates) { candidate in
                     Button {
-                        onOpenExisting(candidate.tree.id)
+                        model.openListedTree()
+                        openedTree = OpenedTree(id: candidate.tree.id)
                     } label: {
                         HStack(spacing: CypressSpacing.gapCandidates) {
                             Text(VisitAddTreeCopy.candidateName(candidate))
@@ -729,12 +816,15 @@ enum VisitAddTreeCopy {
 
     static let addFailed = "This tree could not be added. Nothing was recorded."
 
-    /// BUILD-PLAN §9 M2's warning. The number is `TreeDraft.proximityDedupeRadiusM` rather than a
-    /// literal, because the sentence is a claim about the rule the API just applied.
-    static let duplicateLabel = "ALREADY ON RECORD"
-    static var duplicateBody: String {
+    /// The note over the trees on record nearby, in the owner's words of 2026-11-14. The number is
+    /// `TreeDraft.proximityDedupeRadiusM` rather than a literal, because the sentence is a claim
+    /// about the radius at which a tree brings the note up. A tree already listed stays listed out
+    /// to `TreeDraft.proximityNoteKeepRadiusM`, so a row can show 11 to 15 m under these words; the
+    /// owner accepted that on 2026-11-15 to stop the note flickering.
+    static let nearbyLabel = "ALREADY ON RECORD"
+    static var nearbyBody: String {
         "Something is already on record within \(Int(TreeDraft.proximityDedupeRadiusM)) m of here. "
-            + "Nothing was added. If one of these is the tree in front of you, open it."
+            + "Add this tree only if it is a different one."
     }
 
     /// A candidate's name, by the same rule every other surface names a tree: the species common
