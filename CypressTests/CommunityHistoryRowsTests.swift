@@ -81,7 +81,8 @@ struct CommunityHistoryRowsTests {
     /// All four events, both readers. Every event the service serves is the adder's, so
     /// `addedByYou` decides the wording of every row together.
     ///
-    /// Red-proof: swap the two `historySpeciesNamed` arms in `historyItems` — red on both readers.
+    /// Red-proof: swap the two arms of the `locationCorrected` label in `historyItems` — red on both
+    /// readers.
     @Test("the four events read in the owner's words, for other readers and for the adder")
     func theEightStrings() throws {
         let from = Self.spot
@@ -257,7 +258,8 @@ struct CommunityHistoryRowsTests {
     /// (`LocalAPI.correctLocation`), and only the adder can write one. So a history holding that
     /// id belongs to a profile whose reader added the tree.
     ///
-    /// Red-proof: drop `addedByYou: isAdder` from `LocalAPI.treeProfile` — red on the label.
+    /// Red-proof: swap the two arms of the `locationCorrected` label in `historyItems` — red on the
+    /// label (the same break turns `theEightStrings` red).
     @Test("a move this phone made is in a history whose rows say You")
     func aMoveFromThisPhoneIsYours() async throws {
         let store = try await CypressStore.inMemory()
