@@ -24,8 +24,11 @@ import (
 //   - **Report** (`wrong_species_report`): any sharing account that can see a named tree and is not
 //     its adder and not the namer in force. It counts while it disputes the species in force and
 //     came after the last clear.
-//   - **Keep** (`species_review_dismissal`): the adder. It clears the reported state for everyone and
-//     ends the namer's right to correct.
+//   - **Keep** (`species_review_dismissal`): the adder, naming a counting report by its `flagID`. It
+//     clears that report and every earlier one, for everyone, and ends the namer's right to correct.
+//     A later report still counts. A keep that names no counting report changes nothing.
+//   - **The namer's correct control** (`species_named_by_you` on the profile) is true only while the
+//     correction would apply: the namer in force, still sharing.
 //
 // **Nothing here refuses.** Every other statement is recorded (its `contributions` row) and changes
 // nothing, which is how every species act was answered before 007. A tree the sender may not see is
@@ -56,6 +59,9 @@ type SpeciesReport struct {
 // SpeciesKeep is a `species_review_dismissal` read for materialization: "Keep the species".
 type SpeciesKeep struct {
 	TreeID uuid.UUID
+	// FlagID is the dismissal's `flagID`: the report the adder kept the species against. Nil when the
+	// payload carries none that is a uuid, and then the keep changes nothing.
+	FlagID *uuid.UUID
 }
 
 // sharesTreeRecords is the owner's rule of 2026-11-16, "Only people who share": a signed-in account
@@ -128,10 +134,12 @@ func materializeSpecies(ctx context.Context, tx pgx.Tx, kind string, s SpeciesSt
 	if err != nil || stale {
 		return err
 	}
-	// It does not clear reports: the owner's rule is that the mark stays until the adder or the
-	// operator acts. A report that disputed the old name stops counting by itself, because it
-	// disputes a name the tree no longer has (`speciesReportCounts`); one that disputed nothing
-	// named counts against the species in force.
+	// It clears nothing: `species_reports_cleared_at` moves only for the adder and the operator. But
+	// every report disputes the name in force when it was made (`speciesReportCounts`), so a namer's
+	// change to another name makes the reported line go away, and a change back to the reported name
+	// brings it back. The owner is being asked whether that is wanted; this is the one place that
+	// would change if the answer is "the line stays": carry the counting reports over to the new
+	// name here.
 	return applySpecies(ctx, tx, *tree, s, "species_corrected", SpeciesByContributor, namer, false, act, now)
 }
 
@@ -141,13 +149,23 @@ func materializeSpecies(ctx context.Context, tx pgx.Tx, kind string, s SpeciesSt
 // phone): one outbox can drain out of order (an item in backoff), and its older correction must not
 // undo its newer one. Between different people the later committed act wins, whatever their phones
 // say.
+//
+// **"The same identity" includes an account's own signed-out past.** A phone that added and named a
+// tree signed out, then signed in, made those acts as its device (no account on the act), and its
+// trees moved to the account at sign-in. Its outbox can still hold an older correction, which then
+// drains under the account. So a signed-in owner's own statements are the account's acts plus the
+// signed-out acts of every device the account claimed: the rule the history's `by_viewer` uses, and
+// the actor sweep in `deleteAccountTrees`.
 func supersededByOwnStatement(ctx context.Context, tx pgx.Tx, treeID uuid.UUID, act newTreeAct) (bool, error) {
 	var newer bool
 	err := tx.QueryRow(ctx, `
 		SELECT EXISTS (SELECT 1 FROM community_tree_events
 		                WHERE tree_id = $1 AND kind IN ('species_named', 'species_corrected')
 		                  AND occurred_at > $2
-		                  AND CASE WHEN $3::uuid IS NOT NULL THEN coalesce(actor_user_id = $3, false)
+		                  AND CASE WHEN $3::uuid IS NOT NULL
+		                           THEN coalesce(actor_user_id = $3, false)
+		                                OR (actor_user_id IS NULL
+		                                    AND actor_device_id IN (SELECT d.id FROM devices d WHERE d.user_id = $3))
 		                           ELSE actor_user_id IS NULL AND coalesce(actor_device_id = $4, false) END)
 	`, treeID, act.OccurredAt, act.Owner.UserID, act.Owner.DeviceID).Scan(&newer)
 	return newer, err
@@ -235,19 +253,48 @@ func recordSpeciesReport(ctx context.Context, tx pgx.Tx, r SpeciesReport, act ne
 	}, recorded)
 }
 
-// keepSpecies is the adder's "Keep the species": the reported state clears for everyone, and the
-// namer's right to correct ends. Anybody else's dismissal is recorded and changes nothing.
+// keepSpecies is the adder's "Keep the species".
+//
+// **It clears only what the adder saw.** The dismissal names a report by its `flagID` (the adder's
+// phone takes it from the profile's `species_report_flag_id`). The keep clears every report recorded
+// up to and including that one, and no later one: a keep can wait in a phone's outbox, and a report
+// made after the adder tapped must still count ("A later report brings it back", the owner's answer
+// of 2026-11-16). A `flagID` that names no counting report on this tree (an older build's local flag,
+// a report already cleared, a report about a name the tree no longer has, or nothing at all) changes
+// nothing, and is still answered `applied`.
+//
+// **The namer's right to correct ends only when the keep acts.** The owner's words are "until the
+// adder corrects it" and "until the adder steps in"; an adder who saw a report and kept the species
+// has stepped in. A keep that matched nothing is not a decision about any report, so it is not that.
+//
+// Anybody else's dismissal is recorded and changes nothing.
 func keepSpecies(ctx context.Context, tx pgx.Tx, k SpeciesKeep, act newTreeAct, now time.Time) error {
 	tree, err := lockVisibleTree(ctx, tx, k.TreeID, act.Owner)
-	if tree == nil || err != nil || !tree.isAddedBy(act.Owner) {
+	if tree == nil || err != nil || !tree.isAddedBy(act.Owner) || k.FlagID == nil {
 		return err
 	}
-	if err := clearSpeciesReports(ctx, tx, k.TreeID, now); err != nil {
+	// The newest counting report that carries this flag. Compared as text, lower-cased, so a payload
+	// whose `flagID` is not a uuid cannot fail the cast and the transaction.
+	var upTo *time.Time
+	if err := tx.QueryRow(ctx, `
+		SELECT max(e.recorded_at)
+		  FROM community_tree_events e
+		  JOIN community_trees t ON t.id = e.tree_id
+		  JOIN contributions c ON c.client_uuid = e.contribution_client_uuid
+		 WHERE t.id = $1 AND `+speciesReportCounts+`
+		   AND lower(c.payload ->> 'flagID') = lower($2::text)
+	`, k.TreeID, k.FlagID.String()).Scan(&upTo); err != nil {
 		return err
+	}
+	if upTo == nil {
+		return nil
 	}
 	if _, err := tx.Exec(ctx, `
-		UPDATE community_trees SET species_namer_user_id = NULL WHERE id = $1
-	`, k.TreeID); err != nil {
+		UPDATE community_trees
+		   SET species_reports_cleared_at = GREATEST(species_reports_cleared_at, $2::timestamptz),
+		       species_namer_user_id = NULL
+		 WHERE id = $1
+	`, k.TreeID, *upTo); err != nil {
 		return err
 	}
 	return writeEvent(ctx, tx, event{
@@ -331,7 +378,8 @@ type SpeciesState struct {
 	// Nil when nothing counts or the payload's `flagID` is not a uuid. The caller serves it to the
 	// adder only.
 	ReportFlagID *uuid.UUID
-	// NamedByViewer is whether the viewer's contributor naming is in force, so they may correct it.
+	// NamedByViewer is whether the viewer may correct the species as its namer right now: their
+	// contributor naming is in force and they still share.
 	NamedByViewer bool
 }
 
@@ -347,14 +395,16 @@ const speciesReportCounts = `
 // speciesStateFor reads SpeciesState for a tree the caller has already found visible to the viewer.
 func speciesStateFor(ctx context.Context, q querier, treeID uuid.UUID, viewer Owner) (SpeciesState, error) {
 	var (
-		state  SpeciesState
-		namer  *uuid.UUID
-		found  *bool
-		flagID *string
+		state        SpeciesState
+		namer        *uuid.UUID
+		namerLicense *string
+		found        *bool
+		flagID       *string
 	)
 	err := q.QueryRow(ctx, `
-		SELECT t.species_namer_user_id, r.found, r.flag
+		SELECT t.species_namer_user_id, u.license_version, r.found, r.flag
 		  FROM community_trees t
+		  LEFT JOIN users u ON u.id = t.species_namer_user_id
 		  LEFT JOIN LATERAL (
 		      SELECT true AS found, c.payload ->> 'flagID' AS flag
 		        FROM community_tree_events e
@@ -363,7 +413,7 @@ func speciesStateFor(ctx context.Context, q querier, treeID uuid.UUID, viewer Ow
 		       ORDER BY e.recorded_at DESC, e.id DESC
 		       LIMIT 1) r ON true
 		 WHERE t.id = $1
-	`, treeID).Scan(&namer, &found, &flagID)
+	`, treeID).Scan(&namer, &namerLicense, &found, &flagID)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return SpeciesState{}, nil
 	}
@@ -376,6 +426,10 @@ func speciesStateFor(ctx context.Context, q querier, treeID uuid.UUID, viewer Ow
 			state.ReportFlagID = &parsed
 		}
 	}
-	state.NamedByViewer = namer != nil && viewer.UserID != nil && *namer == *viewer.UserID
+	// The same two facts `materializeSpecies` asks before it applies the namer's correction: the
+	// viewer is the namer in force, and still shares (`sharesTreeRecords`). A namer who later declined
+	// is told false, so their phone draws no control that would silently change nothing.
+	state.NamedByViewer = namer != nil && viewer.UserID != nil && *namer == *viewer.UserID &&
+		namerLicense != nil && IsKnownLicenseVersion(*namerLicense)
 	return state, nil
 }

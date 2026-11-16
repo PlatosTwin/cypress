@@ -46,9 +46,12 @@ added or dropped, so every existing Swift decode test keeps its counts.
     species as wrong." False in every existing file.
   - `species_report_flag_id` (uuid or null): the newest counting report's `flagID`, sent **only to
     the tree's adder**, so the adder's phone can send "Keep the species"
-    (`species_review_dismissal`) about a report it never held. Null in every existing file.
-  - `species_named_by_you` (bool): the caller's own naming is in force, so they may still correct
-    it. False once the adder corrects or keeps the species. False in every existing file.
+    (`species_review_dismissal`) about a report it never held. **The dismissal's `flagID` must be
+    this id**: the keep clears the report it names and every earlier one, never a later one, and a
+    keep whose `flagID` names no counting report clears nothing. Null in every existing file.
+  - `species_named_by_you` (bool): the caller's own naming is in force **and the caller still
+    shares**, so their correction would apply now. False once the adder corrects or keeps the
+    species, and false once the namer declines the license. False in every existing file.
   `tree_profile_hidden.json` is still byte-for-byte `tree_profile_unknown.json` under another id.
   **Absent** (a service deployed before 009) means "the service did not say": keep the phone's own
   answer.

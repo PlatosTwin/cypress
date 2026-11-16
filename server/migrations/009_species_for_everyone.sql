@@ -38,8 +38,8 @@
 -- No backfill. Every existing tree reads NULL in all three, which is what it was before this file:
 -- named by its adder (or not named), and never cleared. The only thing that can change what a reader
 -- sees at deploy is a report that already counts, and none can: a report counts only through a
--- `species_reported` event, and no writer before this file wrote one. The orchestrator's pre-deploy
--- count is in the round's report.
+-- `species_reported` event, and no writer before this file wrote one. The operator's two queries
+-- for the deploy that carries this file are in `server/README.md`, "Deploy", "Migration 009".
 --
 -- ── The two event kinds ─────────────────────────────────────────────────────────────────────────
 --
