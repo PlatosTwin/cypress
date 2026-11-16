@@ -2463,7 +2463,7 @@ into this section in the round that finds it, and nowhere else. Each item stands
     release v16 (`4b0e35b7`). (b) The comments in migration 001 (lines ~37, 205 and 226), 002 (~21) and 007
     (~139) still describe the 10 m dedupe or its resolution sheet. Decide whether applied
     migrations' comments are corrected in place or left as the record of their day.
-142. **UI tests leave community trees in the app's database, and they break another test on a
+142. ~~**UI tests leave community trees in the app's database, and they break another test on a
     reused simulator.** Found in round C2 (2026-11-15). `ProfileLinkColumnUITests` has two tests, and
     each launches `CYPRESS_SCREEN=profileLinks`, which adds one community tree in a line of slots
     running west from 37.769, −122.530 (`DebugDeepLink.profileLinksSpot`). So each run of the class
@@ -2476,7 +2476,7 @@ into this section in the round that finds it, and nowhere else. Each item stands
     unaffected, because each CI run starts from a fresh simulator. `xcrun simctl uninstall <udid>
     app.cypress.Cypress` fixes a device: the same tree passed 23 of 23 map and profile UI tests after
     it. The fix belongs in the harness: fresh state for that test, or a "Yours" camera fit that leaves
-    harness trees out.
+    harness trees out.~~
     **DONE** on `test/community-test-gaps`: the camera test launches with the DEBUG key
     `CYPRESS_WITHDRAW_COMMUNITY_TREES`, which soft-deletes every community tree before the screen
     opens (`LocalAPI.debugWithdrawAllCommunityTrees`); a real reader's "Yours" camera is unchanged.
@@ -2672,15 +2672,16 @@ into this section in the round that finds it, and nowhere else. Each item stands
     **Partly done** on `test/community-test-gaps`; **not struck until CI has run the new tests.**
     `CypressTests/Fixtures/camera-portrait.heic` (1.7 KB, 400 × 300, orientation 6, GPS, capture
     time, serial numbers) is checked in, and two tests read it on every machine, each on a `Thread`
-    of its own under a 30 s `ContinuousClock` deadline that records "reading a HEIC did not finish
-    in 30 s" and prints a `CYPRESS-TEST: reading the checked-in HEIC took N ms` line:
+    of its own under a 120 s `ContinuousClock` deadline that records "reading a HEIC did not finish
+    in 120 s" and prints a `CYPRESS-TEST: reading the checked-in HEIC took N ms` line:
     `aCheckedInHEICIsReadAndCopiedAsAJPEG` (the ingest keeps a HEIC; the JPEG copy is clean and
     upright) and `aCheckedInHEICAddPhotoIsSentAsAJPEG` (the add photo is staged and sent as a clean,
     upright JPEG). Still tested on a physical Mac only: the cases that *write* a HEIC
     (`aHEICStaysAHEICThroughTheIngest` and the HEIC arm of the two picked-type cases). Read the new
     line in CI's unit log: if it says "did not finish", reading stalls on the runner too. Local note:
     the read took 97 ms alone and about 24 s inside the full suite (the two new tests and the
-    HEIC-writing cases ran together), so a CI run near 30 s is a contention reading, not a hang.
+    HEIC-writing cases ran together), so the deadline is 120 s: a slow read on a busy runner
+    passes, and only a read that does not come back fails.
     **Found while doing it, not fixed (it is app behavior):** the ingest (`PhotoBinary.write`) leaves
     the Exif, TIFF, Apple and GPS blocks in a staged HEIC (`carriesIdentifyingMetadata` is true after
     it), where it removes them from a JPEG. The JPEG copy that is sent is clean. The staged HEIC stays

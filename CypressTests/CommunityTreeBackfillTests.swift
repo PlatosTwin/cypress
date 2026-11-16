@@ -1004,8 +1004,11 @@ struct CommunityTreeBackfillTests {
 
     /// How long a read of the checked-in HEIC may take before the test gives up on it. Nobody knows
     /// whether *reading* a HEIC stalls on the CI runner the way writing one did, and a stalled suite
-    /// costs a 45-minute job, so these tests cannot be able to hang it.
-    static let heicReadDeadline: Duration = .seconds(30)
+    /// costs a 45-minute job, so these tests cannot be able to hang it. The limit is far above a
+    /// healthy read (97 ms alone, about 24 s inside a full local suite under load), so a busy runner
+    /// does not fail it; only a read that does not come back does.
+    static let heicReadDeadline: Duration = .seconds(heicReadDeadlineSeconds)
+    static let heicReadDeadlineSeconds = 120
 
     /// `Fixtures/camera-portrait.heic` beside this file: 400 × 300, orientation 6, with a GPS fix, a
     /// capture time and the serial numbers a camera writes. 1.7 KB, made once on a physical Mac by a
@@ -1083,8 +1086,8 @@ struct CommunityTreeBackfillTests {
         let took = started.duration(to: clock.now)
         let milliseconds = Int(took.components.seconds * 1000 + took.components.attoseconds / 1_000_000_000_000_000)
         guard let outcome else {
-            Issue.record("reading a HEIC did not finish in 30 s")
-            print("CYPRESS-TEST: reading the checked-in HEIC did not finish in 30 s (gave up at \(milliseconds) ms)")
+            Issue.record("reading a HEIC did not finish in \(heicReadDeadlineSeconds) s")
+            print("CYPRESS-TEST: reading the checked-in HEIC did not finish in \(heicReadDeadlineSeconds) s (gave up at \(milliseconds) ms)")
             return nil
         }
         print("CYPRESS-TEST: reading the checked-in HEIC took \(milliseconds) ms (hv_vmm_present: \(onAVirtualMachine))")
