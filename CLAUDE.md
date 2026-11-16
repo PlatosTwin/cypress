@@ -272,6 +272,9 @@ conflicts with convenience, the rule wins.
   whose `info.plist` `WorkspacePath` no longer exists) and shuts down the round's simulators
   (`xcrun simctl shutdown <udid>`). 45 GB of DerivedData from deleted worktrees and four
   booted-idle simulators accumulated by 2026-08-31 because the rule above named only the worktree.
+  **Erase an agent simulator when its round is done** (`xcrun simctl erase <udid>`, after the
+  shutdown): on 2026-11-16 the four agent devices held about 5 GB of test data each and the disk
+  fell to 19 GB free. `Tools/run_tests.sh` boots an erased device and grants camera access again.
   Never touch the one DerivedData directory whose `WorkspacePath` is the owner's live checkout.
 - Set up with `Tools/setup_worktree.sh <worktree-path>` — it copies the git-ignored ~103 MB seed
   into `Cypress/Resources/` and `Fixtures/seed/`; without it 13 tests fail on `seedURL → nil`

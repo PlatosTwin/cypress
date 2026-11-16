@@ -2459,7 +2459,7 @@ into this section in the round that finds it, and nowhere else. Each item stands
     the shutter's position with a tree nearby.** A simulator has no live camera; the reviewer measured
     "Choose a photo from this phone" at about 646 pt with a tree nearby on the 390 pt iPhone 17e, still
     above the pinned button at about 696 pt.
-141. **The service keeps an index and migration comments that only the 10 m dedupe needed.** Found
+141. ~~**The service keeps an index and migration comments that only the 10 m dedupe needed.**~~ Found
     while building chip 140 (`feat/no-proximity-refusal-server`, 2026-11-15). ~~(a)
     `idx_community_trees_position` (`server/migrations/001_initial.sql`, line 254) existed for the
     dedupe's bounding box. With the dedupe gone, no query needs it: the only remaining position
@@ -2470,9 +2470,12 @@ into this section in the round that finds it, and nowhere else. Each item stands
     for the round.~~ **(a) DONE, 2026-11-15**, in `feat/community-tree-added-day-server`: migration
     `008_community_tree_added_on.sql` drops the index, after a grep found no other position filter
     on `community_trees`; `TestTheTileIndexesServeTheirQueries` still passes. Deployed 2026-11-15 as `cypress-sync`
-    release v16 (`4b0e35b7`). (b) The comments in migration 001 (lines ~37, 205 and 226), 002 (~21) and 007
+    release v16 (`4b0e35b7`). ~~(b) The comments in migration 001 (lines ~37, 205 and 226), 002 (~21) and 007
     (~139) still describe the 10 m dedupe or its resolution sheet. Decide whether applied
-    migrations' comments are corrected in place or left as the record of their day.
+    migrations' comments are corrected in place or left as the record of their day.~~
+    **(b) CLOSED, 2026-11-16** (the orchestrator's choice): the comments of an applied migration
+    stay as the record of their day. A migration file that has run is not edited, and the later
+    migrations and their comments say what changed.
 142. ~~**UI tests leave community trees in the app's database, and they break another test on a
     reused simulator.** Found in round C2 (2026-11-15). `ProfileLinkColumnUITests` has two tests, and
     each launches `CYPRESS_SCREEN=profileLinks`, which adds one community tree in a line of slots
@@ -2535,6 +2538,12 @@ into this section in the round that finds it, and nowhere else. Each item stands
     ship before the deploy. Both halves merged in the community gaps train of 2026-11-16 while
     TestFlight releases are paused (`TESTFLIGHT_RELEASE_PAUSED`), so the merge ships nothing: deploy
     `cypress-sync` before the release resumes.
+    **DEPLOYED, 2026-11-16**, as `cypress-sync` release v17 (`27d69a6e`), with the owner's
+    go-ahead. After the deploy: `/health` answers `git_sha` `27d69a6e`; migration 009's three
+    columns are present; the README's first check query read 0 rows, and its second read 0 reports
+    and 0 trees. The deploy-before-release rule is met. The owner confirmed the two account rules
+    the same day ("Keep both"). **Still open for one thing:** the check with a second account
+    against the live service, which nobody has run.
 145. **`AreaPickerUITests.testACoarseFixNamesNoNeighborhoodAndOffersThePicker` failed once in CI on a
     tap.** PR 238, run 43775447999, attempt 1, shard 3, iPhone 17 Pro: "Failed to not hittable:
     Button, {{34.0, 293.0}, {111.3, 44.3}}, label: 'Sunset/Parkside'". The rerun of that shard
@@ -2569,6 +2578,9 @@ into this section in the round that finds it, and nowhere else. Each item stands
     (`docs/rulings-pending/account-agree-later.md`). **Its release note
     (`docs/whats-new/feat-account-license-readback.md`) is true only after that deploy, so the
     same rule as chip 144 holds: deploy `cypress-sync` before the release resumes.**
+    **DEPLOYED, 2026-11-16**, as `cypress-sync` release v17 (`27d69a6e`), with the owner's
+    go-ahead, so the service now sends `license_version` and the release note is true. The owner
+    confirmed the two behaviors the same day ("Keep both").
 149. ~~**`server/testdata/README.md` does not say that `tree_history.json`'s "added" row carries the
     day the tree was added.** Since migration 008 the row is dated by `added_on`, where it used to
     carry the day the tree went public. Found by the author of the service's added-day change,
@@ -2585,6 +2597,11 @@ into this section in the round that finds it, and nowhere else. Each item stands
     still read "Right where you are standing." 10 s after the tap. The train changed only comments
     on that screen. The third train makes the first tap wait until the button can be tapped, which
     rules out one cause. Same family as chip 129. Strike each half if it does not come back.
+    **A different kind of red, for the record (PR 241, run 43946695783, attempt 1, 2026-11-16):**
+    three UI shards were cancelled with "The job was not acquired by Runner of type hosted even
+    after multiple attempts", and `gate` failed for that reason alone. No test ran in those shards.
+    It is GitHub's macOS runner capacity, and `gh run rerun <run> --failed` passed. Read the
+    cancelled job's annotation before looking for a test failure.
 151. ~~**A stripped photo's temporary file can stay on the phone.** `PhotoBinary` writes a hidden
     `.<name>-<uuid>.clean` file beside the photo and swaps it in with one rename. Its cleanup is a
     `defer`, which does not run if the app is killed during the strip, and nothing sweeps the photo
@@ -2621,7 +2638,9 @@ into this section in the round that finds it, and nowhere else. Each item stands
     its state word, and the SYNC word takes the outbox tile's line limit and scale floor. The renders
     at the default size are byte-identical before and after. `AX5ReflowTests` measures a one-word
     row against a one-letter row at six phone widths.
-154. **A community pin exactly under the reader's location dot does not draw.** MapKit hides it, so
+154. ~~**A community pin exactly under the reader's location dot does not draw.**~~ **DECIDED,
+    2026-11-16:** the owner chose "No change" (choice (d) below), because a tap on the dot already
+    reaches the tree. MapKit hides it, so
     a person standing at a tree they or someone else added may not see its pin. Found when a C3 UI
     test put the reader on the tree, 2026-11-15; 67 m away the pin draws.
     **Investigated in the community gaps round of 2026-11-16 (`fix/community-phone-gaps`); not
@@ -2679,7 +2698,12 @@ into this section in the round that finds it, and nowhere else. Each item stands
     the community-tree rounds and from earlier ones, and SCREENS.md cites several by filename. The splice is its own docs-only change: it
     replaces the `R???` and `E???` placeholders, rewrites those citations to numbers, and runs
     `DocumentCitationGuardTests` red and green before it merges.
-161. **CI does not read a HEIC, because writing one stalls the unit suite there.** CI run 43806821528
+161. **CI does not write a HEIC, because writing one stalls the unit suite there.** **The reading
+    half is DONE (2026-11-16):** CI run 43946695783 (PR 241) read the checked-in HEIC on the
+    virtual runner. The unit log says "reading the checked-in HEIC took 38765 ms (hv_vmm_present:
+    true)" and 38742 ms for the second test, and both tests passed. Reading works there, slowly,
+    inside the 120 s deadline. The cases that write a HEIC still run on a physical Mac only; that
+    half stays open. The history follows. CI run 43806821528
     (the third merge train of 2026-11-15) was the first to run chip 139's three tests that write a
     HEIC with `CGImageDestinationFinalize`. On the GitHub runner, a virtual machine with three
     worker threads, the unit suite stopped a few lines after those three cases started: no test
@@ -2746,8 +2770,9 @@ into this section in the round that finds it, and nowhere else. Each item stands
     `device_id`, so they still count in the species ring for whoever holds the phone. The comment on
     `notAnonymized` says the rule holds in "all five" places, and this reader is outside them.
     Found by the planner of chip 152, 2026-11-16.
-166. **Open for the owner: a namer's correction leaves the reported line, and old reports can come
-    back (ROADMAP 144).** On the service a report counts against the species it disputed. The
+166. ~~**Open for the owner: a namer's correction leaves the reported line, and old reports can come
+    back (ROADMAP 144).**~~ **DECIDED, 2026-11-16:** the owner chose "Goes away with the old name",
+    which is what the service does. Nothing to build. On the service a report counts against the species it disputed. The
     namer's own correction does not clear reports, but a report about the old name stops counting
     once that name is gone; if the namer changes the name back, those reports count again. Only
     the adder and the operator clear reports. Asked for by the service author of 144, 2026-11-16:
@@ -2798,7 +2823,8 @@ into this section in the round that finds it, and nowhere else. Each item stands
     it unseen.** `POST /photos/begin` does not check for a hidden tree (`server/internal/api/photos.go`),
     so a photo of the tree that was waiting for wi-fi when the person withdrew it still uploads.
     Nobody can see it, and it adds to chip 173. Found by the withdrawal round's planner.
-175. **A refused tap on `Withdraw this tree` draws no sentence.** If the reader signs out between the
+175. ~~**A refused tap on `Withdraw this tree` draws no sentence.**~~ **DECIDED, 2026-11-16:** the
+    owner chose "Nothing": the profile reloads without the control and says nothing, as built. If the reader signs out between the
     profile's read and the tap, the verb answers `forbidden`, and the profile reloads without the
     control and without saying why. The owner has given no sentence for it, so none was written
     (`docs/rulings-pending/community-trees-withdraw.md`). Owner's call.
@@ -2806,10 +2832,13 @@ into this section in the round that finds it, and nowhere else. Each item stands
     Cypress" breaks inside the word ("Grandmoth / er"; ERRATA records it as cosmetic), and a history
     detail such as "· 12 m north" breaks between the number and its unit, where a non-breaking space
     would hold it (D7). Seen by the author of chip 153, 2026-11-16.
-177. **`Photos/<id>.jpg.stripping` can stay on the phone.** `LocalAPI.uploadPhoto` goes through
+177. ~~**`Photos/<id>.jpg.stripping` can stay on the phone.** `LocalAPI.uploadPhoto` goes through
     `writeStrippingMetadata(from:to:)`, which leaves that file if the app is killed during the
     strip. Chip 151's sweep removes only the `.<name>-<UUID>.clean` shape. Found by the author of
-    chip 151, 2026-11-16.
+    chip 151, 2026-11-16.~~ **DONE, 2026-11-16**, in `fix/outbox-and-photo-sweeps`: the launch
+    sweep also removes `<UUID>.jpg.stripping`, and it leaves a file alone while a strip in this
+    process holds its name (the registry counts holders, so two strips of one name are safe).
+    Tests in `PhotoCleanCopySweepTests`.
 178. **`Tools/test_harness_guards.sh` has failing checks on main.** Four checks in its "prebuilt end
     to end" group fail on main's own scripts, and a fifth fails only when the script runs inside a
     worktree. Seen by the author of chip 157, 2026-11-16; not investigated.
@@ -2834,17 +2863,24 @@ into this section in the round that finds it, and nowhere else. Each item stands
     label and is older than chip 144; the label probably needs `.multilineTextAlignment(.leading)`.
     Seen by the author and the reviewer of chip 144's phone half, and in the withdrawal round's AX5
     screenshots, 2026-11-16.
-184. **Finished Outbox rows are never swept.** `OutboxQueue.pruneCompleted()` has no caller in
+184. ~~**Finished Outbox rows are never swept.** `OutboxQueue.pruneCompleted()` has no caller in
     `Cypress/` (checked by search, 2026-11-16), so `done` rows stay past
     `OutboxQueue.completedRetention`. Comments in `OutboxPresentation`, `CommunityTreeStore`,
     `CommunityTreeBackfill`, and `AppSchema` describe a sweep that does not run, and so does item 3
     of `docs/rulings-pending/community-trees-species-for-everyone.md`. Found by the reviewer of chip
-    144's phone half.
+    144's phone half.~~ **DONE, 2026-11-16**, in `fix/outbox-and-photo-sweeps`: `DataLayer.boot`
+    calls `pruneCompleted()` once at each launch, after `recoverInterrupted` and before the
+    backfill. It deletes `done` rows more than 24 hours old and nothing else. The comments now
+    describe what runs. One effect to know, which follows chip 139's ruling: a tree added before
+    add photos were shared, whose `done` add row is swept, gets a new `add_tree` queued with its
+    add photo; the service answers `duplicate` and takes the photo. Tests in
+    `OutboxCompletedSweepTests`.
 185. **A namer's correction that the service applied to nobody stays on the namer's own profile.**
     When the adder kept or corrected the species first, the service records the namer's correction
     and changes nothing, so no tile page brings the tree again. The profile drawn from local data
     then shows the namer's species and "Correct the species" for as long as the `done` Outbox row
-    lives (chip 184: for good), while the profile merged with a service read shows the service's
+    lives (since chip 184's sweep: until the first launch more than 24 hours after it was sent;
+    before that sweep, for good), while the profile merged with a service read shows the service's
     species, so the screen changes on each online open. The same holds for a namer whose correction
     equals what the adder later corrected to. Found by the reviewer of chip 144's phone half
     (probe C), 2026-11-16.
@@ -2874,8 +2910,14 @@ into this section in the round that finds it, and nowhere else. Each item stands
     the load average reached 300 to 700 on 2026-11-16, and two `AddTreeNoteTests` hit their 300 s
     timeouts on a tree that passes alone. The cap in `CLAUDE.md` is three; two may be the real
     limit for full runs.
-192. **Under the keep-records door, a withdrawal that was not sent yet is lost, and the tree stays
-    public for good.** Steps: a sharing account adds a tree, the tree is published, the account
+192. ~~**Under the keep-records door, a withdrawal that was not sent yet is lost, and the tree stays
+    public for good.**~~ **DONE, 2026-11-16**, in `fix/withdraw-keep-records-door`: when the
+    account has an unsent withdrawal, `RoutedAPI.deleteAccount` under the keep-records door first
+    sends the queue through the ordinary drain (`OutboxQueue.sendBeforeAccountDeletion`), and it
+    refuses the deletion with `WithdrawalNotSentBeforeDeletion` if a withdrawal is still unsent
+    after that. With no withdrawal queued, the deletion goes ahead as before. The design is in
+    `docs/rulings-pending/community-trees-withdraw.md`; tests in
+    `WithdrawBeforeAccountDeletionTests`. The original report follows. Steps: a sharing account adds a tree, the tree is published, the account
     withdraws it while offline, and the account is then deleted with the keep-records door
     (`RoutedAPI.deleteAccount` does not send the queue first). The withdrawal stays queued with no
     account in its payload, the service has made the tree anonymous, and it answers the device
@@ -2893,6 +2935,43 @@ into this section in the round that finds it, and nowhere else. Each item stands
     `CYPRESS_WITHDRAW_COMMUNITY_TREES` does not help, because it does not touch the cache. CI is
     unaffected: the two classes run on different shards, each on a fresh simulator. Fix: give the
     seats their own latitudes. Read by the reviewer of the assembled train, 2026-11-16.
+194. **A tree a lead took down can still get its add photo.** A takedown reaches the adder's phone
+    only through the community cache (the tile refresher does not write the adder's own row), so
+    the tree stays live there. After chip 184's sweep removes the `done` add row, the backfill can
+    queue that tree's add photo again, and `POST /photos/begin` does not check whether the tree is
+    deleted (the same gap as chip 174), so the bytes can land on a tree that was taken down. Low
+    risk while no takedown has happened. Inferred by the reviewer of
+    `fix/outbox-and-photo-sweeps`, 2026-11-16; not run.
+195. **The account deletion sheet shows no progress, and its requests have no time limit.** While a
+    deletion runs the sheet is dimmed with Cancel disabled and no indicator, and no request sets a
+    timeout, so it can sit that way for 60 s or more. Since chip 192's fix a keep-records deletion
+    can also send the queue first, which makes the wait longer. Older than that fix. Found by the
+    reviewer of `fix/withdraw-keep-records-door`, 2026-11-16.
+196. **A withdrawal the service keeps refusing holds a keep-records deletion, under a line that is
+    not accurate then (owner's call if better is wanted).** If the service answers a withdrawal
+    with an error the phone retries, the deletion is refused each time with "Your account was not
+    deleted. Check your connection and try again.", for up to the 48-hour window. When the window
+    ends the row fails for good, the deletion goes ahead, and the tree stays public and anonymous.
+    The pending ruling (`docs/rulings-pending/community-trees-withdraw.md`) names both cases. Found
+    by the reviewer of `fix/withdraw-keep-records-door`, 2026-11-16.
+197. **An unsent pin move does not hold a keep-records deletion.** The door sends the whole queue
+    first only when a withdrawal is queued, and only an unsent withdrawal refuses the deletion. A
+    pin move still queued when the account is deleted is refused by the service afterward, as chip
+    164 describes. Found by the author of `fix/withdraw-keep-records-door`, 2026-11-16.
+198. **Two small leftovers from the sweep round.** (a) The comment on
+    `OutboxStore.unsentClientUUIDs` is out of date. (b) `PhotoBinary.write(_:strippingMetadataTo:)`
+    can leave a `cypress-strip-<UUID>/` folder in the temporary directory if the app is killed
+    during the strip; the system clears that directory in its own time, and no sweep of ours does.
+    Found by the author of `fix/outbox-and-photo-sweeps`, 2026-11-16.
+199. **Things seen on Xcode 27.2 during the community gaps round and not followed up.** (a) Eleven
+    warnings from Swift 6 macro expansion in `ZoomTests.swift` and `ScreenHeaderRowsTests.swift`
+    that the source-file warning check does not count. (b) An initialized `@State` is now stored
+    as `LazyState`, which a `Mirror` cannot read before the view is installed (chip 143); other
+    tests that read state through a `Mirror` may meet the same thing. (c) `xcrun simctl ui
+    <udid> appearance dark` did not reach the running app until the simulator was rebooted, so a
+    dark screenshot can be a light one; `DataDisputeUITests` may name its dark shots wrongly for
+    that reason. (d) A system location prompt drew on a fresh install with `CYPRESS_LOCATION`
+    pinned. Seen by authors and reviewers, 2026-11-16; none investigated.
 
 
 **Retire the format-1 manifest — DONE, 2026-08-23.** The owner overrode the trigger the day after
