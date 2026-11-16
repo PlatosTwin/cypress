@@ -33,7 +33,7 @@ The latest `add_tree` outbox row for the tree decides:
 | none, tree added before `CommunityTreeStore.firstQueuedAddsAt` (an old tree) | a new add, its add photo, every live row on it, and its old photographs |
 | none, tree added later (its add went and was pruned) | a new add with the same `client_uuid`, which the service answers `duplicate`, so the add photo has an item to ride on; nothing else |
 | `failed` with `conflict` | the row retried once, with `addedOn` added; the tree then treated as an old tree |
-| `pending` or `uploading` (queued by an earlier build) | its add photo staged on that row |
+| `pending` or `uploading` (queued by an earlier build) | its add photo staged on that row, and `addedOn` set on it when it has none (owner's decision of 2026-11-15) |
 | `done`, or `failed` with any other code | left alone and not recorded; a `done` row is looked at again once it is pruned |
 
 **Narrow rule: a refused add is recognized by `conflict` alone.** Under every version of the
@@ -56,6 +56,23 @@ context, and the adder. `occurredAt` is the tree's `created_at`, the instant of 
 `addedOn` only within a day of `occurredAt`'s UTC date, so `occurredAt` is never the time of the
 resend.
 
+**Known limit: the time zone is the one at the time of the run.** The phone did not record the zone
+an add was made in. A phone that has changed zones since can state a day one off from the day the
+person saw. The service's one-day window accepts it, so the tree shows that day.
+
+**Anonymized rows never go.** The leaving door of an account deletion keeps a row's `device_id` on
+the four contribution tables and records its `client_uuid` in `anonymized_contributions` (E157).
+Such a row reads as this device's own work, so the backfill reads every row through
+`ContributionStore.notAnonymized`. Without it, the row would go out under whoever is signed in now,
+and the service would store it as theirs. An anonymized tree or photograph has no owner at all, and
+is refused twice: the candidate query skips a tree with no owner, and `Identity.maySend` refuses an
+owner of nobody.
+
+**One tree's failure stops nothing else.** Each tree's transaction is caught in the run. A tree
+that throws rolls back, keeps no key, and is tried again at the next launch; the trees after it
+still go. There is no limit on the tries: each is one rolled-back transaction at launch, and a
+limit would need a second record and would leave the tree behind for good.
+
 ### R??? — Which photographs are sent, and how the phone knows
 
 A photograph may be sent only if the service cannot already hold it. The service matches a begin on
@@ -75,7 +92,10 @@ again under `photos.id` would make a second copy. So exactly two kinds go:
 **Not sent:** any other photograph on these trees (one a build may have sent, keyed by a row id the
 phone no longer holds); any photograph a queue row or a refusal record names; a missing file; a
 file that is not a JPEG (the service stores every photograph as `photos/<id>.jpg`); and a
-photograph whose owner this phone cannot send for now (below). **Known limit:** a photograph taken
+photograph whose owner this phone cannot send for now (below). A file that is an image but not a
+JPEG (a HEIC or PNG picked from the library, which the ingest keeps in its own container) is sent as
+a JPEG copy, encoded fresh with only the orientation tag; the person's own file is not changed.
+**Known limit:** a photograph taken
 after that date on a build that could not send yet, and never sent, stays on the phone. The phone
 holds nothing that tells it apart from one that was sent.
 
@@ -86,7 +106,10 @@ photograph is never staged twice. Each is staged already applied, with its row i
 
 **What leaves the phone.** The send sink strips location and time data from every file it sends,
 new or old, right before the bytes go (`APIOutboxSendSink.uploadPhoto`), and keeps the orientation
-tag. A file that still carries them after the repair is refused for good and recorded as refused.
+tag. A file that still carries them after the repair, or an image that cannot be made a JPEG, is
+refused for good and recorded as refused: the person sees a failed Outbox row with the reason, and
+tapping retry settles it. The repair replaces the file in one `rename`, so a process killed during
+it leaves either the old file or the clean one, never neither.
 The begin is dated by the photograph's own `captured_at`; it used to be dated by the queue row's
 creation time, which is months off for an old photograph. Others are served the date and never the
 time (decision 14a).
@@ -106,6 +129,18 @@ would let the next account to sign in on this phone claim it. A new tree never r
 key written, and the run after that account signs in on this phone sends it. A row on a sent tree
 whose owner is another account, or another device, is left behind. A tree with no adder (anonymized
 by an account deletion) is never sent.
+
+**Known limit: ids from the local-account era stay behind.** Builds 6 to 33 (2026-08-03 to
+2026-08-14) signed people in locally and minted the account id on the phone (`85467c18`; removed
+by `ff7e19d1`, #158 step 5). E277 records that such an account can never be signed into again and
+that `claimDevice` does not adopt its rows. On such a phone today, visits, check-ins,
+measurements, care events and photographs carry that local id. A tree carries it only when the
+phone went from build 35 or earlier straight to a build with migration v23 while signed in. These
+rows and trees are never sent: once a real account has signed in, nothing on the phone tells the
+local id apart from a real account another person signed out of, so sending them under the account
+signed in now could hand one person's work to another. A tree that sends while some of its rows
+carry such an id gets its key, and those rows are not tried again. Sending them needs an owner's
+ruling that the phone's holder may claim them (E277's open question).
 
 ### R??? — Move pin, and the deletion doors
 
