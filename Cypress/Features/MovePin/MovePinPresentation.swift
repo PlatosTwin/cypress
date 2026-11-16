@@ -5,14 +5,14 @@
 //  **NOT SPECIFIED.** No mock draws this screen. The owner approved a minimal Move pin control on
 //  2026-11-12 as an exception to DECISIONS constraint 21: on the profile of a community tree the
 //  reader added, a "Move pin" action opens a map centered on the tree, the reader moves the pin, and
-//  then saves or cancels. Every string below is a draft the owner has yet to ratify.
+//  then saves or cancels. The owner kept these strings as drafted on 2026-11-14, except the two that
+//  stated the 10 m rule, which went with the rule.
 //
-//  ── No distance limit, because the service has none ───────────────────────────────────────────
-//  The service's `location_correction` checks only that the position is on the map, that the
-//  placement is one it knows, and that no other tree is within the 10 m dedupe radius
-//  (`server/internal/api/sync.go`, `store.applyLocationCorrection`). It sets no bound on how far a
-//  pin may move. This screen sets none either: the phone refuses what the service refuses, through
-//  `LocalAPI.correctLocation`, and says so when it does.
+//  ── No distance limit, and no 10 m rule ───────────────────────────────────────────────────────
+//  The owner's answers of 2026-11-14: a pin "can go anywhere, and also fine to go within 10m of
+//  another tree". So this screen sets no bound on how far a pin may move and says nothing about
+//  trees nearby. `LocalAPI.correctLocation` still refuses a position off the map and a tree that is
+//  not this reader's, and the screen says so when it does.
 //
 
 import Foundation
@@ -46,11 +46,8 @@ enum MovePinCopy {
     static let action = "Move pin"
     static let title = action
 
-    /// The qualifier under the placement: the one rule the move is held to.
-    static var rule: String {
-        "Drag the map to put the pin on the tree. A pin cannot be within "
-            + "\(Int(TreeDraft.proximityDedupeRadiusM)) m of another tree."
-    }
+    /// The qualifier under the placement: how to move the pin.
+    static let rule = "Drag the map to put the pin on the tree."
 
     static let unmoved = "The pin has not moved."
 
@@ -65,12 +62,6 @@ enum MovePinCopy {
     static let save = "Save"
     static let cancel = "Cancel"
     static let recenter = "Back to where it was"
-
-    /// The 10 m dedupe refused the spot: the same rule the service applies.
-    static var tooClose: String {
-        "Another tree is recorded within \(Int(TreeDraft.proximityDedupeRadiusM)) m of that spot. "
-            + "Move the pin farther from it."
-    }
 
     /// `forbidden` or `notFound`: the tree is not this reader's to move, or it is gone.
     static let notYours = "This pin can no longer be moved from this phone."

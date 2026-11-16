@@ -54,8 +54,6 @@ final class MovePinModel {
                 treeID: treeID, to: pin, placement: .contributorPlaced, locationAccuracyM: nil
             )
             didSave = true
-        } catch is ProximityConflict {
-            failure = MovePinCopy.tooClose
         } catch let error as APIError where error == .forbidden || error == .notFound {
             failure = MovePinCopy.notYours
         } catch {

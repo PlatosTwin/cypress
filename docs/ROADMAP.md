@@ -631,7 +631,11 @@ file.
      the rule chosen, for example a smaller radius, or an override that states the reader has
      checked the nearby record. **Decided by the owner on 2026-11-14: the rule stops refusing, for
      new trees and for pin moves.** See chip 140 and
-     `docs/rulings-pending/community-trees-no-proximity-rule.md`.
+     `docs/rulings-pending/community-trees-no-proximity-rule.md`. **Built on the phone in
+     `feat/no-proximity-refusal-phone`**: the add screen shows "ALREADY ON RECORD" as a note before
+     the tap, at the top of the form above the photo, and adds the tree anyway. The service half is
+     `feat/no-proximity-refusal-server` (PR 236), **deployed 2026-11-15** as `cypress-sync` release
+     v15.
 
 - ~~**F33 — zoom while taking the photo on add-a-tree.**~~ Build 77, 2026-09-28, verbatim: *"Need
   ability to zoom in on photo in this view"*. The screenshot is add-a-tree's live viewfinder
@@ -1679,10 +1683,10 @@ into this section in the round that finds it, and nowhere else. Each item stands
     #187 scoped the candidates to trees the caller may see, which closed the leak of other people's
     unpublished trees; what remains is a published tree's adder-supplied address and creation
     second, which the tile and the profile both withhold. The fix moves
-    `server/testdata/proximity_conflict.json` and its Swift test (`GoldenWireFixtureTests`) together,
+    the fixture `proximity_conflict.json` and its Swift test (`GoldenWireFixtureTests`) together,
     which is why #190 left it.~~ **MOOT, 2026-11-15:** `feat/no-proximity-refusal-server` (chip 140)
     removes the proximity conflict and `candidateFrom`, so no route serves a candidate any more. The
-    fixture file stays for the phone-side round to settle.
+    phone-side branch, `feat/no-proximity-refusal-phone`, deletes the fixture and its Swift test.
 63. **Does a photograph's presigned `GET` give away its capture time?** A hypothesis, not
     reproduced. Object storage normally answers with `Last-Modified`, the upload time to the second,
     and for a photograph uploaded while online that is close to the capture time decision 14 hides
@@ -2384,8 +2388,8 @@ into this section in the round that finds it, and nowhere else. Each item stands
     service keeps the phone's dates), are in `docs/rulings-pending/community-trees-old-trees.md`. Rows on a city tree are
     still under R77; the owner was not asked about them. Not built. It belongs with C2, because
     nobody else sees any community tree until C2 lands.
-140. **Stop refusing a tree that is within 10 m of another (owner's ruling, 2026-11-14).** The
-    owner, on how far a pin may move: "can go anywhere, and also fine to go within 10m of another
+140. ~~**Stop refusing a tree that is within 10 m of another (owner's ruling, 2026-11-14).**
+    The owner, on how far a pin may move: "can go anywhere, and also fine to go within 10m of another
     tree. sometimes they will be close together and that's fine". Asked how far that goes, the owner
     chose pin moves and new trees. This reverses the second half of DECISIONS constraint 16 and
     answers F32, finding 3. The service refuses in three places and the phone in two; the Add this
@@ -2394,7 +2398,16 @@ into this section in the round that finds it, and nowhere else. Each item stands
     deploys before any build that stops refusing on the phone**, and each `cypress-sync` deploy needs
     the owner's go-ahead. The ruling and the build notes are in
     `docs/rulings-pending/community-trees-no-proximity-rule.md`. Not built. It goes before chip 139,
-    whose old trees can otherwise come back as conflicts.
+    whose old trees can otherwise come back as conflicts.~~ **DONE, 2026-11-15:** the phone half is
+    `feat/no-proximity-refusal-phone` and the service half `feat/no-proximity-refusal-server`
+    (PR 236), deployed with the owner's approval as `cypress-sync` release v15 (`bd8a35af`). The
+    owner placed the note at the top of the Add this tree form, above the photo, made a row of the
+    note open its tree over the add screen with the draft kept, and made the note show at 10 m and
+    hide past 15 m (three decisions of 2026-11-15,
+    `docs/rulings-pending/community-trees-no-proximity-rule-phone.md`). **Owed on the physical phone:
+    the shutter's position with a tree nearby.** A simulator has no live camera; the reviewer measured
+    "Choose a photo from this phone" at about 646 pt with a tree nearby on the 390 pt iPhone 17e, still
+    above the pinned button at about 696 pt.
 141. **The service keeps an index and migration comments that only the 10 m dedupe needed.** Found
     while building chip 140 (`feat/no-proximity-refusal-server`, 2026-11-15). ~~(a)
     `idx_community_trees_position` (`server/migrations/001_initial.sql`, line 254) existed for the
@@ -2430,6 +2443,44 @@ into this section in the round that finds it, and nowhere else. Each item stands
     run; the orchestrator reports that four agents saw it on four simulators on 2026-11-15, on main
     itself among them. It is reported to pass on CI; this round did not check a CI log. Until it is fixed, every local full unit run ends `VERIFY-FAIL` with exactly this
     one issue, so read the failing test's name before treating a local red as anything else.
+144. **A species answer on a community tree someone else added counts for everyone.** Owner decision,
+    2026-11-15 (`docs/rulings-pending/community-trees-answers-2026-11-15.md`, second entry). Today
+    the service keeps a non-adder's species statement and applies it to nobody, and the phone
+    refuses the two species verbs on a tree the reader did not add, so C3 hides "Say what species
+    you think this is" and "Report the species as wrong" on such a profile. The round that builds
+    this brings both controls back, with the owner's two rules: on a tree with no species, the first
+    answer names the tree for everyone, marked "species named by a contributor", and the adder can
+    still correct it; on a tree that has a species, the name stays and the profile shows "Somebody
+    has reported this species as wrong." until the adder or the operator corrects it. It is a
+    service change, a deploy, and a phone change. No round has planned it.
+145. **`AreaPickerUITests.testACoarseFixNamesNoNeighborhoodAndOffersThePicker` failed once in CI on a
+    tap.** PR 238, run 43775447999, attempt 1, shard 3, iPhone 17 Pro: "Failed to not hittable:
+    Button, {{34.0, 293.0}, {111.3, 44.3}}, label: 'Sunset/Parkside'". The rerun of that shard
+    passed, which shows the failure is intermittent and not why it happened. The test tapped the
+    picker's row right after `waitForExistence`, and `BottomSheet` draws its card at opacity 0 until
+    its rise finishes, so the row exists before it can be tapped. The log does not show that the tap
+    came in that gap; it is the likely cause, not a proven one. The second merge train of 2026-11-15
+    added `assertReachable` before that tap and before the same tap in the class's two other tests
+    that use the picker. Strike this if the failure does not come back; if it does, the cause is
+    something else.
+146. **`RemoteAPI.claimDevice` sends a body the service refuses.** It sends `user_id`, and
+    `POST /devices/claim` decodes with unknown fields refused. Nothing ships through it today (the
+    live claim goes through `AuthClient` and `AppSession`), and its unit test pins the wrong body.
+    Found by the planner and the author of the "Share my tree records" row, 2026-11-15. Remove the
+    dead path or make it match `claimRequest`.
+147. **The app ships no license text to read.** Screen 15's "Read the short version" is drawn as a
+    link and is not a button (`AccountAskView.swift`), and the You tab's "Share my tree records" row
+    offers no link for the same reason. A person agrees to the open database license without a way
+    to read it in the app. Owner's call what the short version says and where it lives.
+148. **A person who declined to share, then reinstalled, cannot agree later.** The "Share my tree
+    records" row shows only when the phone holds the stored "declined" answer. After a reinstall
+    the phone no longer knows the answer (`ContributionSharing.unknown`), so the row does not show
+    and the only route is to sign out and sign in again. The service knows the answer; nothing reads
+    it back.
+149. **`server/testdata/README.md` does not say that `tree_history.json`'s "added" row carries the
+    day the tree was added.** Since migration 008 the row is dated by `added_on`, where it used to
+    carry the day the tree went public. Found by the author of the service's added-day change,
+    2026-11-15.
 
 
 **Retire the format-1 manifest — DONE, 2026-08-23.** The owner overrode the trigger the day after

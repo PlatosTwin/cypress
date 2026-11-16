@@ -23,7 +23,6 @@ these files, read off disk, so the two halves cannot drift.
 
 | file | decodes into | notes |
 |---|---|---|
-| `proximity_conflict.json` | the whole error body; `detail.candidates` is `[NearbyTree]` | the shape `ProximityConflict` is built from |
 | `grove.json` | `entries[].record` is `GroveRecord` | the rest of the object is server-owned and snake_case |
 | `community_trees_tile.json` | `trees` is `[Tree]` | `GET /community-trees`, a first fetch (no cursor). The envelope (`tile`, `withdrawn_tree_ids`, `next_cursor`, `has_more`) is server-owned and snake_case. Tree `5b0c3f1e-…-1f2a3b4c5d01` has a species: assert its `speciesCurrentID` is **non-nil**, because a key drift decodes it as a silent nil. Find it by id, not by position: the order is `(updated_at, id)` and two trees here share a day. `address` is null for everyone on this route. `createdAt` and `updatedAt` are midnight UTC, because community-tree dates travel at day precision. |
 | `community_trees_tile_delta.json` | `trees` is `[Tree]`; `withdrawn_tree_ids` is `[UUID]` | the same route, from the first fetch's cursor: one tree moved and renamed, one new, one withdrawn, one erased (a tombstone). Both lists are non-empty. A tree in `trees` can lie outside the tile (a pin moved out of it), so the cache keys on `id`. `next_cursor` is opaque, sealed, and always present: store it as a string and send it back unchanged, never parse it. |
