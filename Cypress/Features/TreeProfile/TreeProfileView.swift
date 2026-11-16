@@ -665,7 +665,11 @@ struct TreeProfileView: View {
     /// alert on `body` is what withdraws.
     ///
     /// Where this phone already knows the service would refuse, the owner's reason line is drawn in
-    /// the control's place, in the muted sentence style of the block's other notices.
+    /// the control's place, in the muted sentence style of the block's other notices. It sits
+    /// under the report link's caption, which is drawn in the same style, so it needs a gap above it
+    /// to read as its own line rather than as the caption's last line. The block's own note gap
+    /// (`latinTop`, 2 pt) was tried and did not separate it on screen, at the default size or at
+    /// AX5; the design system's row gap (`CypressSpacing.gapRows`) does.
     @ViewBuilder
     private func treeWithdrawal(_ presentation: TreeProfilePresentation) -> some View {
         switch presentation.treeWithdrawal {
@@ -680,6 +684,7 @@ struct TreeProfileView: View {
             Text(TreeProfileCopy.treeStaysOnTheMap)
                 .cypressBody135(color: CypressColor.textMuted)
                 .fixedSize(horizontal: false, vertical: true)
+                .padding(.top, CypressSpacing.gapRows)
                 .accessibilityIdentifier("treeProfile.withdrawTree.staysOnTheMap")
         }
     }
