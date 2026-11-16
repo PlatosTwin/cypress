@@ -44,9 +44,24 @@ declined to share agree later. There is one now.
 
 #### What this row does not cover (facts, not rulings)
 
-- **A person who declined and then reinstalled the app.** After a reinstall the phone no longer
-  knows the answer (the restore clears it), so the "did not agree" line does not show and neither
-  does the row. That person still has no way to agree from the app.
+- **A person who declined and then reinstalled the app** (ROADMAP chip 148, branch
+  `feat/account-license-readback`). Both session answers of the service (`POST /auth/oidc` and
+  `POST /auth/refresh`) now carry the account's stored answer as `license_version`: the version
+  accepted, or `null`. The phone keeps it in the stored session and writes it back at launch, with
+  no request, and after each refresh. So after a reinstall the "did not agree" line and the row show
+  again. This needs `cypress-sync` deployed with that branch; until then the service sends no key,
+  and the phone behaves as before (no line, no row). A session stored by an older build carries no
+  answer either, so on such a phone the line and the row come back only after the first refresh.
+- **Two behaviors the orchestrator chose for that change (2026-11-16), to be confirmed by the
+  owner.** Each is one named constant in `LocalAPI`, easy to flip.
+  1. **When the service's answer differs from the phone's stored answer, the phone shows the
+     service's** (`serviceLicenseAnswerWins`). For example, an account that agreed on one phone and
+     then declined at a sign-in on a second phone reads "did not agree" on the first phone after its
+     next refresh.
+  2. **A restored phone whose account has no acceptance on the service shows the "did not agree"
+     line and the "Share my tree records" row** (`serviceNoAcceptanceReadsAsDeclined`). The service
+     cannot tell "declined" from "never asked" (both are a `NULL` `license_version`). Every in-app
+     sign-in since 2026-08-14 sent an answer, so "never asked" is an account from before then.
 - **Re-consent when the license version changes.** `docs/RULINGS.md` names it as open ("re-consent
   when the license version moves"). This row does not settle it: an account that agreed to an older
   version reads as having agreed, so the row does not show for it.

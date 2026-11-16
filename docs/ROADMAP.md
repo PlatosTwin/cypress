@@ -2496,20 +2496,28 @@ into this section in the round that finds it, and nowhere else. Each item stands
     added `assertReachable` before that tap and before the same tap in the class's two other tests
     that use the picker. Strike this if the failure does not come back; if it does, the cause is
     something else.
-146. **`RemoteAPI.claimDevice` sends a body the service refuses.** It sends `user_id`, and
+146. ~~**`RemoteAPI.claimDevice` sends a body the service refuses.** It sends `user_id`, and
     `POST /devices/claim` decodes with unknown fields refused. Nothing ships through it today (the
     live claim goes through `AuthClient` and `AppSession`), and its unit test pins the wrong body.
     Found by the planner and the author of the "Share my tree records" row, 2026-11-15. Remove the
-    dead path or make it match `claimRequest`.
+    dead path or make it match `claimRequest`.~~ **DONE, 2026-11-16**, in
+    `feat/account-license-readback`: `ClaimDeviceBody` sends `device_uuid` only, never
+    `license_version` (a `null` there would withdraw consent). The test now pins the body's keys as
+    exactly `["device_uuid"]`.
 147. **The app ships no license text to read.** Screen 15's "Read the short version" is drawn as a
     link and is not a button (`AccountAskView.swift`), and the You tab's "Share my tree records" row
     offers no link for the same reason. A person agrees to the open database license without a way
     to read it in the app. Owner's call what the short version says and where it lives.
-148. **A person who declined to share, then reinstalled, cannot agree later.** The "Share my tree
+148. ~~**A person who declined to share, then reinstalled, cannot agree later.** The "Share my tree
     records" row shows only when the phone holds the stored "declined" answer. After a reinstall
     the phone no longer knows the answer (`ContributionSharing.unknown`), so the row does not show
     and the only route is to sign out and sign in again. The service knows the answer; nothing reads
-    it back.
+    it back.~~ **DONE in code, 2026-11-16**, in `feat/account-license-readback`: both session answers
+    carry `license_version`, and the phone adopts it at launch (no request) and after each refresh.
+    **It takes effect only after `cypress-sync` is deployed with this change, which needs the
+    owner's go-ahead and has not happened.** Until then the service sends no key and the phone
+    behaves as before. Two behaviors are the orchestrator's choice, to be confirmed by the owner
+    (`docs/rulings-pending/account-agree-later.md`).
 149. **`server/testdata/README.md` does not say that `tree_history.json`'s "added" row carries the
     day the tree was added.** Since migration 008 the row is dated by `added_on`, where it used to
     carry the day the tree went public. Found by the author of the service's added-day change,
@@ -2546,9 +2554,13 @@ into this section in the round that finds it, and nowhere else. Each item stands
 154. **A community pin exactly under the reader's location dot does not draw.** MapKit hides it, so
     a person standing at a tree they or someone else added may not see its pin. Found when a C3 UI
     test put the reader on the tree, 2026-11-15; 67 m away the pin draws.
-155. **Sign-out keeps `account_provider`.** A later sign-in that goes only through `claimDevice`
+155. ~~**Sign-out keeps `account_provider`.** A later sign-in that goes only through `claimDevice`
     (today, DEBUG paths) then reads as "declined to share" where it should read as unknown. Found
-    by the reviewer of C3's profile package, 2026-11-15.
+    by the reviewer of C3's profile package, 2026-11-15.~~ **DONE, 2026-11-16**, in
+    `feat/account-license-readback`: `LocalAPI.claimDevice` clears `account_provider` and
+    `account_license_version`. `linkAccount` and `restoreAccount` write their answer after it.
+    Note: no shipping path calls a bare `claimDevice` today (the DEBUG deep link goes through
+    `linkAccount`), so this was latent.
 156. **A partly fetched community tile counts as asked (a gap in the owner's ruling of 2026-11-15
     on the map card and the empty list).** The cache writes a tile's row with each page it applies,
     the service sends at most 100 trees a page, and the "has this phone asked" check reads that
