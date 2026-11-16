@@ -153,3 +153,38 @@ The screen leaves through the lead's `withdrewRecord` path. A `notFound` also le
 is already gone. Any other refusal (a sign-out between the read and the tap) reloads the profile, and
 the reload draws the record controls as they now are. **No sentence is drawn for that refusal: the
 owner has given none, and none was invented.** If the owner wants one, it is theirs to choose.
+
+### R??? — Under the keep-records door, the queue goes before the account (the author's choice, not the owner's; ROADMAP 192)
+
+The keep-records door makes the account's published trees anonymous on the service, and nobody may
+withdraw an anonymous tree (`withdrawCommunityTree` answers `ErrNotTheAdder`, `forbidden`). A
+withdrawal still queued at the deletion was therefore refused afterwards, its tree came back on the
+phone, and nobody could withdraw it again. So, under the keep-records door only,
+`RoutedAPI.deleteAccount` sends the outbox before `DELETE /me`
+(`OutboxQueue.sendBeforeAccountDeletion`):
+
+- **It waits for a drain that is already running**, then holds the queue itself. `drain()` returns
+  at once when another drain runs, so calling it would not prove anything was sent.
+- **Every row the account queued that the service has not accepted is made due now**, then the
+  queue makes up to eight ordinary passes (25 rows each), with the wi-fi toggle honored, and stops
+  at the first pass that finds nothing due. Every kind goes, not only withdrawals: a pin move has
+  the same problem (the service refuses a move on an anonymous tree), and an ordinary contribution
+  loses nothing by going a little earlier. The 48-hour window and the fail count do not change.
+- **The deletion goes ahead only if no withdrawal naming the account is left unsent.** A row the
+  service settled for good does not hold it: an accepted withdrawal keeps the tree withdrawn on the
+  phone (the service's answer lists the tree as anonymized, and the phone's `deleted_at` stays), and
+  a `conflict` brings the tree back with the owner's sentence, as it does on any other day.
+- **If a withdrawal is still unsent** (no connection, or the service did not take it yet), the
+  deletion throws before `DELETE /me`. Nothing is deleted on the service or on the phone, and the
+  sheet draws its existing line, `Your account was not deleted. Check your connection and try
+  again.` The withdrawal row stays in the Outbox with its own reason. No new sentence was needed.
+- **Only withdrawals hold the deletion.** A pin move or any other row that did not go stays queued,
+  is made anonymous by the door as before, and is sent afterwards. Holding the deletion for every
+  kind would let one stuck row keep a person from deleting their account for up to 48 hours.
+- **The erasing door is unchanged.** It discards the account's queued rows and puts back the tree
+  of an unsent withdrawal (`OutboxStore.forgetAccount`), and the service deletes or anonymizes the
+  account's trees itself, so sending first would change nothing it ends with. ROADMAP 188 (a row in
+  `uploading` at an erasure) is not settled by this change: the erasing door does not wait for a
+  running drain.
+- **How long it can take.** Without a connection, one failed request per batch, then the throw. With
+  one, as long as the sends take; on wi-fi with the toggle on, that includes queued photographs.
