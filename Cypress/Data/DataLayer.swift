@@ -535,6 +535,22 @@ public struct DataLayer: Sendable {
             _ = try OutboxStore().recoverInterrupted(at: Date(), connection: connection)
         }
 
+        // ── Finished rows older than a day, once per launch (ROADMAP 184) ──────────────────────
+        //
+        // `OutboxQueue.pruneCompleted` deletes `done` rows whose `updated_at` is more than
+        // `completedRetention` ago, and nothing else: pending, uploading and failed rows of any age
+        // stay. No build before this one called it, so every receipt stayed on the phone.
+        //
+        // Here and not in the drain, for three reasons. The drain is the hot path, and a test or
+        // gate that moves the queue's clock past a day would see its receipts go in the middle of
+        // the case. Screen 17 keeps one set of receipts for the whole session instead of losing a
+        // row while it is open. And it runs before the backfill below, which looks again at a
+        // tree only once its `done` add row is gone (`CommunityTreeBackfill`), so that pass sees
+        // the swept queue. The cost is that a receipt can outlive its day until the next launch.
+        //
+        // `try?`: a failed sweep leaves the receipts for the next launch, and must not stop this one.
+        _ = try? await outbox.pruneCompleted()
+
         // ── The community trees this phone never sent, once (ROADMAP 139) ───────────────────────
         //
         // Only with the send sink wired: with none, a queued row settles `done` without being sent,

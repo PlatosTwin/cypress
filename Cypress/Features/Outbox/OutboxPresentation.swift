@@ -242,8 +242,11 @@ struct OutboxPresentation {
 
     /// The receipts, newest first.
     ///
-    /// `OutboxQueue.completedRetention` is 24 h and `pruneCompleted` sweeps past it, so this section
-    /// can never become a week — **but 24 h of retention spans two calendar days for most of the
+    /// `OutboxQueue.completedRetention` is 24 h and `pruneCompleted` sweeps past it at each launch
+    /// (`DataLayer.boot`), so this section holds the receipts of the day before this launch and the
+    /// ones since. It becomes a week only for a process that runs a week without a relaunch.
+    /// No build before ROADMAP 184's fix called the sweep, so every receipt stayed until then.
+    /// **But 24 h of retention spans two calendar days for most of the
     /// day**, and this line used to argue from the first fact that the section "is exactly what its
     /// heading claims". It is not: the two-day case is precisely the one that flips the stamps to
     /// dates, and it is common rather than exotic (PR #102 review). The heading asks the same
@@ -297,7 +300,8 @@ struct OutboxPresentation {
     /// `today · 14 synced · 0 lost`, or nil.
     ///
     /// **The mock's window is not the one the app keeps.** §5 draws `this week · 14 synced · 0
-    /// lost`, and a `done` row is swept after `OutboxQueue.completedRetention`, which is one day. A
+    /// lost`, and a `done` row is swept at the first launch after `OutboxQueue.completedRetention`,
+    /// which is one day. A
     /// week's figure is not a number this app has, so the line says the window it can actually
     /// answer for. `0 lost` is computed rather than asserted, which is why it is worth printing.
     /// Absent when nothing has gone today, because `0 synced` is a zero (ARCHITECTURE §5.6).
@@ -564,7 +568,9 @@ enum OutboxCopy {
     /// ── **Why the year appears and usually does not** ─────────────────────────────────────────
     ///
     /// `Aug 19` is unambiguous inside a list that cannot reach back a year, and the synced section
-    /// cannot: `OutboxQueue.completedRetention` sweeps it at 24 h. The **queue** has no such sweep —
+    /// cannot: `pruneCompleted` sweeps it at the first launch after `OutboxQueue.completedRetention`
+    /// (24 h), and a process that ran a year without a relaunch is not a case worth a stamp. The
+    /// **queue** has no such sweep —
     /// a terminally failed row waits for a tap and waits as long as it takes — so a queue really can
     /// hold two rows whose `Aug 19`s are twelve months apart. A stamp carries its year when it is
     /// not in `now`'s year, which costs nothing in the ordinary case and stops the one case where

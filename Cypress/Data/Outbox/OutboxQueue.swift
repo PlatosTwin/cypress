@@ -877,7 +877,8 @@ public actor OutboxQueue {
         return changed
     }
 
-    /// Sweeps `done` receipts older than `completedRetention`.
+    /// Sweeps `done` receipts older than `completedRetention`. `DataLayer.boot` calls it once per
+    /// launch (ROADMAP 184); nothing else in the app does.
     @discardableResult
     public func pruneCompleted() async throws -> Int {
         let removed = try await queue.write { connection in

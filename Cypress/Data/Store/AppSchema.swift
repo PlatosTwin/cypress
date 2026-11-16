@@ -1485,8 +1485,9 @@ public enum AppSchema {
     ///
     /// **What copying `seq` does and does not buy.** It preserves the FIFO order of the rows that
     /// exist, and it carries `sqlite_sequence` forward *when there are rows*. On an outbox that is
-    /// **empty** at upgrade time — the ordinary state of a phone that has drained everything and let
-    /// `pruneCompleted` sweep the receipts — the `INSERT … SELECT` writes nothing, `DROP TABLE` takes
+    /// **empty** at upgrade time — a phone that has drained everything and whose receipts are gone
+    /// (no build called `pruneCompleted` before ROADMAP 184's fix, so on the builds that ran this
+    /// migration that meant a phone with no rows at all) — the `INSERT … SELECT` writes nothing, `DROP TABLE` takes
     /// the counter with it, and the new table starts from 1 again. Measured, not assumed
     /// (`OutboxApplySendSplitTests`). It is harmless: `seq` only orders rows that are live at the
     /// same time, and a row's identity is `id` and `client_uuid`, both uniquely indexed and both
@@ -2759,9 +2760,12 @@ public enum AppSchema {
     ///    belongs to that account, and naming the device instead would offer a move the service
     ///    refuses for good (`isAddedBy`, `server/internal/store/community_trees.go`).
     /// 2. Only when that row is gone, this installation's current owner: `app_state
-    ///    .current_user_id` if there is one, else `device_uuid`. A row is gone because
-    ///    `OutboxStore.pruneCompleted` swept it after it was `done`, or because the tree predates
-    ///    the sync path and was never queued (R77). This arm can still be wrong in the sign-out case
+    ///    .current_user_id` if there is one, else `device_uuid`. This was written as "a row is gone
+    ///    because `OutboxStore.pruneCompleted` swept it after it was `done`, or because the tree
+    ///    predates the sync path and was never queued (R77)". The first half never happened before
+    ///    this migration ran: no build called `pruneCompleted` until ROADMAP 184's fix, and that
+    ///    build migrates before its first sweep. So a row was gone when the tree was never queued,
+    ///    or when the erasing door of an account deletion removed it. This arm can still be wrong in the sign-out case
     ///    above, and for an R77 tree the service has no record at all. The owner accepted both cases
     ///    on 2026-11-13: every tree added so far was added by the owner.
     ///
@@ -2875,8 +2879,8 @@ public enum AppSchema {
                                 WHERE o.kind = 'add_tree'
                                   AND o.client_uuid = community_trees.client_uuid COLLATE NOCASE);
 
-                -- Only where that row is gone (`OutboxStore.pruneCompleted` sweeps `done` rows, and
-                -- a tree from before the sync path was never queued, R77): the installation's
+                -- Only where that row is gone (a tree from before the sync path was never queued,
+                -- R77; no sweep of `done` rows had run yet, see arm 2 above): the installation's
                 -- current owner, as `ContributionOwner(attribution)` would name it now, the
                 -- account first and the device otherwise (the owner's ruling of 2026-11-12).
                 UPDATE community_trees

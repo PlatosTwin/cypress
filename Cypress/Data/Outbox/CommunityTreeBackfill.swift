@@ -87,8 +87,9 @@
 //  One write transaction per tree, with the key written last in it. A failure anywhere in a tree
 //  rolls back that tree's rows and its key together, so the next run starts the tree from nothing,
 //  and the run goes on to the next tree.
-//  A tree whose key is written is never looked at again. Done rows do not last (`pruneCompleted`),
-//  which is why the record is an `app_state` key rather than the queue itself.
+//  A tree whose key is written is never looked at again. Done rows do not last: `pruneCompleted`
+//  deletes them at the first launch more than a day after they are done, just before this runs
+//  (`DataLayer.boot`). That is why the record is an `app_state` key rather than the queue itself.
 //
 //  It runs only with the send sink wired (`DataLayer.boot`): with no sink a row settles `done`
 //  without being sent, and the key would record a send that never happened.
