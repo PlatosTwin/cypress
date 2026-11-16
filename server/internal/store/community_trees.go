@@ -386,6 +386,13 @@ type treeRow struct {
 	AnonymizedAt *time.Time
 	DeletedAt    *time.Time
 	PublishedAt  *time.Time
+	// SpeciesSetBy is migration 009's `species_set_by`: "adder", "contributor" or "operator". Empty
+	// is NULL, which every rule reads as the adder.
+	SpeciesSetBy string
+	// SpeciesNamer is the account whose contributor naming is in force, or nil.
+	SpeciesNamer *uuid.UUID
+	// ReportsClearedAt is `species_reports_cleared_at`, or nil when nobody ever cleared them.
+	ReportsClearedAt *time.Time
 }
 
 // hiddenFrom is the reads' rule for who may know the tree exists (review of #190, F6): its adder
@@ -412,12 +419,18 @@ func (t treeRow) isAddedBy(owner Owner) bool {
 // lockTree reads a tree FOR UPDATE, so two acts on one tree serialize. ErrTreeNotFound when absent.
 func lockTree(ctx context.Context, tx pgx.Tx, id uuid.UUID) (treeRow, error) {
 	var row treeRow
+	var setBy *string
 	err := tx.QueryRow(ctx, `
-		SELECT user_id, device_id, species_id, anonymized_at, deleted_at, published_at
+		SELECT user_id, device_id, species_id, anonymized_at, deleted_at, published_at,
+		       species_set_by, species_namer_user_id, species_reports_cleared_at
 		  FROM community_trees WHERE id = $1 FOR UPDATE
-	`, id).Scan(&row.UserID, &row.DeviceID, &row.SpeciesID, &row.AnonymizedAt, &row.DeletedAt, &row.PublishedAt)
+	`, id).Scan(&row.UserID, &row.DeviceID, &row.SpeciesID, &row.AnonymizedAt, &row.DeletedAt, &row.PublishedAt,
+		&setBy, &row.SpeciesNamer, &row.ReportsClearedAt)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return treeRow{}, ErrTreeNotFound
+	}
+	if setBy != nil {
+		row.SpeciesSetBy = *setBy
 	}
 	return row, err
 }
@@ -651,68 +664,6 @@ func uuidLess(a, b uuid.UUID) bool {
 	return false
 }
 
-// ── Species, arm 1 ──────────────────────────────────────────────────────────────────────────────
-
-// SpeciesStatement is a `species_claim` or `species_correction` read for materialization (§3B).
-type SpeciesStatement struct {
-	TreeID    uuid.UUID
-	SpeciesID uuid.UUID
-}
-
-// materializeSpecies applies R45's arm 1 on the server: the adder of a community tree names or
-// corrects its species, and the tree's `species_id` — a read cache — follows.
-//
-// It never refuses. Anybody else's statement, a statement about a tree this service does not hold
-// as a live community tree, a claim on a tree that already has a species, and a correction older
-// than the last one applied are all recorded (the contribution row) and change nothing — which is
-// the pre-007 behaviour for every species act, so a lead-arm correction never becomes a red row.
-func materializeSpecies(ctx context.Context, tx pgx.Tx, kind string, s SpeciesStatement, act newTreeAct, now time.Time) error {
-	tree, err := lockTree(ctx, tx, s.TreeID)
-	if errors.Is(err, ErrTreeNotFound) {
-		return nil
-	}
-	if err != nil {
-		return err
-	}
-	if tree.DeletedAt != nil || !tree.isAddedBy(act.Owner) {
-		return nil
-	}
-
-	eventKind := "species_corrected"
-	if kind == "species_claim" {
-		if tree.SpeciesID != nil {
-			return nil
-		}
-		eventKind = "species_named"
-	} else {
-		var newer bool
-		if err := tx.QueryRow(ctx, `
-			SELECT EXISTS (SELECT 1 FROM community_tree_events
-			                WHERE tree_id = $1 AND kind IN ('species_named', 'species_corrected')
-			                  AND occurred_at > $2)
-		`, s.TreeID, act.OccurredAt).Scan(&newer); err != nil {
-			return err
-		}
-		if newer {
-			return nil
-		}
-	}
-
-	if _, err := tx.Exec(ctx, `
-		UPDATE community_trees SET species_id = $2, updated_at = $3 WHERE id = $1
-	`, s.TreeID, s.SpeciesID, now); err != nil {
-		return err
-	}
-	return writeEvent(ctx, tx, event{
-		TreeID: s.TreeID, Kind: eventKind, ClientUUID: act.ClientUUID,
-		Actor: actorOr(act.Actor, act.Owner), OccurredAt: act.OccurredAt,
-		Before: position{SpeciesID: tree.SpeciesID}, After: position{SpeciesID: &s.SpeciesID},
-		// Decision 13: a species named while the tree was private is the adder's history, not the
-		// public's. The species itself is public at publication through the tree's cache.
-		Public: tree.PublishedAt != nil,
-	}, now)
-}
-
 // ── Withdrawal and takedown ─────────────────────────────────────────────────────────────────────
 
 // withdrawCommunityTree is decision 8: the adder withdraws a tree for everyone, while nobody else
@@ -887,10 +838,41 @@ func deleteAccountTrees(ctx context.Context, tx pgx.Tx, userID uuid.UUID, choice
 		deleted = append(deleted, tree.ID)
 	}
 
+	// ── Species on other people's trees (migration 009) ─────────────────────────────────────────
+	//
+	// **A naming this account made on somebody else's tree stays, and stops being anybody's.** The
+	// species stays on the tree, under both doors, and the naming loses its namer, so nobody but the
+	// adder and the operator can change it afterwards. The owner's decision of 2026-11-16 ("The
+	// species stays": the name stays for everyone, with nothing that links it to the person) is
+	// held here and by the actor sweep below. This statement is the one place that decides it; a
+	// later rule that reverted the species would go here instead.
+	// The foreign key's `ON DELETE SET NULL` would clear the namer anyway when `users` loses the
+	// row; this is said here so the rule has a place to change.
+	if _, err := tx.Exec(ctx, `
+		UPDATE community_trees SET species_namer_user_id = NULL WHERE species_namer_user_id = $1
+	`, userID); err != nil {
+		return nil, nil, err
+	}
+	// **A report this account made counts until its record is gone.** Under `leaveRecords` the
+	// report stays, anonymized, so it still counts, like every other record that door leaves.
+	// Under `eraseEverything` the report's contribution is deleted above, and its `species_reported`
+	// event goes with it here, so the report stops counting. Before the actor sweep below, which
+	// would otherwise leave the event with no name to find it by.
+	if choice == EraseEverything {
+		if _, err := tx.Exec(ctx, `
+			DELETE FROM community_tree_events
+			 WHERE kind = 'species_reported'
+			   AND (actor_user_id = $1
+			        OR (actor_user_id IS NULL AND actor_device_id IN (SELECT id FROM devices WHERE user_id = $1)))
+		`, userID); err != nil {
+			return nil, nil, err
+		}
+	}
+
 	// The account's name comes off every chain row and event it or any device it claimed performed,
-	// on every tree — its own and, for species or publication events, nobody else's (only the adder
-	// may act, so in practice these are its own trees). Full detail was the server's to keep while
-	// the account existed (decision 4), not after.
+	// on every tree, its own and anybody else's. Since migration 009 that includes other people's
+	// trees: a contributor's naming, correction or report on a tree somebody else added. Full detail
+	// was the server's to keep while the account existed (decision 4), not after.
 	for _, table := range []string{"community_tree_locations", "community_tree_events"} {
 		if _, err := tx.Exec(ctx, `
 			UPDATE `+table+`
@@ -917,6 +899,10 @@ type position struct {
 	// LicenseVersion is set only on a `published` event's `after`: the license the account had
 	// accepted at the moment of publication (decision 10). 007's backfill writes the same key.
 	LicenseVersion *string `json:"license_version,omitempty"`
+	// By is set only on a species event's `after` (migration 009): who acted, as `SpeciesByAdder`,
+	// `SpeciesByContributor` or `SpeciesByOperator`. Absent on every species event written before
+	// 009, when only the adder could act, so the history reads absent as the adder.
+	By string `json:"by,omitempty"`
 }
 
 // at is a position with a place in it. Pointers rather than values so a tree on the equator or the
@@ -927,7 +913,7 @@ func at(lat, lon float64, placement string, accuracyM *float64) position {
 
 func (p position) isZero() bool {
 	return p.Lat == nil && p.Lon == nil && p.Placement == "" && p.AccuracyM == nil && p.SpeciesID == nil &&
-		p.LicenseVersion == nil
+		p.LicenseVersion == nil && p.By == ""
 }
 
 type event struct {

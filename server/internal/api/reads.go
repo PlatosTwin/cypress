@@ -282,15 +282,35 @@ func treeProfileBody(id uuid.UUID, community store.TreeCommunity, who caller) ma
 		addedByYou, isPublished = community.Tree.AddedByViewer, community.Tree.Published
 	}
 
+	// ── ROADMAP 144's three additions (migration 009), additive like S2's ──────────────────────
+	//
+	// Always present, so every older key and every older fixture keeps its meaning, and so a hidden
+	// tree still answers exactly as an unknown id does: false, null, false.
+	//
+	//   - `species_reported`: a report counts now, so the profile shows "Somebody has reported this
+	//     species as wrong." To every viewer served the tree.
+	//   - `species_report_flag_id`: the newest counting report's `flagID`, to the **adder only**, so
+	//     the adder's phone can send "Keep the species" (`species_review_dismissal`) about a report
+	//     it never held. The service clears every report on the adder's keep, whatever flag it names.
+	//   - `species_named_by_you`: the viewer's own contributor naming is in force, so they may still
+	//     correct it. False once the adder corrects or keeps the species.
+	var reportFlagID *uuid.UUID
+	if addedByYou {
+		reportFlagID = community.Species.ReportFlagID
+	}
+
 	return map[string]any{
-		"tree_uuid":           id,
-		"photos":              photos,
-		"photo_count":         len(photos),
-		"visit_count":         community.VisitCount,
-		"own_photo_ids":       ownPhotoIDs,
-		"deletable_photo_ids": deletablePhotoIDs,
-		"community_tree":      tree,
-		"added_by_you":        addedByYou,
-		"is_published":        isPublished,
+		"tree_uuid":              id,
+		"photos":                 photos,
+		"photo_count":            len(photos),
+		"visit_count":            community.VisitCount,
+		"own_photo_ids":          ownPhotoIDs,
+		"deletable_photo_ids":    deletablePhotoIDs,
+		"community_tree":         tree,
+		"added_by_you":           addedByYou,
+		"is_published":           isPublished,
+		"species_reported":       community.Species.Reported,
+		"species_report_flag_id": reportFlagID,
+		"species_named_by_you":   community.Species.NamedByViewer,
 	}
 }

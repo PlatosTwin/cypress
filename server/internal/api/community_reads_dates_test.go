@@ -134,8 +134,15 @@ func TestEverybodyIsToldTheDayTheTreeWasAddedOnThePhone(t *testing.T) {
 				t.Fatalf("the adder's own profile says created %v (added_by_you %v), want %s",
 					own.CommunityTree, *own.AddedByYou, addedDay)
 			}
-			if _, ownHistory := readHistory(t, h, adder, tree); !bytes.Equal(ownHistory.raw, history.raw) {
+			// Byte for byte except `by_you` (migration 009), the one key that says who is asking:
+			// the "added" row is the adder's own act, and nobody else's.
+			_, ownHistory := readHistory(t, h, adder, tree)
+			if !bytes.Equal(ownHistory.withoutByYou(t), history.withoutByYou(t)) {
 				t.Fatalf("the adder's history differs from a stranger's:\n%s\n%s", ownHistory.raw, history.raw)
+			}
+			if own, theirs := ownHistory.byYou(), history.byYou(); len(own) != 1 || own[0] == nil || !*own[0] ||
+				len(theirs) != 1 || theirs[0] == nil || *theirs[0] {
+				t.Fatalf("by_you is %v for the adder and %v for a stranger; want true and false", own, theirs)
 			}
 			assertPublicationInvariant(t, h)
 		})

@@ -360,6 +360,10 @@ type HistoryEvent struct {
 	OccurredAt time.Time
 	Before     HistoryPosition
 	After      HistoryPosition
+	// ByViewer is whether the viewer performed this act (migration 009). It is computed in the query
+	// from the actor columns, which are still never selected: the viewer learns only "this one was
+	// you", which they already know. False for an anonymized actor and for the operator.
+	ByViewer bool
 }
 
 // HistoryPosition is an event's `before` or `after`, as `position` writes it. Every field is
@@ -369,6 +373,9 @@ type HistoryPosition struct {
 	Lon       *float64   `json:"lon"`
 	Placement *string    `json:"placement"`
 	SpeciesID *uuid.UUID `json:"species_id"`
+	// By is a species event's `after.by` (migration 009): "adder", "contributor" or "operator". Nil
+	// on every event written before 009, when only the adder could act.
+	By *string `json:"by"`
 }
 
 // ErrHistoryNotFound is a history this viewer may not read: no community tree by that id, or one
@@ -418,16 +425,27 @@ func (s *Store) CommunityTreeHistory(ctx context.Context, id uuid.UUID, viewer O
 	//
 	// `GREATEST` ignores a NULL, so a tree that is not published (the adder's own, which has no
 	// public events anyway) is unchanged.
+	//
+	// **`by_viewer` is `deleteAccountTrees`' actor sweep, read the other way.** A signed-in viewer
+	// performed an act its account is the actor of, or one a device it claimed performed while signed
+	// out (no account on the act): that device's acts became the account's when it signed in, as its
+	// trees did. A device viewer performed only the signed-out acts of that device. An act with no
+	// actor (anonymized, or the operator's) is nobody's.
 	rows, err := s.pool.Query(ctx, `
 		SELECT id, kind,
 		       CASE WHEN kind = 'published' THEN $5::timestamptz
 		            ELSE GREATEST(occurred_at, $4::timestamptz, $5::timestamptz) END AS served_at,
-		       before, after
+		       before, after,
+		       coalesce(CASE WHEN $6::uuid IS NOT NULL
+		                     THEN actor_user_id = $6
+		                          OR (actor_user_id IS NULL
+		                              AND actor_device_id IN (SELECT d.id FROM devices d WHERE d.user_id = $6))
+		                     ELSE actor_user_id IS NULL AND actor_device_id = $7 END, false) AS by_viewer
 		  FROM community_tree_events
 		 WHERE tree_id = $1 AND in_public_history AND kind = ANY ($2::text[])
 		 ORDER BY GREATEST(occurred_at, $4::timestamptz) DESC, recorded_at DESC, id DESC
 		 LIMIT $3
-	`, id, kinds, limit+1, tree.PublishedAt, tree.CreatedAt)
+	`, id, kinds, limit+1, tree.PublishedAt, tree.CreatedAt, viewer.UserID, viewer.DeviceID)
 	if err != nil {
 		return nil, false, err
 	}
@@ -438,7 +456,7 @@ func (s *Store) CommunityTreeHistory(ctx context.Context, id uuid.UUID, viewer O
 			event         HistoryEvent
 			before, after []byte
 		)
-		if err := rows.Scan(&event.ID, &event.Kind, &event.OccurredAt, &before, &after); err != nil {
+		if err := rows.Scan(&event.ID, &event.Kind, &event.OccurredAt, &before, &after, &event.ByViewer); err != nil {
 			return nil, false, err
 		}
 		if before != nil {
