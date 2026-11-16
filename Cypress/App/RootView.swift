@@ -191,7 +191,8 @@ struct RootView: View {
             wrappedValue: MapModel(
                 api: data.api,
                 refreshProfile: data.refreshTreeProfile,
-                refreshMembership: data.refreshMapMembership
+                refreshMembership: data.refreshMapMembership,
+                refreshCommunity: data.refreshCommunityTrees
             )
         )
     }

@@ -28,13 +28,16 @@ import (
 // phone sets it, so it is null today for every tree, and a modified client could otherwise publish
 // free text beside somebody else's map pin. The tile is caller-independent, so it never carries one.
 //
-// **`createdAt` and `updatedAt` are truncated to the UTC day.** This is the orchestrator's history
-// ruling ("dates on the wire truncated to the day") applied to the one other place a community
-// tree's dates travel. `createdAt` is the moment the adder stood at the tree, to the second, for a
-// GPS-placed pin; `updatedAt` is, among other things, the moment the adder signed in (a claim
-// publishes and bumps it). A history that said "a day" beside a tile that said "18:41:46" would
-// have withheld nothing. The phone never needs more: the cursor, not `updatedAt`, is how it knows
-// what changed, and the adder's own rows are authored on the phone and win the merge (§5).
+// **`createdAt` and `updatedAt` are calendar days, sent as midnight UTC.** This is the
+// orchestrator's history ruling ("dates on the wire truncated to the day") applied to the one other
+// place a community tree's dates travel. `createdAt` is the tree's `added_on`, already a date: the
+// day the adder added it on the phone, for every viewer (the owner's decision of 2026-11-15).
+// `updatedAt` is, among other things, the moment the adder signed in (a claim publishes and bumps
+// it), so it is truncated to its UTC day. A history that said "a day" beside a tile that said
+// "18:41:46" would have withheld nothing. The phone never needs more: the cursor, not `updatedAt`, is
+// how it knows what changed, and the adder's own rows are authored on the phone and win the merge
+// (§5). `createdAt` can be one day after `updatedAt`'s day, for a tree added east of UTC on a day
+// that is still the previous day in UTC.
 func communityWireTree(tree store.CommunityTreeRecord, withAddress bool) wireTree {
 	var address *string
 	if withAddress {

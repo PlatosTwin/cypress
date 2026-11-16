@@ -825,6 +825,68 @@ public extension RemoteAPI {
         /// the wire and not about a photograph: the phone's own rows have no such value (their id
         /// *is* the key), and a stranger's rows never carry one.
         public let clientUUIDs: [UUID: UUID]
+        /// Each photograph's `captured_on`, by the service's `photo_id`, for the rows that carry
+        /// one (decision 14a). A dictionary beside `photos` for `clientUUIDs`' reason: it is a fact
+        /// about the wire. `RoutedAPI.refreshedTreeProfile(id:)` is where it reaches the screen.
+        public var capturedOn: [UUID: CalendarDay] = [:]
+        /// The service's `added_by_you`: the caller added this community tree. False for a city
+        /// tree, an unknown id and a hidden one alike, and for a service that sent no key.
+        public var addedByYou: Bool = false
+        // The response's `community_tree` and `is_published` are decoded and deliberately not
+        // carried here: `TreeCommunityHalfResponse.communityTree` says why.
+    }
+
+    /// `GET /community-trees?tile=14/x/y[&cursor=]` — one page of one tile of the community layer.
+    ///
+    /// A nil cursor asks for a snapshot. The answer's cursor is stored and sent back unchanged.
+    /// `CommunityTileRefresher` is the one caller; it applies each page in one transaction with its
+    /// cursor (`CommunityTreeCacheStore.apply`). The service answers `validation_failed` for a
+    /// cursor it no longer accepts (a rotated key, another tile's cursor), which arrives here as
+    /// `APIError.validationFailed` and which the refresher answers by dropping the tile.
+    func communityTile(_ tile: CommunityTile, cursor: String?) async throws -> CommunityTilePage {
+        var query = [URLQueryItem(name: "tile", value: tile.path)]
+        if let cursor { query.append(URLQueryItem(name: "cursor", value: cursor)) }
+        let data = try await transport.send(try request("community-trees", method: "GET", query: query))
+        let response = try decode(CommunityTileResponse.self, from: data)
+        return CommunityTilePage(
+            tile: response.tile,
+            trees: response.trees,
+            withdrawnTreeIDs: response.withdrawnTreeIDs,
+            nextCursor: response.nextCursor,
+            hasMore: response.hasMore
+        )
+    }
+
+    /// `GET /trees/{id}/history` — a community tree's public history, or **nil for the service's
+    /// `not_found`**, which means "no history" and not an error to surface: a city tree, an unknown
+    /// id and a tree hidden from the caller all answer it alike (`server/testdata/README.md`).
+    ///
+    /// Each event's `occurred_at` is midnight UTC of its day and becomes a `CalendarDay`, so no
+    /// surface can shift it into the reader's zone.
+    func treeHistory(id: UUID) async throws -> CommunityTreeHistory? {
+        let data: Data
+        do {
+            data = try await transport.send(try request("trees/\(id.uuidString)/history", method: "GET"))
+        } catch APIError.notFound {
+            return nil
+        }
+        let response = try decode(TreeHistoryResponse.self, from: data)
+        return CommunityTreeHistory(
+            treeID: response.treeUUID,
+            events: response.events.map { event in
+                CommunityTreeHistory.Event(
+                    id: event.id,
+                    kind: CommunityTreeHistory.Kind(wire: event.kind),
+                    day: CalendarDay(utcDayOf: event.occurredAt),
+                    fromCoordinate: event.fromCoordinate,
+                    toCoordinate: event.toCoordinate,
+                    fromSpeciesID: event.fromSpeciesID,
+                    toSpeciesID: event.toSpeciesID,
+                    placement: event.placement.map(CommunityTreeHistory.Placement.init(wire:))
+                )
+            },
+            isComplete: response.complete
+        )
     }
 
     /// `GET /me/grove`.
@@ -885,7 +947,16 @@ public extension RemoteAPI {
             clientUUIDs: Dictionary(
                 response.photos.compactMap { row in row.clientUUID.map { (row.photoID, $0) } },
                 uniquingKeysWith: { first, _ in first }
-            )
+            ),
+            // A `captured_on` that is not a real `YYYY-MM-DD` is treated as absent, so the row
+            // falls back to `captured_at` in the reader's zone rather than failing the profile.
+            capturedOn: Dictionary(
+                response.photos.compactMap { row in
+                    row.capturedOn.flatMap(CalendarDay.init(isoDate:)).map { (row.photoID, $0) }
+                },
+                uniquingKeysWith: { first, _ in first }
+            ),
+            addedByYou: response.addedByYou ?? false
         )
     }
 

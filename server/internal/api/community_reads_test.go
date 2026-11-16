@@ -454,8 +454,8 @@ func TestTheCursorNeverPassesARowThatMightStillCommit(t *testing.T) {
 	}
 	late := uuid.New()
 	execSQL(t, h, `
-		INSERT INTO community_trees (id, lat, lon, placement, user_id, published_at, created_at, updated_at)
-		VALUES ($1, $2, $3, 'gps', $4, $5, $5, $5)
+		INSERT INTO community_trees (id, lat, lon, placement, user_id, published_at, created_at, updated_at, added_on)
+		VALUES ($1, $2, $3, 'gps', $4, $5, $5, $5, ($5::timestamptz AT TIME ZONE 'UTC')::date)
 	`, late, north(40), ctLon, adder.UserID, stampedAt.Add(-time.Second))
 
 	delta := readTile(t, h, stranger, tile, *first.NextCursor, 0, nil)
@@ -1046,6 +1046,10 @@ func fixedClock(text string) func() time.Time {
 // signed in. So its private `added` event and its private move are in the table and must be in no
 // fixture; the public record starts with the `published` event at P1. Its dates carry seconds, so
 // the files prove the wire keeps the day only. Tree B was added signed in and went live at once.
+//
+// Each tree's `added_on` is the day its phone added it (the owner's decision of 2026-11-15), and
+// that is the day every fixture serves as its `createdAt` and its history's "added". For tree A
+// that is 2026-09-20, the day before it went live: P0 is 10:04 in San Francisco on the 20th.
 func seedGoldenWorld(t *testing.T, h *harness) sessionResponse {
 	t.Helper()
 	adder := signInAs(t, h, "ct.golden.adder", nil, accepted())
@@ -1054,8 +1058,8 @@ func seedGoldenWorld(t *testing.T, h *harness) sessionResponse {
 	added, privateMove, live := goldenTime("2026-09-20T17:04:11Z"), goldenTime("2026-09-20T18:00:00Z"), goldenTime("2026-09-21T09:00:00Z")
 	execSQL(t, h, `
 		INSERT INTO community_trees (id, lat, lon, address, species_id, placement, land_context,
-		                             user_id, published_at, created_at, updated_at)
-		VALUES ($1, 37.7601, -122.505, '1 Main St', $2, 'contributor_placed', 'street', $3, $4, $5, $4)
+		                             user_id, published_at, created_at, updated_at, added_on)
+		VALUES ($1, 37.7601, -122.505, '1 Main St', $2, 'contributor_placed', 'street', $3, $4, $5, $4, '2026-09-20')
 	`, goldenTreeA, goldenSpecies, adder.UserID, live, added)
 	inOneTransaction(t, h, []statement{
 		{`INSERT INTO community_tree_locations (id, tree_id, lat, lon, placement, actor_user_id, occurred_at,
@@ -1087,8 +1091,8 @@ func seedGoldenWorld(t *testing.T, h *harness) sessionResponse {
 	// Tree B.
 	b := goldenTime("2026-09-21T08:30:00Z")
 	execSQL(t, h, `
-		INSERT INTO community_trees (id, lat, lon, address, placement, user_id, published_at, created_at, updated_at)
-		VALUES ($1, 37.7605, -122.5046, '1 Main St', 'contributor_placed', $2, $3, $3, $3)
+		INSERT INTO community_trees (id, lat, lon, address, placement, user_id, published_at, created_at, updated_at, added_on)
+		VALUES ($1, 37.7605, -122.5046, '1 Main St', 'contributor_placed', $2, $3, $3, $3, '2026-09-21')
 	`, goldenTreeB, adder.UserID, b)
 	execSQL(t, h, `
 		INSERT INTO community_tree_locations (id, tree_id, lat, lon, placement, actor_user_id, occurred_at, recorded_at, was_public)
@@ -1170,8 +1174,8 @@ func seedGoldenChanges(t *testing.T, h *harness, adder sessionResponse) {
 
 	added := goldenTime("2026-09-26T12:00:00Z")
 	execSQL(t, h, `
-		INSERT INTO community_trees (id, lat, lon, placement, land_context, user_id, published_at, created_at, updated_at)
-		VALUES ($1, 37.7603, -122.5052, 'gps', 'city_park', $2, $3, $3, $3)
+		INSERT INTO community_trees (id, lat, lon, placement, land_context, user_id, published_at, created_at, updated_at, added_on)
+		VALUES ($1, 37.7603, -122.5052, 'gps', 'city_park', $2, $3, $3, $3, '2026-09-26')
 	`, goldenTreeC, adder.UserID, added)
 	execSQL(t, h, `
 		INSERT INTO community_tree_locations (id, tree_id, lat, lon, placement, actor_user_id, occurred_at, recorded_at, was_public)

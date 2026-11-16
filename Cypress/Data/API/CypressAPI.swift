@@ -1167,6 +1167,26 @@ public struct TreeProfile: Hashable, Sendable {
     /// `false` for every stub and preview, the safe direction: it offers nothing.
     public let canMovePin: Bool
 
+    /// Whether the reader added this community tree (round C2). Carried for the round that draws
+    /// it (C3, "the reader's own rows say 'you'"); nothing in C2 draws it.
+    ///
+    /// The phone answers from its own record: a tree this phone added whose adder is the reader.
+    /// `RoutedAPI.refreshedTreeProfile(id:)` **adopts the service's `added_by_you` when it says
+    /// yes**, which covers a tree the reader's account added on another phone, held here only in
+    /// the community cache. A service "no" never overrides the phone's yes: the service answers no
+    /// for a tree it has not received, and one phone can get both answers for one tree
+    /// (`server/testdata/README.md`).
+    ///
+    /// It is not `canMovePin`. That one also needs the tree in this phone's own table, because the
+    /// move is a local write (`LocalAPI.correctLocation`).
+    public let addedByYou: Bool
+
+    /// The tree's public history from the service (`GET /trees/{id}/history`), or nil: a city
+    /// tree, a read that did not reach the service, or the service's "no history". Carried for C3,
+    /// which draws it on the profile; nothing in C2 draws it. Each event's date is a
+    /// `CalendarDay`.
+    public let communityHistory: CommunityTreeHistory?
+
     public init(
         tree: Tree,
         activeName: TreeName? = nil,
@@ -1190,7 +1210,9 @@ public struct TreeProfile: Hashable, Sendable {
         speciesCorrection: SpeciesCorrectionOffer = .unavailable,
         recordDefect: RecordDefectOffer = .unavailable,
         statusProvenance: TreeStatusProvenance = .record,
-        canMovePin: Bool = false
+        canMovePin: Bool = false,
+        addedByYou: Bool = false,
+        communityHistory: CommunityTreeHistory? = nil
     ) {
         self.tree = tree
         self.activeName = activeName
@@ -1215,6 +1237,8 @@ public struct TreeProfile: Hashable, Sendable {
         self.recordDefect = recordDefect
         self.statusProvenance = statusProvenance
         self.canMovePin = canMovePin
+        self.addedByYou = addedByYou
+        self.communityHistory = communityHistory
     }
 
     /// Whether this device contributed the photo, and may therefore show it to the person who took

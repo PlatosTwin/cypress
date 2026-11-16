@@ -119,8 +119,8 @@ public actor LocalAPI: CypressAPI {
     /// connection instead of queueing behind each other three times.
     public func mapContent(in viewport: MapViewport) async throws -> MapContent {
         let overrideCache = self.overrideCache
-        let (seedContent, added, overrides) = try await store.queue.read {
-            connection -> (MapContent, [Tree], [UUID: TreeStatus]) in
+        let (seedContent, community, overrides) = try await store.queue.read {
+            connection -> (MapContent, CommunityRead, [UUID: TreeStatus]) in
             let seedContent: MapContent = try treeQueries.map {
                 try $0.mapContent(in: viewport, connection: connection)
             } ?? (viewport.shouldCluster ? .clusters([]) : .pins([]))
@@ -130,67 +130,57 @@ public actor LocalAPI: CypressAPI {
             // tables — the trees this phone added and other people's from the service — and
             // `CommunityLayer` reads them as one, the phone's own row winning.
             //
-            // **The narrowing has to be applied to them too, in Swift, or "only" leaks.** The seed
-            // half of a narrowed viewport is filtered in SQL; this half is a separate table that
-            // knows nothing about it, so a search for London Planes would have drawn every community
-            // tree in the box on top of the matches — and drawn them *dashed*, which reads as "the
-            // community found you these", the most convincing possible way to be wrong. Filtering
-            // here rather than in `CommunityTreeStore.inBounds` keeps the narrowing in one place per
-            // layer and costs nothing: the layer holds the trees this device added and the published
-            // trees of the tiles it has fetched, not an inventory.
-            let allAdded = try layer.inBounds(
-                viewport.bounds,
-                limit: viewport.pinLimit,
-                connection: connection
-            )
+            // **The narrowing has to be applied to them too, or "only" leaks.** The seed half of a
+            // narrowed viewport is filtered in SQL; this half is a separate table that knows nothing
+            // about it, so a search for London Planes would have drawn every community tree in the
+            // box on top of the matches — and drawn them *dashed*, which reads as "the community
+            // found you these", the most convincing possible way to be wrong.
             //
             // **Every narrowing, not just the species one (#116).** Each is the same leak in a
             // different color: a `Favorites` map that drew every community tree in the box would
             // be claiming the reader had hearted them, and a `2010s` map that drew a community tree
             // with no planting year would be claiming the city planted it in a decade nobody
-            // recorded. The year clause is deliberately `false` for a nil year, matching the SQL's
-            // `planted_year IS NOT NULL` on the seed side exactly — see ERRATA E175.
+            // recorded. A nil year never matches a year range, matching the seed side's
+            // `planted_year IS NOT NULL` exactly — see ERRATA E175.
             //
-            // **The two `siteKind` clauses mirror `TreeQueries.Narrowing.predicate` term for term**
-            // (tasks #178, #179), and they have to: a narrowing that reached the seed's SQL but not
-            // this filter would draw community vacant sites under a year while the city's own were
-            // correctly excluded — one filter telling two stories depending on who added the row.
-            // `MapSiteKind.of` is the single definition both sides call.
+            // **The `siteKind` and year statuses mirror `TreeQueries.Narrowing.predicate` term for
+            // term** (tasks #178, #179): a planting date on a site with no tree is the date of a
+            // tree that is gone, so a year admits only `hasTree` statuses. `MapSiteKind.of` is the
+            // single definition both sides call.
             //
             // **The two condition chips are here for the same reason** (task #240). `In bloom` is a
             // species narrowing, so it is resolved to the same uuid set the seed's SQL resolves —
             // through `TreeQueries.bloomingSpeciesIDs`, the one definition — and intersected with
-            // any typed or tapped species exactly as `TreeQueries.narrowing` intersects them. A
-            // community tree drawn under `Needs care` while the city's own were correctly excluded
-            // would be the dashed layer claiming *the community found you a tree that needs
-            // something*, which is the most convincing possible way to be wrong.
+            // any typed or tapped species exactly as `TreeQueries.narrowing` intersects them.
             // `?? []` rather than `flatMap`: with no seed attached there is no bloom calendar, and
             // the honest answer to "which species bloom this month" is then *none*. Letting it
             // collapse to nil would read as "no narrowing" and draw the whole community layer under
             // a chip that admitted nothing — the `[]` versus `nil` distinction R23 spends three
             // paragraphs on, one layer down.
+            //
+            // **Narrowed in the engine, then cut** (round C2's two reviews). The narrowing is
+            // resolved here to sets and applied in the statement's `WHERE`, so the pin read can cut
+            // to `pinLimit` after it (the phone's own trees first, then by id) and still never cut
+            // a match for a non-match, and the cluster read counts every match per cell without
+            // building a `Tree`. Narrowing in Swift after a whole read cost about 430 ms at 5,000
+            // cached trees in the box and 3.8 s at 50,000.
             let bloomingSpecies: Set<UUID>? = try viewport.bloomMonth.map { month in
                 try treeQueries?.bloomingSpeciesIDs(month: month, connection: connection) ?? []
             }
-            let added = allAdded.filter { tree in
-                if let wanted = viewport.speciesIDs {
-                    guard let id = tree.speciesCurrentID, wanted.contains(id) else { return false }
-                }
-                if let blooming = bloomingSpecies {
-                    guard let id = tree.speciesCurrentID, blooming.contains(id) else { return false }
-                }
-                if viewport.needsCare, !tree.status.needsCare { return false }
-                if let wanted = viewport.treeIDs, !wanted.contains(tree.id) { return false }
-                if let years = viewport.plantedYears {
-                    guard let planted = tree.plantedYear, years.contains(planted) else { return false }
-                    // Task #178: a planting date on a site with no tree is the date of a tree that
-                    // is gone, so it never answers "planted in the 2010s".
-                    guard MapSiteKind.of(tree.status) == .hasTree else { return false }
-                }
-                if let wanted = viewport.siteKind, MapSiteKind.of(tree.status) != wanted {
-                    return false
-                }
-                return true
+            let narrowing = Self.communityNarrowing(for: viewport, bloomingSpecies: bloomingSpecies)
+            let community: CommunityRead
+            if viewport.shouldCluster {
+                let centerLatitude = (viewport.bounds.minLatitude + viewport.bounds.maxLatitude) / 2
+                let cell = TreeQueries.cellSize(zoom: viewport.zoom, centerLatitude: centerLatitude)
+                community = .cells(try layer.cells(
+                    in: viewport.bounds, narrowing: narrowing,
+                    cellLatitude: cell.latitude, cellLongitude: cell.longitude,
+                    connection: connection
+                ))
+            } else {
+                community = .pins(try layer.pins(
+                    in: viewport.bounds, narrowing: narrowing, limit: viewport.pinLimit, connection: connection
+                ))
             }
 
             // Local status overrides (ERRATA E124-B): a lead-confirmed removal makes a tree a
@@ -203,7 +193,7 @@ public actor LocalAPI: CypressAPI {
             // and not fine to run on every camera change for the life of the app. `overrideCache`
             // holds the answer between the writes that can change it.
             let overrides = try overrideCache ?? contributions.statusOverrides(connection: connection)
-            return (seedContent, added, overrides)
+            return (seedContent, community, overrides)
         }
         self.overrideCache = overrides
         func applyingOverrides(_ content: MapContent) -> MapContent {
@@ -223,10 +213,9 @@ public actor LocalAPI: CypressAPI {
             }))
         }
 
-        guard !added.isEmpty else { return applyingOverrides(seedContent) }
-
-        switch seedContent {
-        case let .pins(answer):
+        switch (seedContent, community) {
+        case let (.pins(answer), .pins(read)):
+            guard !read.trees.isEmpty else { return applyingOverrides(seedContent) }
             // The community layer gets its own share of the budget rather than the tail of the
             // seed's.
             //
@@ -241,7 +230,7 @@ public actor LocalAPI: CypressAPI {
             // layer DECISIONS §3.16 requires to be visually distinct. What it spends is seed pins,
             // one for each community tree — and the 260th seed pin in a viewport of 264 is worth
             // less than the tree somebody stood in front of and added.
-            let communityPins = added.map {
+            let communityPins = read.trees.map {
                 TreePin(
                     id: $0.id,
                     coordinate: $0.coordinate,
@@ -251,46 +240,105 @@ public actor LocalAPI: CypressAPI {
                     speciesID: $0.speciesCurrentID
                 )
             }
-            let seedBudget = max(viewport.pinLimit - communityPins.count, 0)
-            let kept = Array(answer.items.prefix(seedBudget)) + communityPins
+            //
+            // **And the community share is capped** (round C2). Since the cache holds other
+            // people's trees, the layer can be dense, and a reservation with no ceiling let it take
+            // the whole budget: 400 community pins in a box drew no city tree at all. The layer now
+            // takes at most half the budget when the city layer could use the rest, and any part
+            // of the budget the city layer leaves unused (`communityPinShare`). The phone's own
+            // trees come first inside the share (`CommunityLayer.pinsSQL`).
+            //
+            // `read.matches` is every narrowed community tree in the box, counted before the
+            // statement's cut, so `matchesInView` below counts all of them.
+            let communityShare = Self.communityPinShare(
+                pinLimit: viewport.pinLimit,
+                cityPins: answer.items.count,
+                communityPins: communityPins.count
+            )
+            let keptCommunity = Array(communityPins.prefix(communityShare))
+            let seedBudget = max(viewport.pinLimit - keptCommunity.count, 0)
+            let kept = Array(answer.items.prefix(seedBudget)) + keptCommunity
             // Reserving the community layer's space spends seed pins, and on a narrowed map those
             // are matches — so if this cut anything, the answer is a sample whether or not the grid
-            // already made it one. `PinAnswer` collapses a "sample" that dropped nothing, so an
-            // untouched answer still reports itself complete.
+            // already made it one. The cap cuts community pins the same way. `PinAnswer` collapses
+            // a "sample" that dropped nothing, so an untouched answer still reports itself complete.
             let dropped = answer.items.count - min(answer.items.count, seedBudget)
+                + read.matches - keptCommunity.count
             return applyingOverrides(.pins(PinAnswer(
                 kept,
-                matchesInView: answer.matchesInView.map { $0 + communityPins.count }
-                    ?? (dropped > 0 ? answer.items.count + communityPins.count : nil)
+                matchesInView: answer.matchesInView.map { $0 + read.matches }
+                    ?? (dropped > 0 ? answer.items.count + read.matches : nil)
             )))
 
-        case var .clusters(clusters):
-            let centerLatitude = (viewport.bounds.minLatitude + viewport.bounds.maxLatitude) / 2
-            let cell = TreeQueries.cellSize(zoom: viewport.zoom, centerLatitude: centerLatitude)
+        case let (.clusters(clusters), .cells(cells)):
+            guard !cells.isEmpty else { return seedContent }
             var byCell = Dictionary(uniqueKeysWithValues: clusters.map { ($0.id, $0) })
-            for tree in added {
-                let cellY = Int((tree.coordinate.latitude + 90.0) / cell.latitude)
-                let cellX = Int((tree.coordinate.longitude + 180.0) / cell.longitude)
-                let id = "z\(viewport.zoom):\(cellY):\(cellX)"
+            for cell in cells {
+                let id = "z\(viewport.zoom):\(cell.cellY):\(cell.cellX)"
                 if let existing = byCell[id] {
-                    // Weighted mean, so adding one community tree to a cell of 2,000 does not move
-                    // the badge.
-                    let total = existing.count + 1
+                    // Weighted mean, so adding community trees to a cell of 2,000 does not move the
+                    // badge further than their share.
+                    let total = existing.count + cell.count
                     byCell[id] = TreeCluster(
                         id: id,
                         coordinate: Coordinate(
-                            latitude: (existing.coordinate.latitude * Double(existing.count) + tree.coordinate.latitude) / Double(total),
-                            longitude: (existing.coordinate.longitude * Double(existing.count) + tree.coordinate.longitude) / Double(total)
+                            latitude: (existing.coordinate.latitude * Double(existing.count)
+                                + cell.coordinate.latitude * Double(cell.count)) / Double(total),
+                            longitude: (existing.coordinate.longitude * Double(existing.count)
+                                + cell.coordinate.longitude * Double(cell.count)) / Double(total)
                         ),
                         count: total
                     )
                 } else {
-                    byCell[id] = TreeCluster(id: id, coordinate: tree.coordinate, count: 1)
+                    byCell[id] = TreeCluster(id: id, coordinate: cell.coordinate, count: cell.count)
                 }
             }
-            clusters = Array(byCell.values)
-            return .clusters(clusters)
+            return .clusters(Array(byCell.values))
+
+        default:
+            // The two reads take their shape from the same `viewport.shouldCluster`, so they
+            // always agree; a mismatch would mean a reader changed, and the seed's answer stands.
+            return applyingOverrides(seedContent)
         }
+    }
+
+    /// What the community layer is narrowed to on this viewport, as `CommunityLayer.Narrowing`
+    /// sets. `bloomingSpecies` is the month's blooming species, resolved by the caller.
+    static func communityNarrowing(for viewport: MapViewport, bloomingSpecies: Set<UUID>?) -> CommunityLayer.Narrowing {
+        var species = viewport.speciesIDs
+        if let blooming = bloomingSpecies { species = species.map { $0.intersection(blooming) } ?? blooming }
+        var statuses: Set<TreeStatus>?
+        func admit(_ allowed: Set<TreeStatus>) {
+            statuses = statuses.map { $0.intersection(allowed) } ?? allowed
+        }
+        if viewport.needsCare { admit(Set(TreeStatus.allCases.filter(\.needsCare))) }
+        if let kind = viewport.siteKind { admit(Set(TreeStatus.allCases.filter { MapSiteKind.of($0) == kind })) }
+        if viewport.plantedYears != nil { admit(Set(TreeStatus.allCases.filter { MapSiteKind.of($0) == .hasTree })) }
+        return CommunityLayer.Narrowing(
+            speciesIDs: species,
+            statuses: statuses,
+            treeIDs: viewport.treeIDs,
+            plantedYears: viewport.plantedYears
+        )
+    }
+
+    /// The community half of one map read: pins for a pin answer, per-cell counts for a cluster one.
+    enum CommunityRead {
+        case pins(CommunityLayer.PinRead)
+        case cells([CommunityLayer.Cell])
+    }
+
+    /// How many community pins a pin answer keeps (round C2): at most half of `pinLimit` when the
+    /// city layer could use the other half, plus whatever the city layer leaves unused.
+    ///
+    /// Half is the ROADMAP's proposal. **The half is rounded down**, so an odd budget gives the
+    /// odd pin to the city layer. A budget the city layer does not fill is not withheld: a map
+    /// over a park with 30 city trees and 300 added ones draws all 330 under a budget of 400.
+    /// `cityPins` is the city layer's answer, which `TreeQueries` has already capped at
+    /// `pinLimit`.
+    static func communityPinShare(pinLimit: Int, cityPins: Int, communityPins: Int) -> Int {
+        let ceiling = max(pinLimit / 2, pinLimit - cityPins)
+        return max(0, min(communityPins, ceiling))
     }
 
     public func treesNear(_ coordinate: Coordinate, radiusM: Double, limit: Int) async throws -> [NearbyTree] {
@@ -375,7 +423,9 @@ public actor LocalAPI: CypressAPI {
 
             let adder = addedHere ? try communityTrees.adder(treeID: id, connection: connection) : nil
             // The adder test, and ROADMAP 107's: a tree the service never received (R77) is
-            // answered `not_found`, so its move is not offered. C2's `added_by_you` replaces both.
+            // answered `not_found`, so its move is not offered. C2 carries the service's
+            // `added_by_you` on `TreeProfile.addedByYou` and leaves this gate as it is: the move is
+            // a write to this phone's own row, which a tree held only in the cache does not have.
             let isAdder = adder?.isOwned(by: attribution) ?? false
             let canMovePin = isAdder
                 ? try communityTrees.mayHaveReachedService(treeID: id, connection: connection)
@@ -465,7 +515,10 @@ public actor LocalAPI: CypressAPI {
                 // here), an adder who is the reader, and a tree the service may hold
                 // (`mayHaveReachedService`, which `correctLocation` does not apply). A withdrawn
                 // tree never reaches this line (it threw above).
-                canMovePin: canMovePin
+                canMovePin: canMovePin,
+                // The phone's half of `added_by_you`: this phone's own record says the reader added
+                // it. `RoutedAPI.refreshedTreeProfile(id:)` adopts the service's yes on top.
+                addedByYou: isAdder
             )
         }
     }

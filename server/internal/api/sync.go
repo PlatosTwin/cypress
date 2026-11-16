@@ -81,6 +81,13 @@ type addTreePayload struct {
 	// LocationAccuracyM is the fix's horizontal accuracy in metres (D6), optional. `TreeAddition`
 	// does not carry it at 007; C1 may add it under this name, and until then it is NULL.
 	LocationAccuracyM *float64 `json:"locationAccuracyM"`
+	// AddedOn is the phone's own **local** calendar date of the add, exactly `YYYY-MM-DD`: the day
+	// everybody is shown as the day the tree was added (the owner's decision of 2026-11-15). It is
+	// `captured_on`'s idea (decision 14a) spelled the way this payload spells keys, after the Swift
+	// property. Optional: a build that does not send it gets the UTC date of `occurred_at`, and the
+	// service that preceded this field ignored it, so neither order of deploy breaks an add.
+	// `store.addedDay` decides what is stored.
+	AddedOn *string `json:"addedOn"`
 }
 
 // locationCorrectionPayload is `TreeLocationCorrection` as the client encodes it (the community-trees
@@ -736,6 +743,18 @@ func (s *Server) applyOne(r *http.Request, raw json.RawMessage, who caller, owne
 		if payload.LocationAccuracyM != nil && !(*payload.LocationAccuracyM >= 0) {
 			return failed(apierr.ValidationFailed, "That location accuracy is not a distance.")
 		}
+		// A day that is not a date in exactly `YYYY-MM-DD` is a malformed item, refused like every
+		// other malformed field here. A real date that is implausible (far from the add's instant,
+		// in the future, or before the app existed) is not refused: the tree is good even when the
+		// phone's calendar is not, so `store.addedDay` replaces that day instead.
+		var addedOn *time.Time
+		if payload.AddedOn != nil {
+			day, err := time.Parse(capturedOnLayout, *payload.AddedOn)
+			if err != nil {
+				return failed(apierr.ValidationFailed, "That item's added day is not a date.")
+			}
+			addedOn = &day
+		}
 
 		addition = &store.NewCommunityTree{
 			ID:          item.TreeUUID,
@@ -747,6 +766,7 @@ func (s *Server) applyOne(r *http.Request, raw json.RawMessage, who caller, owne
 			LandContext: payload.LandContext,
 
 			LocationAccuracyM: payload.LocationAccuracyM,
+			AddedOn:           addedOn,
 		}
 	}
 

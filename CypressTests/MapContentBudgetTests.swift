@@ -96,7 +96,13 @@ struct MapContentBudgetTests {
 
         let content = Self.pins(try await api.mapContent(in: viewport))
         #expect(content.count <= limit, "the viewport returned \(content.count) pins for a budget of \(limit)")
-        #expect(content.allSatisfy { added.contains($0.id) })
+        // Round C2 caps the community share: with the city layer able to fill the budget, the
+        // community layer takes half of it, rounded down, and no longer the whole
+        // (`LocalAPI.communityPinShare`). Before the cap this test asserted every pin was a
+        // community tree, which is the starvation the cap exists to stop.
+        let communityPins = content.filter { added.contains($0.id) }
+        #expect(communityPins.count == limit / 2, "the community layer took \(communityPins.count) of \(limit)")
+        #expect(content.count - communityPins.count == limit - limit / 2, "the city layer lost its share")
     }
 
     @Test("a clustered viewport still counts the community tree in its badge")

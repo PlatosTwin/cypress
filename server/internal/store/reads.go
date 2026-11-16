@@ -424,6 +424,10 @@ type NewCommunityTree struct {
 	LandContext *string
 	// LocationAccuracyM is the fix's accuracy (D6), optional: nil is "the phone did not say".
 	LocationAccuracyM *float64
+	// AddedOn is the phone's own local calendar day of the add (`addedOn` on the wire), as midnight
+	// UTC of that date. Optional: nil is a build that does not send it. `addedDay` decides what is
+	// stored, and it never stores this value unchecked.
+	AddedOn *time.Time
 }
 
 // AddTree inserts a community tree under the client's own id, for `POST /trees`.
