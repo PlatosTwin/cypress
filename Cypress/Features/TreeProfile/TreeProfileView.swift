@@ -645,6 +645,8 @@ struct TreeProfileView: View {
                 Text(TreeProfileCopy.claimSpeciesAction)
                     .font(CypressFont.body13Bold)
                     .foregroundStyle(CypressColor.ctaFill)
+                    // Each line on the leading edge when it wraps, as in `recordLinkAction`.
+                    .multilineTextAlignment(.leading)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .contentShape(Rectangle())
             }
@@ -847,6 +849,10 @@ struct TreeProfileView: View {
             Text(label)
                 .font(CypressFont.body13Bold)
                 .foregroundStyle(CypressColor.ctaFill)
+                // The default button style centers a label's lines, so a link that wraps at a large
+                // text size drew its second line in the middle of the column (ROADMAP 183). The frame
+                // below puts the text block on the leading edge; this puts each line there.
+                .multilineTextAlignment(.leading)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .contentShape(Rectangle())
         }

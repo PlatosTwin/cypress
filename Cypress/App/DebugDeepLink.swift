@@ -898,17 +898,56 @@ enum DebugDeepLink {
 
     /// The cached trees of somebody else's: one fixed id and spot per case, so a case never writes
     /// onto a tree another case reads, and a re-run replaces its own row.
+    ///
+    /// `othersTree` and `othersTreeUnnamed` sat on `addTreeNearbySpot` and `addTreeAloneSpot` until
+    /// ROADMAP 193, so a run of `OthersTreeUITests` left a cached tree where `.addTreeAlone` needs
+    /// open water, and `.addTreeAlone` then failed on that simulator. They now have spots of their
+    /// own, north of the withdrawal round's. `treeSpot(for:)` lists every case's spot, and
+    /// `DebugDeepLinkSpotTests` holds them 100 m apart.
     static func othersTreeSeat(_ screen: Screen) -> (id: UUID, spot: Coordinate) {
         switch screen {
         case .othersTreeUnnamed:
             return (UUID(uuidString: "C3000000-0000-4000-8000-0000000000B2")!,
-                    Coordinate(latitude: 37.7726, longitude: -122.5300))
+                    Coordinate(latitude: 37.7942, longitude: -122.5300))
         case .othersTreeOnMap:
             return (UUID(uuidString: "C3000000-0000-4000-8000-0000000000B3")!,
                     Coordinate(latitude: 37.7744, longitude: -122.5300))
         default:
             return (UUID(uuidString: "C3000000-0000-4000-8000-0000000000B1")!,
-                    Coordinate(latitude: 37.7708, longitude: -122.5300))
+                    Coordinate(latitude: 37.7924, longitude: -122.5300))
+        }
+    }
+
+    /// Where each case puts its tree, or the start of its line of slots: `nil` for a case that
+    /// places no tree of its own at sea. `DebugDeepLinkSpotTests` reads it for every case in
+    /// `Screen.allCases` and fails when two spots are closer than 100 m.
+    ///
+    /// **How a new spot gets in.** The switch has no `default`, so a new `Screen` case does not
+    /// compile until it is given a line here. A case that places a tree returns the spot it uses,
+    /// read from the same constant or function the case itself reads.
+    static func treeSpot(for screen: Screen) -> Coordinate? {
+        switch screen {
+        case .speciesClaim: return claimedSpot
+        case .speciesUnclaimed: return unclaimedSpot
+        case .communityPhotos: return communityPhotoSpot
+        case .recordDefect: return recordDefectSpot
+        case .movePin: return movePinSpot
+        case .profileLinks: return profileLinksSpot
+        case .addTreeNearby: return addTreeNearbySpot
+        case .addTreeAlone: return addTreeAloneSpot
+        case .othersTree, .othersTreeUnnamed, .othersTreeOnMap: return othersTreeSeat(screen).spot
+        case .othersTreeSharing: return othersSharingSpot
+        case .othersTreeUnnamedSharing: return othersUnnamedSharingSpot
+        case .ownTreeSpeciesReported: return ownReportedSpot
+        case .unsharedSignedOut: return signedOutSpot
+        case .unsharedNotSharing: return notSharingSpot
+        case .withdrawTree, .withdrawTreeShared, .withdrawTreeBuiltOn, .withdrawTreeRefused:
+            return withdrawTreeSpot(screen)
+        case .treeProfile, .site, .species, .checkIn, .report, .growthHistory, .activity, .measure,
+             .fullyMeasured, .outbox, .memorial, .deadProfile, .photos, .photoHero, .anonymizedPhotos,
+             .dataDispute, .strandedPhotoHero, .careLog, .share, .accountAsk, .grove, .journal,
+             .journalList, .journalContributions, .journalCity, .you, .moderationReview, .pinAdjust:
+            return nil
         }
     }
 
