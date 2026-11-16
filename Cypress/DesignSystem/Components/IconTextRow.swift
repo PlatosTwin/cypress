@@ -20,6 +20,10 @@ struct IconTextRow: View {
     /// `ContributionStore.heroPhotoIDs` rather than here — this component only draws the id it is
     /// given.
     var photoID: UUID?
+    /// Draws the community tree mark (`CommunityTreeTile`) in the tile, in place of the accent or
+    /// the photograph. Only the Journal's pin-move row sets it (the app owner's decision of
+    /// 2026-11-15); every other call site leaves it `false` and draws what it always drew.
+    var drawsCommunityTreeMark = false
     var action: (() -> Void)?
 
     var body: some View {
@@ -87,11 +91,18 @@ struct IconTextRow: View {
     /// `drawsEmptyWell`.
     private var tile: some View {
         Group {
-            if Self.drawsEmptyWell(accent) {
+            switch Self.tileDrawing(
+                accent: accent,
+                photoID: photoID,
+                drawsCommunityTreeMark: drawsCommunityTreeMark
+            ) {
+            case .communityTreeMark:
+                CommunityTreeTile()
+            case .emptyWell:
                 emptyWell
-            } else if let photoID {
+            case let .photo(photoID):
                 PhotoImage(photoID: photoID, placeholder: Self.placeholderRecipe(accent))
-            } else {
+            case .accent:
                 CypressGradientField(Self.placeholderRecipe(accent))
             }
         }
@@ -101,6 +112,29 @@ struct IconTextRow: View {
         )
         .cypressCornerRadius(CypressRadius.thumbSmAlt)
         .accessibilityHidden(true)
+    }
+
+    /// What the tile draws, as a value, for `drawsEmptyWell`'s reason: SwiftUI builds no render
+    /// tree a test can walk.
+    enum TileDrawing: Equatable {
+        case communityTreeMark
+        case emptyWell
+        case photo(UUID)
+        case accent
+    }
+
+    /// The community tree mark first, when the caller asks for it; then the rule this row always
+    /// had: the empty well for a vacant site, the photograph when there is one, the accent
+    /// otherwise.
+    static func tileDrawing(
+        accent: CypressColor.TileAccent,
+        photoID: UUID?,
+        drawsCommunityTreeMark: Bool
+    ) -> TileDrawing {
+        if drawsCommunityTreeMark { return .communityTreeMark }
+        if drawsEmptyWell(accent) { return .emptyWell }
+        if let photoID { return .photo(photoID) }
+        return .accent
     }
 
     /// The empty planting basin, drawn exactly as 14's empty photo well, the site screen and

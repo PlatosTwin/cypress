@@ -107,6 +107,12 @@ struct JournalQueryPlanTests {
         // `ContributionStore.activeNamesSQL` for why the collation that forbids the seek is kept,
         // and the file header for why `AppSchema` v19 fixed its two neighbours and not this one.
         "tree_names",
+        // The pin's chains of the trees this phone added (`AppSchema` v23): one root row per tree
+        // added here and one row per move. The page query's fifth arm, a pin move, walks it,
+        // because it has no index on `occurred_at` by itself and adding one is a migration. Bounded
+        // by one person's own adds and moves, the premise `tree_names` is allowed on. The arm does
+        // not sort for itself; `thePageQueryStops` still counts one temp b-tree.
+        "tree_locations",
         // The `IN` list of a batched read, a virtual table over a bound JSON array.
         "json_each"
         //
@@ -294,6 +300,18 @@ struct JournalQueryPlanTests {
                 """
             )
 
+            // The pin-move arm's withdrawn-tree check is one indexed probe per move, not a walk of
+            // `community_trees`, which is not on `scannable`.
+            #expect(
+                steps.contains(where: {
+                    $0.contains("SEARCH withdrawn") && $0.contains("idx_community_trees_id")
+                }),
+                """
+                the pin-move arm's withdrawn-tree check no longer seeks idx_community_trees_id — \
+                \(plan)
+                """
+            )
+
             // The tombstone lookup is still one indexed probe per candidate row, not a scan.
             #expect(
                 steps.contains(where: {
@@ -399,6 +417,40 @@ struct JournalQueryPlanTests {
     }
 
     // MARK: - The calibration
+
+    /// **The gate still refuses a walk that is not on the list**, measured on the page query
+    /// itself rather than assumed.
+    ///
+    /// `tree_locations` joined `scannable` with the pin-move arm. This is the known answer that says
+    /// the list did not become a licence: the same page query, with its withdrawn-tree probe
+    /// rewritten as `lower(…) = lower(…)` so no index can answer it, must walk `community_trees`,
+    /// and the gate must refuse that walk.
+    @Test("the page query's gate still refuses a walk of a relation not on the list")
+    func theGateRefusesAnUnlistedWalk() async throws {
+        let store = try await Self.store()
+        let probe = "withdrawn.id = tree_locations.tree_id COLLATE NOCASE"
+        #expect(
+            ContributionStore.journalSQL.contains(probe),
+            "the calibration's edit point is gone from journalSQL; rewrite this test against the new text"
+        )
+        let walking = ContributionStore.journalSQL.replacingOccurrences(
+            of: probe,
+            with: "lower(withdrawn.id) = lower(tree_locations.tree_id)"
+        )
+
+        try await store.queue.read { connection in
+            let steps = try connection.queryPlan(for: walking)
+            let scanned = steps.compactMap { GroveQueryPlanTests.scannedRelation(in: $0) }
+            let refused = scanned.filter { !Self.isPermittedScan($0, derivedTablesAllowed: true) }
+            #expect(
+                refused == ["withdrawn"],
+                """
+                the edited page query should walk community_trees (as `withdrawn`) and only that \
+                walk should be refused; refused \(refused) — \(steps.joined(separator: " | "))
+                """
+            )
+        }
+    }
 
     /// **Every string above still parses and plans against the real schema.**
     ///

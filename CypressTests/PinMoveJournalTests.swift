@@ -1,0 +1,384 @@
+import Foundation
+import SwiftUI
+import Testing
+import UIKit
+@testable import Cypress
+
+/// A pin move in the Journal: "Moved the pin of Grandmother Cypress" (the app owner's decision of
+/// 2026-11-14), with the community tree mark in its square (the decision of 2026-11-15).
+///
+/// The row comes from `ContributionStore.journalSQL`'s fifth arm, over `tree_locations`. The
+/// sentences this suite makes true:
+///
+/// 1. a move by this phone's person is a row, with the tree, the moment of the move, and the
+///    owner's title;
+/// 2. the root row (where the tree was first put) is not a move and is not a row;
+/// 3. a move by another device on the same phone is not this person's row;
+/// 4. a move on a withdrawn tree is not a row, because the row opens a profile that no longer opens;
+/// 5. pages across a pin move and a visit that share one moment lose and repeat nothing;
+/// 6. the row's square is the community tree mark, and no other row's square changed.
+@Suite("Journal · a pin move")
+struct PinMoveJournalTests {
+
+    static let deviceID = UUID(uuidString: "D0000000-0000-4000-8000-0000000C3C01")!
+    static let otherDeviceID = UUID(uuidString: "D0000000-0000-4000-8000-0000000C3C02")!
+
+    /// West of Ocean Beach, where the street-tree inventory has nothing (`LocationCorrectionTests`).
+    static let offshore = Coordinate(latitude: 37.7600, longitude: -122.5400)
+
+    /// Whole seconds, so the stored millisecond timestamp reads back as the same `Date`.
+    static let start = Date(timeIntervalSince1970: 1_800_000_000)
+
+    static func capture() -> String {
+        let path = NSTemporaryDirectory() + "cypress-c3-journal-\(UUID().uuidString).jpg"
+        FileManager.default.createFile(atPath: path, contents: Data([0xFF, 0xD8, 0xFF, 0xD9]))
+        return path
+    }
+
+    static func add(_ api: LocalAPI, device: UUID, at coordinate: Coordinate) async throws -> Tree {
+        try await api.addTree(
+            TreeDraft(
+                coordinate: coordinate,
+                photoLocalPath: capture(),
+                attribution: .anonymous(deviceID: device)
+            )
+        )
+    }
+
+    static func move(_ api: LocalAPI, _ tree: Tree, meters: Double) async throws {
+        _ = try await api.correctLocation(
+            treeID: tree.id,
+            to: ProximityDedupeTests.diagonal(from: tree.coordinate, meters: meters),
+            placement: .contributorPlaced,
+            locationAccuracyM: 5
+        )
+    }
+
+    static func visit(_ store: CypressStore, _ tree: Tree, device: UUID, at moment: Date) async throws {
+        try await store.queue.write { connection in
+            try ContributionStore().insert(
+                Visit(treeID: tree.id, attribution: .anonymous(deviceID: device), capturedAt: moment),
+                connection: connection
+            )
+        }
+    }
+
+    static func wholeJournal(_ api: LocalAPI, limit: Int = 25) async throws -> [JournalEntry] {
+        var entries: [JournalEntry] = []
+        var cursor: String?
+        repeat {
+            let page = try await api.journal(cursor: cursor, limit: limit)
+            entries += page.items
+            cursor = page.nextCursor
+        } while cursor != nil
+        return entries
+    }
+
+    // MARK: - 1. The row
+
+    /// Red-proof: delete the fifth arm's `UNION ALL` from `journalSQL`, and this goes red on "the
+    /// journal holds no pin move".
+    @Test("a move by this phone is a row with its tree, its moment, and the owner's title")
+    func aMoveIsARow() async throws {
+        let store = try await CypressStore.inMemory()
+        let clock = OutboxTestSupport.Clock(Self.start)
+        let api = LocalAPI(store: store, deviceID: Self.deviceID, now: clock.closure)
+        let tree = try await Self.add(api, device: Self.deviceID, at: Self.offshore)
+        clock.advance(by: 3_600)
+        let movedAt = clock.now
+        try await Self.move(api, tree, meters: 30)
+
+        let entries = try await Self.wholeJournal(api)
+        let moves = entries.filter { $0.kind == .pinMoved }
+        #expect(moves.count == 1, "the journal holds \(moves.count) pin moves, not 1: \(entries)")
+        let move = try #require(moves.first, "the journal holds no pin move")
+        #expect(move.treeID == tree.id)
+        #expect(move.capturedAt == movedAt, "the row is dated \(move.capturedAt), not the move's \(movedAt)")
+        #expect(move.summary == "", "a pin move carries no second line, but read \(move.summary)")
+        // The chain row's own id, never the tree's: that one belongs to the root.
+        #expect(move.id != tree.id)
+
+        let row = try #require(JournalPresentation(entries: [move], nextCursor: nil).rows.first)
+        let name = move.treeDisplayName.isEmpty
+            ? TreeProfilePresentation.fallbackTitle
+            : move.treeDisplayName
+        #expect(row.title == "Moved the pin of \(name)")
+        #expect(row.subtitle == "")
+        #expect(row.treeID == tree.id)
+    }
+
+    @Test("the title is the owner's words, verb first")
+    func theTitleIsTheOwnersWords() {
+        #expect(JournalCopy.verb(for: .pinMoved) == "Moved the pin of")
+        #expect(
+            JournalCopy.rowTitle(kind: .pinMoved, treeName: "Grandmother Cypress")
+                == "Moved the pin of Grandmother Cypress"
+        )
+    }
+
+    // MARK: - 2-4. What is not a row
+
+    /// Red-proof: drop `id <> tree_id COLLATE NOCASE` from the fifth arm, and this goes red on the
+    /// root row read as a move.
+    @Test("the root row records the add, and is not a move")
+    func theRootIsNotAMove() async throws {
+        let store = try await CypressStore.inMemory()
+        let api = LocalAPI(store: store, deviceID: Self.deviceID)
+        let tree = try await Self.add(api, device: Self.deviceID, at: Self.offshore)
+
+        let moves = try await Self.wholeJournal(api).filter { $0.kind == .pinMoved }
+        #expect(
+            moves.isEmpty,
+            "a tree with no move reads as \(moves.count) pin moves; ids \(moves.map(\.id)), tree \(tree.id)"
+        )
+    }
+
+    /// Red-proof: drop the owner predicate from the fifth arm, and this goes red on the other
+    /// device's move.
+    @Test("another device's move on this phone is not this person's row")
+    func anotherDevicesMoveIsNotARow() async throws {
+        let store = try await CypressStore.inMemory()
+        let mine = LocalAPI(store: store, deviceID: Self.deviceID)
+        let theirs = LocalAPI(store: store, deviceID: Self.otherDeviceID)
+
+        let myTree = try await Self.add(mine, device: Self.deviceID, at: Self.offshore)
+        let theirTree = try await Self.add(
+            theirs,
+            device: Self.otherDeviceID,
+            at: ProximityDedupeTests.diagonal(from: Self.offshore, meters: 200)
+        )
+        try await Self.move(mine, myTree, meters: 30)
+        try await Self.move(theirs, theirTree, meters: 30)
+
+        let myMoves = try await Self.wholeJournal(mine).filter { $0.kind == .pinMoved }
+        #expect(myMoves.map(\.treeID) == [myTree.id], "this person's journal reads moves on \(myMoves.map(\.treeID))")
+        let theirMoves = try await Self.wholeJournal(theirs).filter { $0.kind == .pinMoved }
+        #expect(theirMoves.map(\.treeID) == [theirTree.id])
+    }
+
+    /// Red-proof: drop the `withdrawn` clause from the fifth arm, and this goes red on the move
+    /// that is still read.
+    @Test("a move on a withdrawn tree is not a row")
+    func aWithdrawnTreesMoveIsNotARow() async throws {
+        let store = try await CypressStore.inMemory()
+        let api = LocalAPI(store: store, deviceID: Self.deviceID)
+        let kept = try await Self.add(api, device: Self.deviceID, at: Self.offshore)
+        let withdrawn = try await Self.add(
+            api,
+            device: Self.deviceID,
+            at: ProximityDedupeTests.diagonal(from: Self.offshore, meters: 200)
+        )
+        try await Self.move(api, kept, meters: 30)
+        try await Self.move(api, withdrawn, meters: 30)
+
+        let before = try await Self.wholeJournal(api).filter { $0.kind == .pinMoved }
+        #expect(Set(before.map(\.treeID)) == [kept.id, withdrawn.id], "both moves read before the withdrawal")
+
+        let didWithdraw = try await store.queue.write { connection in
+            try CommunityTreeStore().withdraw(treeID: withdrawn.id, at: Self.start, connection: connection)
+        }
+        #expect(didWithdraw)
+
+        let after = try await Self.wholeJournal(api).filter { $0.kind == .pinMoved }
+        #expect(
+            after.map(\.treeID) == [kept.id],
+            "after the withdrawal the journal reads moves on \(after.map(\.treeID)), not only \(kept.id)"
+        )
+    }
+
+    // MARK: - 5. Paging
+
+    /// A pin move and a visit at the same moment, read one row per page. Each must appear once:
+    /// the cursor is `(captured_at, id)`, and the fifth arm takes it as the other four do.
+    ///
+    /// Red-proof: make the fifth arm compare `occurred_at` alone (`occurred_at < COALESCE(:cursorAt,
+    /// …)`), and this goes red on the row the tie loses.
+    @Test("pages across a pin move and a visit that share one moment lose and repeat nothing")
+    func pagesAcrossATie() async throws {
+        let store = try await CypressStore.inMemory()
+        let clock = OutboxTestSupport.Clock(Self.start)
+        let api = LocalAPI(store: store, deviceID: Self.deviceID, now: clock.closure)
+        let tree = try await Self.add(api, device: Self.deviceID, at: Self.offshore)
+        clock.advance(by: 60)
+        let moment = clock.now
+        try await Self.move(api, tree, meters: 30)
+        try await Self.visit(store, tree, device: Self.deviceID, at: moment)
+        try await Self.visit(store, tree, device: Self.deviceID, at: moment.addingTimeInterval(-60))
+
+        let all = try await Self.wholeJournal(api, limit: 25)
+        let paged = try await Self.wholeJournal(api, limit: 1)
+
+        #expect(all.count == 3, "the whole journal holds \(all.count) rows, not a move and two visits")
+        #expect(paged.map(\.id) == all.map(\.id), "one row per page read \(paged.map(\.kind)), whole read \(all.map(\.kind))")
+        #expect(Set(paged.map(\.id)).count == paged.count, "a row was read twice")
+        #expect(paged.filter { $0.kind == .pinMoved }.count == 1)
+        #expect(paged.filter { $0.capturedAt == moment }.count == 2, "the tie at \(moment) lost a row")
+    }
+
+    // MARK: - 6. The square
+
+    /// Red-proof: return `false` from `JournalCopy.drawsCommunityTreeMark`, and this goes red on the
+    /// pin-move row.
+    @Test("a pin-move row draws the community tree mark, and no other kind does")
+    func onlyAPinMoveDrawsTheMark() {
+        let kinds: [JournalEntry.Kind] = [.visit, .observation, .measurement, .careEvent, .pinMoved]
+        let rows = JournalPresentation(
+            entries: kinds.enumerated().map { index, kind in
+                JournalEntry(
+                    id: UUID(),
+                    kind: kind,
+                    treeID: UUID(),
+                    treeDisplayName: "Grandmother Cypress",
+                    capturedAt: Self.start.addingTimeInterval(TimeInterval(-index)),
+                    summary: "",
+                    heroPhotoID: UUID()
+                )
+            },
+            nextCursor: nil
+        ).rows
+
+        for (kind, row) in zip(kinds, rows) {
+            #expect(row.drawsCommunityTreeMark == (kind == .pinMoved), "the \(kind) row's square is wrong")
+        }
+        // A pin-move row whose tree has a photograph still draws the mark, not the photograph.
+        let pinMove = rows[4]
+        #expect(
+            IconTextRow.tileDrawing(
+                accent: pinMove.accent,
+                photoID: pinMove.heroPhotoID,
+                drawsCommunityTreeMark: pinMove.drawsCommunityTreeMark
+            ) == .communityTreeMark
+        )
+    }
+
+    /// Every row that does not ask for the mark draws what it drew before the mark existed: the
+    /// empty well for a vacant site, else the photograph, else the accent.
+    ///
+    /// Red-proof: move the `drawsCommunityTreeMark` check below the photograph's in
+    /// `IconTextRow.tileDrawing`, and the first assertion goes red.
+    @Test("the mark changes no other row's square")
+    func theMarkChangesNoOtherSquare() {
+        let photo = UUID()
+        #expect(
+            IconTextRow.tileDrawing(accent: .elder, photoID: photo, drawsCommunityTreeMark: true)
+                == .communityTreeMark
+        )
+        for accent in CypressColor.TileAccent.allCases {
+            let withPhoto = IconTextRow.tileDrawing(accent: accent, photoID: photo, drawsCommunityTreeMark: false)
+            let without = IconTextRow.tileDrawing(accent: accent, photoID: nil, drawsCommunityTreeMark: false)
+            if accent == .vacantSite {
+                #expect(withPhoto == .emptyWell)
+                #expect(without == .emptyWell)
+            } else {
+                #expect(withPhoto == .photo(photo), "the \(accent.rawValue) row with a photograph draws \(withPhoto)")
+                #expect(without == .accent, "the \(accent.rawValue) row draws \(without)")
+            }
+        }
+    }
+}
+
+#if DEBUG
+/// The pin-move rows, photographed: the Journal with a pin-move row between a visit and a care row,
+/// and the Outbox with a queued move, a refused move, and a visit. Light and dark, at the default
+/// size and the largest accessibility size. The images are the output; the test asserts only that
+/// each capture produced pixels (`ScreenSweepShots`' rule). Set `TEST_RUNNER_CYPRESS_SHOT_DIR` to
+/// keep the PNGs.
+@MainActor
+@Suite("Journal and Outbox · a pin move, photographed")
+struct PinMoveShots {
+
+    static let treeID = UUID(uuidString: "C3C00000-0000-4000-8000-000000000F01")!
+
+    static func entry(_ index: Int, _ kind: JournalEntry.Kind, _ summary: String) -> JournalEntry {
+        JournalEntry(
+            id: UUID(uuidString: String(format: "C3C00000-0000-4000-8000-%012d", index))!,
+            kind: kind,
+            treeID: treeID,
+            treeDisplayName: "Grandmother Cypress",
+            capturedAt: PinMoveJournalTests.start.addingTimeInterval(TimeInterval(-index * 60)),
+            summary: summary
+        )
+    }
+
+    @Test("the Journal draws the pin-move row between a visit and a care row")
+    func theJournal() async {
+        let entries = [
+            Self.entry(1, .visit, "Fog on the crown"),
+            Self.entry(2, .pinMoved, ""),
+            Self.entry(3, .careEvent, "watering, weeding")
+        ]
+        for variant in ScreenSweepShots.variants {
+            let image = await ScreenSweepShots.capture(
+                "c3-journal-pin-move-\(variant.suffix)",
+                size: variant.size,
+                scheme: variant.scheme,
+                viewportHeight: 900
+            ) {
+                ScrollView {
+                    JournalListView(
+                        presentation: JournalPresentation(
+                            entries: entries,
+                            nextCursor: nil,
+                            now: PinMoveJournalTests.start
+                        ),
+                        onOpenTree: { _ in }
+                    )
+                }
+            }
+            #expect(image != nil, "the \(variant.suffix) Journal photographed as a blank image")
+        }
+    }
+
+    @Test("the Outbox draws a queued pin move and a refused one beside a visit")
+    func theOutbox() async throws {
+        let clock = OutboxTestSupport.Clock(PinMoveJournalTests.start)
+        let store = try await CypressStore.inMemory()
+        let transport = OutboxTestSupport.ScriptedTransport(script: .allFail(.forbidden))
+        let queue = OutboxQueue(queue: store.queue, apply: transport, now: clock.closure)
+        let attribution = Attribution.anonymous(deviceID: PinMoveJournalTests.deviceID)
+
+        func move() -> OutboxPayload {
+            .locationCorrection(TreeLocationCorrection(
+                id: UUID(),
+                clientUUID: UUID(),
+                treeID: Self.treeID,
+                coordinate: PinMoveJournalTests.offshore,
+                placement: .contributorPlaced,
+                locationAccuracyM: 5,
+                attribution: attribution,
+                occurredAt: clock.now
+            ))
+        }
+        // The first move is refused; the visit and the second move wait behind a dead connection.
+        _ = try await queue.enqueue(move())
+        _ = try await queue.drain()
+        await transport.setScript(.connectionDropped)
+        clock.advance(by: 60)
+        _ = try await queue.enqueue(.visit(Visit(treeID: Self.treeID, attribution: attribution, capturedAt: clock.now)))
+        clock.advance(by: 60)
+        _ = try await queue.enqueue(move())
+
+        let snapshot = try await queue.snapshot(
+            treeNames: [Self.treeID: "Grandmother Cypress"],
+            syncPhotosOnWifiOnly: true
+        )
+        let presentation = OutboxPresentation(snapshot: snapshot, now: clock.now)
+        #expect(presentation.queue.map(\.title).filter { $0 == "Pin moved · Grandmother Cypress" }.count == 2)
+
+        for variant in ScreenSweepShots.variants {
+            let image = await ScreenSweepShots.capture(
+                "c3-outbox-pin-move-\(variant.suffix)",
+                size: variant.size,
+                scheme: variant.scheme,
+                viewportHeight: 1_100
+            ) {
+                NavigationStack {
+                    OutboxScreen(presentation: presentation, syncPhotosOnWifiOnly: .constant(true))
+                }
+                .environment(AppRouter())
+            }
+            #expect(image != nil, "the \(variant.suffix) Outbox photographed as a blank image")
+        }
+    }
+}
+#endif

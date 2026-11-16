@@ -1450,6 +1450,10 @@ scrim `rgba(14,24,17,.3)`.
 
    The third row is an AttentionCard (C24): `border:1.5px solid #D9A05B`,
    shadow `0 3px 12px rgba(180,113,31,.1)`.
+
+   Not in the mock: a **pin move** (a community tree's `Move pin`) is titled
+   `Pin moved · Grandmother Cypress` and has **no sub-line** (only the time). Refused, it reads
+   `This couldn't be sent.`, the same as every other kind (the app owner's decisions of 2026-11-14).
 3. **Wifi setting row** — `margin:10px 16px 0`, fill `#fff`, `1px #E3E8D9`, radius 14px,
    `padding:13px 15px`, `gap:12px`:
    - `Sync photos on wifi only` — 13.5px/700.
