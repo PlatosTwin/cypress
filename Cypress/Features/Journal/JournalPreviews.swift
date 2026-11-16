@@ -137,9 +137,12 @@ enum JournalFixtures {
         )
     }
 
-    /// One of each kind, so all four accents are visible together.
+    /// One of each kind, so all four accents and the pin move's community tree mark are visible
+    /// together. The pin move sits between a visit and a care row, so its square is drawn beside
+    /// both of theirs.
     static let entries: [JournalEntry] = [
         entry(1, kind: .visit, tree: "Grandmother Cypress", daysAgo: 1, summary: "Fog on the crown"),
+        entry(6, kind: .pinMoved, tree: "Grandmother Cypress", daysAgo: 2, summary: ""),
         entry(2, kind: .careEvent, tree: "Grandmother Cypress", daysAgo: 3, summary: "watering, weeding"),
         entry(3, kind: .measurement, tree: "Ginkgo on Judah", daysAgo: 12, summary: "31 cm taped"),
         // `Spring flush noted` until the copy audit of 2026-08-23 retired it — see

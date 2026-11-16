@@ -35,6 +35,14 @@ final class MovePinUITests: XCTestCase, DeepLinkHarness {
         static let showWhere = "Show me where this is"
         static let fromGPS = "position from GPS"
         static let byHand = "position placed by hand"
+        // `OutboxCopy.kindLabel(.locationCorrection)` and `JournalCopy.verb(for: .pinMoved)`: the
+        // app owner's words of 2026-11-14.
+        static let outboxRowPrefix = "Pin moved · "
+        static let journalRowPrefix = "Moved the pin of "
+        static let journalTab = "Journal"
+        static let yoursSegment = "Yours"
+        static let youTab = "You"
+        static let outboxRow = "Outbox"
     }
 
     // MARK: - 1 · Move a tree you added
@@ -98,6 +106,76 @@ final class MovePinUITests: XCTestCase, DeepLinkHarness {
         XCTAssertTrue(
             app.staticTexts[Copy.unmoved].waitForExistence(timeout: 15),
             "the reopened Move pin screen did not start where the pin was saved"
+        )
+    }
+
+    // MARK: - 1b · The move, as the Journal and the Outbox read it
+
+    /// After a move, the Journal's own list reads "Moved the pin of <tree>", and the Outbox reads
+    /// "Pin moved · <tree>" (the app owner's words of 2026-11-14). The Journal row is found by its
+    /// button's label, which is what VoiceOver reads, so this is also the row's accessibility
+    /// label: the same words as the title.
+    func testAPinMoveReadsRightInTheJournalAndTheOutbox() {
+        let app = launch("movePin")
+
+        let action = app.buttons[Copy.action]
+        guard action.waitForExistence(timeout: 60) else {
+            XCTFail(
+                deepLinkFailure(app).map { "movePin: \($0)" }
+                    ?? "movePin: the profile of a tree this phone just added drew no '\(Copy.action)'"
+            )
+            return
+        }
+        assertReachable(action, "the profile's Move pin action")
+        action.tap()
+
+        let north = app.buttons[Copy.nudgeNorth]
+        assertReachable(north, "the north nudge")
+        north.tap()
+        XCTAssertTrue(
+            app.staticTexts[Copy.movedFiveNorth].waitForExistence(timeout: 10),
+            "one north nudge did not put the pin 5 m north of where it was"
+        )
+        let save = app.buttons[Copy.save]
+        assertReachable(save, "the Save button")
+        save.tap()
+        XCTAssertTrue(
+            subtitle(containing: Copy.byHand, in: app).waitForExistence(timeout: 15),
+            "after Save the profile still does not say the position was placed by hand"
+        )
+
+        // The Journal, on its own list.
+        let journalTab = app.buttons[Copy.journalTab]
+        assertReachable(journalTab, "the Journal tab")
+        journalTab.tap()
+        let yours = app.buttons[Copy.yoursSegment]
+        if yours.waitForExistence(timeout: 10) {
+            assertReachable(yours, "the Journal's Yours segment")
+            yours.tap()
+        }
+        let journalRow = app.buttons
+            .matching(NSPredicate(format: "label BEGINSWITH %@", Copy.journalRowPrefix))
+            .firstMatch
+        XCTAssertTrue(
+            journalRow.waitForExistence(timeout: 20),
+            "the Journal drew no row whose label begins '\(Copy.journalRowPrefix)' after a move"
+        )
+
+        // The Outbox, from the You tab.
+        let youTab = app.buttons[Copy.youTab]
+        assertReachable(youTab, "the You tab")
+        youTab.tap()
+        let outboxRow = app.buttons
+            .matching(NSPredicate(format: "label BEGINSWITH %@", Copy.outboxRow))
+            .firstMatch
+        assertReachable(outboxRow, "the You tab's Outbox row")
+        outboxRow.tap()
+        let pinMoved = app.staticTexts
+            .matching(NSPredicate(format: "label BEGINSWITH %@", Copy.outboxRowPrefix))
+            .firstMatch
+        XCTAssertTrue(
+            pinMoved.waitForExistence(timeout: 20),
+            "the Outbox drew no row titled '\(Copy.outboxRowPrefix)…' after a move"
         )
     }
 

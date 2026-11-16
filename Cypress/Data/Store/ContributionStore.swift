@@ -2133,7 +2133,8 @@ public struct ContributionStore {
         }
     }
 
-    /// `GET /me/journal`. One stream over the four contribution kinds, newest first.
+    /// `GET /me/journal`. One stream over the four contribution kinds and this person's pin moves,
+    /// newest first.
     ///
     /// The cursor is the last row returned — its `captured_at` **and its id**, because the
     /// timestamp alone is not a position in the list; see `JournalCursor`. It is stable under
@@ -2227,6 +2228,33 @@ public struct ContributionStore {
     /// The `SEARCH tomb` step is `Self.notAnonymized`'s lookup, one indexed probe per candidate
     /// row. It is correctly indexed, it is inside each arm now rather than over the union, and it
     /// excludes exactly the rows it excluded before.
+    ///
+    /// ── The fifth arm: a pin move (the app owner's decision of 2026-11-14) ──────────────────────
+    ///
+    /// A row of `tree_locations` (`AppSchema` v23) that this phone's person wrote, and that is a
+    /// move rather than where the tree was first put. The Journal reads it as "Moved the pin of X".
+    /// Four rules, each a `WHERE` clause:
+    ///
+    /// - **`id <> tree_id`: not the root row.** Every tree has a root row whose id is the tree's own
+    ///   id; it records the add, which is not a move. Every later row has its own id (the service
+    ///   refuses a correction spelled with the tree's id). `NOCASE`, so a root row whose id and
+    ///   `tree_id` differ only in case is still a root.
+    /// - **The owner predicate the other four arms use.** A move on this phone by another device or
+    ///   account is not this person's act.
+    /// - **Not on a withdrawn tree.** A withdrawal keeps the chain (it is the record, v23), but the
+    ///   tree's profile no longer opens, and every Journal row opens a profile. `NOT EXISTS` on a
+    ///   withdrawn row rather than `EXISTS` on a live one, and a BINARY match so the probe seeks the
+    ///   primary key: both ids are written as `UUID.uuidString`, and a case mismatch could only show
+    ///   a row, never hide one.
+    /// - **`notAnonymized`**, the same tombstone check as the other arms.
+    ///
+    /// **This arm walks `tree_locations` and does not sort.** The table has no index on
+    /// `occurred_at` by itself, and adding one is a migration. So the arm has no `ORDER BY` and no
+    /// `LIMIT` of its own: it hands every move before the cursor to the outer merge, which sorts it
+    /// with the other four arms' rows. The plan keeps one temp b-tree. The table holds one root row
+    /// for each tree this phone added and one row per move, so both the walk and the extra rows in
+    /// the merge are bounded by one person's own adds and moves. `JournalQueryPlanTests` allows the
+    /// walk by name with that as the premise, as it allows `tree_names`.
     static let journalSQL = """
         SELECT id, kind, tree_uuid, captured_at, summary FROM (
             SELECT id, 'visit' AS kind, tree_uuid, captured_at, COALESCE(note, '') AS summary
@@ -2275,6 +2303,18 @@ public struct ContributionStore {
                        AND \(Self.notAnonymized("e"))
                      ORDER BY captured_at DESC, id COLLATE NOCASE DESC
                      LIMIT :limit)
+            UNION ALL
+            SELECT id, 'pinMoved', tree_id, occurred_at, ''
+              FROM tree_locations
+             WHERE id <> tree_id COLLATE NOCASE
+               AND (device_id = :device COLLATE NOCASE
+                    OR (:user IS NOT NULL AND user_id = :user COLLATE NOCASE))
+               AND (occurred_at, id COLLATE NOCASE)
+                   < (COALESCE(:cursorAt, char(0x10FFFF)), COALESCE(:cursorID, char(0x10FFFF)))
+               AND NOT EXISTS (SELECT 1 FROM community_trees withdrawn
+                                WHERE withdrawn.id = tree_locations.tree_id
+                                  AND withdrawn.deleted_at IS NOT NULL)
+               AND \(Self.notAnonymized("tree_locations"))
         )
         ORDER BY captured_at DESC, id COLLATE NOCASE DESC
         LIMIT :limit

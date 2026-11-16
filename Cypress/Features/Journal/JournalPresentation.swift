@@ -132,6 +132,9 @@ struct JournalPresentation: Equatable {
         /// The photograph this row draws instead of the accent tile, when this tree has one
         /// (#176). See `JournalEntry.heroPhotoID` for the rule.
         let heroPhotoID: UUID?
+        /// Whether the row's square is the community tree mark rather than the accent tile or the
+        /// tree's photograph. True for a pin move only (`JournalCopy.drawsCommunityTreeMark`).
+        let drawsCommunityTreeMark: Bool
     }
 
     /// One day's worth of rows, under the day.
@@ -212,7 +215,8 @@ struct JournalPresentation: Equatable {
                 subtitle: entry.summary.trimmingCharacters(in: .whitespacesAndNewlines),
                 accent: JournalCopy.accent(for: entry.kind),
                 treeID: entry.treeID,
-                heroPhotoID: entry.heroPhotoID
+                heroPhotoID: entry.heroPhotoID,
+                drawsCommunityTreeMark: JournalCopy.drawsCommunityTreeMark(for: entry.kind)
             )
         }
         self.hasOlder = nextCursor != nil
@@ -403,10 +407,22 @@ enum JournalCopy {
         case .observation: return .newGrowth
         case .measurement: return .record
         case .careEvent: return .water
+        // Never drawn: a pin-move row draws the community tree mark in its square instead
+        // (`drawsCommunityTreeMark`). The switch needs an answer, and `elder` is the plain one.
+        case .pinMoved: return .elder
         }
     }
 
-    /// `Visited`, `Observed`, `Measured`, `Cared for`.
+    /// Whether a row draws the community tree mark in its square: the map's dashed green ring on
+    /// its pale fill, drawn small. The app owner chose it on 2026-11-15 for the Journal's pin-move
+    /// row ("The community tree mark"). It replaces both the accent tile and the tree's photograph,
+    /// because the row is about where the pin is, not about the tree's appearance. No other kind
+    /// draws it.
+    static func drawsCommunityTreeMark(for kind: JournalEntry.Kind) -> Bool {
+        kind == .pinMoved
+    }
+
+    /// `Visited`, `Observed`, `Measured`, `Cared for`, `Moved the pin of`.
     ///
     /// Past tense throughout, because every row is a thing that has already happened. The words are
     /// the acts as the app's own controls name them — screen 05 is a check-in, screen 09 is `Care`,
@@ -417,6 +433,9 @@ enum JournalCopy {
         case .observation: return "Observed"
         case .measurement: return "Measured"
         case .careEvent: return "Cared for"
+        // The app owner's words, chosen on 2026-11-14 from "Moved the pin of X", "Moved X", and no
+        // Journal row: `rowTitle` makes it "Moved the pin of Grandmother Cypress".
+        case .pinMoved: return "Moved the pin of"
         }
     }
 

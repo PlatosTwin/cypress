@@ -1588,6 +1588,7 @@ public extension GroveEntry {
 public struct JournalEntry: Hashable, Sendable, Identifiable {
     public enum Kind: String, Sendable, Hashable, Codable {
         case visit, observation, measurement, careEvent
+        case pinMoved // A move of a community tree's pin (`ContributionStore.journalSQL`'s fifth arm).
     }
 
     public let id: UUID
