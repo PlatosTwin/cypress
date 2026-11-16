@@ -331,4 +331,62 @@ struct CommunityHistoryRowsTests {
         let rows = Self.spoken(TreeProfilePresentation(profile: merged).activity)
         #expect(rows.contains("You moved the pin · 12 m north"), "\(rows)")
     }
+
+    // MARK: - ROADMAP 144: who made a species row
+
+    static func event(_ kind: CommunityTreeHistory.Kind, _ iso: String, byYou: Bool?) throws -> CommunityTreeHistory.Event {
+        CommunityTreeHistory.Event(id: UUID(), kind: kind, day: try day(iso), byYou: byYou)
+    }
+
+    /// With `by_you`, "You" is the service's answer for each row: the namer reads "You named the
+    /// species" on a tree somebody else added, and the adder reads a contributor's naming and the
+    /// operator's correction in the third person. The new kinds keep the adder's words.
+    ///
+    /// Red-proof: read `byYou` as `profile.addedByYou` for every row in `historyItems` (the C3
+    /// rule) — red on the namer's rows.
+    @Test("by_you decides You on each row, and the new kinds read Species named and Species corrected")
+    func byYouDecidesEachRow() throws {
+        // The namer's view: the operator's correction, then the namer's own two acts. The activity
+        // list shows four rows, so each view is four events.
+        let seenByTheNamer = [
+            try Self.event(.speciesCorrectedByOperator, "2026-09-24", byYou: false),
+            try Self.event(.speciesCorrectedByContributor, "2026-09-23", byYou: true),
+            try Self.event(.speciesNamedByContributor, "2026-09-22", byYou: true),
+            try Self.event(.added, "2026-09-21", byYou: false),
+        ]
+        let namer = Self.spoken(Self.rows(Self.profile(history: Self.history(seenByTheNamer))))
+        #expect(namer == [
+            "Species corrected", "You corrected the species", "You named the species", "Added",
+        ], "\(namer)")
+
+        // The adder's view of the same tree, after the adder's own correction.
+        let seenByTheAdder = [
+            try Self.event(.speciesCorrected, "2026-09-25", byYou: true),
+            try Self.event(.speciesCorrectedByContributor, "2026-09-23", byYou: false),
+            try Self.event(.speciesNamedByContributor, "2026-09-22", byYou: false),
+            try Self.event(.added, "2026-09-21", byYou: true),
+        ]
+        let adder = Self.spoken(Self.rows(Self.profile(history: Self.history(seenByTheAdder), addedByYou: true, isAddedHere: true)))
+        #expect(adder == [
+            "You corrected the species", "Species corrected", "Species named", "You added this tree",
+        ], "\(adder)")
+    }
+
+    /// Without `by_you` (release v16 and older), an event only the adder makes is the adder's, as
+    /// the C3 build read it, and a contributor's or the operator's row is never "You".
+    ///
+    /// Red-proof: return `kind.isOnlyTheAdders` without `&& readerAddedTree` in
+    /// `Event.isByReader` — red on the stranger's rows.
+    @Test("a history with no by_you reads the adder's kinds by addedByYou, and the new kinds as not yours")
+    func noByYouFallsBackToTheAdder() throws {
+        let events = [
+            try Self.event(.speciesNamedByContributor, "2026-09-23", byYou: nil),
+            try Self.event(.speciesNamed, "2026-09-22", byYou: nil),
+            try Self.event(.added, "2026-09-21", byYou: nil),
+        ]
+        let adder = Self.spoken(Self.rows(Self.profile(history: Self.history(events), addedByYou: true, isAddedHere: true)))
+        #expect(adder == ["Species named", "You named the species", "You added this tree"], "\(adder)")
+        let stranger = Self.spoken(Self.rows(Self.profile(history: Self.history(events))))
+        #expect(stranger == ["Species named", "Species named", "Added"], "\(stranger)")
+    }
 }

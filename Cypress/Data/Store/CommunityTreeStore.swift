@@ -255,6 +255,36 @@ public struct CommunityTreeStore {
     /// and the service serves it with no adder at all (history carries no actor, decision 4); an
     /// owner that rode on it would be one more place for a caller-relative fact to travel where it
     /// should not.
+    /// Takes the service's species onto a tree this phone added (ROADMAP 144), only while the row
+    /// still holds `observed`, the species this phone read before it asked the service. A species
+    /// this phone wrote in between is newer than the answer, so the row keeps it and this returns
+    /// false. `updated_at` is left alone: the change is not this phone's act.
+    public func adoptSpecies(
+        treeID: UUID,
+        observed: UUID?,
+        served: UUID,
+        connection: SQLiteConnection
+    ) throws -> Bool {
+        let statement = try connection.cachedStatement("""
+            UPDATE community_trees
+               SET species_current = :served
+             WHERE id = :id COLLATE NOCASE
+               AND deleted_at IS NULL
+               AND ((:observed IS NULL AND species_current IS NULL)
+                    OR species_current = :observed COLLATE NOCASE)
+               AND (species_current IS NULL OR species_current <> :served COLLATE NOCASE)
+            """)
+        _ = try statement.bind([
+            ":served": served,
+            ":observed": observed,
+            ":id": treeID
+        ])
+        try statement.run()
+        let changed = connection.changes > 0
+        _ = try statement.reset()
+        return changed
+    }
+
     public func adder(treeID: UUID, connection: SQLiteConnection) throws -> ContributionOwner? {
         let statement = try connection.cachedStatement("""
             SELECT user_id, device_id FROM community_trees WHERE id = :id COLLATE NOCASE

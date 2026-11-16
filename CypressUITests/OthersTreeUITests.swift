@@ -5,15 +5,18 @@
 //  Round C3, on the running app: community trees somebody else added, and the line that tells the
 //  adder of a tree that only they can see it.
 //
-//  1. Somebody else's tree: the city tree's controls (Visit, Check in, Favorite, Care, Share,
-//     Report), no Move pin, neither species control (the owner's ruling of 2026-11-15, "Hide
-//     species controls for now"), and the "Added" row dated by the service's day. Then each control
-//     is used: Favorite changes state, and Care, Share, Check in, a measure tile and Visit each
-//     open their own screen or sheet.
-//  2. Somebody else's unnamed tree: no "Say what species you think this is", whose tap used to fail.
+//  1. Somebody else's tree, read signed out: the city tree's controls (Visit, Check in, Favorite,
+//     Care, Share, Report), no Move pin, neither species control (only a reader who shares gets
+//     one, the owner's answer of 2026-11-16), and the "Added" row dated by the service's day. Then
+//     each control is used: Favorite changes state, and Care, Share, Check in, a measure tile and
+//     Visit each open their own screen or sheet.
+//  2. Somebody else's unnamed tree, read signed out: no "Say what species you think this is".
 //  3. Its pin on the map is the same dashed community pin as anybody's.
 //  4. A tree this reader added while signed out, and one added signed in without agreeing to
 //     share: each profile carries its line, in the owner's words.
+//  5. ROADMAP 144: a sharing reader names somebody else's unnamed tree and reports somebody else's
+//     named one; the adder sees the reported line and keeps the species. Each at default size and
+//     at the largest accessibility size, with screenshots.
 //
 //  The UI suite runs with the remote gate shut, so no tile is downloaded: the deep links write
 //  somebody else's tree into the community cache through `LocalAPI.debugSeedCommunityCache`. The
@@ -259,5 +262,148 @@ final class OthersTreeUITests: XCTestCase, DeepLinkHarness {
             return
         }
         XCTAssertFalse(signedOut.staticTexts[Copy.notSharing].exists, "the signed-out tree carries both lines")
+    }
+
+    // MARK: - 5 · ROADMAP 144: a sharer's species answers, and the adder's keep
+
+    private enum Species {
+        static let mark = "species named by a contributor"
+        static let correct = "Correct the species"
+        static let keep = "Keep the species"
+        static let reported = "Somebody has reported this species as wrong."
+        static let othersNote =
+            "This goes to the person who added the tree and to a reviewer. The city is not notified."
+    }
+
+    /// The sharing debug account stays signed in after these cases. Any other deep link signs it
+    /// out (`DebugDeepLink.open`); this runs one on the way out, for a later launch with none.
+    private func signTheSharerOutAfterwards() {
+        addTeardownBlock {
+            let reset = XCUIApplication()
+            reset.launchEnvironment["CYPRESS_SCREEN"] = "othersTree"
+            DebugMapCamera.pin(reset)
+            reset.launch()
+            _ = reset.staticTexts["Added"].waitForExistence(timeout: 60)
+            reset.terminate()
+        }
+    }
+
+    /// Waits for the profile's added row. Somebody else's tree reads "Added"; the reader's own tree
+    /// reads "You added this tree" (`TreeProfileCopy.historyAddedByYou`).
+    private func opened(_ app: XCUIApplication, _ screen: String) -> Bool {
+        let row = screen == "ownTreeSpeciesReported" ? Copy.youAdded : Copy.added
+        guard app.staticTexts[row].waitForExistence(timeout: 60) else {
+            XCTFail(deepLinkFailure(app).map { "\(screen): \($0)" } ?? "\(screen): the profile drew no '\(row)' row")
+            return false
+        }
+        return true
+    }
+
+    private func reachInColumn(_ element: XCUIElement, in app: XCUIApplication, _ what: String) {
+        XCTAssertTrue(element.waitForExistence(timeout: 10), "no \(what)")
+        scrollToHittable(element, in: app)
+        assertReachable(element, what)
+    }
+
+    /// A sharer names somebody else's unnamed tree through the picker; the profile then carries the
+    /// contributor mark, and the namer's correction.
+    func testASharerNamesSomebodyElsesUnnamedTree() {
+        signTheSharerOutAfterwards()
+        let app = launch("othersTreeUnnamedSharing")
+        guard opened(app, "othersTreeUnnamedSharing") else { return }
+        XCTAssertFalse(app.buttons[Copy.movePin].exists, "somebody else's tree offers Move pin")
+
+        let claim = app.buttons[Copy.claim]
+        reachInColumn(claim, in: app, "'\(Copy.claim)' on somebody else's unnamed tree, for a sharer")
+        record(app, named: "unnamed-claim")
+        claim.tap()
+        let search = app.textFields.firstMatch
+        assertReachable(search, "the species picker's search field")
+        search.tap()
+        search.typeText("Platanus")
+        let row = app.buttons.matching(NSPredicate(format: "label CONTAINS %@", "Platanus")).firstMatch
+        assertReachable(row, "a Platanus row in the species picker")
+        row.tap()
+
+        let mark = app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", Species.mark)).firstMatch
+        XCTAssertTrue(mark.waitForExistence(timeout: 15), "the named tree carries no '\(Species.mark)'")
+        XCTAssertFalse(app.buttons[Copy.claim].exists, "the claim is still offered after naming")
+        reachInColumn(app.buttons[Species.correct], in: app, "the namer's '\(Species.correct)'")
+        XCTAssertFalse(app.buttons[Copy.report].exists, "the namer is offered a report on their own answer")
+        record(app, named: "named-mark")
+    }
+
+    /// A sharer on somebody else's named tree: the report, under it the owner's note that names
+    /// the adder, and after the tap the reported line in place of the control.
+    func testASharerReportsSomebodyElsesNamedTree() {
+        signTheSharerOutAfterwards()
+        let app = launch("othersTreeSharing")
+        guard opened(app, "othersTreeSharing") else { return }
+
+        let report = app.buttons[Copy.report]
+        reachInColumn(report, in: app, "'\(Copy.report)' on somebody else's named tree, for a sharer")
+        XCTAssertTrue(app.staticTexts[Species.othersNote].exists, "the report's note is not the owner's sentence")
+        XCTAssertFalse(app.buttons[Copy.claim].exists)
+        record(app, named: "report-note")
+        report.tap()
+
+        XCTAssertTrue(app.staticTexts[Species.reported].waitForExistence(timeout: 15),
+                      "the reporter does not see '\(Species.reported)'")
+        XCTAssertFalse(app.buttons[Copy.report].exists, "the report is still offered after reporting")
+        XCTAssertFalse(app.buttons[Species.keep].exists, "the reporter is offered the adder's keep")
+        record(app, named: "reported-line")
+    }
+
+    /// The adder's own tree with a report open: the line, the correction, and "Keep the species",
+    /// whose tap clears the line.
+    func testTheAdderSeesTheReportAndKeepsTheSpecies() {
+        let app = launch("ownTreeSpeciesReported")
+        guard opened(app, "ownTreeSpeciesReported") else { return }
+
+        let keep = app.buttons[Species.keep]
+        reachInColumn(keep, in: app, "the adder's '\(Species.keep)'")
+        XCTAssertTrue(app.staticTexts[Species.reported].exists, "the adder does not see '\(Species.reported)'")
+        XCTAssertTrue(app.buttons[Species.correct].exists, "the adder is not offered '\(Species.correct)'")
+        record(app, named: "adder-reported-keep")
+        keep.tap()
+        XCTAssertTrue(waitForGone(app.staticTexts[Species.reported], timeout: 15),
+                      "the line stayed after the adder kept the species")
+    }
+
+    /// The same three screens at the largest accessibility text size: each control is still there
+    /// and reachable. Nothing is tapped.
+    func testTheSpeciesControlsAtTheLargestTextSize() {
+        signTheSharerOutAfterwards()
+        for (screen, control, name) in [
+            ("othersTreeUnnamedSharing", Copy.claim, "unnamed-claim-ax5"),
+            ("othersTreeSharing", Copy.report, "report-note-ax5"),
+            ("ownTreeSpeciesReported", Species.keep, "adder-reported-keep-ax5"),
+        ] {
+            let app = XCUIApplication()
+            app.launchEnvironment[Self.deepLinkScreenKey] = screen
+            app.launchArguments += [
+                "-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXXXL"
+            ]
+            DebugMapCamera.pin(app)
+            app.launch()
+            guard opened(app, screen) else { return }
+            reachInColumn(app.buttons[control], in: app, "'\(control)' at the largest text size on \(screen)")
+            record(app, named: name)
+            app.terminate()
+        }
+    }
+
+    /// A PNG of the screen, plus the same image on the result bundle — `AreaPickerUITests.record`.
+    private func record(_ app: XCUIApplication, named name: String) {
+        let shot = XCUIScreen.main.screenshot()
+        let attachment = XCTAttachment(screenshot: shot)
+        attachment.name = name
+        attachment.lifetime = .keepAlways
+        add(attachment)
+
+        let directory = ProcessInfo.processInfo.environment["CYPRESS_SHOT_DIR"] ?? NSTemporaryDirectory()
+        let url = URL(fileURLWithPath: directory).appendingPathComponent("species-\(name).png")
+        try? shot.pngRepresentation.write(to: url)
+        print("CYPRESS-SHOT: \(url.path)")
     }
 }

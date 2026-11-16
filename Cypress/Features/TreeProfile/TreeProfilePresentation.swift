@@ -515,14 +515,30 @@ struct TreeProfilePresentation {
     /// - **Only where a contribution is welcome.** A memorial and a vacant site refuse every other
     ///   write on this screen (E95); naming the species of a tree that has been removed, or of a site
     ///   that never had one, is the same kind of claim about a thing that is not there.
-    /// - **Only on a tree the reader added, held in this phone's own table (round C3).**
-    ///   `claimSpecies` throws `notFound` for a tree in the community cache, so before this the
-    ///   control showed on somebody else's unnamed tree and its tap failed. And the owner's ruling
-    ///   of 2026-11-15 ("Hide species controls for now") hides both species controls on a tree
-    ///   somebody else added, because the service applies a non-adder's statement to nobody.
+    /// - **On a tree somebody else added, only for a reader who shares (ROADMAP 144).** The first
+    ///   answer names the tree for everyone (the owner's ruling of 2026-11-15), and the service
+    ///   counts it only from a signed-in account that agreed to share tree records (the owner's
+    ///   answer of 2026-11-16, "Only people who share"). For everybody else the control does not
+    ///   show, as the C3 build had it. The reader's own tree keeps the control whatever they agreed.
+    /// - **Not on a tree the reader added on another phone**, which reaches this one only through
+    ///   the cache: the claim there would be the adder's, and nothing on this phone can act as the
+    ///   adder of a tree it does not hold (ROADMAP 144, recorded as open).
     var offersSpeciesClaim: Bool {
-        tree.source == .community && species == nil && acceptsContributions
-            && profile.isAddedHere && profile.addedByYou
+        guard tree.source == .community, species == nil, acceptsContributions else { return false }
+        if profile.addedByYou { return profile.isAddedHere }
+        return profile.readerSharing == .sharing
+    }
+
+    /// The note under "Report the species as wrong": where the report goes.
+    ///
+    /// On a community tree somebody else added the report reaches the person who added it and a
+    /// reviewer (the owner's answer of 2026-11-16, "Name the adder"). Any other tree answers the
+    /// older sentence, but no screen draws it now: the view draws this note only with the
+    /// `.reportable` offer, the adder never gets that offer, and a city row gets `.dataDispute`.
+    var reportSpeciesNote: String {
+        tree.source == .community && !profile.addedByYou
+            ? TreeProfileCopy.reportSpeciesNoticeOthersTree
+            : TreeProfileCopy.reportSpeciesNotice
     }
 
     /// The line that tells the adder of a community tree that only they can see it yet (round C3).
@@ -984,11 +1000,14 @@ struct TreeProfilePresentation {
 
     /// A community tree's history rows (round C3), unsorted. Empty for a city tree.
     ///
-    /// **"You" is `addedByYou`, for every row.** Every event the service serves was made by the
-    /// tree's adder: only the adder's add publishes, only the adder may move the pin
-    /// (`applyLocationCorrection`), and only the adder's species statements make events
-    /// (`materializeSpecies`). So when the reader added the tree every row is theirs, and when they
-    /// did not, none is.
+    /// **"You" is the service's `by_you` for each row** (ROADMAP 144): since a contributor's naming
+    /// and the operator's correction make events too, the adder is no longer the only actor. A
+    /// service that sends no `by_you` (release v16 and older) serves only the adder's events, so
+    /// the row is the reader's exactly when the reader added the tree
+    /// (`CommunityTreeHistory.Event.isByReader`). A contributor's or the operator's species row
+    /// keeps the adder's words, "Species named" and "Species corrected" (the orchestrator's choice
+    /// of 2026-11-16, "history wording does not change"). The "Added" row the phone draws itself
+    /// is the adder's act, so it still reads `addedByYou`.
     ///
     /// **The "Added" row is always there.** The service's `added` event when the history has one;
     /// otherwise (no history read, an empty one, or one capped before its oldest row) a row from
@@ -1004,16 +1023,17 @@ struct TreeProfilePresentation {
         var items: [ActivityItem] = events.compactMap { event in
             let label: String
             var detail = ""
+            let mine = event.isByReader(readerAddedTree: byYou)
             switch event.kind {
             case .added:
-                label = byYou ? TreeProfileCopy.historyAddedByYou : TreeProfileCopy.historyAdded
+                label = mine ? TreeProfileCopy.historyAddedByYou : TreeProfileCopy.historyAdded
             case .locationCorrected:
-                label = byYou ? TreeProfileCopy.historyPinMovedByYou : TreeProfileCopy.historyPinMoved
+                label = mine ? TreeProfileCopy.historyPinMovedByYou : TreeProfileCopy.historyPinMoved
                 detail = TreeProfileCopy.pinMovedDetail(from: event.fromCoordinate, to: event.toCoordinate)
-            case .speciesNamed:
-                label = byYou ? TreeProfileCopy.historySpeciesNamedByYou : TreeProfileCopy.historySpeciesNamed
-            case .speciesCorrected:
-                label = byYou
+            case .speciesNamed, .speciesNamedByContributor:
+                label = mine ? TreeProfileCopy.historySpeciesNamedByYou : TreeProfileCopy.historySpeciesNamed
+            case .speciesCorrected, .speciesCorrectedByContributor, .speciesCorrectedByOperator:
+                label = mine
                     ? TreeProfileCopy.historySpeciesCorrectedByYou
                     : TreeProfileCopy.historySpeciesCorrected
             case .unrecognized:
@@ -1789,6 +1809,11 @@ enum TreeProfileCopy {
     /// tapping this is reasonably hoping somebody official will fix the record, and DECISIONS §3.3
     /// forbids implying it (D16 made that permanent).
     static let reportSpeciesNotice = "This goes to a community reviewer. The city is not notified."
+
+    /// The same note on a community tree somebody else added, where a report now reaches the
+    /// tree's adder (ROADMAP 144). The owner's exact words of 2026-11-16 ("Name the adder").
+    static let reportSpeciesNoticeOthersTree =
+        "This goes to the person who added the tree and to a reviewer. The city is not notified."
 
     /// Drawn while a report is open, to everybody: the disagreement is on the record and the screen
     /// says so rather than showing the species as if nobody had objected.

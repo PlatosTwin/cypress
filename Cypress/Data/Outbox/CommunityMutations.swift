@@ -154,6 +154,12 @@ public struct ReviewReport: Codable, Hashable, Sendable {
     public let kind: ReviewFlag.Kind
     public let attribution: Attribution
     public let occurredAt: Date
+    /// The species a `wrong_species` report says is wrong (ROADMAP 144), or nil. The service counts
+    /// a report only while this is still the tree's species, so a report about a name that has
+    /// since changed stops marking the tree. Absent from a report queued by an older build and from
+    /// a `never_existed` report; the service then takes the species in force when the report
+    /// arrives. The synthesized coding omits a nil, so an older payload still decodes.
+    public let disputedSpeciesID: UUID?
 
     public init(
         clientUUID: UUID,
@@ -161,7 +167,8 @@ public struct ReviewReport: Codable, Hashable, Sendable {
         treeID: UUID,
         kind: ReviewFlag.Kind,
         attribution: Attribution,
-        occurredAt: Date
+        occurredAt: Date,
+        disputedSpeciesID: UUID? = nil
     ) {
         self.clientUUID = clientUUID
         self.flagID = flagID
@@ -169,17 +176,18 @@ public struct ReviewReport: Codable, Hashable, Sendable {
         self.kind = kind
         self.attribution = attribution
         self.occurredAt = occurredAt
+        self.disputedSpeciesID = disputedSpeciesID
     }
 }
 
 /// Closing a report without changing what it was about — the species seam's dismissal and the
 /// record seam's, which are two kinds for the reason `SpeciesStatement` gives.
 ///
-/// **Who was allowed to do it is decided on the device and stated here, not re-decided.** The
-/// species dismissal has an author's arm (`LocalAPI.dismissSpeciesReview`) that depends on the
-/// assertion chain, and the record dismissal is lead-only; neither rule is one this service can
-/// evaluate, because it holds no assertion chain and no role. The item records who dismissed what;
-/// a moderation surface that can adjudicate it is ARCHITECTURE §8's web deliverable.
+/// **Who may send it.** The species dismissal is the tree adder's "Keep the species"
+/// (`LocalAPI.dismissSpeciesReview`, ROADMAP 144). The service checks that itself, acts on the
+/// adder's keep only, and clears the reports up to the one `flagID` names, so a keep for a report
+/// raised on another phone carries the service's `species_report_flag_id`. The record dismissal is
+/// lead-only on the device, a rule the service cannot evaluate because it holds no role.
 public struct ReviewDismissal: Codable, Hashable, Sendable {
     public let clientUUID: UUID
     public let flagID: UUID

@@ -753,9 +753,18 @@ struct TreeProfileView: View {
             recordLinkAction(TreeProfileCopy.reportSpeciesAction) {
                 Task { await model.reportSpeciesAsWrong() }
             }
-            Text(TreeProfileCopy.reportSpeciesNotice)
+            Text(presentation.reportSpeciesNote)
                 .cypressBody135(color: CypressColor.textMuted)
                 .fixedSize(horizontal: false, vertical: true)
+        case .reportedYoursToCorrect:
+            // The namer's own answer, reported (ROADMAP 144): the line, and the namer's correction.
+            // No "Keep the species", which only the adder's phone may send.
+            Text(TreeProfileCopy.speciesReported)
+                .cypressBody135(color: CypressColor.textMuted)
+                .fixedSize(horizontal: false, vertical: true)
+            recordLinkAction(TreeProfileCopy.correctSpeciesAction, belowALink: false) {
+                model.beginCorrectingSpecies()
+            }
         case let .underReview(flagID, canResolve):
             // Drawn to everybody, including the person who raised it: a species under dispute must
             // not render as though nobody had objected.

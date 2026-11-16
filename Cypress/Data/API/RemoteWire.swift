@@ -483,6 +483,17 @@ struct TreeCommunityHalfResponse: Decodable {
     let ownPhotoIDs: [UUID]
     let deletablePhotoIDs: [UUID]
 
+    /// ROADMAP 144: a report against the species in force counts. Nil from a service deployed
+    /// before the key existed (release v16 and older), which the phone reads as "the service did
+    /// not say", never as false.
+    let speciesReported: Bool?
+    /// The newest counting report's flag id, sent **to the adder only**, so "Keep the species"
+    /// can name it. Null for everybody else and when nothing counts.
+    let speciesReportFlagID: UUID?
+    /// The species in force is the caller's own naming, still theirs to correct. Nil from an older
+    /// service.
+    let speciesNamedByYou: Bool?
+
     enum CodingKeys: String, CodingKey {
         case treeUUID = "tree_uuid"
         case photos
@@ -493,6 +504,9 @@ struct TreeCommunityHalfResponse: Decodable {
         case addedByYou = "added_by_you"
         case isPublished = "is_published"
         case communityTree = "community_tree"
+        case speciesReported = "species_reported"
+        case speciesReportFlagID = "species_report_flag_id"
+        case speciesNamedByYou = "species_named_by_you"
     }
 
     init(from decoder: Decoder) throws {
@@ -506,6 +520,9 @@ struct TreeCommunityHalfResponse: Decodable {
         addedByYou = try container.decodeIfPresent(Bool.self, forKey: .addedByYou)
         isPublished = try container.decodeIfPresent(Bool.self, forKey: .isPublished)
         communityTree = (try? container.decodeIfPresent(Tree.self, forKey: .communityTree)) ?? nil
+        speciesReported = try container.decodeIfPresent(Bool.self, forKey: .speciesReported)
+        speciesReportFlagID = try container.decodeIfPresent(UUID.self, forKey: .speciesReportFlagID)
+        speciesNamedByYou = try container.decodeIfPresent(Bool.self, forKey: .speciesNamedByYou)
     }
 }
 
@@ -544,6 +561,8 @@ struct TreeHistoryResponse: Decodable {
         let fromSpeciesID: UUID?
         let toSpeciesID: UUID?
         let placement: String?
+        /// ROADMAP 144: the caller made this event. Nil from an older service.
+        let byYou: Bool?
 
         enum CodingKeys: String, CodingKey {
             case id, kind
@@ -553,6 +572,7 @@ struct TreeHistoryResponse: Decodable {
             case fromSpeciesID = "from_species_id"
             case toSpeciesID = "to_species_id"
             case placement
+            case byYou = "by_you"
         }
     }
 

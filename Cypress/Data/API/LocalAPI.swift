@@ -383,9 +383,10 @@ public actor LocalAPI: CypressAPI {
             let record = try treeQueries?.tree(id: id, connection: connection)
             // A community tree is either one this phone added or one the service sent down
             // (`CommunityLayer`). Which of the two it is decides which controls the record offers:
-            // somebody else's tree gets no species or record control this round, because every
-            // verb behind one acts only on a tree this phone added (the round's orchestrator
-            // ruling: "Others' trees: no species/report/dispute controls this round").
+            // somebody else's tree gets no record control, because that verb acts only on a tree
+            // this phone added (the round's orchestrator ruling: "Others' trees: no
+            // species/report/dispute controls this round"). Its species controls came back with
+            // ROADMAP 144, for a reader who shares (`speciesCorrectionOffer`).
             let cityTree = record?.tree
             let community = try cityTree == nil ? layer.row(id: id, connection: connection) : nil
             let addedHere = community?.isAddedHere ?? false
@@ -439,6 +440,13 @@ public actor LocalAPI: CypressAPI {
             let canMovePin = isAdder
                 ? try communityTrees.mayHaveReachedService(treeID: id, connection: connection)
                 : false
+
+            // ROADMAP 144: on a tree in the community cache, the reader's own naming or correction
+            // is laid over the cache's species while it is in force. The cache keeps its one writer.
+            let speciesAnswers = try tree.source == .community
+                ? localSpeciesAnswers(tree: tree, addedHere: addedHere, isAdder: isAdder, connection: connection)
+                : nil
+            if let speciesAnswers { tree.speciesCurrentID = speciesAnswers.shownSpeciesID }
 
             return TreeProfile(
                 tree: tree,
@@ -509,7 +517,8 @@ public actor LocalAPI: CypressAPI {
                 // moment's answer against another moment's species is a control that offers to
                 // correct something that has already been corrected.
                 speciesCorrection: try speciesCorrectionOffer(
-                    tree: tree, addedHere: addedHere, isAdder: isAdder, connection: connection
+                    tree: tree, isAdder: isAdder, sharing: sharing, answers: speciesAnswers,
+                    connection: connection
                 ),
                 // Same transaction, same reason (task #125): the offer is a statement about the
                 // open reports against this record, and a control drawn from one moment's answer
@@ -788,22 +797,33 @@ public actor LocalAPI: CypressAPI {
         _ = try await species(id: speciesID)
         let moment = now()
 
-        let subject = try await store.queue.read { connection -> Tree? in
-            try communityTrees.tree(id: treeID, connection: connection)
+        // Not in `main` and not in the cache: if the seed has it then it is a city row, and the
+        // refusal is `.forbidden` rather than `.notFound` — the tree is real and this is not
+        // allowed, which is a different sentence from "there is no such tree" and the screen says
+        // both.
+        let target = try await store.queue.read { connection -> SpeciesTarget in
+            try speciesTarget(treeID: treeID, connection: connection)
         }
-        guard let subject else {
-            // Not in `main`. If the seed has it then it is a city row, and the refusal is
-            // `.forbidden` rather than `.notFound` — the tree is real and this is not allowed, which
-            // is a different sentence from "there is no such tree" and the screen says both.
-            let isCityRow = try await store.queue.read { connection -> Bool in
-                let record = try treeQueries?.tree(id: treeID, connection: connection)
-                return record.flatMap { $0 } != nil
-            }
-            throw isCityRow ? APIError.forbidden : APIError.notFound
+        let subject: Tree
+        switch target {
+        case let .cached(cached):
+            try await claimCachedSpecies(cached, speciesID: speciesID, at: moment)
+            return try await treeProfile(id: treeID).tree
+        case let .own(own):
+            subject = own
+        }
+        let mine = attribution
+        // A tree somebody else added on this phone follows the cached tree's rule (ROADMAP 144):
+        // the service applies a stranger's first answer only from an account that shares. The
+        // adder names their own tree whatever they agreed.
+        let isAdder = try await store.queue.read { connection in
+            try communityTrees.adder(treeID: treeID, connection: connection)?.isOwned(by: mine) ?? false
+        }
+        if !isAdder, ContributionSharing(userID: userID, link: try await accountLink()) != .sharing {
+            throw APIError.forbidden
         }
         guard subject.speciesCurrentID == nil else { throw APIError.conflict }
 
-        let mine = attribution
         let owner = ContributionOwner(mine)
         try await store.queue.write { connection in
             guard try communityTrees.claimSpecies(
@@ -857,27 +877,28 @@ public actor LocalAPI: CypressAPI {
     /// without its source is a cache that can disagree with it.
     ///
     /// ── Who may do it ───────────────────────────────────────────────────────────────────────────
-    /// `RULINGS R45` carries the argument; the rule is two arms:
+    /// The service's rule (ROADMAP 144), so the phone never makes a correction the service would
+    /// record and apply to nobody. It replaces `RULINGS R45`'s two arms ("the author of the claim
+    /// in force" and "a lead, in answer to a report"), which the service never honored on a
+    /// community tree:
     ///
-    /// 1. **The author of the claim in force, always.** D15's "first namer wins" exists to stop one
-    ///    contributor discarding another's statement; where the two are the same person there is no
-    ///    statement to protect, and refusing is only a refusal to admit a mistake. Identity is
-    ///    `Attribution` — the account when signed in, this device otherwise (D9) — through
-    ///    `ContributionOwner.isOwned(by:)`.
-    /// 2. **A lead, but only in answer to a report.** `canConfirmReviewFlag` is not a license to
-    ///    rewrite anybody's species at will: it is the authority to resolve a `wrong_species` flag
-    ///    somebody actually raised, which is why the second arm requires one to be open. A lead with
-    ///    an opinion and no report in front of them is a contributor, and takes arm 1's route.
+    /// 1. **The tree's adder, always**, whoever named it: a contributor, an older build, or nobody
+    ///    on record (a claim made before v14, or a species this phone took from the service).
+    /// 2. **The namer, for their own answer**, while it is in force: the reader is not the adder,
+    ///    the claim in force is theirs, and they share tree records (the owner's answers of
+    ///    2026-11-16, "Only people who share" and "Yes, until the adder corrects it"). On a tree
+    ///    in the community cache, "in force" is `localSpeciesAnswers`' answer.
     ///
-    /// Everybody else gets `.forbidden` and the `flagWrongSpecies` route. An assertion owned by
-    /// **nobody** — every claim made before v14, whose author the database never recorded — is
-    /// nobody's to overwrite either, and takes the same route.
+    /// Everybody else gets `.forbidden` and the `flagWrongSpecies` route.
     ///
-    /// Resolving the report *is* the correction, so an open `wrong_species` flag on this tree moves
-    /// to `confirmed` here rather than through a second verb somebody could forget. **No status is
-    /// written**, by either arm: a wrong species is not a statement about whether the tree is alive,
-    /// and `ReviewFlag.Kind.Resolution` keeps the two seams apart so this cannot drift into the one
-    /// that moves `trees.status` (ERRATA E170).
+    /// The adder's correction **is** the answer to every report, so an open `wrong_species` flag on
+    /// this tree moves to `confirmed` here; the service clears the reports on it too. The namer's
+    /// correction does not, on either side. **No status is written**: a wrong species is not a
+    /// statement about whether the tree is alive, and `ReviewFlag.Kind.Resolution` keeps the two
+    /// seams apart so this cannot drift into the one that moves `trees.status` (ERRATA E170).
+    ///
+    /// On a tree in the cache the correction is appended to this phone's chain and queued, and the
+    /// cache is not written: it keeps its one writer, the tile refresher.
     public func correctSpecies(treeID: UUID, speciesID: UUID) async throws -> Tree {
         // The catalog check first, for `claimSpecies`' reason: `species_current` and
         // `species_uuid` are bare TEXT with no foreign key available to them, so nothing but this
@@ -886,29 +907,39 @@ public actor LocalAPI: CypressAPI {
         _ = try await species(id: speciesID)
         let moment = now()
         let mine = attribution
-        let isLead = userRole.canConfirmReviewFlag
+        let shares = ContributionSharing(userID: userID, link: try await accountLink()) == .sharing
 
-        let (head, openFlags) = try await store.queue.read {
-            connection -> (SpeciesAssertion?, [ReviewFlag]) in
-            guard try communityTrees.tree(id: treeID, connection: connection) != nil else {
-                // Same two-armed refusal `claimSpecies` makes, and for the same reason: a city row is
-                // real and this is not allowed, which is a different sentence from "no such tree".
-                let record = try treeQueries?.tree(id: treeID, connection: connection)
-                throw record.flatMap { $0 } != nil ? APIError.forbidden : APIError.notFound
+        let (target, head, openFlags, isAdder, isNamer, shown) = try await store.queue.read {
+            connection -> (SpeciesTarget, SpeciesAssertion?, [ReviewFlag], Bool, Bool, UUID?) in
+            // Same two-armed refusal `claimSpecies` makes, and for the same reason: a city row is
+            // real and this is not allowed, which is a different sentence from "no such tree".
+            let target = try speciesTarget(treeID: treeID, connection: connection)
+            let isAdder: Bool
+            let answers: LocalSpeciesAnswers
+            switch target {
+            case let .own(tree):
+                isAdder = try communityTrees.adder(treeID: treeID, connection: connection)?
+                    .isOwned(by: mine) ?? false
+                answers = try localSpeciesAnswers(tree: tree, addedHere: true, isAdder: isAdder, connection: connection)
+            case let .cached(tree):
+                isAdder = false
+                answers = try localSpeciesAnswers(tree: tree, addedHere: false, isAdder: false, connection: connection)
             }
             return (
+                target,
                 try assertions.current(treeID: treeID, connection: connection),
-                try Self.openSpeciesReviews(treeID: treeID, store: contributions, connection: connection)
+                try Self.openSpeciesReviews(treeID: treeID, store: contributions, connection: connection),
+                isAdder,
+                answers.isNamer,
+                answers.shownSpeciesID
             )
         }
 
-        // No head is not "nothing to correct by accident": it is a tree nobody has named, and naming
-        // one is `claimSpecies`. Saying so is better than appending a first assertion here and
-        // letting two verbs write the same row for different reasons.
-        guard let head else { throw APIError.validationFailed }
-        guard head.isSupersedable(by: mine) || (isLead && !openFlags.isEmpty) else {
-            throw APIError.forbidden
-        }
+        // No species is not "nothing to correct by accident": it is a tree nobody has named, and
+        // naming one is `claimSpecies`. Saying so is better than appending a first assertion here
+        // and letting two verbs write the same row for different reasons.
+        guard shown != nil else { throw APIError.validationFailed }
+        guard isAdder || (isNamer && shares) else { throw APIError.forbidden }
 
         let successor = SpeciesAssertion(
             treeID: treeID,
@@ -921,22 +952,29 @@ public actor LocalAPI: CypressAPI {
         try await store.queue.write { connection in
             // Stamp before insert, never after. The partial unique index allows one unsuperseded row
             // per tree, so inserting first would be refused by the engine — which is the index doing
-            // its job, and is also why the order is not a matter of taste.
-            guard try assertions.supersede(
-                id: head.id, with: successor.id, at: moment, connection: connection
-            ) else {
-                // Somebody superseded this head between the read and the write. Their correction
-                // stands; this one is not silently layered on top of it.
-                throw APIError.conflict
+            // its job, and is also why the order is not a matter of taste. A tree whose species has
+            // no assertion behind it has no head to stamp; only its adder reaches this with one.
+            if let head {
+                guard try assertions.supersede(
+                    id: head.id, with: successor.id, at: moment, connection: connection
+                ) else {
+                    // Somebody superseded this head between the read and the write. Their correction
+                    // stands; this one is not silently layered on top of it.
+                    throw APIError.conflict
+                }
             }
             try assertions.insert(successor, connection: connection)
-            guard try communityTrees.setSpecies(
-                treeID: treeID, speciesID: speciesID, at: moment, connection: connection
-            ) else {
-                throw APIError.conflict
+            if case .own = target {
+                guard try communityTrees.setSpecies(
+                    treeID: treeID, speciesID: speciesID, at: moment, connection: connection
+                ) else {
+                    throw APIError.conflict
+                }
             }
-            for flag in openFlags {
-                try contributions.confirmReviewFlag(id: flag.id, at: moment, connection: connection)
+            if isAdder {
+                for flag in openFlags {
+                    try contributions.confirmReviewFlag(id: flag.id, at: moment, connection: connection)
+                }
             }
             // Spec §3.4, in the same transaction as the supersession — see `addTree`. A separate
             // kind from `speciesClaim` because the two acts mean different things; see
@@ -975,24 +1013,44 @@ public actor LocalAPI: CypressAPI {
     /// merge* — two devices that could not see each other — and this write is neither. Here the
     /// person can see the open report on the screen they are tapping from, and a second one says
     /// nothing the first did not.
+    ///
+    /// **On a tree in the community cache (ROADMAP 144)** the reader must share tree records
+    /// (`.forbidden` otherwise, the owner's "Only people who share"), and "already open" means a
+    /// report of the reader's that has not been sent yet. A sent report has been answered or is
+    /// waiting for the adder, and the service decides whether it still counts; the adder's "Keep
+    /// the species" makes room for a new one ("A later report brings it back").
+    ///
+    /// The adder is refused too (`.validationFailed`): the adder corrects, and the service does not
+    /// count the adder's own report. Every report names the species it disputes
+    /// (`ReviewReport.disputedSpeciesID`).
     public func flagWrongSpecies(treeID: UUID) async throws {
         let moment = now()
         let mine = attribution
         let raiser = userID
+        let shares = ContributionSharing(userID: userID, link: try await accountLink()) == .sharing
 
-        let head = try await store.queue.read { connection -> SpeciesAssertion? in
-            guard try communityTrees.tree(id: treeID, connection: connection) != nil else {
-                let record = try treeQueries?.tree(id: treeID, connection: connection)
-                throw record.flatMap { $0 } != nil ? APIError.forbidden : APIError.notFound
+        let disputed = try await store.queue.read { connection -> UUID in
+            let target = try speciesTarget(treeID: treeID, connection: connection)
+            let answers: LocalSpeciesAnswers
+            switch target {
+            case let .own(tree):
+                let isAdder = try communityTrees.adder(treeID: treeID, connection: connection)?
+                    .isOwned(by: mine) ?? false
+                // A tree somebody else added on this phone: the cached tree's rule, sharers only.
+                guard isAdder || shares else { throw APIError.forbidden }
+                answers = try localSpeciesAnswers(tree: tree, addedHere: true, isAdder: isAdder, connection: connection)
+                guard answers.openFlag == nil else { throw APIError.conflict }
+                // The adder and the namer correct; neither reports.
+                guard !isAdder, !answers.isNamer else { throw APIError.validationFailed }
+            case let .cached(tree):
+                guard shares else { throw APIError.forbidden }
+                answers = try localSpeciesAnswers(tree: tree, addedHere: false, isAdder: false, connection: connection)
+                guard !answers.isQueued(.wrongSpeciesReport, by: mine) else { throw APIError.conflict }
+                guard !answers.isNamer else { throw APIError.validationFailed }
             }
-            guard try Self.openSpeciesReviews(
-                treeID: treeID, store: contributions, connection: connection
-            ).isEmpty else { throw APIError.conflict }
-            return try assertions.current(treeID: treeID, connection: connection)
+            guard let shown = answers.shownSpeciesID else { throw APIError.validationFailed }
+            return shown
         }
-
-        guard let head else { throw APIError.validationFailed }
-        guard !head.isSupersedable(by: mine) else { throw APIError.validationFailed }
 
         let flag = ReviewFlag(
             treeID: treeID,
@@ -1012,7 +1070,8 @@ public actor LocalAPI: CypressAPI {
                         treeID: treeID,
                         kind: flag.kind,
                         attribution: mine,
-                        occurredAt: moment
+                        occurredAt: moment,
+                        disputedSpeciesID: disputed
                     )
                 ),
                 at: moment,
@@ -1027,32 +1086,30 @@ public actor LocalAPI: CypressAPI {
     /// Nothing is appended and no status is written: dismissing says the species on record is right
     /// after all, and it already says what it says. The flag row records that somebody looked.
     ///
-    /// Same two arms as `correctSpecies`, minus the report requirement on the second: a lead may
-    /// dismiss any species report, and the author of the disputed claim may answer one raised against
-    /// their own statement. The author's arm is what keeps this loop closed on a phone with no lead
-    /// on it — the alternative is a report nobody present can resolve, which is precisely the state
-    /// E170 exists about.
+    /// **Only the tree's adder** (ROADMAP 144): it is the existing "Keep the species", and the
+    /// owner's answer of 2026-11-16 ("Yes, with "Keep the species"") lets the adder clear the
+    /// reported line for everyone. The service acts on nobody else's keep, so the two older arms
+    /// (a lead, and the author of the disputed claim) are gone: each drew a control the service
+    /// would record and apply to nobody.
     public func dismissSpeciesReview(flagID: UUID) async throws {
         let moment = now()
         let mine = attribution
-        let isLead = userRole.canConfirmReviewFlag
 
-        let (flag, head) = try await store.queue.read {
-            connection -> (ReviewFlag, SpeciesAssertion?) in
+        let (flag, isAdder) = try await store.queue.read {
+            connection -> (ReviewFlag, Bool) in
             guard let flag = try contributions.reviewFlag(id: flagID, connection: connection),
                   flag.deletedAt == nil else { throw APIError.notFound }
-            return (flag, try assertions.current(treeID: flag.treeID, connection: connection))
+            let adder = try communityTrees.adder(treeID: flag.treeID, connection: connection)
+            return (flag, adder?.isOwned(by: mine) ?? false)
         }
         guard flag.kind.resolution == .speciesAssertion else { throw APIError.validationFailed }
         guard flag.status == .open else { throw APIError.conflict }
-        guard isLead || (head?.isSupersedable(by: mine) ?? false) else { throw APIError.forbidden }
+        guard isAdder else { throw APIError.forbidden }
 
         try await store.queue.write { connection in
             try contributions.dismissReviewFlag(id: flagID, at: moment, connection: connection)
-            // Spec §3.4, in the same transaction as the dismissal — see `addTree`. Which arm of the
-            // gate above allowed it (a lead, or the author of the disputed claim) is decided here
-            // and not restated on the wire: the service holds no assertion chain and no role, so it
-            // could not re-derive the answer and must not appear to.
+            // Spec §3.4, in the same transaction as the dismissal — see `addTree`. The service
+            // checks for itself that the sender is the tree's adder.
             try Self.queueAppliedMutation(
                 .speciesReviewDismissal(
                     ReviewDismissal(
@@ -1083,44 +1140,319 @@ public actor LocalAPI: CypressAPI {
 
     /// What this viewer may do about the species on this tree, decided where the identity and the
     /// role live rather than in a view (`SpeciesCorrectionOffer`).
+    ///
+    /// On a community tree, `SpeciesAnswerFacts` decides (ROADMAP 144): the adder corrects and
+    /// keeps, the namer corrects their own answer, anybody else who shares reports. A reader who
+    /// does not share gets no control on a tree somebody else added (the owner's "Only people who
+    /// share"), and everybody sees the reported line.
     private func speciesCorrectionOffer(
         tree: Tree,
-        addedHere: Bool,
         isAdder: Bool,
+        sharing: ContributionSharing,
+        answers: LocalSpeciesAnswers?,
         connection: SQLiteConnection
     ) throws -> SpeciesCorrectionOffer {
         // **A city row answers R79's surface, not this one.** It answered `.unavailable` until
         // `AppSchema` v22, and that answer stopped being true the day city data became disputable.
         // The species is still not correctable here and `correctSpecies` still refuses one — what
         // changed is that there is now somewhere for the disagreement to go.
-        guard tree.source == .community else {
+        guard tree.source == .community, let answers else {
             return .dataDispute(try dataDisputeOffer(tree: tree, connection: connection))
         }
-        // Somebody else's tree, from the cache. `claimSpecies`, `correctSpecies` and
-        // `flagWrongSpecies` all act only on a tree this phone added, so any control here would be
-        // one the tap is refused behind. Stated rather than left to fall out of the missing chain
-        // below, which answers the same today for a reason that is not this one.
-        guard addedHere else { return .unavailable }
-        // A tree this phone holds that another person on this phone added (another account, or
-        // this device before a different account signed in). The owner's ruling of 2026-11-15
-        // ("Hide species controls for now"): the profile of a tree somebody else added offers
-        // neither species control, because the service records a non-adder's species statement
-        // and applies it to nobody. The verbs themselves are unchanged.
-        guard isAdder else { return .unavailable }
-        guard tree.speciesCurrentID != nil else { return .unavailable }
+        return SpeciesAnswerFacts(
+            hasSpecies: answers.shownSpeciesID != nil,
+            isAdder: isAdder,
+            isNamer: answers.isNamer,
+            readerShares: sharing == .sharing,
+            isReported: answers.openFlag != nil,
+            reportFlagID: answers.openFlag?.id
+        ).offer(placeholderFlagID: tree.id)
+    }
+
+    // MARK: - Species on a tree somebody else added (ROADMAP 144)
+
+    /// Where a species verb acts: this phone's own row, or a tree in the community cache.
+    private enum SpeciesTarget {
+        case own(Tree)
+        case cached(Tree)
+    }
+
+    /// The tree a species verb names, or the refusal: `.forbidden` for a city row (the tree is real
+    /// and this is not allowed) and `.notFound` for anything else.
+    private func speciesTarget(treeID: UUID, connection: SQLiteConnection) throws -> SpeciesTarget {
+        if let own = try communityTrees.tree(id: treeID, connection: connection) { return .own(own) }
+        if let row = try layer.row(id: treeID, connection: connection), !row.isAddedHere {
+            return .cached(row.tree)
+        }
+        let record = try treeQueries?.tree(id: treeID, connection: connection)
+        throw record.flatMap { $0 } != nil ? APIError.forbidden : APIError.notFound
+    }
+
+    /// What this phone knows about the species answers on one community tree.
+    struct LocalSpeciesAnswers {
+        /// The species the profile shows. On a cached tree it is the reader's own answer while that
+        /// answer is in force (`isNamer`), and the cache's species otherwise.
+        var shownSpeciesID: UUID?
+        /// The species in force is the reader's own naming, on a tree the reader did not add.
+        var isNamer: Bool
+        /// An open species report on this tree, raised on this phone.
+        var openFlag: ReviewFlag?
+        /// The species acts still queued for this tree, by anybody on this phone.
+        var queued: [OutboxStore.QueuedSpeciesAct]
+
+        func isQueued(_ kind: OutboxItem.Kind, by attribution: Attribution) -> Bool {
+            queued.contains { $0.kind == kind && $0.owner.isOwned(by: attribution) }
+        }
+    }
+
+    /// The reader's species answers on one community tree, read in the caller's transaction.
+    ///
+    /// **When the reader's own answer is in force on a cached tree.** The cache is written only by
+    /// the tile refresher, so it learns the reader's naming or correction a refresh after the
+    /// service applied it. Until then, and for as long as the cache agrees, the answer is the
+    /// reader's: the answer is still queued, or the cache has no species, or the cache holds the
+    /// reader's species, or it still holds the species the reader's correction replaced **and the
+    /// cache row was served no later than the service accepted that correction** (outbox
+    /// `remote_sent`, against the cache's `fetched_at`). Without that last bound, an adder who set
+    /// the replaced species back would leave the namer's phone showing the namer's correction for
+    /// good. Any other species in the cache is somebody else's later act (the adder's, or the
+    /// operator's), or the first naming that won a race, and the cache wins. A correction whose
+    /// outbox row the prune removed counts as not in force, and the cache wins then too.
+    /// `RoutedAPI` checks this against the service's own answer (`species_named_by_you`) whenever
+    /// it has one.
+    func localSpeciesAnswers(
+        tree: Tree,
+        addedHere: Bool,
+        isAdder: Bool,
+        connection: SQLiteConnection
+    ) throws -> LocalSpeciesAnswers {
+        let mine = attribution
         let head = try assertions.current(treeID: tree.id, connection: connection)
-        let isMine = head?.isSupersedable(by: attribution) ?? false
-        let reported = try Self.openSpeciesReviews(
-            treeID: tree.id, store: contributions, connection: connection
-        ).first
-        if let reported {
-            return .underReview(
-                flagID: reported.id,
-                canResolve: isMine || userRole.canConfirmReviewFlag
+        let queued = try OutboxStore().queuedSpeciesActs(treeID: tree.id, connection: connection)
+        var answers = LocalSpeciesAnswers(
+            shownSpeciesID: tree.speciesCurrentID,
+            isNamer: false,
+            openFlag: try Self.openSpeciesReviews(
+                treeID: tree.id, store: contributions, connection: connection
+            ).first,
+            queued: queued
+        )
+        guard !isAdder, let head, head.isSupersedable(by: mine), let named = head.speciesID else {
+            return answers
+        }
+        if addedHere {
+            // This phone's own row is the chain's read cache, so a head of the reader's is in force.
+            answers.isNamer = true
+            return answers
+        }
+        let cached = tree.speciesCurrentID
+        let answerQueued = answers.isQueued(.speciesClaim, by: mine)
+            || answers.isQueued(.speciesCorrection, by: mine)
+        var inForce = answerQueued || cached == nil || cached == named
+        if !inForce {
+            // The cache still holds the species the reader's correction replaced. That means "the
+            // correction is in force" only while the cache has not been served since the service
+            // accepted the correction. A row served after that is the service's word: somebody
+            // (the adder, or the operator) set that species back, and the cache wins.
+            let replaced = try assertions.chain(treeID: tree.id, connection: connection)
+                .first { $0.supersededBy == head.id }?.speciesID
+            if let replaced, cached == replaced,
+               let fetched = try CommunityTreeCacheStore().fetchedAt(id: tree.id, connection: connection) {
+                inForce = try OutboxStore().acceptedSpeciesCorrections(
+                    treeID: tree.id, speciesID: named, connection: connection
+                ).contains { $0.owner.isOwned(by: mine) && fetched <= $0.acceptedAt }
+            }
+        }
+        if inForce {
+            answers.isNamer = true
+            answers.shownSpeciesID = named
+        }
+        return answers
+    }
+
+    /// Names a tree in the community cache: the first answer on an unnamed tree, which the service
+    /// applies for everyone (the owner's "It names the tree for everyone").
+    ///
+    /// The cache is not written; it keeps its one writer. The answer goes into this phone's chain,
+    /// owned by the reader, and is queued; `localSpeciesAnswers` lays it over the profile until
+    /// the cache has a species of its own. Two first answers race on the service, and the one it
+    /// commits first wins (the orchestrator's choice of 2026-11-16); the loser is told nothing, and
+    /// the next tile refresh shows the winner here.
+    private func claimCachedSpecies(_ tree: Tree, speciesID: UUID, at moment: Date) async throws {
+        let mine = attribution
+        guard ContributionSharing(userID: userID, link: try await accountLink()) == .sharing else {
+            throw APIError.forbidden
+        }
+        guard tree.speciesCurrentID == nil else { throw APIError.conflict }
+        try await store.queue.write { connection in
+            // Somebody on this phone already named it, and the cache has not caught up.
+            guard try assertions.current(treeID: tree.id, connection: connection) == nil else {
+                throw APIError.conflict
+            }
+            try assertions.insert(
+                SpeciesAssertion(
+                    treeID: tree.id,
+                    speciesID: speciesID,
+                    source: .community,
+                    owner: ContributionOwner(mine),
+                    createdAt: moment,
+                    updatedAt: moment
+                ),
+                connection: connection
+            )
+            try Self.queueAppliedMutation(
+                .speciesClaim(
+                    SpeciesStatement(
+                        clientUUID: UUID(),
+                        treeID: tree.id,
+                        speciesID: speciesID,
+                        attribution: mine,
+                        occurredAt: moment
+                    )
+                ),
+                at: moment,
+                connection: connection
             )
         }
-        guard head != nil else { return .unavailable }
-        return isMine ? .correctable : .reportable
+    }
+
+    /// The adder's "Keep the species" for a report this phone does not hold: one the service
+    /// reported (`species_report_flag_id`), raised on somebody else's phone. `RoutedAPI` calls it
+    /// when `dismissSpeciesReview` finds no such flag here.
+    ///
+    /// Only the tree's adder, on a tree this phone added (`.forbidden` and `.notFound` otherwise).
+    /// It queues the keep the service expects and changes nothing on this phone, which holds no
+    /// row for the report; a flag this phone does hold with that id is closed too.
+    public func keepServedSpeciesReport(treeID: UUID, flagID: UUID) async throws {
+        let moment = now()
+        let mine = attribution
+        try await store.queue.write { connection in
+            guard try communityTrees.tree(id: treeID, connection: connection) != nil else {
+                throw APIError.notFound
+            }
+            guard try communityTrees.adder(treeID: treeID, connection: connection)?
+                .isOwned(by: mine) ?? false else { throw APIError.forbidden }
+            // A keep of this report is already queued: a second tap, or a read that ran before the
+            // first keep left the queue. It says nothing new, so nothing more is queued.
+            let alreadyKept = try OutboxStore().queuedSpeciesActs(treeID: treeID, connection: connection)
+                .contains { $0.kind == .speciesReviewDismissal && $0.flagID == flagID }
+            if alreadyKept { return }
+            if let local = try contributions.reviewFlag(id: flagID, connection: connection),
+               local.status == .open, local.deletedAt == nil {
+                try contributions.dismissReviewFlag(id: flagID, at: moment, connection: connection)
+            }
+            try Self.queueAppliedMutation(
+                .speciesReviewDismissal(
+                    ReviewDismissal(
+                        clientUUID: UUID(),
+                        flagID: flagID,
+                        treeID: treeID,
+                        attribution: mine,
+                        occurredAt: moment
+                    )
+                ),
+                at: moment,
+                connection: connection
+            )
+        }
+    }
+
+    /// What `RoutedAPI` needs from this phone to lay its own species acts over the service's
+    /// answer, or nil for a tree that is not a community tree here or a read that failed.
+    public func speciesAnswerState(treeID: UUID) async -> SpeciesAnswerState? {
+        let mine = attribution
+        return try? await store.queue.read { connection -> SpeciesAnswerState? in
+            guard let row = try layer.row(id: treeID, connection: connection) else { return nil }
+            var isAdder = false
+            if row.isAddedHere {
+                isAdder = try communityTrees.adder(treeID: treeID, connection: connection)?.isOwned(by: mine) ?? false
+            }
+            let answers = try localSpeciesAnswers(
+                tree: row.tree, addedHere: row.isAddedHere, isAdder: isAdder, connection: connection
+            )
+            return SpeciesAnswerState(
+                answerQueued: answers.isQueued(.speciesClaim, by: mine)
+                    || answers.isQueued(.speciesCorrection, by: mine),
+                reportQueued: answers.isQueued(.wrongSpeciesReport, by: mine),
+                keptFlagIDs: Set(answers.queued.compactMap { act in
+                    act.kind == .speciesReviewDismissal && act.owner.isOwned(by: mine) ? act.flagID : nil
+                }),
+                anyActQueued: !answers.queued.isEmpty,
+                openFlagID: answers.openFlag?.id
+            )
+        }
+    }
+
+    /// Takes the service's species onto a tree this phone added (ROADMAP 144): a contributor's
+    /// naming, the namer's correction, or the operator's. The adder's phone learns a species no
+    /// other way, because the cache never holds a tree this phone added.
+    ///
+    /// Written only when all of these hold, so the service's answer never overwrites an answer of
+    /// this phone's that it does not include yet:
+    /// - the species is in this phone's catalog (the operator's id is not checked on the service);
+    /// - no species act on this tree is queued, by anybody on this phone;
+    /// - the row still holds `observed`, the species read before the service was asked.
+    ///
+    /// The species becomes the head of this phone's chain, owned by **nobody**: the phone does not
+    /// know who named it, and the adder may correct any species (`correctSpecies`).
+    ///
+    /// - Returns: whether the row changed.
+    @discardableResult
+    public func adoptServedSpecies(treeID: UUID, observed: UUID?, served: UUID) async -> Bool {
+        let moment = now()
+        let known = try? await store.queue.read { connection in
+            try speciesQueries?.species(id: served, connection: connection)
+        }
+        guard known != nil else { return false }
+        let adopted = try? await store.queue.write { connection -> Bool in
+            guard try OutboxStore().queuedSpeciesActs(treeID: treeID, connection: connection).isEmpty,
+                  try communityTrees.adoptSpecies(
+                    treeID: treeID, observed: observed, served: served, connection: connection
+                  ) else { return false }
+            let successor = SpeciesAssertion(
+                treeID: treeID,
+                speciesID: served,
+                source: .community,
+                owner: .nobody,
+                createdAt: moment,
+                updatedAt: moment
+            )
+            if let head = try assertions.current(treeID: treeID, connection: connection) {
+                guard try assertions.supersede(
+                    id: head.id, with: successor.id, at: moment, connection: connection
+                ) else { throw APIError.conflict }
+            }
+            try assertions.insert(successor, connection: connection)
+            return true
+        }
+        return adopted ?? false
+    }
+
+    /// `adoptServedSpecies` for the trees of one tile page that this phone added and has not named.
+    ///
+    /// The tile serves the adder's own trees too, and the cache drops them (the phone's own row
+    /// wins), so this is how the adder's map learns a contributor's naming without opening the
+    /// profile. **Only an unnamed row** (`observed` nil): a page is not ordered against this
+    /// phone's own species acts, and a row that has a species may hold one the page does not
+    /// include yet. The profile read, which knows what was queued before it asked, takes every
+    /// other change.
+    public func adoptServedSpeciesOnUnnamedTrees(_ trees: [Tree]) async {
+        let named = trees.filter { $0.speciesCurrentID != nil }
+        guard !named.isEmpty else { return }
+        let unnamedHere = (try? await store.queue.read { connection -> Set<UUID> in
+            var ids: Set<UUID> = []
+            for tree in named {
+                if let own = try communityTrees.tree(id: tree.id, connection: connection),
+                   own.speciesCurrentID == nil, own.deletedAt == nil {
+                    ids.insert(tree.id)
+                }
+            }
+            return ids
+        }) ?? []
+        for tree in named where unnamedHere.contains(tree.id) {
+            guard let served = tree.speciesCurrentID else { continue }
+            await adoptServedSpecies(treeID: tree.id, observed: nil, served: served)
+        }
     }
 
     // MARK: - The record itself (task #125)

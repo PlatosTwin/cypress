@@ -452,7 +452,16 @@ public struct DataLayer: Sendable {
             // that draws it (review of #194, finding 3).
             withdrawServicePhoto: { id, treeID in
                 try await local.withdrawServicePhoto(id: id, treeID: treeID)
-            }
+            },
+            // ROADMAP 144: the reader's queued species acts, the adder's phone taking a species
+            // somebody else gave its tree, and the adder's keep of a report raised elsewhere.
+            speciesSeam: CommunitySpeciesSeam(
+                state: { id in await local.speciesAnswerState(treeID: id) },
+                adopt: { id, observed, served in
+                    await local.adoptServedSpecies(treeID: id, observed: observed, served: served)
+                },
+                keep: { treeID, flagID in try await local.keepServedSpeciesReport(treeID: treeID, flagID: flagID) }
+            )
         )
 
         // ── The background half of the grove's two reads (the owner's ruling of 2026-09-01) ─────
@@ -483,7 +492,11 @@ public struct DataLayer: Sendable {
         var refreshCommunityTrees: (@Sendable (BoundingBox) async -> Bool)?
         if access.allowsNetwork {
             let refresher = CommunityTileRefresher(queue: store.queue) { tile, cursor in
-                try await remote.communityTile(tile, cursor: cursor)
+                let page = try await remote.communityTile(tile, cursor: cursor)
+                // ROADMAP 144: a tree this phone added and has not named takes a species somebody
+                // else gave it. The cache never holds such a tree, so this is the adder's map's way in.
+                await local.adoptServedSpeciesOnUnnamedTrees(page.trees)
+                return page
             }
             refreshCommunityTrees = { bounds in await refresher.refresh(covering: bounds).changedCache }
         }
