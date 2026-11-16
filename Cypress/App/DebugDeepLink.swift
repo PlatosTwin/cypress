@@ -793,7 +793,7 @@ enum DebugDeepLink {
     /// The account `unsharedNotSharing` signs in as. Not a real account. The UI suite runs with the
     /// remote gate shut, so there the id stays on the phone; a DEBUG build pointed at a live service
     /// should not run this case.
-    static let notSharingAccount =UUID(uuidString: "C3000000-0000-4000-8000-00000000AC01")!
+    static let notSharingAccount = UUID(uuidString: "C3000000-0000-4000-8000-00000000AC01")!
 
     /// The candidate window, **with this device's own status overrides laid over it**.
     ///
