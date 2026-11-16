@@ -61,6 +61,36 @@ These are the orchestrator's choices, not the owner's.
 3. **The operator corrects a species through an operator route**, guarded like the takedown, not a
    screen: `POST /operator/community-trees/{id}/species` and
    `POST /operator/community-trees/{id}/species-reports/clear`.
+4. **"The later committed act wins" holds against the operator too.** Between two people the
+   service applies acts in the order it commits them, and never compares two phones' clocks, or a
+   phone's clock with the service's. So an adder's correction that waited in the adder's outbox
+   (made before the operator's correction, sent after it) replaces the operator's species when it
+   arrives. The adder may correct at any time anyway, so this changes who can act, never only when.
+   (Adjudicated after the review of 2026-11-16.)
+5. **"Keep the species" clears only the reports the adder saw.** The adder's dismissal names a
+   report by its `flagID`, which the adder's phone takes from the profile's
+   `species_report_flag_id`. The keep clears that report and every earlier one, never a later one,
+   so a report made after the adder tapped still counts while the keep waits in the outbox (the
+   owner's "A later report brings it back."). A keep whose `flagID` names no counting report
+   changes nothing and is still answered `applied`. Builds before the phone half of ROADMAP 144
+   send the `flagID` of a flag row on their own phone, which is never a counting report on a tree
+   that phone's account added (the adder's own reports do not count), so their keeps change
+   nothing. (Adjudicated after the review of 2026-11-16.)
+6. **A keep ends the namer's right to correct only when it acts.** The owner's words are "until the
+   adder corrects it" and "until the adder steps in". An adder who kept the species against a
+   report they were shown has stepped in; a keep that matched no report decided nothing.
+7. **`species_named_by_you` follows the rule exactly.** It is true only while the namer's
+   correction would apply: the caller is the namer in force and still shares. A namer who later
+   declines the license is told false, so the phone draws no control that silently does nothing.
+
+### R??? — Pending with the owner
+
+1. **A namer's change of name and the reported line.** Today (the build on this branch): a report
+   disputes the name in force when it was made, so a namer's correction to another name makes
+   "Somebody has reported this species as wrong." go away, and a correction back to the reported
+   name brings it back. The owner is being asked whether the line should instead stay until the
+   adder or the operator acts. The current behavior is kept until the answer comes;
+   `materializeSpecies`' namer arm is the one place it would change.
 
 ### R??? — Species on a tree somebody else added: the service author's design choices
 
@@ -73,7 +103,7 @@ Recorded so a reviewer can see each one and the orchestrator can ask the owner w
    a report about the old name stops counting once that name is gone, because the line "Somebody
    has reported this species as wrong." would otherwise sit under a name nobody reported. If the
    namer changes the name back, those reports count again. Only the adder and the operator **clear**
-   reports. The owner may want to be asked whether a namer's change should leave the line on.
+   reports. The owner is being asked about this (see "Pending with the owner" above).
 2. **A report from the namer of the species in force does not count** (correct it instead), and a
    report on a tree with no species does not count. The adder's own report does not count.
 3. **The adder's `species_claim` on a tree a contributor named is the adder's correction.** Builds 88
@@ -82,7 +112,9 @@ Recorded so a reviewer can see each one and the orchestrator can ask the owner w
 4. **Between two people, the act the service commits later wins; a phone's clock is compared only
    with the same identity's earlier statements** (one outbox can drain out of order). Before 009 the
    adder's correction was compared with every species event's `occurred_at`; it is now compared
-   only with the adder's own.
+   only with the adder's own. For a signed-in adder "its own" includes the signed-out acts of every
+   device the account claimed, because a phone that named a tree signed out and then signed in can
+   still drain an older correction under the account (the review's F1).
 5. **Existing reports do not light the mark at deploy.** Only reports received after 009 can count.
    No backfill.
 6. **The operator's species id is not checked**, because the service holds no species catalog.

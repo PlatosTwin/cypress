@@ -636,5 +636,39 @@ flyctl deploy --ha=false --build-arg GIT_SHA=$(git rev-parse HEAD)
 one-machine budget — and the rate limiter is in memory, so a second machine would also halve the
 limit it thinks it is enforcing.
 
+### Migration 009 (species on a tree somebody else added, ROADMAP 144)
+
+No existing report changes what anybody sees at this deploy: a report counts only through a
+`species_reported` event, and nothing before 009 wrote one. Two queries, against the production
+database (read only):
+
+1. **After the migration has run, this must read 0.** Anything else means a writer outside this
+   file made report events, and the profile's "Somebody has reported this species as wrong." could
+   light up on deploy.
+
+   ```sql
+   SELECT count(*) FROM community_tree_events WHERE kind = 'species_reported';
+   ```
+
+2. **For information only: the existing `wrong_species_report` rows that would qualify under the
+   new rules if they had arrived after 009** (a sharing account that is not the adder, on a live,
+   published, named tree). They never count; no backfill makes them count. The number says how
+   many reports the new line would have shown, if the owner wants to know.
+
+   ```sql
+   SELECT count(*) AS reports_that_would_qualify, count(DISTINCT c.tree_uuid) AS trees
+     FROM contributions c
+     JOIN community_trees t ON t.id = c.tree_uuid
+     JOIN users u ON u.id = c.user_id
+    WHERE c.kind = 'wrong_species_report' AND c.deleted_at IS NULL
+      AND t.deleted_at IS NULL AND t.published_at IS NOT NULL AND t.species_id IS NOT NULL
+      AND (t.user_id IS NULL OR t.user_id <> c.user_id)
+      AND u.license_version = 'odbl-1.0';
+   ```
+
+   Checked on 2026-11-16 against a test database with one stranger's report and one adder's own
+   report on the same named tree: it counts 1. When the license versions change, the last line
+   changes with `knownLicenseVersions` (`internal/store/community_trees.go`).
+
 **One thing that is a code change, not a deploy step.** The rate limiter is per-process. If this app
 ever runs more than one machine, it moves to Postgres or Redis first.
