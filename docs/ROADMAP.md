@@ -2558,7 +2558,7 @@ into this section in the round that finds it, and nowhere else. Each item stands
     (today, DEBUG paths) then reads as "declined to share" where it should read as unknown. Found
     by the reviewer of C3's profile package, 2026-11-15.~~ **DONE, 2026-11-16**, in
     `feat/account-license-readback`: `LocalAPI.claimDevice` clears `account_provider` and
-    `account_license_version`. `linkAccount` and `restoreAccount` write their answer after it.
+    `account_license_version` in the same transaction that writes `current_user_id`. `linkAccount` and `restoreAccount` write their answer after it.
     Note: no shipping path calls a bare `claimDevice` today (the DEBUG deep link goes through
     `linkAccount`), so this was latent.
 156. **A partly fetched community tile counts as asked (a gap in the owner's ruling of 2026-11-15
@@ -2600,6 +2600,12 @@ into this section in the round that finds it, and nowhere else. Each item stands
     fixture file checked in, so CI can test reading a HEIC without writing one; nobody has checked
     whether reading a HEIC works on the runner. Until then a HEIC add photo is tested on a
     physical Mac only.
+162. **A refresh that finishes after a sign-out stores a session again.** `AppSession.performMint`
+    calls `persist` after `client.refresh` returns, with no check that the person is still signed
+    in. So a refresh in flight across a sign-out writes the account's session back into the
+    Keychain, and if another account signed in meanwhile, it overwrites that account's stored
+    session. It predates the license readback change. Found by the reviewer of
+    `feat/account-license-readback`, 2026-11-16.
 
 
 **Retire the format-1 manifest — DONE, 2026-08-23.** The owner overrode the trigger the day after

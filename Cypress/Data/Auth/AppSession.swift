@@ -433,8 +433,9 @@ public actor AppSession {
         // refresh does not bring back "declined". Read again after the send: a refresh during it
         // rotated the tokens, and those are the ones to keep. Only for the same account: the
         // session can end, or change, while the request is in flight. `try?`: the service has
-        // agreed, so this must not report a failure; if the write fails, the next refresh carries
-        // the agreement anyway.
+        // agreed, so this must not report a failure. If the write fails, the stored session still
+        // says "declined", so a relaunch before the next refresh adopts it and the You tab shows
+        // "did not agree" again; the next refresh carries the agreement and corrects it.
         if let stored = storedSession, stored.userID == account {
             try? persist(stored.with(licenseVersion: .accepted(version)))
         }

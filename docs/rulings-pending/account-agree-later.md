@@ -52,6 +52,20 @@ declined to share agree later. There is one now.
   again. This needs `cypress-sync` deployed with that branch; until then the service sends no key,
   and the phone behaves as before (no line, no row). A session stored by an older build carries no
   answer either, so on such a phone the line and the row come back only after the first refresh.
+  - **The key can be absent from a refresh.** If the service cannot read the account's answer
+    after a refresh has rotated the session, it still sends the new tokens and leaves
+    `license_version` out, rather than failing (a failure would leave the phone with a spent
+    refresh token and sign the person out). The phone reads a missing key as "not stated" and
+    writes nothing. It never sends `null` in that case, because the phone would read `null` as "did
+    not agree" and could overwrite an agreement.
+  - **A narrow race, inferred in review and not staged in a test.** A refresh that read the
+    service's answer before an agreement committed can arrive after the person agreed. The phone
+    then stores and adopts "declined", and the You tab shows "did not agree" and the row again. The
+    next refresh carries the agreement and corrects it. A second tap on "Share" sends the same
+    agreement again, which publishes nothing new.
+  - **A failed save after agreeing.** After the service agrees, the phone re-saves its stored
+    session as "accepted". If that save fails, a relaunch before the next refresh shows "did not
+    agree" again, until the next refresh corrects it.
 - **Two behaviors the orchestrator chose for that change (2026-11-16), to be confirmed by the
   owner.** Each is one named constant in `LocalAPI`, easy to flip.
   1. **When the service's answer differs from the phone's stored answer, the phone shows the

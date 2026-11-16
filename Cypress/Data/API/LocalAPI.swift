@@ -3290,19 +3290,23 @@ public actor LocalAPI: CypressAPI {
 
     public func claimDevice(deviceUUID: UUID, userID: UUID) async throws {
         let moment = now()
+        // A claim that was not screen 15's leaves no consent record, and must not leave a stale one
+        // either (ROADMAP chip 155): a sign-out keeps the provider and the answer, so a bare claim
+        // after it would otherwise read the old account's answer as this one's. `linkAccount` and
+        // `restoreAccount` write their own answer after this returns.
+        //
+        // **One transaction for the sweep, the account and the three clears.** As separate writes, a
+        // kill after `current_user_id` and before the clears left the new account signed in with the
+        // previous account's provider and answer, which is the stale read this closes. Now they land
+        // together or not at all.
         try await store.queue.write { connection in
             try contributions.claimDevice(deviceUUID: deviceUUID, userID: userID, at: moment, connection: connection)
+            try CypressStore.setAppState(.currentUserID, to: userID.uuidString, connection: connection)
+            try CypressStore.clearAppState(.signedOutUserID, connection: connection)
+            try CypressStore.clearAppState(.accountProvider, connection: connection)
+            try CypressStore.clearAppState(.accountLicenseVersion, connection: connection)
         }
         self.userID = userID
-        try await store.setAppState(.currentUserID, to: userID.uuidString)
-        // A claim that was not screen 15's — the DEBUG deep links, a future server exchange — leaves
-        // no consent record, and must not leave a stale one either (ROADMAP chip 155): a sign-out
-        // keeps the provider and the answer, so a bare claim after it would otherwise read the old
-        // account's answer as this one's. `linkAccount` and `restoreAccount` write their own answer
-        // after this returns.
-        try await store.clearAppState(.signedOutUserID)
-        try await store.clearAppState(.accountProvider)
-        try await store.clearAppState(.accountLicenseVersion)
         // The old community trees of this account that waited while it was signed out
         // (`CommunityTreeBackfill`), now that it is the one signed in.
         await afterClaim?(userID)
