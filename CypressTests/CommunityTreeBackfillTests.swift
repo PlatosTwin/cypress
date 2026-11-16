@@ -1000,6 +1000,146 @@ struct CommunityTreeBackfillTests {
         #expect(!PhotoBinary.isJPEG(atPath: staged.path))
     }
 
+    // MARK: - 15b. Reading a HEIC that is checked in (ROADMAP 161)
+
+    /// How long a read of the checked-in HEIC may take before the test gives up on it. Nobody knows
+    /// whether *reading* a HEIC stalls on the CI runner the way writing one did, and a stalled suite
+    /// costs a 45-minute job, so these tests cannot be able to hang it.
+    static let heicReadDeadline: Duration = .seconds(30)
+
+    /// `Fixtures/camera-portrait.heic` beside this file: 400 × 300, orientation 6, with a GPS fix, a
+    /// capture time and the serial numbers a camera writes. 1.7 KB, made once on a physical Mac by a
+    /// throwaway script, so no machine has to write a HEIC to test reading one.
+    ///
+    /// Read from the test bundle when the build copied it there, else from the source tree through
+    /// `#filePath` (the way `BritishSpellingGuardTests` reads the repository).
+    static func checkedInHEIC(file: StaticString = #filePath) throws -> URL {
+        let name = "camera-portrait"
+        if let url = Bundle(for: HEICBundleToken.self).url(forResource: name, withExtension: "heic") {
+            return url
+        }
+        let url = URL(fileURLWithPath: "\(file)", isDirectory: false)
+            .deletingLastPathComponent()
+            .appendingPathComponent("Fixtures/\(name).heic")
+        try #require(FileManager.default.fileExists(atPath: url.path), "fixture: \(url.path) is not there")
+        return url
+    }
+
+    private final class HEICBundleToken {}
+
+    /// Runs `work` on a thread of its own, **not** on Swift concurrency's pool, and waits for it with
+    /// a clock deadline. Returns nil when the deadline passed first: the thread is then left running
+    /// (nothing can stop a call stuck inside ImageIO) and the caller records the Issue.
+    ///
+    /// A pool thread that blocks in ImageIO would hold one of the few workers the suite runs on, and
+    /// that is how three HEIC writers stopped the whole CI suite. A thread of its own blocks nothing
+    /// else, and the wait is a sleep on a clock, which no blocked call can stop.
+    static func runOnAThread<T: Sendable>(
+        deadline: Duration = heicReadDeadline,
+        _ work: @escaping @Sendable () throws -> T
+    ) async -> Result<T, Error>? {
+        await withCheckedContinuation { (continuation: CheckedContinuation<Result<T, Error>?, Never>) in
+            let gate = OneShot()
+            let finish: @Sendable (Result<T, Error>?) -> Void = { result in
+                if gate.claim() { continuation.resume(returning: result) }
+            }
+            let thread = Thread { finish(Result { try work() }) }
+            thread.name = "cypress-161-heic-read"
+            thread.start()
+            Task { @Sendable in
+                try? await ContinuousClock().sleep(for: deadline)
+                finish(nil)
+            }
+        }
+    }
+
+    /// Lets the first of two callers through: the thread that read, or the deadline.
+    private final class OneShot: @unchecked Sendable {
+        private let lock = NSLock()
+        private var claimed = false
+        func claim() -> Bool {
+            lock.lock()
+            defer { lock.unlock() }
+            if claimed { return false }
+            claimed = true
+            return true
+        }
+    }
+
+    /// Reads the checked-in HEIC the way the app does: the ingest (`PhotoBinary.write`, which strips
+    /// the metadata and keeps the container) and then the JPEG copy the sender makes
+    /// (`PhotoBinary.writeJPEGCopy`). Returns the two files, or nil after recording an Issue when the
+    /// read did not finish in time. Prints how long it took.
+    static func readTheCheckedInHEIC(into folder: URL) async throws -> (staged: URL, jpeg: URL)? {
+        let fixture = try checkedInHEIC()
+        let staged = folder.appendingPathComponent("staged-\(UUID().uuidString)")
+        let jpeg = folder.appendingPathComponent("copy-\(UUID().uuidString).jpg")
+        let clock = ContinuousClock()
+        let started = clock.now
+        let outcome = await runOnAThread {
+            try PhotoBinary.write(try Data(contentsOf: fixture), strippingMetadataTo: staged)
+            try PhotoBinary.writeJPEGCopy(from: staged, to: jpeg)
+        }
+        let took = started.duration(to: clock.now)
+        let milliseconds = Int(took.components.seconds * 1000 + took.components.attoseconds / 1_000_000_000_000_000)
+        guard let outcome else {
+            Issue.record("reading a HEIC did not finish in 30 s")
+            print("CYPRESS-TEST: reading the checked-in HEIC did not finish in 30 s (gave up at \(milliseconds) ms)")
+            return nil
+        }
+        print("CYPRESS-TEST: reading the checked-in HEIC took \(milliseconds) ms (hv_vmm_present: \(onAVirtualMachine))")
+        try outcome.get()
+        return (staged, jpeg)
+    }
+
+    @Test("a checked-in HEIC is read by the ingest and copied as a clean, upright JPEG, on any machine")
+    func aCheckedInHEICIsReadAndCopiedAsAJPEG() async throws {
+        let folder = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("cypress-161-heic-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+
+        let fixture = try Self.checkedInHEIC()
+        #expect(PhotoBinary.carriesIdentifyingMetadata(atPath: fixture.path), "fixture: the HEIC has nothing to strip")
+        #expect(!PhotoBinary.isJPEG(atPath: fixture.path), "fixture: the file is a JPEG")
+
+        guard let (staged, jpeg) = try await Self.readTheCheckedInHEIC(into: folder) else { return }
+
+        // The ingest keeps the container. It is not asserted here that the staged HEIC is clean:
+        // `CGImageDestinationCopyImageSource` with the strip options leaves the Exif, TIFF, Apple and
+        // GPS blocks in a HEIC (measured 2026-11-16 by a script on the host and by this suite on the simulator), where it
+        // removes them from a JPEG. The file that leaves the phone is the JPEG copy below, and that
+        // one is clean. The difference is recorded in ROADMAP 161 for the owner.
+        let type = CGImageSourceCreateWithURL(staged as CFURL, nil).flatMap(CGImageSourceGetType) as String?
+        #expect(type == UTType.heic.identifier, "the ingest wrote \(type ?? "nil")")
+
+        // The copy the sender uploads: a JPEG, clean, still upright.
+        #expect(PhotoBinary.isJPEG(atPath: jpeg.path), "the HEIC was not copied as a JPEG")
+        #expect(!PhotoBinary.carriesIdentifyingMetadata(atPath: jpeg.path), "the JPEG copy still says where or when")
+        let properties = try #require(
+            CGImageSourceCreateWithURL(jpeg as CFURL, nil)
+                .flatMap { CGImageSourceCopyPropertiesAtIndex($0, 0, nil) as? [CFString: Any] }
+        )
+        #expect(properties[kCGImagePropertyOrientation] as? Int == 6, "the copy lost which way up it goes")
+        #expect(PhotoBinary.pixelSize(atPath: jpeg.path).map { [$0.width, $0.height] } == [400, 300])
+    }
+
+    @Test("an add photo that is the checked-in HEIC is staged and sent as a clean, upright JPEG, on any machine")
+    func aCheckedInHEICAddPhotoIsSentAsAJPEG() async throws {
+        let scratch = FileManager.default.temporaryDirectory
+            .appendingPathComponent("cypress-161-gate-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: scratch, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: scratch) }
+        // The read first, on its own thread and under the deadline. The flow below reads the same
+        // file on the test's own thread, so it starts only once a read is known to return.
+        guard try await Self.readTheCheckedInHEIC(into: scratch) != nil else { return }
+
+        let fixture = try Self.checkedInHEIC()
+        try await Self.assertAddPhotoIsSentAsAJPEG(named: "checked-in HEIC", fileExtension: "heic") { original in
+            try FileManager.default.copyItem(at: fixture, to: original)
+        }
+    }
+
     /// Red-proof: make `sendableFile` require a JPEG again — red on "not staged"; and drop the JPEG
     /// copy from `APIOutboxSendSink.uploadPhoto` — red on the sent type.
     @Test(
@@ -1007,6 +1147,19 @@ struct CommunityTreeBackfillTests {
         arguments: CommunityTreeBackfillTests.pickedTypes
     )
     func aLibraryAddPhotoIsSentAsAJPEG(_ type: UTType) async throws {
+        try await Self.assertAddPhotoIsSentAsAJPEG(
+            named: type.identifier, fileExtension: type.preferredFilenameExtension ?? ""
+        ) { try Self.image(type, at: $0) }
+    }
+
+    /// The body of the test above, for a picked photograph that `place` writes over the add photo's
+    /// file. The checked-in HEIC (ROADMAP 161) takes the same path, so what is asserted for one is
+    /// asserted for the other.
+    static func assertAddPhotoIsSentAsAJPEG(
+        named name: String,
+        fileExtension: String,
+        place: (URL) throws -> Void
+    ) async throws {
         let phone = try await Self.phone()
         let (tree, _) = try await Self.addTree(on: phone, at: Self.old)
         let addPhoto = try #require(try await Self.addPhotoID(phone, tree.id))
@@ -1018,16 +1171,16 @@ struct CommunityTreeBackfillTests {
         }
         let original = URL(fileURLWithPath: stored)
         try FileManager.default.removeItem(at: original)
-        _ = try Self.image(type, at: original)
+        try place(original)
         let originalBytes = try Data(contentsOf: original)
         #expect(!PhotoBinary.isJPEG(atPath: stored), "fixture: the add photo is a JPEG")
 
         try await phone.run(phone.signedOut)
         let add = try #require(try await phone.outbox().first { $0.item.kind == .addTree })
-        let row = try #require(try await phone.sendable(add.id).first, "the \(type.identifier) add photo was not staged")
+        let row = try #require(try await phone.sendable(add.id).first, "the \(name) add photo was not staged")
 
         let serviceID = UUID()
-        let destination = URL(string: "https://storage.invalid/photos/\(serviceID.uuidString).jpg?sig=139\(type.preferredFilenameExtension ?? "")")!
+        let destination = URL(string: "https://storage.invalid/photos/\(serviceID.uuidString).jpg?sig=139\(fileExtension)")!
         StubStorageProtocol.park(destination, status: 200)
         let transport = ScriptedTransport()
         transport.answer("POST /photos/begin", with: """
@@ -1044,7 +1197,7 @@ struct CommunityTreeBackfillTests {
         let put = try #require(StubStorageProtocol.requests(to: destination).first { $0.method == "PUT" })
         let sent = phone.folder.appendingPathComponent("sent-\(UUID().uuidString)")
         try #require(put.body).write(to: sent)
-        #expect(PhotoBinary.isJPEG(atPath: sent.path), "the \(type.identifier) add photo was sent as it is, not as a JPEG")
+        #expect(PhotoBinary.isJPEG(atPath: sent.path), "the \(name) add photo was sent as it is, not as a JPEG")
         #expect(!PhotoBinary.carriesIdentifyingMetadata(atPath: sent.path), "the sent file still says where or when")
         let properties = try #require(
             CGImageSourceCreateWithURL(sent as CFURL, nil)
