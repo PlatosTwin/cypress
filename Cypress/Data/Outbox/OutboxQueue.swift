@@ -360,9 +360,9 @@ public actor OutboxQueue {
 
     // MARK: - Before a keep-records account deletion (ROADMAP 192)
 
-    /// How many passes `sendBeforeAccountDeletion` makes at most. A pass takes `batchSize` rows,
-    /// so this covers 200 due rows; a row a longer queue leaves unsent is counted in the answer,
-    /// not lost.
+    /// How many drains `sendBeforeAccountDeletion` makes at most. A drain's first pass takes
+    /// `batchSize` rows, so this covers 200 due rows; a withdrawal a longer queue leaves unsent is
+    /// counted in the answer, not lost.
     static let passesBeforeAccountDeletion = 8
 
     /// Sends what this account queued, now, before `DELETE /me` under the keep-records door.
@@ -374,35 +374,33 @@ public actor OutboxQueue {
     /// reaches the service while the account still owns the tree.
     ///
     /// **What it does.**
-    /// 1. Waits for a running drain to end, so a row that drain holds `uploading` is settled
-    ///    before this reads it, and then holds the queue itself, so no other drain runs meanwhile.
-    /// 2. Makes every row naming the account that the service has not accepted due now
+    /// 1. Makes every row naming the account that the service has not accepted due now
     ///    (`OutboxStore.makeAccountRowsDueNow`), so a row in backoff is not skipped.
-    /// 3. Makes up to `passesBeforeAccountDeletion` ordinary passes, the drain's own, with the
-    ///    wi-fi toggle honored, and stops at the first pass that finds nothing due. A row that fails
-    ///    in a pass is settled as any drain settles it: a `conflict` on a withdrawal fails it and
-    ///    brings the tree back with the owner's sentence; a failure that can be retried leaves it
-    ///    pending.
+    /// 2. Calls `drain()` up to `passesBeforeAccountDeletion` times, and stops at the first drain
+    ///    that finds nothing due. Before each, it waits for a running drain to end, so a row that
+    ///    drain holds `uploading` is settled first. **The wait matters**: `drain()` returns at once
+    ///    when another drain runs, so calling it without the wait would prove nothing was sent.
+    ///    `drain()` reads the wi-fi decision before it checks, so another drain can still start in
+    ///    between; an empty report while a drain runs is therefore not taken as "nothing due".
+    ///    It is the ordinary drain, so the wi-fi toggle is honored and a row that fails is settled
+    ///    as on any other day: a `conflict` on a withdrawal fails it and brings the tree back with
+    ///    the owner's sentence, and a failure that can be retried leaves it pending.
     ///
     /// - Returns: how many `tree_withdrawal` rows naming the account are still unsent and not
     ///   failed (`OutboxStore.unsentTreeWithdrawals`). The caller does not delete the account while
-    ///   this is above zero.
+    ///   this is above zero. A row another drain holds `uploading` at the read counts as unsent,
+    ///   which errs toward not deleting.
     public func sendBeforeAccountDeletion(userID: UUID) async throws -> Int {
-        await waitUntilIdle()
-        isDraining = true
-        defer { endDraining() }
-
         try await queue.write { connection in
             _ = try store.makeAccountRowsDueNow(userID: userID, connection: connection)
         }
         for _ in 0..<Self.passesBeforeAccountDeletion {
-            let report = try await passReleasingMoves(photoUploadsAllowed: await photoUploadsAllowedNow())
-            if report.attempted == 0 { break }
-        }
-        // A drain asked for while this ran gets its pass, as `drain(photoUploadsAllowed:)` gives it.
-        while drainRequested {
-            drainRequested = false
-            _ = try await passReleasingMoves(photoUploadsAllowed: await photoUploadsAllowedNow())
+            await waitUntilIdle()
+            let report = try await drain()
+            // An empty report while another drain runs may mean this call was the one turned away
+            // (`drain()` reads the wi-fi decision before it checks), so wait for that drain and
+            // ask again rather than stopping.
+            if report.attempted == 0 && !isDraining { break }
         }
         return try await queue.read { connection in
             try store.unsentTreeWithdrawals(userID: userID, connection: connection)

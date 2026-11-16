@@ -163,11 +163,12 @@ phone, and nobody could withdraw it again. So, under the keep-records door only,
 `RoutedAPI.deleteAccount` sends the outbox before `DELETE /me`
 (`OutboxQueue.sendBeforeAccountDeletion`):
 
-- **It waits for a drain that is already running**, then holds the queue itself. `drain()` returns
-  at once when another drain runs, so calling it would not prove anything was sent.
 - **Every row the account queued that the service has not accepted is made due now**, then the
-  queue makes up to eight ordinary passes (25 rows each), with the wi-fi toggle honored, and stops
-  at the first pass that finds nothing due. Every kind goes, not only withdrawals: a pin move has
+  queue runs its ordinary `drain()` up to eight times (25 rows in each first pass), with the wi-fi
+  toggle honored, and stops at the first drain that finds nothing due while no other drain runs.
+- **Each drain waits for one that is already running.** `drain()` returns at once when another
+  drain runs, so calling it without the wait would not prove anything was sent, and a row the other
+  drain holds `uploading` would be counted as unsent. Every kind goes, not only withdrawals: a pin move has
   the same problem (the service refuses a move on an anonymous tree), and an ordinary contribution
   loses nothing by going a little earlier. The 48-hour window and the fail count do not change.
 - **The deletion goes ahead only if no withdrawal naming the account is left unsent.** A row the
