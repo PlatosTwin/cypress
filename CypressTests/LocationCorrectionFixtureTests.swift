@@ -184,4 +184,72 @@ struct LocationCorrectionFixtureTests {
         #expect(RemoteAPI.localDate(of: instant, in: tokyo) == "2026-09-29")
         #expect(RemoteAPI.localDate(of: instant, in: TimeZone(secondsFromGMT: 0)!) == "2026-09-28")
     }
+
+    // MARK: - sync_add_tree.json (ROADMAP 139)
+
+    private static let addKey = UUID(uuidString: "4C9E2B7A-6D1F-4A3E-8B5C-0F2D9E1A7B30")!
+    private static let addedTreeID = UUID(uuidString: "A7D3F1C9-2E4B-4C6D-9A8F-1B3C5D7E9F20")!
+
+    /// A queued `add_tree`, built as `LocalAPI.addTree` and `CommunityTreeBackfill` build it: the
+    /// add's instant, and `addedOn` read from that instant in the phone's zone.
+    private static func addBody(in zone: TimeZone, rename: (from: String, to: String)? = nil) throws -> Data {
+        let occurred = try instant("2026-10-15T06:30:00Z")
+        let addition = TreeAddition(
+            clientUUID: addKey,
+            treeID: addedTreeID,
+            attribution: Attribution(userID: nil, deviceID: deviceID),
+            coordinate: Coordinate(latitude: 37.76015, longitude: -122.50505),
+            placement: .contributorPlaced,
+            occurredAt: occurred,
+            addedOn: TreeAddition.addedDay(of: occurred, in: zone)
+        )
+        let item = try OutboxPayload.addTree(addition).makeItem(createdAt: try instant("2026-11-15T12:00:00Z"))
+        let encoded = try RemoteCoding.encoder.encode(
+            SyncRequestBody(items: [try RemoteAPI.syncItemBody(for: item)])
+        )
+        guard let rename else { return encoded }
+        var mutated = try #require(try JSONSerialization.jsonObject(with: encoded) as? [String: Any])
+        var items = try #require(mutated["items"] as? [[String: Any]])
+        var payload = try #require(items[0]["payload"] as? [String: Any])
+        payload[rename.to] = payload.removeValue(forKey: rename.from)
+        items[0]["payload"] = payload
+        mutated["items"] = items
+        return try JSONSerialization.data(withJSONObject: mutated)
+    }
+
+    /// The instrument against an answer known before it ran: `addedOn` spelled any other way, or the
+    /// day read in UTC, compares unequal.
+    @Test("the add golden is on disk, and the comparison sees addedOn renamed or read in UTC")
+    func theAddComparisonIsCalibrated() throws {
+        let losAngeles = try #require(TimeZone(identifier: "America/Los_Angeles"))
+        let golden = try Self.object(try Self.fixture("sync_add_tree.json"))
+        #expect(golden.isEqual(NSDictionary()) == false, "sync_add_tree.json parsed as nothing")
+        let renamed = try Self.object(try Self.addBody(in: losAngeles, rename: (from: "addedOn", to: "addedDay")))
+        #expect(!renamed.isEqual(golden), "a renamed addedOn compared equal; the comparison ignores it")
+        let utc = try Self.object(try Self.addBody(in: TimeZone(secondsFromGMT: 0)!))
+        #expect(!utc.isEqual(golden), "addedOn read in UTC compared equal; the comparison ignores its value")
+    }
+
+    /// 23:30 on the 14th in San Francisco is 06:30 UTC on the 15th. The phone sends the 14th and the
+    /// add's own instant, and the service's golden holds both.
+    ///
+    /// Red-proof: read `TreeAddition.addedDay` in UTC — red here on the value, "2026-10-15".
+    @Test("a queued add is sent with its local added day, exactly as the service's golden holds it")
+    func theAddMatchesTheGolden() throws {
+        let losAngeles = try #require(TimeZone(identifier: "America/Los_Angeles"))
+        let occurred = try Self.instant("2026-10-15T06:30:00Z")
+        #expect(TreeAddition.addedDay(of: occurred, in: losAngeles) == "2026-10-14",
+                "addedOn for 23:30 Pacific is \(TreeAddition.addedDay(of: occurred, in: losAngeles))")
+
+        let oursData = try Self.addBody(in: losAngeles)
+        let goldenData = try Self.fixture("sync_add_tree.json")
+        #expect(
+            try Self.object(oursData).isEqual(try Self.object(goldenData)),
+            """
+            the phone's add_tree body is not the golden.
+            ours:   \(String(decoding: oursData, as: UTF8.self))
+            golden: \(String(decoding: goldenData, as: UTF8.self))
+            """
+        )
+    }
 }

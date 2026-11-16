@@ -8,9 +8,10 @@
 //  `MapInventoryNotice.isOwed` is a pure function of four facts, so the gates are decidable
 //  outright. The *words* are decidable as facts about the string rather than as its phrasing:
 //  CLAUDE.md's rule is "assert facts, not phrasing", and the facts this copy must carry are that
-//  it says the trees may exist, that it makes no promise, and that it is not any other notice on
-//  this screen. What no test here decides is that the sentence is *legible* on a phone — that is
-//  the AX5 measurement at the bottom and the screenshots in the branch report.
+//  it names what the map draws and puts the absence on those records rather than on the ground
+//  (round C3, the owner's ruling of 2026-11-15), that it makes no promise, and that it is not any
+//  other notice on this screen. What no test here decides is that the sentence is *legible* on a
+//  phone — that is the AX5 measurement at the bottom and the screenshots in the branch report.
 //
 
 #if DEBUG
@@ -118,19 +119,39 @@ struct MapEmptyInventoryTests {
     /// hundred thousand trees in it and the app knows about none of them (`ERRATA E214`). A notice
     /// a reader could take as "there are no trees here" would be a worse screen than the silent
     /// one it replaces.
-    @Test("the notice says the trees may exist, and puts the absence on the record")
+    ///
+    /// **What changed in round C3.** The body used to end with the hedge "Trees may stand here
+    /// without being listed.", and this test required it. The owner's ruling of 2026-11-15 on
+    /// places with no city inventory ("name both kinds") replaced the body with two sentences that
+    /// name the two things the map draws and say neither has a tree here. That keeps the absence
+    /// on the record rather than on the ground, so the test now holds that: the body names both
+    /// sources, and the sentence about the absence has them, not the ground, as its subject.
+    ///
+    /// Red-proof: put back the old first sentence, which names only the city inventory — red on
+    /// "the notice does not name the trees people have added".
+    @Test("the notice names both kinds the map draws, and puts the absence on them")
     func theTreesAreNotDeniedOnlyTheRecordsAre() {
-        let words = MapInventoryCopy.title + " " + MapInventoryCopy.message
-        // The clause read `Trees may well stand here, unlisted.` until the copy audit of
-        // 2026-08-23 (R25) made it `Trees may stand here without being listed.` What this test
-        // holds is the hedge and its subject, not the adverb: the trees have to be left standing,
-        // as a possibility the notice raises in so many words.
+        let words = MapInventoryCopy.title + " " + MapInventoryCopy.neitherHasATree
+        let lowered = MapInventoryCopy.neitherHasATree.lowercased()
         #expect(
-            MapInventoryCopy.message.contains("Trees may stand here"),
+            lowered.contains("city street-tree inventory"),
+            "the notice does not name the city inventory: \(MapInventoryCopy.neitherHasATree)"
+        )
+        #expect(
+            lowered.contains("trees people have added"),
             """
-            the notice does not say the trees may be standing here; without that clause it reads \
-            as "this ground has no trees", which is false of every park in the city
+            the notice does not name the trees people have added; since round C3 the map draws \
+            them for everyone, so a body that names only the city inventory says less than the map \
+            shows: \(MapInventoryCopy.neitherHasATree)
             """
+        )
+        // The absence belongs to the two sources: "Neither" is the subject of the last sentence.
+        let last = MapInventoryCopy.neitherHasATree
+            .split(separator: ".", omittingEmptySubsequences: true)
+            .last.map { $0.trimmingCharacters(in: .whitespaces) } ?? ""
+        #expect(
+            last.hasPrefix("Neither"),
+            "the sentence about the absence is not about the two sources: “\(last)”"
         )
         // And the message may not say the opposite. **The title is not swept here and must not
         // be**: it reads `No trees on record here`, and its whole design is that "no trees"
@@ -139,8 +160,8 @@ struct MapEmptyInventoryTests {
         // this right, which is what it did when this check was first written.
         for denial in ["no trees", "nothing grows", "there are none"] {
             #expect(
-                !MapInventoryCopy.message.lowercased().contains(denial),
-                "the message denies the trees with “\(denial)”: \(MapInventoryCopy.message)"
+                !MapInventoryCopy.neitherHasATree.lowercased().contains(denial),
+                "the message denies the trees with “\(denial)”: \(MapInventoryCopy.neitherHasATree)"
             )
         }
         // The subject of both sentences is the record, so neither can be read as a claim about
@@ -149,22 +170,48 @@ struct MapEmptyInventoryTests {
         #expect(words.contains("inventory"))
     }
 
+    /// **The first body, where the phone has not asked for added trees** (the owner's answer of
+    /// 2026-11-15, "Show the old text there"). It must still leave the trees standing: the hedge
+    /// "Trees may stand here" is what makes it true when the phone cannot know about trees other
+    /// people added, and it must deny nothing.
+    ///
+    /// Red-proof: make `notOnTheCityInventory` end "Neither has a tree here." — red on "the first
+    /// body does not say the trees may be standing here".
+    @Test("the first body leaves the trees standing, and puts the absence on the record")
+    func theFirstBodyKeepsItsHedge() {
+        let body = MapInventoryCopy.notOnTheCityInventory
+        #expect(
+            body.contains("Trees may stand here"),
+            "the first body does not say the trees may be standing here: \(body)"
+        )
+        #expect(body.lowercased().contains("city street-tree inventory"))
+        for denial in ["no trees", "nothing grows", "there are none", "neither has"] {
+            #expect(!body.lowercased().contains(denial), "the first body says “\(denial)”: \(body)")
+        }
+    }
+
+    /// Both bodies, for the checks that hold for each.
+    static let bodies = [MapInventoryCopy.neitherHasATree, MapInventoryCopy.notOnTheCityInventory]
+
     /// **`ERRATA E212`'s mistake in another costume.** EveryTreeSF excluded park trees by design,
     /// SF Rec & Park publishes no tree inventory at any status, and no parks phase of the Urban
     /// Forest Plan has ever published data (E214). There is no date to give and no work to
     /// promise, so the sentence gives neither — and it must not grow one later.
     @Test("the notice promises nothing about data arriving")
     func theNoticePromisesNothing() {
-        let lowered = MapInventoryCopy.message.lowercased() + " " + MapInventoryCopy.title.lowercased()
-        for promise in ["yet", "soon", "coming", "working on", "will be", "we plan", "future", "shortly"] {
-            #expect(
-                !lowered.contains(promise),
-                """
-                the empty-inventory notice contains “\(promise)”, which reads as a promise that \
-                park trees are on their way. Rec & Park publishes no tree inventory at any status \
-                (E214) and a destination claim with nothing behind it is E212.
-                """
-            )
+        let promises = ["yet", "soon", "coming", "working on", "will be", "we plan", "future", "shortly"]
+        for body in Self.bodies {
+            let lowered = body.lowercased() + " " + MapInventoryCopy.title.lowercased()
+            for promise in promises {
+                #expect(
+                    !lowered.contains(promise),
+                    """
+                    the empty-inventory notice contains “\(promise)”, which reads as a promise that \
+                    park trees are on their way. Rec & Park publishes no tree inventory at any \
+                    status (E214) and a destination claim with nothing behind it is E212.
+                    """
+                )
+            }
         }
     }
 
@@ -173,15 +220,18 @@ struct MapEmptyInventoryTests {
     /// would make it read as an error may appear.
     @Test("the notice does not read as an error or as a wait")
     func theNoticeIsNotAnError() {
-        let lowered = MapInventoryCopy.message.lowercased() + " " + MapInventoryCopy.title.lowercased()
-        for alarm in ["error", "failed", "could not", "unable", "try again", "loading", "problem"] {
-            #expect(
-                !lowered.contains(alarm),
-                """
-                the empty-inventory notice contains "\(alarm)", which makes a known boundary of a \
-                municipal dataset read as a fault
-                """
-            )
+        let alarms = ["error", "failed", "could not", "unable", "try again", "loading", "problem"]
+        for body in Self.bodies {
+            let lowered = body.lowercased() + " " + MapInventoryCopy.title.lowercased()
+            for alarm in alarms {
+                #expect(
+                    !lowered.contains(alarm),
+                    """
+                    the empty-inventory notice contains "\(alarm)", which makes a known boundary of \
+                    a municipal dataset read as a fault
+                    """
+                )
+            }
         }
     }
 
@@ -197,15 +247,17 @@ struct MapEmptyInventoryTests {
             MapLocationCopy.title(.denied) + " " + MapLocationCopy.message(showing),
             MapLocationCopy.title(.servicesOff) + " " + MapLocationCopy.message(showing)
         ]
-        let mine = MapInventoryCopy.title + " " + MapInventoryCopy.message
-        #expect(!mine.isEmpty)
-        #expect(
-            !others.contains(mine),
-            """
-            the empty-inventory notice reads as one of screen 01's location notices; they are \
-            different facts about the world (E126, E158)
-            """
-        )
+        for body in Self.bodies {
+            let mine = MapInventoryCopy.title + " " + body
+            #expect(!mine.isEmpty)
+            #expect(
+                !others.contains(mine),
+                """
+                the empty-inventory notice reads as one of screen 01's location notices; they are \
+                different facts about the world (E126, E158)
+                """
+            )
+        }
         // And it must not borrow the *title* of one either — the title is what a reader scanning
         // the card actually reads.
         for title in [
@@ -243,12 +295,17 @@ struct MapEmptyInventoryTests {
     @MainActor
     @Test("the notice is no taller at AX5 than the location notices already in its slot")
     func theNoticeFitsTheSlotAtAX5() async {
+        // Both bodies: the card draws either, by whether the phone asked for added trees here.
+        for body in Self.bodies {
+            await Self.assertFitsTheSlotAtAX5(body)
+        }
+    }
+
+    @MainActor
+    private static func assertFitsTheSlotAtAX5(_ body: String) async {
         let width = AX5ReflowTests.phoneWidth
         let mine = await AX5ReflowTests.ax5Size(
-            of: MapLocationNotice(
-                title: MapInventoryCopy.title,
-                message: MapInventoryCopy.message
-            ),
+            of: MapLocationNotice(title: MapInventoryCopy.title, message: body),
             width: width
         )
         let searching = await AX5ReflowTests.ax5Size(
@@ -274,7 +331,8 @@ struct MapEmptyInventoryTests {
         #expect(
             mine.height <= tallestShipped,
             """
-            the empty-inventory notice is \(mine.height) pt tall at AX5 on a \(width) pt phone, \
+            the empty-inventory notice with the body “\(body)” is \(mine.height) pt tall at AX5 \
+            on a \(width) pt phone, \
             against \(tallestShipped) pt for the tallest location notice already in this slot. \
             E183 §2 is the unfixed defect this must not deepen: the card lays out from its bottom \
             edge and grows off the top of the display.

@@ -56,7 +56,8 @@ struct VisitAddTreeView: View {
     /// The tree a row of the note opened, presented over this screen. Nil when none is open.
     @State private var openedTree: OpenedTree?
 
-    /// Read for one decision: where the empty well's sentence is drawn. See `wellEmptyNotice`.
+    /// Read for two decisions: where the empty well's sentence is drawn (`wellEmptyNotice`), and
+    /// where the note under the button is drawn (`VisitAddTreeLayout.footnotePlace`).
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     /// Held so the species picker can be handed the same boundary this screen writes through. The
@@ -76,16 +77,22 @@ struct VisitAddTreeView: View {
     private let debugPhoto: Data?
     #endif
 
+    /// - Parameter sharing: reads whether this phone's account shares its tree records, for the
+    ///   note under the button. Asked each time the screen appears, so a sign-in, or an agreement
+    ///   made since the last time, is seen. The composition root's, like `attribution`.
     init(
         api: any CypressAPI,
         location: VisitLocationProvider,
         attribution: Attribution,
+        sharing: @escaping ContributionSharingReader,
         onAdded: @escaping (UUID) -> Void,
         openExisting: @escaping ExistingTreeScreen,
         onBack: @escaping () -> Void
     ) {
         _model = State(
-            wrappedValue: VisitAddTreeModel(api: api, location: location, attribution: attribution)
+            wrappedValue: VisitAddTreeModel(
+                api: api, location: location, attribution: attribution, readSharing: sharing
+            )
         )
         self.api = api
         self.onAdded = onAdded
@@ -102,13 +109,16 @@ struct VisitAddTreeView: View {
         api: any CypressAPI,
         location: VisitLocationProvider,
         attribution: Attribution,
+        sharing: @escaping ContributionSharingReader,
         debugPhoto: Data,
         onAdded: @escaping (UUID) -> Void,
         openExisting: @escaping ExistingTreeScreen,
         onBack: @escaping () -> Void
     ) {
         _model = State(
-            wrappedValue: VisitAddTreeModel(api: api, location: location, attribution: attribution)
+            wrappedValue: VisitAddTreeModel(
+                api: api, location: location, attribution: attribution, readSharing: sharing
+            )
         )
         self.api = api
         self.onAdded = onAdded
@@ -275,6 +285,12 @@ struct VisitAddTreeView: View {
                 Text(reason)
                     .cypressBody135(color: CypressColor.textMuted)
                     .fixedSize(horizontal: false, vertical: true)
+            }
+
+            // At the accessibility sizes only: see `footer`.
+            if VisitAddTreeLayout.footnotePlace(isAccessibilitySize: dynamicTypeSize.isAccessibilitySize)
+                == .scroll {
+                footnote
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -621,6 +637,10 @@ struct VisitAddTreeView: View {
 
     // MARK: - Footer
 
+    /// The button, and under it the note on who can see the tree, except at the accessibility
+    /// sizes. There the note is the last row of the scrolling form and only the button is pinned
+    /// (the owner's ruling of 2026-11-15, "move into the scroll"): at AX5 the note is five or more
+    /// lines, and pinned under the button it would take the strip the form scrolls in.
     private var footer: some View {
         VStack(spacing: CypressSpacing.gapRows) {
             PrimaryButton(VisitAddTreeCopy.cta, isEnabled: model.canAdd) {
@@ -628,14 +648,50 @@ struct VisitAddTreeView: View {
                     if let id = await model.add() { onAdded(id) }
                 }
             }
-            Text(VisitAddTreeCopy.footnote)
-                .cypressBody135(color: CypressColor.textMuted)
-                .multilineTextAlignment(.center)
-                .fixedSize(horizontal: false, vertical: true)
+            if VisitAddTreeLayout.footnotePlace(isAccessibilitySize: dynamicTypeSize.isAccessibilitySize)
+                == .footer {
+                footnote
+            }
         }
         .padding(.horizontal, CypressSpacing.gutter)
         .padding(.top, VisitMetrics.Identify.footerTop)
         .padding(.bottom, CypressSpacing.bottomCTA)
+    }
+
+    /// `VisitAddTreeCopy.footnote(for:)` for the account as it was when this screen appeared.
+    /// Nothing until that read answers (one hop to the local database), so the screen never shows
+    /// one account's sentence and then swaps it for another's.
+    ///
+    /// Centered under the button, as it always was; leading in the form, like the rows around it.
+    @ViewBuilder
+    private var footnote: some View {
+        if let sharing = model.sharing {
+            let inScroll = VisitAddTreeLayout.footnotePlace(
+                isAccessibilitySize: dynamicTypeSize.isAccessibilitySize
+            ) == .scroll
+            Text(VisitAddTreeCopy.footnote(for: sharing))
+                .cypressBody135(color: CypressColor.textMuted)
+                .multilineTextAlignment(inScroll ? .leading : .center)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+}
+
+/// Where the add screen puts a row whose place depends on the text size. A pure function of the
+/// one fact it reads, so the rule is testable without a renderer (`AX5ReflowTests`' pattern).
+enum VisitAddTreeLayout {
+
+    enum FootnotePlace: Equatable {
+        /// Pinned under the Add this tree button.
+        case footer
+        /// The last row of the scrolling form, with only the button pinned.
+        case scroll
+    }
+
+    /// The owner's ruling of 2026-11-15 on the note under the Add this tree button: at the
+    /// accessibility sizes the note moves up into the scrolling form; below them it stays pinned.
+    static func footnotePlace(isAccessibilitySize: Bool) -> FootnotePlace {
+        isAccessibilitySize ? .scroll : .footer
     }
 }
 
@@ -795,8 +851,28 @@ enum VisitAddTreeCopy {
     ///
     /// It no longer says *where*, because the row above the CTA now owns that and says it more
     /// precisely. One screen must not carry two sentences about the coordinate that can disagree.
-    static let footnote =
-        "Recorded as community-added and unverified, on this phone."
+    ///
+    /// **The second half says who can see the tree, and that depends on the account** (the owner's
+    /// rulings of 2026-11-15 on the note under the Add this tree button). A signed-out phone, and an
+    /// account that declined the license, still send the tree to the service, which keeps it
+    /// private to its adder. So those two say "Only you can see it", not "on this phone". When the
+    /// phone holds no answer for a signed-in account (after a reinstall, or an account linked
+    /// before the answer was stored) the owner chose to keep the sentence this screen always had.
+    /// The note does not mention private property: the land row above the button already does.
+    static func footnote(for sharing: ContributionSharing) -> String {
+        let recorded = "Recorded as community-added and unverified"
+        switch sharing {
+        case .sharing:
+            return "\(recorded). Everyone using Cypress can see it once it is sent."
+        case .signedOut:
+            return "\(recorded). Only you can see it. Everyone using Cypress can see it after you sign in."
+        case .notSharing:
+            return "\(recorded). Only you can see it. "
+                + "Everyone using Cypress can see it after you agree to share your tree records."
+        case .unknown:
+            return "\(recorded), on this phone."
+        }
+    }
 
     /// Why the CTA is disabled, in the three cases where it is.
     ///

@@ -88,17 +88,19 @@ public struct OutboxStore {
     /// a second time is a second correction, a second flag, a second withdrawal —
     /// `LocalAPI.apply(_:)` refuses them outright for that reason.
     ///
-    /// **This is not a backfill and must never become one.** It writes one row for one mutation at
-    /// the moment that mutation happens. Nothing sweeps rows that already exist into the queue; see
-    /// `AppSchema` v17.
+    /// **One backfill uses it, and only for rows on a community tree.** The owner reversed R77 for
+    /// community trees on 2026-11-14: a tree the service never received is sent once, with every
+    /// visit, check-in, measurement and care event on it (`CommunityTreeBackfill`). Those rows are
+    /// already on this device, so they are queued here, applied, and never offered to the apply
+    /// sink. Rows on a city tree are still never swept into the queue (R77, `AppSchema` v17).
     ///
-    /// **The `Bool` says whether a row was written, and every caller today discards it, on an
-    /// invariant worth stating rather than assuming**: the `ON CONFLICT(client_uuid) DO NOTHING`
-    /// arm cannot fire for these ten. Nine mint a fresh `UUID()` at the call site, and `addTree`
-    /// reuses `TreeDraft.clientUUID`, which `community_trees.client_uuid TEXT NOT NULL UNIQUE` has
-    /// already refused in the same transaction if it is a repeat. A future kind that keys on
-    /// something a caller can hand in twice inherits a silent drop instead — so it reads this
-    /// result, or it does not use this method.
+    /// **The `Bool` says whether a row was written.** For the mutations of the moment the
+    /// `ON CONFLICT(client_uuid) DO NOTHING` arm cannot fire: nine mint a fresh `UUID()` at the call
+    /// site, and `addTree` reuses `TreeDraft.clientUUID`, which
+    /// `community_trees.client_uuid TEXT NOT NULL UNIQUE` has already refused in the same
+    /// transaction if it is a repeat. The backfill keys each row on the row's own `client_uuid`,
+    /// which can still be queued, so it reads this result and stages binaries only on a row it
+    /// wrote.
     @discardableResult
     public func enqueueLocallyApplied(_ item: OutboxItem, connection: SQLiteConnection) throws -> Bool {
         try enqueue(item, locallyApplied: true, connection: connection)
@@ -744,6 +746,13 @@ public struct OutboxStore {
         /// RULINGS **R77**: false for every binary `AppSchema` v18 migrated, which stays on device.
         public var isSendable: Bool
         public var failCount: Int
+        /// `photos.captured_at` of the photograph this binary is, when the phone holds its row.
+        ///
+        /// The send dates the photograph by this. It used to date it by the queue row's own
+        /// `created_at`, which is seconds from the shutter for a new photograph and months from it
+        /// for one sent by `CommunityTreeBackfill`. Nil for a binary whose `photos` row is absent
+        /// (a test double's apply sink); the send then falls back to the row's time.
+        public var capturedAt: Date? = nil
     }
 
     /// The binaries whose local commit is done and whose send is still owed.
@@ -773,7 +782,10 @@ public struct OutboxStore {
     /// was.
     public func sendablePhotos(for id: UUID, connection: SQLiteConnection) throws -> [PhotoRow] {
         let statement = try connection.cachedStatement("""
-            SELECT * FROM outbox_photos
+            SELECT outbox_photos.*,
+                   (SELECT photos.captured_at FROM photos
+                     WHERE photos.id = outbox_photos.photo_id COLLATE NOCASE) AS photo_captured_at
+              FROM outbox_photos
              WHERE outbox_id = :item AND state = 'applied' AND sendable = 1
                AND photo_id IS NOT NULL AND container_path IS NOT NULL
                AND NOT EXISTS (
@@ -860,8 +872,73 @@ public struct OutboxStore {
             containerPath: try row.stringIfPresent("container_path"),
             isApplied: (try row.string("state")) == "applied",
             isSendable: try row.bool("sendable"),
-            failCount: try row.int("fail_count")
+            failCount: try row.int("fail_count"),
+            capturedAt: try row.dateIfPresent("photo_captured_at")
         )
+    }
+
+    /// Stages a binary that **this device has already applied**: its `photos` row exists and its
+    /// bytes are at `containerPath`, so all that is owed is the send.
+    ///
+    /// The two binaries this covers are ones no apply sink ever touches. The photograph taken on the
+    /// Add this tree screen is ingested by `LocalAPI.addTree` itself and keeps its `local_path`, and
+    /// an old photograph `CommunityTreeBackfill` sends is already in the photo directory. Staging
+    /// either one `pending` would offer it to the apply sink, which would ingest it a second time.
+    ///
+    /// **The row's id is the photograph's id**, so the begin's idempotency key is `photos.id`: the
+    /// key the service echoes to the photograph's contributor (report F30), and the key that makes a
+    /// second send of the same photograph land on the row the first one made.
+    ///
+    /// - Returns: whether a row was written. `ON CONFLICT(id) DO NOTHING`, so a photograph already
+    ///   staged is not staged twice.
+    @discardableResult
+    public func stageAppliedPhoto(
+        photoID: UUID,
+        for item: UUID,
+        shotType: ShotType,
+        containerPath: String,
+        at date: Date,
+        connection: SQLiteConnection
+    ) throws -> Bool {
+        let statement = try connection.cachedStatement("""
+            INSERT INTO outbox_photos
+                (id, outbox_id, path, shot_type, photo_id, container_path, state, sendable,
+                 fail_count, created_at, updated_at)
+            VALUES
+                (:id, :item, NULL, :shot, :id, :container, 'applied', 1, 0, :now, :now)
+            ON CONFLICT(id) DO NOTHING
+            """)
+        _ = try statement.bind([
+            ":id": photoID,
+            ":item": item,
+            ":shot": shotType.rawValue,
+            ":container": containerPath,
+            ":now": date
+        ])
+        try statement.run()
+        let inserted = connection.changes > 0
+        _ = try statement.reset()
+        return inserted
+    }
+
+    /// Drops the applied binaries of one item when **no send sink is wired**, so the item can settle.
+    ///
+    /// `settleAppliedPhoto` already does this for a binary the drain applies. A binary staged
+    /// applied (`stageAppliedPhoto`) never passes through it, and with no sink nothing would ever
+    /// complete it: its item's `photos_outstanding` would stay above zero and the item would never
+    /// reach `done`. With no sink nothing is sent at all, so nothing more is owed for it.
+    ///
+    /// - Returns: how many rows were dropped.
+    @discardableResult
+    public func dropAppliedPhotosWithNoSink(for id: UUID, connection: SQLiteConnection) throws -> Int {
+        let statement = try connection.cachedStatement(
+            "DELETE FROM outbox_photos WHERE outbox_id = :item AND state = 'applied'"
+        )
+        _ = try statement.bind(id, forName: ":item")
+        try statement.run()
+        let dropped = connection.changes
+        _ = try statement.reset()
+        return dropped
     }
 
     /// Writes one row per staged binary, at the moment its mutation is queued.

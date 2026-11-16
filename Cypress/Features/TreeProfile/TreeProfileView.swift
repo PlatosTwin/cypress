@@ -303,6 +303,10 @@ struct TreeProfileView: View {
 
                 if !presentation.isCold {
                     regularsRow(presentation)
+                }
+
+                // Behind `isCold` for city trees only (round C3); see `drawsActivityFeed`.
+                if presentation.drawsActivityFeed {
                     activityFeed(presentation)
                 }
 
@@ -534,6 +538,15 @@ struct TreeProfileView: View {
             // the record, and the badge would attribute Cypress's reading of the column to the city
             // (`landContextNote`'s argument, one block up).
             if let note = presentation.unreadSpeciesNote {
+                Text(note)
+                    .cypressBody135(color: CypressColor.textMuted)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.top, TreeProfileMetrics.latinTop)
+            }
+
+            // Round C3: the adder of a tree only they can see is told so. Under the subtitle,
+            // which already says the tree is community-added, and drawn like the note above it.
+            if let note = presentation.onlyYouCanSeeNote {
                 Text(note)
                     .cypressBody135(color: CypressColor.textMuted)
                     .fixedSize(horizontal: false, vertical: true)
@@ -901,6 +914,9 @@ struct TreeProfileView: View {
             return .photo(colorScheme == .dark ? CypressGradient.activityVisitDark : CypressGradient.activityVisit)
         case .care:
             return .care
+        case .history:
+            // The owner's choice of 2026-11-15: the community tree mark.
+            return .communityTree
         }
     }
 

@@ -517,9 +517,15 @@ struct CommunityAddTests {
             continuation?.resume(throwing: APIError.forbidden)
         }
 
-        /// Bounded: two seconds, then the test fails instead of hanging.
+        /// How long a wait lasts before the test fails instead of hanging. It is a clock time, not a
+        /// count of turns: CI run 43786913681 failed three tests here when 400 turns of a 5 ms sleep
+        /// took 87 s on a busy runner and the second read had not arrived. A wait returns as soon as
+        /// the read arrives, so a healthy run does not pay for the length.
+        private static let patience: Duration = .seconds(120)
+
         func waitForReads(_ count: Int) async throws {
-            for _ in 0..<400 {
+            let deadline = ContinuousClock.now + Self.patience
+            while ContinuousClock.now < deadline {
                 if lock.withLock({ reads.count }) >= count { return }
                 try await Task.sleep(for: .milliseconds(5))
             }
@@ -527,7 +533,8 @@ struct CommunityAddTests {
         }
 
         func waitForAdd() async throws {
-            for _ in 0..<400 {
+            let deadline = ContinuousClock.now + Self.patience
+            while ContinuousClock.now < deadline {
                 if lock.withLock({ add != nil }) { return }
                 try await Task.sleep(for: .milliseconds(5))
             }

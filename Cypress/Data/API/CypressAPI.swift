@@ -1183,6 +1183,29 @@ public struct TreeProfile: Hashable, Sendable {
     /// `CalendarDay`.
     public let communityHistory: CommunityTreeHistory?
 
+    /// Whether this tree is a row in this phone's own `community_trees` table (round C3), rather
+    /// than a row of the community cache (somebody's tree the service sent down) or a city row.
+    ///
+    /// Two things on the profile turn on it. The species verbs act only on this phone's own rows
+    /// (`LocalAPI.claimSpecies` throws `notFound` for any other), so the claim is offered only here.
+    /// And the tree's `createdAt` means different things in the two tables: this phone's own row
+    /// holds the instant of the add, while the cache holds the service's day as midnight UTC. The
+    /// "Added" row is dated from one or the other accordingly.
+    ///
+    /// `false` for every stub and preview, the safe direction: it offers no species control.
+    public let isAddedHere: Bool
+
+    /// Whether the reader's contributions go out to everyone (round C3), read in the same profile
+    /// read as the tree. Nil for a city tree and for every stub. It is a fact about the reader, not
+    /// the tree; the profile reads it only for a tree the reader added, to say who can see it.
+    public let readerSharing: ContributionSharing?
+
+    /// The service's `is_published` for this tree (round C3): `true` when everyone can see it,
+    /// `false` when only its adder can. Nil when the service did not answer, and nil whenever the
+    /// service sent no `community_tree`, because the service also answers `false` for a city tree,
+    /// an unknown id and a hidden one, and that `false` says nothing about this tree.
+    public let isPublished: Bool?
+
     public init(
         tree: Tree,
         activeName: TreeName? = nil,
@@ -1208,7 +1231,10 @@ public struct TreeProfile: Hashable, Sendable {
         statusProvenance: TreeStatusProvenance = .record,
         canMovePin: Bool = false,
         addedByYou: Bool = false,
-        communityHistory: CommunityTreeHistory? = nil
+        communityHistory: CommunityTreeHistory? = nil,
+        isAddedHere: Bool = false,
+        readerSharing: ContributionSharing? = nil,
+        isPublished: Bool? = nil
     ) {
         self.tree = tree
         self.activeName = activeName
@@ -1235,6 +1261,9 @@ public struct TreeProfile: Hashable, Sendable {
         self.canMovePin = canMovePin
         self.addedByYou = addedByYou
         self.communityHistory = communityHistory
+        self.isAddedHere = isAddedHere
+        self.readerSharing = readerSharing
+        self.isPublished = isPublished
     }
 
     /// Whether this device contributed the photo, and may therefore show it to the person who took
@@ -1589,6 +1618,7 @@ public extension GroveEntry {
 public struct JournalEntry: Hashable, Sendable, Identifiable {
     public enum Kind: String, Sendable, Hashable, Codable {
         case visit, observation, measurement, careEvent
+        case pinMoved // A move of a community tree's pin (`ContributionStore.journalSQL`'s fifth arm).
     }
 
     public let id: UUID

@@ -187,7 +187,8 @@ struct MapNeedsCareToastTests {
         )
         let showing = MapOpening.Showing.whereYouLeftOff
         let othersOnThisScreen = [
-            MapInventoryCopy.title, MapInventoryCopy.message,
+            MapInventoryCopy.title, MapInventoryCopy.neitherHasATree,
+            MapInventoryCopy.notOnTheCityInventory,
             MapOpeningCopy.notAskedTitle, MapOpeningCopy.notAskedMessage(showing),
             MapOpeningCopy.searchingTitle, MapOpeningCopy.searchingMessage(showing),
             MapLocationCopy.title(.denied), MapLocationCopy.message(showing),

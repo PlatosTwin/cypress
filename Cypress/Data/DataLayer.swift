@@ -505,6 +505,27 @@ public struct DataLayer: Sendable {
             _ = try OutboxStore().recoverInterrupted(at: Date(), connection: connection)
         }
 
+        // ── The community trees this phone never sent, once (ROADMAP 139) ───────────────────────
+        //
+        // Only with the send sink wired: with none, a queued row settles `done` without being sent,
+        // and the record the backfill writes would claim a send that never happened. It runs here,
+        // after the identity is reconciled and before the first drain, and again after every claim,
+        // so an account's trees that waited while it was signed out go when it signs in.
+        // `try?`: a failed pass leaves each tree it did not finish unrecorded, and the next launch
+        // or sign-in starts those trees again (`CommunityTreeBackfill`).
+        if access.allowsNetwork {
+            let backfill = local.communityTreeBackfill()
+            let current = await local.attribution.userID
+            _ = try? await backfill.run(
+                identity: .init(userID: current, deviceID: deviceID), queue: queue
+            )
+            await local.onClaimed { userID in
+                _ = try? await backfill.run(
+                    identity: .init(userID: userID, deviceID: deviceID), queue: queue
+                )
+            }
+        }
+
         return DataLayer(
             store: store,
             api: api,

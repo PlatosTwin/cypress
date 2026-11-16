@@ -353,8 +353,9 @@
 # there: no one machine has measured all four shards in one sitting, so a rebalance would be
 # arithmetic on numbers from different devices. That re-measure is owed (ROADMAP).
 
-# `MovePinUITests` (community trees C1, the owner's Move pin control of 2026-11-12): three tests, each
-# one launch. PLACED ON SHARD 2 by line count, for the reason the entry above gives.
+# `MovePinUITests` (community trees C1, the owner's Move pin control of 2026-11-12): four tests since
+# C3 added the Journal and Outbox check; three are one launch each and that one is three. PLACED ON
+# SHARD 2 by line count, for the reason the entry above gives.
 
 # `DialogCancelUITests` (ROADMAP 77) and `ProfileLinkColumnUITests` (ROADMAP 119), both added on
 # 2026-11-14: NEVER MEASURED. No test could run on the machine that wrote them (ROADMAP 112), so
@@ -367,7 +368,10 @@
 # another is noted, not refused): four tests, one launch each. PLACED ON SHARD 2 by line count, for the
 # reason the `MovePinUITests` entry above gives.
 
-DeepLinkVoiceOverTests MapCenteredStateUITests FrameFinitenessGateTests IdentifyFABReachabilityTests AppleSignInUITests SeeAllOnMapUITests DialogCancelUITests
+# `OthersTreeUITests` (round C3: other people's community trees, and the only-you line): NEVER
+# MEASURED on CI. PLACED ON SHARD 1, the only line no other branch of the round edits.
+
+DeepLinkVoiceOverTests MapCenteredStateUITests FrameFinitenessGateTests IdentifyFABReachabilityTests AppleSignInUITests SeeAllOnMapUITests DialogCancelUITests OthersTreeUITests
 MapFilterAccessibilityTests AnonymizedPhotoNoticeUITests MapRecenterUITests PhotoBrowserReachabilityTests CityDisclaimerUITests AddReadingReachabilityTests MovePinUITests AddTreeNearbyUITests
 DeepLinkSweepTests PrimaryCTAReachabilityTests SheetHeightUITests AlmanacGroupTapTests StrandedPhotoHeroUITests CityCardContainmentUITests AreaPickerUITests ProfileLinkColumnUITests
 SheetExitUITests MapSearchUITests MapSuggestionUITests MapPanTabSwitchUITests PhotoDeletionReachabilityTests AccessibilityTreeTests ReadingOrderAccessibilityTests RemoteGateComplaintUITests DataDisputeUITests

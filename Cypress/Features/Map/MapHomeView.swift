@@ -681,7 +681,8 @@ struct MapHomeView: View {
             if model.inventoryIsEmptyHere {
                 MapLocationNotice(
                     title: MapInventoryCopy.title,
-                    message: MapInventoryCopy.message,
+                    // Which of the two bodies: whether this phone has asked for added trees here.
+                    message: model.inventoryNoticeMessage,
                     maxHeight: noticeMaxHeight
                 )
             } else {

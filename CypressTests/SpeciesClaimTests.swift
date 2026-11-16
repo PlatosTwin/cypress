@@ -247,6 +247,8 @@ struct SpeciesClaimTests {
 
     // MARK: - The claim, on the tree profile
 
+    /// A community profile here is the reader's own tree, in this phone's own table: the only
+    /// community tree `claimSpecies` accepts and the owner's rule leaves the claim on (round C3).
     private static func profile(source: TreeSource, species: Species?) -> TreeProfile {
         TreeProfile(
             tree: Tree(
@@ -255,7 +257,9 @@ struct SpeciesClaimTests {
                 speciesCurrentID: species?.id,
                 verificationState: source == .cityImport ? .cityRecord : .unverified
             ),
-            species: species
+            species: species,
+            addedByYou: source == .community,
+            isAddedHere: source == .community
         )
     }
 
@@ -428,12 +432,20 @@ struct SpeciesClaimTests {
         #expect(!Self.presentation(source: .cityImport, species: nil).offersSpeciesClaim)
         #expect(!Self.presentation(source: .community, species: try Self.londonPlane()).offersSpeciesClaim)
 
+        // Round C3: a tree from the community cache (`claimSpecies` throws `notFound`), and a tree
+        // somebody else added on this phone (the owner's "Hide species controls for now").
+        let tree = Tree(source: .community, coordinate: Self.fix)
+        #expect(!TreeProfilePresentation(profile: TreeProfile(tree: tree, addedByYou: true)).offersSpeciesClaim)
+        #expect(!TreeProfilePresentation(profile: TreeProfile(tree: tree, isAddedHere: true)).offersSpeciesClaim)
+
         // A memorial and a vacant site refuse every other write on this screen (E95); naming the
         // species of a tree that is not there is the same kind of claim.
         for status in [TreeStatus.removed, .vacantSite] {
             let gone = TreeProfilePresentation(
                 profile: TreeProfile(
-                    tree: Tree(source: .community, coordinate: Self.fix, status: status)
+                    tree: Tree(source: .community, coordinate: Self.fix, status: status),
+                    addedByYou: true,
+                    isAddedHere: true
                 )
             )
             #expect(!gone.offersSpeciesClaim, "a \(status.rawValue) record offered a species claim")

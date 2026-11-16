@@ -12,7 +12,7 @@ import SwiftUI
 
 struct ActivityRow: View {
 
-    /// The three leading-thumb kinds §2 documents.
+    /// The leading-thumb kinds §2 documents, and the community tree mark.
     enum Leading {
         /// A photo placeholder — any C22 recipe.
         case photo(CypressGradientRecipe)
@@ -22,6 +22,9 @@ struct ActivityRow: View {
         case sync
         /// 19's check-in row uses a vitality reference swatch as its thumb.
         case vitality(Vitality)
+        /// A community tree's history row: the map's community pin, drawn small on its pale fill
+        /// (`CommunityTreeTile`; the app owner's decision of 2026-11-15).
+        case communityTree
     }
 
     let leading: Leading
@@ -95,6 +98,8 @@ struct ActivityRow: View {
                     }
             case let .vitality(vitality):
                 (CypressColor.Vitality(rawValue: vitality.rawValue) ?? .fair).gradient
+            case .communityTree:
+                CommunityTreeTile()
             }
         }
         .frame(width: side, height: side)

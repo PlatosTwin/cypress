@@ -438,8 +438,8 @@ struct TreeCommunityHalfResponse: Decodable {
     let addedByYou: Bool?
 
     /// Whether the tree is published (S2). Nil from a service deployed before the key existed.
-    /// **Decoded, and carried no further**, with `communityTree` below and for its reason: the
-    /// profile shows the tree as the phone holds it, and nothing on the screen reads this flag.
+    /// Carried as `RemoteAPI.TreeCommunityDelta.isPublished`, and only beside a `community_tree`
+    /// (round C3): the profile reads it to tell a tree's adder whether only they can see it.
     let isPublished: Bool?
 
     /// The community tree, as `Tree` in its own synthesized keys, or nil: **a city tree, an

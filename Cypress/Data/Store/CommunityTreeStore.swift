@@ -275,6 +275,17 @@ public struct CommunityTreeStore {
     /// tree no build queued.
     public static let firstQueuedAddsAt = Date(timeIntervalSince1970: 1_787_338_497)
 
+    /// The `app_state` key prefix that records that a tree's add, with its add photo, has been queued
+    /// once by this build or a later one (`CommunityTreeBackfill`, `LocalAPI.addTree`). The full key
+    /// is this followed by the tree id's upper-case `uuidString`. No migration: `app_state` is the
+    /// existing key/value table, and `OutboxStore.refusedPhotoKeyPrefix` is the precedent.
+    public static let queuedOnceKeyPrefix = "community_tree_queued_once:"
+
+    /// The full `queuedOnceKeyPrefix` key for one tree.
+    public static func queuedOnceKey(treeID: UUID) -> String {
+        queuedOnceKeyPrefix + treeID.uuidString.uppercased()
+    }
+
     /// Whether the service may hold this tree, so that an act on it is not answered `not_found`
     /// (ROADMAP 107).
     ///
@@ -284,15 +295,24 @@ public struct CommunityTreeStore {
     /// (`pruneCompleted` deletes only `done` rows). A pending or uploading add is still on its way,
     /// and the move waits behind it (`OutboxStore.dueItems`).
     ///
-    /// **When no row exists, the date decides**: yes for a tree added on or after
-    /// `firstQueuedAddsAt`, whose add was sent and pruned; no for a tree added before the sync path
-    /// existed (R77), which was never queued and which the service has never received.
+    /// **When no row exists, the one-time send decides next**: yes when `CommunityTreeBackfill` (or
+    /// `addTree`, since this build) queued the tree's add and recorded it in `app_state`. That record
+    /// outlives the add row, which `pruneCompleted` deletes a day after it is done. Without it a
+    /// tree added before syncing existed lost the Move pin offer again a day after it was sent.
+    ///
+    /// **Then the date decides**: yes for a tree added on or after `firstQueuedAddsAt`, whose add
+    /// was sent and pruned; no for a tree added before the sync path existed, which was never queued
+    /// and which the service has never received.
     ///
     /// This is a cheap local guess. It cannot see a tree added after that date on a build that did
     /// not queue adds yet, and it cannot fix a pruned add row whose adder the v23 backfill guessed.
-    /// The service's `added_by_you` on `GET /trees/{id}` (C2) answers both, and replaces this test.
-    public static func mayHaveReachedService(createdAt: Date, addRowState: OutboxItem.State?) -> Bool {
+    public static func mayHaveReachedService(
+        createdAt: Date,
+        addRowState: OutboxItem.State?,
+        queuedOnce: Bool = false
+    ) -> Bool {
         if let addRowState { return addRowState != .failed }
+        if queuedOnce { return true }
         return createdAt >= firstQueuedAddsAt
     }
 
@@ -317,7 +337,16 @@ public struct CommunityTreeStore {
         _ = try queued.bind(treeID.uuidString, forName: ":id")
         let addRowState = try queued.fetchOne { try $0.value("state", OutboxItem.State.self) }
         _ = try queued.reset()
-        return Self.mayHaveReachedService(createdAt: createdAt, addRowState: addRowState)
+
+        let marker = try connection.cachedStatement(
+            "SELECT 1 AS present FROM app_state WHERE key = :key"
+        )
+        _ = try marker.bind(Self.queuedOnceKey(treeID: treeID), forName: ":key")
+        let queuedOnce = try marker.fetchOne { _ in true } ?? false
+        _ = try marker.reset()
+        return Self.mayHaveReachedService(
+            createdAt: createdAt, addRowState: addRowState, queuedOnce: queuedOnce
+        )
     }
 
     public func tree(id: UUID, connection: SQLiteConnection) throws -> Tree? {

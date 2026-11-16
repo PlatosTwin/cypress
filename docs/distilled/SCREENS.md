@@ -418,7 +418,9 @@ All pills: `border-radius: 999px`.
   `HStack(spacing:11)`, `align-items:center`, shadow `0 1px 3px rgba(25,40,28,.05)`.
 - Leading thumb: 38×38, `border-radius:10px`, either a photo gradient or a tinted tile
   (`#E2EFE2` with the 12×12 `#2F6B4F` leaf glyph for Care; `#EDEEE6` with mono 10px `SYNC` in
-  `#5C6555` for the city-sync row on 19).
+  `#5C6555` for the city-sync row on 19; the community tree mark for a community tree's history
+  rows: the C19 community pin, 18×18, dashed `2.5px` Canopy ring on `#EDF1E3`, centered on the
+  `#EDEEE6` SYNC ground; the app owner's decision of 2026-11-15).
 - Body: 13.5px, `<b>` label + ` · ` + detail.
 - Trailing timestamp: Spline Sans Mono 11px, `#8B9482`, `white-space:nowrap`, pushed with
   `margin-left:auto`.
@@ -673,6 +675,20 @@ tap the FAB → 02; filter chips switch the pin set; search opens species/street
 selection is single-select with `All` default. **NOT SPECIFIED:** search results, zoom controls,
 empty/no-GPS state.
 
+**ADDED — round C3, owner ruling 2026-11-15** (see `docs/rulings-pending/community-trees-c3-answers.md`,
+"Places with no city inventory"). The built map's empty-inventory card (title `No trees on record
+here`, drawn when a settled, unnarrowed read has nothing to draw) has two bodies, by whether this
+phone has asked the service for added trees over the viewport (the owner's answer of 2026-11-15,
+"Show the old text there"; see `docs/rulings-pending/c3-add-note.md`):
+- **Asked** (the viewport touches at most 16 zoom-14 tiles, and every one has been fetched):
+  `Cypress draws a city street-tree inventory and trees people have added. Neither has a tree here.`
+- **Not asked** (zoomed out past 16 tiles, a tile in view never fetched because the phone was
+  offline, a fetch failed, or the first fetch has not answered, or the remote gate is shut): the body
+  as it shipped before round C3, `Cypress draws a city street-tree inventory, and this ground is not
+  on it. Trees may stand here without being listed.`
+
+The trigger is unchanged: the card draws only when no pin or cluster of either kind is in view.
+
 ---
 
 #### 02 · What tree is this?
@@ -713,9 +729,36 @@ empty/no-GPS state.
 4. **Footer CTA** — `margin-top:auto`, `padding:14px 16px 40px`, C7 outline button
    `padding:14px`, 15px: **`None of these? Add this tree`**
 
+   **ADDED — round C3, owner rulings 2026-11-15** (see `docs/rulings-pending/community-trees-c3-answers.md`,
+   "The note under the Add this tree button", `docs/rulings-pending/community-trees-answers-2026-11-15.md`,
+   the last entry, and the rulings-pending file `community-trees-only-you-can-see.md`, written by
+   another author of this round). The add screen
+   this button opens has no mock. The note under its own `Add this tree` button now says who can
+   see the tree, by the account's state, read each time the add screen appears:
+   - signed in and sharing: `Recorded as community-added and unverified. Everyone using Cypress can see it once it is sent.`
+   - signed out: `Recorded as community-added and unverified. Only you can see it. Everyone using Cypress can see it after you sign in.`
+   - signed in, not sharing: `Recorded as community-added and unverified. Only you can see it. Everyone using Cypress can see it after you agree to share your tree records.`
+   - signed in, and the phone holds no answer: `Recorded as community-added and unverified, on this phone.` (the note as it was)
+
+   The note does not mention private property. At the accessibility text sizes it is the last row
+   of the scrolling form, and only the button stays pinned.
+
 **Affordances:** tap a card to pick a species → 03/visit; the outline button starts a new tree record.
 
 **States:** selected (2px `#2F6B4F` border + shadow + eyebrow + confidence bar) vs. idle.
+
+**ADDED — round C3, owner ruling 2026-11-15** (see `docs/rulings-pending/community-trees-c3-answers.md`,
+"Places with no city inventory", and `docs/rulings-pending/c3-add-note.md`, "The empty list where
+the phone has not asked for added trees"). The built empty state, `No trees on record here`, has
+two messages. The number in each is the list's search radius. The list reads the city inventory and
+every added tree on the phone, this phone's and other people's, so it is empty only when neither
+has a tree within the radius. Which message shows depends on whether the phone has asked the
+service for added trees over the 60 m around the reader:
+- **Asked** (every zoom-14 tile under that area has been fetched): `No city tree and no added tree
+  is within 60 m of you. If there is a tree in front of you, it is not on the map yet.`
+- **Not asked** (a tile under it was never fetched, the fetch failed, or the remote gate is shut):
+  `Nothing in the city inventory is within 60 m of you. If there is a tree in front of you, it is
+  not on the map yet.` This is the message as it shipped before round C3.
 
 ---
 
@@ -758,6 +801,39 @@ empty/no-GPS state.
    - **`Visit`** ` · “Fog dripping off the crown”` — thumb `radial(40% 40%, #4E8F6A 0→50%)` over
      `linear-gradient(170deg,#DCE5D2,#A9C4AE)` — `Oct 12`
    - **`Care`** ` · watered, mulched` — thumb `#E2EFE2` + 12px leaf glyph `#2F6B4F` — `Sep 28`
+
+   > **Added, round C3 (the owner's answers of 2026-11-14 and 2026-11-15).** On a community tree
+   > the feed also holds the tree's public history, mixed with visits and care by date, four rows
+   > in all, newest first. Each history row's thumb is the community tree mark (C9). The rows, word
+   > for word, for other readers and for the person who did it on their own phone:
+   >
+   > | Event | Other readers | The adder, on their own phone |
+   > |---|---|---|
+   > | Added | **`Added`** | **`You added this tree`** |
+   > | Pin moved | **`Pin moved`** ` · 12 m north` | **`You moved the pin`** ` · 12 m north` |
+   > | Species named | **`Species named`** | **`You named the species`** |
+   > | Species corrected | **`Species corrected`** | **`You corrected the species`** |
+   >
+   > The distance is whole meters and one of eight directions in the Move pin screen's words
+   > (`north`, `north-east`, …); a move with an unknown end reads **`Pin moved`** alone. The date
+   > is month and day, `Mar 20`, and a history day prints as itself in every zone. On one day,
+   > visits and care sort above history rows. When the history cannot be read or is empty, the
+   > feed shows the **`Added`** row from what the phone knows, dated by the day the tree was added
+   > on its adder's phone, and no message. `See the whole year` shows only when there is a visit
+   > or care row. A city tree has no history rows.
+   >
+   > The identity block also carries one muted line (13.5px in `text.muted`, the style of the
+   > unread-species note) under the subtitle, only on a tree the reader added that only they can
+   > see: signed out, `Only you can see this tree. Everyone can see it after you sign in.`; signed
+   > in and not sharing, `Only you can see this tree. Everyone can see it after you agree to share
+   > your tree records.` No line when the reader agreed, when the service says the tree is
+   > public, or when the phone does not know the answer and the service does not say the tree is
+   > held back.
+   >
+   > On a community tree somebody else added, the profile offers what a city tree offers (visit,
+   > check-in, care, favorite, share, measure). It offers no Move pin and, in this build, neither
+   > `Say what species you think this is` nor `Report the species as wrong` (the owner,
+   > 2026-11-15: "Hide species controls for now").
 9. **Stat grid** (C11) — `grid-template-columns:1fr 1fr; gap:8px; padding:10px 16px 30px; margin-top:auto`:
 
    | Label | Value | Badge |
@@ -1287,6 +1363,15 @@ Intro: *The unglamorous screens that make the app trustworthy: a brand-new tree 
 **Differences from 03 to encode as a variant:** no hero, no foliage strip, no regulars row,
 no activity feed, no quad-action row, badge is `PLANTED <year>` instead of `THRIVING`.
 
+> **Departed from, deliberately — round C3 (the owner's answers of 2026-11-14).** "No activity
+> feed" no longer holds for a community tree. Such a tree is usually cold on a phone that did not
+> add it (nobody here has visited or photographed it), and its history rows, at least its
+> **`Added`** row, must still show (03 §8). So the feed draws on the cold variant of a community
+> tree. A cold city tree still draws no feed, even when it carries care entries: "cold" means no
+> visit and no photo, so a city tree with care and nothing else is cold
+> (`TreeProfilePresentation.drawsActivityFeed`). (The quad-action row already shows on the cold
+> variant, ERRATA E127.)
+
 ---
 
 #### 15 · The account ask (on the third save)
@@ -1378,6 +1463,10 @@ scrim `rgba(14,24,17,.3)`.
 
    The third row is an AttentionCard (C24): `border:1.5px solid #D9A05B`,
    shadow `0 3px 12px rgba(180,113,31,.1)`.
+
+   Not in the mock: a **pin move** (a community tree's `Move pin`) is titled
+   `Pin moved · Grandmother Cypress` and has **no sub-line** (only the time). Refused, it reads
+   `This couldn't be sent.`, the same as every other kind (the app owner's decisions of 2026-11-14).
 3. **Wifi setting row** — `margin:10px 16px 0`, fill `#fff`, `1px #E3E8D9`, radius 14px,
    `padding:13px 15px`, `gap:12px`:
    - `Sync photos on wifi only` — 13.5px/700.

@@ -145,4 +145,59 @@ public struct CommunityTreeCacheStore {
         _ = try statement.bind([":tile": tile])
         return try statement.fetchOne { try $0.string("next_cursor") }
     }
+
+    /// Whether this phone has asked the service for the community trees over `bounds` (round C3,
+    /// the owner's answer of 2026-11-15 on the map card): true when `bounds` touches at most
+    /// `maxTiles` zoom-14 tiles and every one of them has a row in `community_tree_cache_tiles`.
+    ///
+    /// **What a row means, read from the writers.** `apply` writes the row with each page it applies,
+    /// whether the page held trees or none, so a tile the service answered with no trees has one.
+    /// A failed request writes nothing itself (`CommunityTileRefresher` stops the pass before
+    /// `apply`), and a refused cursor deletes the row (`dropTile`) until the snapshot that follows
+    /// is applied. A shut remote gate never calls the refresher, so it leaves no rows. A row from an
+    /// earlier fetch counts as asked however old it is.
+    ///
+    /// **A row does not mean the tile was fetched to its end.** Each page is applied in its own
+    /// transaction, and the service serves at most 100 trees a page. So in a tile with more than
+    /// 100 added trees, a request that fails after the first page leaves the row the earlier pages
+    /// wrote, and this answers true for a tile only partly fetched. The same is true of a tile that
+    /// needs more than `Policy.maxPagesPerTile` (10) pages in one pass. The map card and the empty
+    /// list can then say neither kind of tree is here while the service holds added trees that the
+    /// phone never downloaded. The next pass for that tile corrects it: it continues from the
+    /// stored cursor, no sooner than `Policy.minimumInterval` (120 s) after the last attempt
+    /// started, and only once the phone is online again. Marking a tile complete across pages
+    /// needs a new column in this table (a migration) or a mark kept outside it; neither is built.
+    ///
+    /// The same rule as the refresher's: more than `maxTiles` tiles is a map the refresher never
+    /// asks about, so the answer there is false. A box across the antimeridian covers no tile
+    /// (`CommunityTile.covering`), and the answer is false too.
+    public func hasAsked(
+        covering bounds: BoundingBox,
+        maxTiles: Int = CommunityTileRefresher.Policy().maxTiles,
+        connection: SQLiteConnection
+    ) throws -> Bool {
+        guard let tiles = CommunityTile.covering(bounds, limit: maxTiles), !tiles.isEmpty else {
+            return false
+        }
+        let paths = tiles.map(\.path)
+        let statement = try connection.cachedStatement("""
+            SELECT COUNT(*) AS fetched FROM main.community_tree_cache_tiles
+             WHERE tile IN (SELECT value FROM json_each(:tiles))
+            """)
+        _ = try statement.bind(
+            "[\(paths.map { "\"\($0)\"" }.joined(separator: ","))]", forName: ":tiles"
+        )
+        let fetched = try statement.fetchOne { try $0.int("fetched") } ?? 0
+        return fetched == paths.count
+    }
+
+    /// `hasAsked(covering:maxTiles:connection:)` as a read a feature can hold: the map card, and
+    /// any other screen that says "neither has a tree here" over an area.
+    public static func askedReader(queue: DatabaseQueue) -> @Sendable (BoundingBox) async -> Bool {
+        return { bounds in
+            (try? await queue.read { connection in
+                try CommunityTreeCacheStore().hasAsked(covering: bounds, connection: connection)
+            }) ?? false
+        }
+    }
 }

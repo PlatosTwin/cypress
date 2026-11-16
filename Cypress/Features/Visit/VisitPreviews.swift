@@ -177,11 +177,13 @@ enum VisitPreviewFixtures {
     @MainActor
     static func identify(
         rows: [NearbyTree] = shortlistRows,
-        fix: VisitLocationProvider.Fix = .located(origin, accuracyM: 9)
+        fix: VisitLocationProvider.Fix = .located(origin, accuracyM: 9),
+        communityAsked: Bool = false
     ) -> VisitIdentifyView {
         VisitIdentifyView(
             api: VisitPreviewAPI(nearby: rows),
             location: VisitLocationProvider(pinnedFix: fix),
+            communityAsked: { _ in communityAsked },
             onPick: { _ in },
             onAddTree: {},
             onBack: {}
@@ -218,15 +220,20 @@ enum VisitPreviewFixtures {
     /// sees with no tree within 10 m. `VisitPreviewAPI`'s own default is the shortlist's rows, which
     /// it returns whatever radius is asked, so they would draw the note above the well. Pass rows
     /// to draw it.
+    ///
+    /// **Signed out by default**, because `attribution` has no user, and the note under the button
+    /// follows the account (`VisitAddTreeCopy.footnote(for:)`). Pass `sharing` to draw another.
     @MainActor
     static func addTree(
         fix: VisitLocationProvider.Fix = .located(origin, accuracyM: 5),
-        nearby: [NearbyTree] = []
+        nearby: [NearbyTree] = [],
+        sharing: ContributionSharing = .signedOut
     ) -> VisitAddTreeView {
         VisitAddTreeView(
             api: VisitPreviewAPI(nearby: nearby),
             location: VisitLocationProvider(pinnedFix: fix),
             attribution: attribution,
+            sharing: { sharing },
             onAdded: { _ in },
             openExisting: { _, _ in AnyView(EmptyView()) },
             onBack: {}
@@ -344,6 +351,11 @@ enum VisitPreviewFixtures {
 /// whole form below a fold nothing admitted to.
 #Preview("add · composer · AX5") {
     VisitPreviewFixtures.addTree().environment(\.dynamicTypeSize, .accessibility5)
+}
+
+/// The note under the button for a signed-in account that shares its tree records.
+#Preview("add · composer · sharing") {
+    VisitPreviewFixtures.addTree(sharing: .sharing)
 }
 
 /// The community add's pin step, on a fix as poor as a street canyon really produces.

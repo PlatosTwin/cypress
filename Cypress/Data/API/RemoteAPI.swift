@@ -832,8 +832,13 @@ public extension RemoteAPI {
         /// The service's `added_by_you`: the caller added this community tree. False for a city
         /// tree, an unknown id and a hidden one alike, and for a service that sent no key.
         public var addedByYou: Bool = false
-        // The response's `community_tree` and `is_published` are decoded and deliberately not
-        // carried here: `TreeCommunityHalfResponse.communityTree` says why.
+        /// The service's `is_published` (round C3), and nil when the response carried no
+        /// `community_tree`. The service answers `false` for a city tree, an unknown id and a
+        /// hidden one alike, so its `false` is a fact about this tree only when it sent the tree.
+        /// The profile reads it to decide whether to tell the adder that only they can see it.
+        public var isPublished: Bool?
+        // The response's `community_tree` is decoded and deliberately not carried here:
+        // `TreeCommunityHalfResponse.communityTree` says why.
     }
 
     /// `GET /community-trees?tile=14/x/y[&cursor=]` — one page of one tile of the community layer.
@@ -956,7 +961,8 @@ public extension RemoteAPI {
                 },
                 uniquingKeysWith: { first, _ in first }
             ),
-            addedByYou: response.addedByYou ?? false
+            addedByYou: response.addedByYou ?? false,
+            isPublished: response.communityTree == nil ? nil : response.isPublished
         )
     }
 

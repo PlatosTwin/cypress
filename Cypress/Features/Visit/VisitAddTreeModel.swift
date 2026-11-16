@@ -81,6 +81,10 @@ import Foundation
 import Observation
 import UIKit
 
+/// Reads whether this phone's account shares its tree records. The composition root builds it from
+/// `LocalAPI.userID` and `LocalAPI.accountLink()`, which are not `CypressAPI` requirements.
+typealias ContributionSharingReader = @Sendable () async -> ContributionSharing
+
 @MainActor
 @Observable
 final class VisitAddTreeModel {
@@ -224,10 +228,31 @@ final class VisitAddTreeModel {
     /// this list is only input.
     static let offered: [LandContext] = [.street, .cityPark, .privateProperty]
 
-    init(api: any CypressAPI, location: VisitLocationProvider, attribution: Attribution) {
+    /// Whether this phone's account shares its tree records, as read the last time the screen
+    /// appeared: the note under the button (`VisitAddTreeCopy.footnote(for:)`). Nil until the first
+    /// read answers, and the note draws nothing until then.
+    private(set) var sharing: ContributionSharing?
+
+    /// Where `sharing` comes from: the composition root's read of the user id and the account link.
+    /// Nil in tests that do not look at the note, and then the phone is treated as not knowing
+    /// (`.unknown`), which keeps the note this screen always had.
+    private let readSharing: ContributionSharingReader?
+
+    init(
+        api: any CypressAPI,
+        location: VisitLocationProvider,
+        attribution: Attribution,
+        readSharing: ContributionSharingReader? = nil
+    ) {
         self.api = api
         self.location = location
         self.attribution = attribution
+        self.readSharing = readSharing
+    }
+
+    /// Reads `sharing` again. Called from `load()`, which runs each time the screen appears.
+    func refreshSharing() async {
+        sharing = await readSharing?() ?? .unknown
     }
 
     // MARK: - Derived
@@ -325,6 +350,10 @@ final class VisitAddTreeModel {
         // Nothing starts under a listed tree's profile: the cover leaves this screen in place, so a
         // `load` from anywhere while it is up would run a capture session nobody can see.
         guard !isShowingListedTree else { return }
+        // First, and on every appearance: a reader who signed in, or agreed to share, since the
+        // screen last appeared must see the note that says so (the owner's ruling of 2026-11-15).
+        // Also after a listed tree's profile closes, because `closeListedTree` calls this.
+        await refreshSharing()
         location.start()
         await camera.start()
     }

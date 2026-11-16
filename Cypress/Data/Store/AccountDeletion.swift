@@ -877,6 +877,20 @@ public struct AccountDeletion {
             """,
             userAndNow, on: connection
         )
+
+        // The one-time-send keys of trees that are now gone (`CommunityTreeStore.queuedOnceKey`).
+        // Each names a tree by id, in `app_state` rather than a column, so neither statement above
+        // nor `AccountDeletionCoverage` reaches it. It goes with its tree, the refused-photo keys'
+        // rule. A key whose tree survives (anonymized, or somebody else's) stays: it is still true.
+        try run(
+            """
+            DELETE FROM app_state
+             WHERE substr(key, 1, length(:prefix)) = :prefix
+               AND substr(key, length(:prefix) + 1)
+                   NOT IN (SELECT upper(id) FROM main.community_trees)
+            """,
+            [":prefix": CommunityTreeStore.queuedOnceKeyPrefix], on: connection
+        )
     }
 
     /// The tables whose live rows mean somebody has met a tree (decision 6, as the orchestrator

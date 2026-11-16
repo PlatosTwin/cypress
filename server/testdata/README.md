@@ -84,6 +84,10 @@ compare against the file.
 |---|---|---|
 | `sync_location_correction.json` | a `location_correction` outbox item (`SyncItemBody` wrapping `TreeLocationCorrection`) | `TestTheLocationCorrectionFixtureMovesThePin` |
 | `photos_begin.json` | the `POST /photos/begin` body, including decision 14a's `captured_on` | `TestThePhotosBeginFixtureStoresItsLocalCaptureDate` |
+| `sync_add_tree.json` | an `add_tree` outbox item (`SyncItemBody` wrapping `TreeAddition`), including `addedOn` | `TestTheAddTreeFixtureStoresItsLocalAddedDay` |
+
+`sync_add_tree.json` is the west-of-UTC case: `occurred_at` is 06:30 UTC on the 15th, and `addedOn`
+is the phone's local date, the 14th. The Go test checks the stored `added_on` is the 14th.
 
 `photos_begin.json` is deliberately the east-of-UTC case. `captured_at` is 23:30 UTC on the 28th, and
 `captured_on` is the phone's local date, the 29th. A client that sent the UTC date would still pass a
