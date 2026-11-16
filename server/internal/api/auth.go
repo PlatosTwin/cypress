@@ -90,6 +90,24 @@ type sessionResponse struct {
 	ExpiresAt        Timestamp `json:"expires_at"`
 	RefreshExpiresAt Timestamp `json:"refresh_expires_at"`
 	UserID           uuid.UUID `json:"user_id"`
+	// LicenseVersion is the account's stored answer to the license question, read back after the
+	// request's own writes. A string is a version this service knows (`store.IsKnownLicenseVersion`);
+	// null is every other case: declined, never asked, or a stored value that is not a known
+	// version. No `omitempty`: the key is always present, so a phone can tell this service's
+	// "no acceptance" from an older service that does not send the key at all.
+	LicenseVersion *string `json:"license_version"`
+}
+
+// sessionLicense reads the account's stored license answer for a session response.
+func (s *Server) sessionLicense(r *http.Request, userID uuid.UUID) (*string, error) {
+	user, err := s.Store.UserByID(r.Context(), userID)
+	if err != nil {
+		return nil, apierr.Wrap(apierr.ServerError, "Something went wrong on our end.", err)
+	}
+	if user.LicenseVersion == nil || !store.IsKnownLicenseVersion(*user.LicenseVersion) {
+		return nil, nil
+	}
+	return user.LicenseVersion, nil
 }
 
 func (s *Server) authOIDC(w http.ResponseWriter, r *http.Request) error {
@@ -190,10 +208,16 @@ func (s *Server) authOIDC(w http.ResponseWriter, r *http.Request) error {
 		}
 	}
 
+	// Read after the consent and the claim above, so the answer is the one this request left.
+	license, err := s.sessionLicense(r, user.ID)
+	if err != nil {
+		return err
+	}
 	session, err := s.mintSession(r, user.ID, deviceID)
 	if err != nil {
 		return err
 	}
+	session.LicenseVersion = license
 	writeJSON(w, s.Log, http.StatusOK, session)
 	return nil
 }
@@ -272,12 +296,20 @@ func (s *Server) authRefresh(w http.ResponseWriter, r *http.Request) error {
 		return apierr.Wrap(apierr.ServerError, "Something went wrong on our end.", err)
 	}
 
+	// Read after the rotation, so a refresh carries an acceptance made on another phone, or
+	// through `POST /devices/claim`, since this session was minted.
+	license, err := s.sessionLicense(r, session.UserID)
+	if err != nil {
+		return err
+	}
+
 	writeJSON(w, s.Log, http.StatusOK, sessionResponse{
 		AccessToken:      access,
 		RefreshToken:     nextSecret,
 		ExpiresAt:        stamp(now.Add(tokens.AccessTokenLifetime)),
 		RefreshExpiresAt: stamp(refreshExpiry),
 		UserID:           session.UserID,
+		LicenseVersion:   license,
 	})
 	return nil
 }

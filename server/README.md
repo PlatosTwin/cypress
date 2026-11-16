@@ -118,6 +118,11 @@ decodes to `server_error` rather than throwing and would look like an outage.
 | `GET /health` | Liveness, and the git sha of the running build. |
 | `POST /auth/oidc` | Verifies an Apple identity token, **exchanges the authorization code**, mints a session. Optionally registers and claims the device in the same round trip. |
 | `POST /auth/refresh` | Rotates the refresh token, mints a new access token. |
+
+Both session answers carry `license_version`: the version the account has accepted, or `null` when the account has no known acceptance (it declined, was never asked, or holds a version this service does not know). The key is always present, so a phone can read the account's answer back after a reinstall.
+
+| Route | What it does |
+|---|---|
 | `POST /devices/register` | Exchanges `app_state.deviceUUID` for a device token authorizing `POST /sync` for items carrying a deviceID and no userID. |
 | `POST /devices/claim` | The idempotent sweep that re-homes a device's unattributed rows onto an account. |
 | `DELETE /me` | Applies the client-sent `AccountDeletionChoice`, writes tombstones, calls Apple's revocation endpoint. |
