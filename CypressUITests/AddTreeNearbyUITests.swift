@@ -326,9 +326,12 @@ final class AddTreeNearbyUITests: XCTestCase, DeepLinkHarness {
             note.frame.minY, add.frame.maxY,
             "the note is not under the button: note \(note.frame), button \(add.frame)"
         )
-        XCTAssertFalse(
-            app.scrollViews.firstMatch.staticTexts[Copy.signedOutNote].exists,
-            "at the drawn size the note is in the scrolling form, not pinned under the button"
+        // Pinned: a swipe that scrolls the form leaves the note where it was.
+        let before = note.frame
+        app.swipeUp()
+        XCTAssertTrue(
+            note.waitForExistence(timeout: 5) && note.frame == before,
+            "the note moved with the form at the drawn size, so it is not pinned: \(before) → \(note.frame)"
         )
     }
 
@@ -337,7 +340,7 @@ final class AddTreeNearbyUITests: XCTestCase, DeepLinkHarness {
     /// the note, and it is then above the button. Nothing is tapped, so this test adds no tree.
     ///
     /// Red-proof: return `.footer` for both sizes from `VisitAddTreeLayout.footnotePlace` — red on
-    /// "the note is not in the scrolling form".
+    /// "the note is not in the scrolling form above the pinned button".
     func testTheNoteMovesIntoTheFormAtTheLargestTextSize() {
         let app = XCUIApplication()
         app.launchEnvironment[Self.deepLinkScreenKey] = "addTreeAlone"
@@ -355,20 +358,19 @@ final class AddTreeNearbyUITests: XCTestCase, DeepLinkHarness {
             )
             return
         }
-        let inForm = app.scrollViews.firstMatch.staticTexts[Copy.signedOutNote]
-        XCTAssertTrue(
-            inForm.waitForExistence(timeout: 10),
-            "the note is not in the scrolling form at the largest text size"
-        )
+        let note = app.staticTexts[Copy.signedOutNote]
+        XCTAssertTrue(note.waitForExistence(timeout: 10), "no signed-out note at the largest text size")
         assertReachable(add, "the pinned Add this tree button at the largest text size")
         record(app, named: "signed-out-note-ax5-top")
 
-        scroll(app, until: inForm, up: true)
+        // In the form: the reader scrolls to it, and it is then above the pinned button. Pinned
+        // under the button, as at the drawn size, it would sit below the button's top edge.
+        scroll(app, until: note, up: true)
         record(app, named: "signed-out-note-ax5-scrolled")
-        assertReachable(inForm, "the note, after scrolling the form")
+        assertReachable(note, "the note, after scrolling the form")
         XCTAssertLessThanOrEqual(
-            inForm.frame.maxY, add.frame.minY,
-            "the scrolled-to note is not above the pinned button: note \(inForm.frame), button \(add.frame)"
+            note.frame.maxY, add.frame.minY,
+            "the note is not in the scrolling form above the pinned button: note \(note.frame), button \(add.frame)"
         )
         assertReachable(add, "the Add this tree button after scrolling, which must stay pinned")
     }
