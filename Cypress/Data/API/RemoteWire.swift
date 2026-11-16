@@ -408,6 +408,10 @@ struct TreeCommunityHalfResponse: Decodable {
         let photoID: UUID
         let shotType: ShotType
         let capturedAt: Date
+        /// The phone's local calendar date of the photograph, `YYYY-MM-DD` (decision 14a), sent to
+        /// everybody whenever the phone that took it sent one, and **absent, never null**,
+        /// otherwise. Kept as the wire's string here; `RemoteAPI.treeCommunityHalf` parses it.
+        let capturedOn: String?
         let isPubliclyVisible: Bool
         /// The key this photograph's begin carried, sent **only to its own contributor** and absent
         /// on everybody else's rows (`treeProfileBody` in `reads.go`). It is the phone's own
@@ -419,6 +423,7 @@ struct TreeCommunityHalfResponse: Decodable {
             case photoID = "photo_id"
             case shotType = "shot_type"
             case capturedAt = "captured_at"
+            case capturedOn = "captured_on"
             case isPubliclyVisible = "is_publicly_visible"
             case clientUUID = "client_uuid"
         }
@@ -427,6 +432,34 @@ struct TreeCommunityHalfResponse: Decodable {
     let treeUUID: UUID
     let photos: [PhotoRow]
     let photoCount: Int
+
+    /// Whether the caller added this community tree (S2). False for a city tree, an unknown id and
+    /// a hidden one alike. Nil from a service deployed before the key existed.
+    let addedByYou: Bool?
+
+    /// Whether the tree is published (S2). Nil from a service deployed before the key existed.
+    /// **Decoded, and carried no further**, with `communityTree` below and for its reason: the
+    /// profile shows the tree as the phone holds it, and nothing on the screen reads this flag.
+    let isPublished: Bool?
+
+    /// The community tree, as `Tree` in its own synthesized keys, or nil: **a city tree, an
+    /// unknown id, or a tree hidden from this caller**, which the service answers alike so the
+    /// answer says nothing about which (`server/testdata/README.md`). Nil never means "deleted",
+    /// and nothing evicts a cached tree on it.
+    ///
+    /// Decoded with `try?`, `DeleteAccountResponse.communityTrees`' reasoning: a `Tree` this build
+    /// cannot read (a status the service learned later) costs this one field, never the
+    /// photographs beside it.
+    ///
+    /// **Decoded, and deliberately carried no further** (`visitCount`'s pattern, round C2's
+    /// review). The profile shows the copy in the phone's cache, which can be older than this one.
+    /// Writing this copy into the cache was the other choice, and it was refused: the cache has
+    /// one writer, the tile refresher, and the tile's cursor is what orders its writes. A profile
+    /// read is not ordered against a tile page. A profile answer fetched before a tile page and
+    /// written after it would put the older tree back, and no `updatedAt` comparison can catch it,
+    /// because the service rounds dates to the day (S2). The cached copy is refreshed when the
+    /// reader's map next refreshes the tree's tile.
+    let communityTree: Tree?
 
     /// **Decoded, and deliberately carried no further** — `RemoteAPI.TreeCommunityDelta` does not
     /// have this field and `RoutedAPI.treeProfile` never sees it.
@@ -453,6 +486,79 @@ struct TreeCommunityHalfResponse: Decodable {
         case visitCount = "visit_count"
         case ownPhotoIDs = "own_photo_ids"
         case deletablePhotoIDs = "deletable_photo_ids"
+        case addedByYou = "added_by_you"
+        case isPublished = "is_published"
+        case communityTree = "community_tree"
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        treeUUID = try container.decode(UUID.self, forKey: .treeUUID)
+        photos = try container.decode([PhotoRow].self, forKey: .photos)
+        photoCount = try container.decode(Int.self, forKey: .photoCount)
+        visitCount = try container.decode(Int.self, forKey: .visitCount)
+        ownPhotoIDs = try container.decode([UUID].self, forKey: .ownPhotoIDs)
+        deletablePhotoIDs = try container.decode([UUID].self, forKey: .deletablePhotoIDs)
+        addedByYou = try container.decodeIfPresent(Bool.self, forKey: .addedByYou)
+        isPublished = try container.decodeIfPresent(Bool.self, forKey: .isPublished)
+        communityTree = (try? container.decodeIfPresent(Tree.self, forKey: .communityTree)) ?? nil
+    }
+}
+
+/// `GET /community-trees?tile=14/x/y&cursor=` (S2, §3C). The envelope is server-owned and
+/// snake_case; each tree inside it is `Tree` in its own synthesized keys.
+///
+/// **Strict, unlike the profile's `community_tree`.** A page this build cannot read fails whole, so
+/// its cursor is never stored: skipping one undecodable tree and storing the cursor past it would
+/// lose that tree for good with nothing to say so. A page that fails stays unread, and the next
+/// refresh asks for it again.
+struct CommunityTileResponse: Decodable {
+    let tile: String
+    let trees: [Tree]
+    let withdrawnTreeIDs: [UUID]
+    let nextCursor: String
+    let hasMore: Bool
+
+    enum CodingKeys: String, CodingKey {
+        case tile, trees
+        case withdrawnTreeIDs = "withdrawn_tree_ids"
+        case nextCursor = "next_cursor"
+        case hasMore = "has_more"
+    }
+}
+
+/// `GET /trees/{id}/history` (S2, §3E). Server-owned and snake_case; the two coordinates are
+/// `Coordinate` in its own keys. `kind` and `placement` are read as strings so a value this build
+/// does not know is kept as `unrecognized` rather than failing the whole history.
+struct TreeHistoryResponse: Decodable {
+    struct Event: Decodable {
+        let id: UUID
+        let kind: String
+        let occurredAt: Date
+        let fromCoordinate: Coordinate?
+        let toCoordinate: Coordinate?
+        let fromSpeciesID: UUID?
+        let toSpeciesID: UUID?
+        let placement: String?
+
+        enum CodingKeys: String, CodingKey {
+            case id, kind
+            case occurredAt = "occurred_at"
+            case fromCoordinate = "from_coordinate"
+            case toCoordinate = "to_coordinate"
+            case fromSpeciesID = "from_species_id"
+            case toSpeciesID = "to_species_id"
+            case placement
+        }
+    }
+
+    let treeUUID: UUID
+    let events: [Event]
+    let complete: Bool
+
+    enum CodingKeys: String, CodingKey {
+        case treeUUID = "tree_uuid"
+        case events, complete
     }
 }
 
