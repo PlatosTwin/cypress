@@ -24,7 +24,16 @@ struct SpeciesCorrectionTests {
 
     private static let deviceID = UUID(uuidString: "D0000000-0000-4000-8000-00000000AD14")!
     private static let strangerDeviceID = UUID(uuidString: "D0000000-0000-4000-8000-00000000AD15")!
+    private static let strangerUserID = UUID(uuidString: "0E000000-0000-4000-8000-00000000AD15")!
     private static let moment = Date(timeIntervalSince1970: 1_800_000_000)
+
+    /// Signs the stranger in on its device, sharing tree records unless told otherwise. Since
+    /// ROADMAP 144 only a sharer may name or report a tree somebody else added on this phone.
+    private static func share(_ stranger: LocalAPI, _ shares: Bool = true) async throws {
+        try await stranger.linkAccount(
+            deviceUUID: strangerDeviceID, userID: strangerUserID, provider: "apple", acceptsLicense: shares
+        )
+    }
 
     /// West of Ocean Beach: the seed is the city's *street*-tree inventory, so nothing is inside the
     /// 10 m dedupe radius and the only trees a test contends with are its own
@@ -164,6 +173,7 @@ struct SpeciesCorrectionTests {
         _ = try await namer.claimSpecies(treeID: tree.id, speciesID: plane.id)
 
         let stranger = LocalAPI(store: store, deviceID: Self.strangerDeviceID)
+        try await Self.share(stranger)
         try await stranger.flagWrongSpecies(treeID: tree.id)
 
         let flags = try await store.queue.read { connection in
@@ -230,9 +240,13 @@ struct SpeciesCorrectionTests {
     // MARK: - Resolving a report
 
     /// Correcting the species **is** confirming the report — one transaction, no second verb to
-    /// forget — and the lead arm needs a report to exist before it may act.
-    @Test("a lead may correct only in answer to a report, and the correction closes it")
-    func aLeadResolvesByCorrecting() async throws {
+    /// forget — and it is the adder's (ROADMAP 144). A lead is no longer an arm: the service never
+    /// honored a lead's correction on a community tree, so the phone does not draw one.
+    ///
+    /// Red-proof: put back `|| (isLead && !openFlags.isEmpty)` in `correctSpecies`' gate — red on
+    /// "a lead corrected somebody else's tree".
+    @Test("a lead cannot correct, and the adder's correction closes the report")
+    func theAdderResolvesByCorrecting() async throws {
         let store = try await Self.seededStore()
         let namer = LocalAPI(store: store, deviceID: Self.deviceID)
         let (plane, oak) = try await Self.twoSpecies(namer)
@@ -240,20 +254,46 @@ struct SpeciesCorrectionTests {
         _ = try await namer.claimSpecies(treeID: tree.id, speciesID: plane.id)
 
         let lead = LocalAPI(store: store, deviceID: Self.strangerDeviceID, role: .moderator)
-        // A lead with an opinion and no report in front of them is a contributor.
-        await #expect(throws: APIError.forbidden) {
+        try await Self.share(lead)
+        try await lead.flagWrongSpecies(treeID: tree.id)
+        await #expect(throws: APIError.forbidden, "a lead corrected somebody else's tree") {
             _ = try await lead.correctSpecies(treeID: tree.id, speciesID: oak.id)
         }
 
-        try await lead.flagWrongSpecies(treeID: tree.id)
-        _ = try await lead.correctSpecies(treeID: tree.id, speciesID: oak.id)
-
+        _ = try await namer.correctSpecies(treeID: tree.id, speciesID: oak.id)
         let open = try await store.queue.read { connection in
             try ContributionStore().openReviewFlags(kinds: [.wrongSpecies], connection: connection)
         }
         #expect(open.isEmpty, "the correction left the report open")
         let stored = try await Self.storedSpecies(of: tree.id, in: store)
         #expect(stored?.caseInsensitiveCompare(oak.id.uuidString) == .orderedSame)
+    }
+
+    /// The adder may correct a species whatever named it: here one named by somebody else on this
+    /// phone. The namer, who is not the adder and does not share, may not (the service would apply
+    /// their correction to nobody).
+    ///
+    /// Red-proof: put back the "author of the claim in force" arm (`head.isSupersedable(by: mine)`)
+    /// in `correctSpecies` — red on "the adder could not correct a contributor's naming".
+    @Test("the adder corrects somebody else's naming, and a namer who does not share cannot correct theirs")
+    func theAdderCorrectsAnybodysNaming() async throws {
+        let store = try await Self.seededStore()
+        let adder = LocalAPI(store: store, deviceID: Self.deviceID)
+        let (plane, oak) = try await Self.twoSpecies(adder)
+        let tree = try await Self.addTree(through: adder, at: Self.offshore)
+        let contributor = LocalAPI(store: store, deviceID: Self.strangerDeviceID)
+        // The contributor names it while sharing, then declines.
+        try await Self.share(contributor)
+        _ = try await contributor.claimSpecies(treeID: tree.id, speciesID: plane.id)
+        try await Self.share(contributor, false)
+
+        await #expect(throws: APIError.forbidden) {
+            _ = try await contributor.correctSpecies(treeID: tree.id, speciesID: oak.id)
+        }
+        _ = try await adder.correctSpecies(treeID: tree.id, speciesID: oak.id)
+        let stored = try await Self.storedSpecies(of: tree.id, in: store)
+        #expect(stored?.caseInsensitiveCompare(oak.id.uuidString) == .orderedSame,
+                "the adder could not correct a contributor's naming: \(stored ?? "NULL")")
     }
 
     /// The second verb, and its promise: the species stays where it is and nothing is appended.
@@ -266,6 +306,7 @@ struct SpeciesCorrectionTests {
         _ = try await namer.claimSpecies(treeID: tree.id, speciesID: plane.id)
 
         let stranger = LocalAPI(store: store, deviceID: Self.strangerDeviceID)
+        try await Self.share(stranger)
         try await stranger.flagWrongSpecies(treeID: tree.id)
         let flagID = try await #require(
             store.queue.read { connection in
@@ -321,6 +362,7 @@ struct SpeciesCorrectionTests {
         _ = try await namer.claimSpecies(treeID: tree.id, speciesID: plane.id)
 
         let lead = LocalAPI(store: store, deviceID: Self.strangerDeviceID, role: .moderator)
+        try await Self.share(lead)
         try await lead.flagWrongSpecies(treeID: tree.id)
         let flagID = try await #require(
             store.queue.read { connection in
@@ -511,23 +553,32 @@ struct SpeciesCorrectionTests {
         #expect(presentation.speciesCorrection == .correctable, "the namer is not offered the correction")
         #expect(!presentation.offersSpeciesClaim)
 
-        // Somebody who did not add the tree is offered no species control at all (the owner's
-        // ruling of 2026-11-15, "Hide species controls for now"). It used to offer the report
-        // here. The verb is unchanged, so a report raised another way still reaches the namer.
+        // Somebody who did not add the tree and does not share is offered no species control (the
+        // owner's answer of 2026-11-16, "Only people who share"), and the verb refuses them too.
         let stranger = LocalAPI(store: store, deviceID: Self.strangerDeviceID)
         presentation = TreeProfilePresentation(profile: try await stranger.treeProfile(id: tree.id))
         #expect(presentation.speciesCorrection == .unavailable, "a stranger is offered a species control")
         #expect(!presentation.offersSpeciesClaim)
+        await #expect(throws: APIError.forbidden) { try await stranger.flagWrongSpecies(treeID: tree.id) }
 
+        // A stranger who shares is offered the report. Once raised, everybody sees the line; only
+        // the adder may answer it.
+        try await Self.share(stranger)
+        presentation = TreeProfilePresentation(profile: try await stranger.treeProfile(id: tree.id))
+        #expect(presentation.speciesCorrection == .reportable, "a sharing stranger is not offered the report")
         try await stranger.flagWrongSpecies(treeID: tree.id)
         presentation = TreeProfilePresentation(profile: try await stranger.treeProfile(id: tree.id))
-        #expect(presentation.speciesCorrection == .unavailable, "the raiser was offered the open report")
+        guard case let .underReview(_, strangerCanResolve) = presentation.speciesCorrection else {
+            Issue.record("the raiser does not see the line: \(presentation.speciesCorrection)")
+            return
+        }
+        #expect(!strangerCanResolve, "the raiser was offered the adder's answer")
 
         presentation = TreeProfilePresentation(profile: try await namer.treeProfile(id: tree.id))
         guard case let .underReview(_, namerCanResolve) = presentation.speciesCorrection else {
-            Issue.record("the namer does not see the report against their claim")
+            Issue.record("the adder does not see the report against their claim")
             return
         }
-        #expect(namerCanResolve, "the author of the disputed claim cannot answer the report")
+        #expect(namerCanResolve, "the adder cannot answer the report")
     }
 }

@@ -27,12 +27,52 @@ these files, read off disk, so the two halves cannot drift.
 | `community_trees_tile.json` | `trees` is `[Tree]` | `GET /community-trees`, a first fetch (no cursor). The envelope (`tile`, `withdrawn_tree_ids`, `next_cursor`, `has_more`) is server-owned and snake_case. Tree `5b0c3f1e-…-1f2a3b4c5d01` has a species: assert its `speciesCurrentID` is **non-nil**, because a key drift decodes it as a silent nil. Find it by id, not by position: the order is `(updated_at, id)` and two trees here share a day. `address` is null for everyone on this route. `createdAt` and `updatedAt` are midnight UTC, because community-tree dates travel at day precision. |
 | `community_trees_tile_delta.json` | `trees` is `[Tree]`; `withdrawn_tree_ids` is `[UUID]` | the same route, from the first fetch's cursor: one tree moved and renamed, one new, one withdrawn, one erased (a tombstone). Both lists are non-empty. A tree in `trees` can lie outside the tile (a pin moved out of it), so the cache keys on `id`. `next_cursor` is opaque, sealed, and always present: store it as a string and send it back unchanged, never parse it. |
 | `tree_profile_community.json` | `community_tree` is `Tree?` | `GET /trees/{id}` for a published community tree, asked by a stranger. The six keys that existed before, plus `community_tree`, `added_by_you` and `is_published`. Assert `community_tree.speciesCurrentID` non-nil, and that `added_by_you` is false and `is_published` true. |
-| `tree_history.json` | server-owned, snake_case; `from_coordinate` / `to_coordinate` are `Coordinate?` | `GET /trees/{id}/history`, newest first, dates truncated to the day, no actor field. `kind` and `placement` must decode tolerantly (an unknown case), because the vocabulary is an allow-list that can widen. The oldest event is `added`, at the position the tree went live at: the tree was moved while private, and neither that move nor its first position is served (decision 13). |
+| `tree_history.json` | server-owned, snake_case; `from_coordinate` / `to_coordinate` are `Coordinate?` | `GET /trees/{id}/history`, newest first, dates truncated to the day, no actor field. `kind` and `placement` must decode tolerantly (an unknown case), because the vocabulary is an allow-list that can widen. The oldest event is `added`, at the position the tree went live at: the tree was moved while private, and neither that move nor its first position is served (decision 13). Since server migration 008, the `added` row's `occurred_at` is the day the tree was added (the tree's `added_on`: the adder's own calendar day on the phone), where it used to be the day the tree went public (`published_at`). Its position is still the one at publication. |
 | `tree_profile_city.json` | `community_tree` is `Tree?` | `GET /trees/{id}` for a **city** tree with community data (photos, visits). `community_tree` is **null** and `added_by_you` / `is_published` are false. This is the ordinary case for most ids, not an error. |
 | `tree_profile_unknown.json` | same | `GET /trees/{id}` for an id nobody has ever sent: the empty answer, `community_tree` null. |
 | `tree_profile_hidden.json` | same | `GET /trees/{id}` for a community tree hidden from the caller (somebody else's unpublished tree, withdrawn, taken down or erased). **Byte-for-byte `tree_profile_unknown.json` with the id replaced**; the Go test asserts it, so the answer is not an oracle. |
 | `delete_me.json` | `DeleteAccountResponse`, through `RemoteAPI` (`GoldenWireFixtureTests`) | `DELETE /me`, written by `deletionBody` itself. Server-owned and snake_case. `community_trees` lists, by id, what the deletion did to each tree the account added: `deleted` (removed and tombstoned) and `anonymized` (kept with no adder). Both lists are always present, `[]` when empty. The phone acts on them instead of its own rule (`ROADMAP` 104, 105); when the key is **absent** (a service deployed before it), the phone keeps its own rule. Assert both ids by value. |
 | `tree_profile.json` | `TreeCommunityHalfResponse`, through `RemoteAPI.treeCommunityHalf` (`GoldenWireFixtureTests`) | `GET /trees/{id}` asked by a signed-in contributor, written by `treeProfileBody` itself. `client_uuid` is on the caller's **own** rows only (a key on the approved one, `null` on the keyless pending one) and **absent** on the stranger's. Both approved rows carry `captured_on`: the owner's is served its exact `captured_at`, the stranger's noon UTC of that date. Assert the key by value, and that the stranger's row has none. |
+
+## ROADMAP 144: species on a tree somebody else added (migration 009)
+
+**Keys added to existing files.** Nothing was renamed or removed, and no existing history event was
+added or dropped, so every existing Swift decode test keeps its counts.
+
+- Every `GET /trees/{id}` fixture (`tree_profile.json`, `tree_profile_community.json`,
+  `tree_profile_city.json`, `tree_profile_unknown.json`, `tree_profile_hidden.json`) now carries
+  three more keys, always present:
+  - `species_reported` (bool): a report counts now, so the profile shows "Somebody has reported this
+    species as wrong." False in every existing file.
+  - `species_report_flag_id` (uuid or null): the newest counting report's `flagID`, sent **only to
+    the tree's adder**, so the adder's phone can send "Keep the species"
+    (`species_review_dismissal`) about a report it never held. **The dismissal's `flagID` must be
+    this id**: the keep clears the report it names and every earlier one, never a later one, and a
+    keep whose `flagID` names no counting report clears nothing. Null in every existing file.
+  - `species_named_by_you` (bool): the caller's own naming is in force **and the caller still
+    shares**, so their correction would apply now. False once the adder corrects or keeps the
+    species, and false once the namer declines the license. False in every existing file.
+  `tree_profile_hidden.json` is still byte-for-byte `tree_profile_unknown.json` under another id.
+  **Absent** (a service deployed before 009) means "the service did not say": keep the phone's own
+  answer.
+- `tree_history.json`: every event carries `by_you` (bool), whether the caller performed it. The
+  stranger who reads this file performed none of them, so all three are false. Absent (before 009):
+  fall back to `added_by_you`, as the C3 build does.
+
+**New files.**
+
+| file | decodes into | notes |
+|---|---|---|
+| `tree_profile_community_reported.json` | as `tree_profile_community.json` | Tree `…5d01` **as its adder sees it** after a sharing account reported its species. `species_reported` is true, `species_report_flag_id` is `4e7a2c10-9b3d-4f5e-8a6c-1d2e3f4a5b01`, and `added_by_you` is true (so `address` is served). Assert the flag id by value. |
+| `tree_profile_community_named_by_you.json` | as `tree_profile_community.json` | Tree `…5d02`, which its adder left unnamed, **as the sharing account that named it sees it**: `speciesCurrentID` is `…6b7e`, `species_named_by_you` is true, `added_by_you` false, and `species_report_flag_id` null. |
+| `tree_history_contributor.json` | as `tree_history.json` | Tree `…5d02`'s history **as its namer reads it**, newest first: the adder's correction (`species_corrected`, `by_you` false), the operator's correction (`species_corrected_by_operator`), the namer's own correction (`species_corrected_by_contributor`, `by_you` true), the namer's naming (`species_named_by_contributor`, `by_you` true), and `added`. Assert all three new kinds decode as known kinds, not `unrecognized`. |
+
+**The history's kinds.** The adder's species acts keep `species_named` and `species_corrected`.
+Anybody else's get kinds of their own: `species_named_by_contributor`,
+`species_corrected_by_contributor`, `species_corrected_by_operator`. The C3 build drops a kind it
+does not know (`CommunityTreeHistory.Kind.unrecognized`, no row), which is better than its "You
+named the species" on the adder's phone. A build that knows them maps them to the existing labels,
+"Species named" and "Species corrected", and takes "You" from `by_you`.
 
 ## The two public-read fixtures decode into **nothing Swift**, and that is the point
 
@@ -85,6 +125,13 @@ compare against the file.
 | `sync_location_correction.json` | a `location_correction` outbox item (`SyncItemBody` wrapping `TreeLocationCorrection`) | `TestTheLocationCorrectionFixtureMovesThePin` |
 | `photos_begin.json` | the `POST /photos/begin` body, including decision 14a's `captured_on` | `TestThePhotosBeginFixtureStoresItsLocalCaptureDate` |
 | `sync_add_tree.json` | an `add_tree` outbox item (`SyncItemBody` wrapping `TreeAddition`), including `addedOn` | `TestTheAddTreeFixtureStoresItsLocalAddedDay` |
+| `sync_wrong_species_report.json` | a signed-in `wrong_species_report` outbox item (`SyncItemBody` wrapping `ReviewReport`), including the new optional `disputedSpeciesID` | `TestTheWrongSpeciesReportFixtureMarksTheSpecies` |
+
+`sync_wrong_species_report.json` carries an account id, `A0B1C2D3-…-9E0F1A2B3C4D`, in `user_id` and
+`attribution.userID`. The Go test replaces it with the signed-in reporter's id, because the service
+mints account ids. `disputedSpeciesID` is the species the reader saw and said was wrong. It is
+optional: builds that do not send it are still read, and their report disputes the species in force
+when it arrives.
 
 `sync_add_tree.json` is the west-of-UTC case: `occurred_at` is 06:30 UTC on the 15th, and `addedOn`
 is the phone's local date, the 14th. The Go test checks the stored `added_on` is the 14th.

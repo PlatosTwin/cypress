@@ -228,8 +228,12 @@ struct CommunityOutboxKindTests {
         _ = try await api.correctSpecies(treeID: tree.id, speciesID: second)
         #expect(try await Self.rows(store, ofKind: .speciesCorrection).count == 1)
 
-        // A report by somebody who is not the namer, so the "is it yours" guard lets it through.
+        // A report by somebody who is not the namer, so the "is it yours" guard lets it through, and
+        // who shares, so the ROADMAP 144 guard does too.
         let stranger = LocalAPI(store: store, deviceID: Self.otherDeviceID)
+        try await stranger.linkAccount(
+            deviceUUID: Self.otherDeviceID, userID: Self.otherUserID, provider: "apple", acceptsLicense: true
+        )
         try await stranger.flagWrongSpecies(treeID: tree.id)
         let reports = try await Self.rows(store, ofKind: .wrongSpeciesReport)
         #expect(reports.count == 1)
@@ -519,6 +523,10 @@ struct CommunityOutboxKindTests {
         )
         _ = try await api.claimSpecies(treeID: control.id, speciesID: species)
         let stranger = LocalAPI(store: store, deviceID: Self.otherDeviceID)
+        // A sharer: ROADMAP 144 refuses a report from anybody else on a tree they did not add.
+        try await stranger.linkAccount(
+            deviceUUID: Self.otherDeviceID, userID: Self.otherUserID, provider: "apple", acceptsLicense: true
+        )
         try await stranger.flagWrongSpecies(treeID: control.id)
         let controlFlags = try await Self.scalar(
             "SELECT COUNT(*) AS n FROM review_flags WHERE tree_uuid = '\(control.id.uuidString)'",
@@ -978,6 +986,10 @@ struct CommunityOutboxKindTests {
                 coordinate: Coordinate(latitude: 37.76015, longitude: -122.50505),
                 placement: .contributorPlaced, locationAccuracyM: 4.5,
                 attribution: who, occurredAt: moment
+            )),
+            // The adder's withdrawal: a pointer, every field set.
+            .treeWithdrawal(TreeWithdrawal(
+                clientUUID: UUID(), treeID: tree, attribution: who, occurredAt: moment
             ))
         ]
         // `uniqueKeysWithValues` rather than a merge: two specimens of one kind here would make the

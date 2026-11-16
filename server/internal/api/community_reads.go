@@ -275,6 +275,53 @@ var withheldHistoryKinds = map[string]string{
 	"added":      "the adder's private record, at the position before any private move (decision 13); the public \"added\" is the published event",
 	"withdrawn":  "a withdrawn tree's history answers not_found (§3E), so there is no response for it to be in",
 	"taken_down": "a taken-down tree's history answers not_found (§3E), so there is no response for it to be in",
+	// Migration 009. A report is an unadjudicated accusation, and the public read withholds the
+	// same act for that reason (`withheldKinds`); its effect is the profile's `species_reported`.
+	"species_reported": "an unadjudicated accusation; the profile's species_reported carries its effect, never the act",
+	// Its effect is the reported line going away; the act itself is moderation bookkeeping.
+	"species_reports_cleared": "moderation bookkeeping; its effect is species_reported turning false",
+}
+
+// speciesEventWireKinds is the kind a species event is served as, by who acted (`after.by`,
+// migration 009).
+//
+// **The adder's acts keep the two kinds every build already maps** to "Species named" and "Species
+// corrected" (and "You …" on the adder's phone). Anybody else's act gets a kind of its own, because
+// the C3 build labels every row "You …" on the adder's phone (it assumes only the adder acts); a kind
+// it does not know is a row it does not draw (`CommunityTreeHistory.Kind.unrecognized`, dropped by
+// `TreeProfilePresentation.historyItems`), which is better than telling the adder they named a tree
+// they did not. A later phone build maps the new kinds to the same two labels, and reads `by_you`
+// for "You".
+var speciesEventWireKinds = map[string]map[string]string{
+	"species_named": {
+		store.SpeciesByAdder:       "species_named",
+		store.SpeciesByContributor: "species_named_by_contributor",
+		// The operator's act is always written as `species_corrected`; this is for completeness.
+		store.SpeciesByOperator: "species_named_by_operator",
+	},
+	"species_corrected": {
+		store.SpeciesByAdder:       "species_corrected",
+		store.SpeciesByContributor: "species_corrected_by_contributor",
+		store.SpeciesByOperator:    "species_corrected_by_operator",
+	},
+}
+
+// servedHistoryKind is the wire kind of one stored event. An absent `by` is the adder, because
+// before migration 009 only the adder could act. A `by` this build does not know is served under a
+// kind no phone knows, so no phone mislabels it.
+func servedHistoryKind(event store.HistoryEvent) string {
+	byKind, isSpecies := speciesEventWireKinds[event.Kind]
+	if !isSpecies {
+		return servedHistoryKinds[event.Kind]
+	}
+	by := store.SpeciesByAdder
+	if event.After.By != nil {
+		by = *event.After.By
+	}
+	if served, ok := byKind[by]; ok {
+		return served
+	}
+	return event.Kind + "_by_" + by
 }
 
 // historyEventsServed is `servedHistoryKinds` as the query's argument, in a stable order.
@@ -300,6 +347,9 @@ type historyEvent struct {
 	FromSpeciesID  *uuid.UUID      `json:"from_species_id"`
 	ToSpeciesID    *uuid.UUID      `json:"to_species_id"`
 	Placement      *string         `json:"placement"`
+	// ByYou is whether the caller performed this act (migration 009). It is computed in the store
+	// from the actor columns, which never leave it: it tells the caller about their own acts only.
+	ByYou bool `json:"by_you"`
 }
 
 type historyResponse struct {
@@ -342,13 +392,14 @@ func (s *Server) treeHistory(w http.ResponseWriter, r *http.Request, who caller)
 	for _, event := range events {
 		body.Events = append(body.Events, historyEvent{
 			ID:             event.ID,
-			Kind:           servedHistoryKinds[event.Kind],
+			Kind:           servedHistoryKind(event),
 			OccurredAt:     stamp(dayOf(event.OccurredAt)),
 			FromCoordinate: coordinateOf(event.Before),
 			ToCoordinate:   coordinateOf(event.After),
 			FromSpeciesID:  event.Before.SpeciesID,
 			ToSpeciesID:    event.After.SpeciesID,
 			Placement:      event.After.Placement,
+			ByYou:          event.ByViewer,
 		})
 	}
 	writeJSON(w, s.Log, http.StatusOK, body)

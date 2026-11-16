@@ -133,6 +133,36 @@ type speciesStatementPayload struct {
 	SpeciesID uuid.UUID `json:"speciesID"`
 }
 
+// readSpeciesReport reads the two fields of `ReviewReport` a `wrong_species_report` materializes
+// from: `treeID`, and `disputedSpeciesID`, the species the reader saw and said was wrong.
+//
+// **`disputedSpeciesID` is new, optional, and sent only by the build that carries the phone half of
+// ROADMAP 144.** Builds 88 and older and the C3 build never send it; absent, the report disputes the
+// species in force when it arrives. Present and `null` is the same as absent. Present and not a
+// uuid is a report that names nothing the service can match, so it is recorded and does not count:
+// never refused, because `validation_failed` is terminal for the phone's queue and this kind has
+// never been refused for its body. Keys are matched exactly, for `speciesStatementSpeciesID`'s
+// reason.
+func readSpeciesReport(raw json.RawMessage) (uuid.UUID, *uuid.UUID, bool) {
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &fields); err != nil {
+		return uuid.UUID{}, nil, false
+	}
+	var tree uuid.UUID
+	if value, ok := fields["treeID"]; !ok || json.Unmarshal(value, &tree) != nil || tree.IsNil() {
+		return uuid.UUID{}, nil, false
+	}
+	value, ok := fields["disputedSpeciesID"]
+	if !ok {
+		return tree, nil, true
+	}
+	var disputed *uuid.UUID
+	if json.Unmarshal(value, &disputed) != nil {
+		return uuid.UUID{}, nil, false
+	}
+	return tree, disputed, true
+}
+
 // wireLatLon is `Coordinate` as the client's `JSONEncoder` writes it.
 type wireLatLon struct {
 	Latitude  float64 `json:"latitude"`
@@ -423,6 +453,9 @@ var disputeTreeSources = map[string]bool{"city_import": true, "community": true}
 //     here and none of those rules is one this service can evaluate — ARCHITECTURE §8 makes the
 //     moderation surface a web deliverable. Recording the act and refusing to guess at its effect is
 //     the honest half; guessing would move somebody's species on an unadjudicated say-so.
+//     (Superseded in part for community trees: 007 materialized the adder's species acts, and 009
+//     the owner's rules for everybody else's, ROADMAP 144. A city tree's species is still recorded
+//     and never moved.)
 //
 //   - **`photo_withdrawal` is the second that materializes, and it no longer waits on the upload.**
 //     Two earlier versions of this comment were wrong in opposite directions: the first filed it
@@ -553,8 +586,11 @@ var disputeTreeSources = map[string]bool{"city_import": true, "community": true}
 //     existence oracle: a stranger's act on a withdrawn, taken-down, unpublished or erased tree is
 //     answered as the same act on an unknown id). The second is the adder withdrawing the tree for everyone while
 //     nobody else has built on it (decision 8), `conflict` otherwise. `species_claim` and
-//     `species_correction` also materialize from 007 on, for a community tree's adder only, and
-//     never refuse — see `store.materializeSpecies`.
+//     `species_correction` also materialize from 007 on, for a community tree's adder, and from 009
+//     on for a sharing account's first naming and that namer's own correction (ROADMAP 144).
+//     `wrong_species_report` and `species_review_dismissal` materialize from 009 on: a sharing
+//     account's report marks the species, and the adder's dismissal ("Keep the species") clears the
+//     mark. None of the four ever refuses — see `store/species.go`.
 var syncKinds = map[string]bool{
 	"visit": true, "observation": true, "measurement": true,
 	"care_event": true, "favorite_toggle": true, "private_reminder": true,
@@ -839,6 +875,36 @@ func (s *Server) applyOne(r *http.Request, raw json.RawMessage, who caller, owne
 		}
 	}
 
+	// ── `wrong_species_report` and `species_review_dismissal` (ROADMAP 144): read leniently ───────
+	//
+	// Both were recorded and nothing else until migration 009, and neither is refused for its shape
+	// now: a body that does not decode, or names another tree, is recorded exactly as before and
+	// materializes nothing. See `readSpeciesReport` for the one new field.
+	var speciesReport *store.SpeciesReport
+	if item.Kind == "wrong_species_report" {
+		if tree, disputed, ok := readSpeciesReport(item.Payload); ok && tree == item.TreeUUID {
+			speciesReport = &store.SpeciesReport{TreeID: tree, DisputedSpeciesID: disputed}
+		}
+	}
+	// The keep needs `treeID` and `flagID` (`ReviewDismissal`, unchanged): the flag names the report
+	// the adder kept the species against, and only it and older reports are cleared
+	// (`store.keepSpecies`). A body whose `flagID` is missing or not a uuid clears nothing.
+	var speciesKeep *store.SpeciesKeep
+	if item.Kind == "species_review_dismissal" {
+		var payload struct {
+			TreeID uuid.UUID `json:"treeID"`
+		}
+		if err := json.Unmarshal(item.Payload, &payload); err == nil && payload.TreeID == item.TreeUUID {
+			speciesKeep = &store.SpeciesKeep{TreeID: payload.TreeID}
+			var flag struct {
+				FlagID *uuid.UUID `json:"flagID"`
+			}
+			if json.Unmarshal(item.Payload, &flag) == nil && flag.FlagID != nil && !flag.FlagID.IsNil() {
+				speciesKeep.FlagID = flag.FlagID
+			}
+		}
+	}
+
 	// ── `species_claim` and `species_correction` must name a species ──────────────────────────
 	//
 	// See `speciesStatementSpeciesID` for why this refusal is safe, why it is here, and why the
@@ -1005,6 +1071,8 @@ func (s *Server) applyOne(r *http.Request, raw json.RawMessage, who caller, owne
 		Actor:              who.actor(),
 		LocationCorrection: correction,
 		SpeciesStatement:   speciesStatement,
+		SpeciesReport:      speciesReport,
+		SpeciesKeep:        speciesKeep,
 		WithdrawnTreeID:    withdrawnTreeID,
 	}, owner)
 

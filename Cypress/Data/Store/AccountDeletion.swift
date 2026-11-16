@@ -870,9 +870,13 @@ public struct AccountDeletion {
             """,
             userAndNow, on: connection
         )
+        // **`set_on_device` comes off in the same statement** (`AppSchema` v24), `photos
+        // .taken_on_device`'s reason. The Journal's pin-move arm reads it, and a row with no
+        // owner, no tombstone and this phone's provenance would put the deleted account's moves
+        // back in the Journal and the export of whoever holds the phone next.
         outcome.anonymizedTreeLocations += try run(
             """
-            UPDATE main.tree_locations SET user_id = NULL, updated_at = :now
+            UPDATE main.tree_locations SET user_id = NULL, set_on_device = NULL, updated_at = :now
              WHERE user_id = :user COLLATE NOCASE
             """,
             userAndNow, on: connection

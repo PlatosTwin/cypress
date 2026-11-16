@@ -552,9 +552,15 @@ func TestTheProfileCarriesTheCommunityTree(t *testing.T) {
 	}
 	sort.Strings(got)
 	want := []string{"added_by_you", "community_tree", "deletable_photo_ids", "is_published",
-		"own_photo_ids", "photo_count", "photos", "tree_uuid", "visit_count"}
+		"own_photo_ids", "photo_count", "photos", "species_named_by_you", "species_report_flag_id",
+		"species_reported", "tree_uuid", "visit_count"}
 	if !slices.Equal(got, want) {
-		t.Fatalf("GET /trees/{id} keys = %v, want the six existing keys plus the three additive ones %v", got, want)
+		t.Fatalf("GET /trees/{id} keys = %v, want the six existing keys, S2's three additive ones and "+
+			"migration 009's three %v", got, want)
+	}
+	if string(keys["species_reported"]) != "false" || string(keys["species_report_flag_id"]) != "null" ||
+		string(keys["species_named_by_you"]) != "false" {
+		t.Fatalf("a city tree's species keys are not false, null, false: %s", city.raw)
 	}
 }
 
@@ -740,6 +746,40 @@ func readHistory(t *testing.T, h *harness, bearer string, tree uuid.UUID) (int, 
 	return recorder.Code, body
 }
 
+// withoutByYou is the body with every event's `by_you` taken out: the one key (migration 009) whose
+// value depends on who asks, so two viewers' histories can be compared on everything else.
+func (b historyBody) withoutByYou(t *testing.T) []byte {
+	t.Helper()
+	events := make([]map[string]json.RawMessage, 0, len(b.Events))
+	for _, event := range b.Events {
+		copied := map[string]json.RawMessage{}
+		for key, value := range event {
+			if key != "by_you" {
+				copied[key] = value
+			}
+		}
+		events = append(events, copied)
+	}
+	encoded, err := json.Marshal(map[string]any{"tree_uuid": b.TreeUUID, "events": events, "complete": b.Complete})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return encoded
+}
+
+// byYou is each event's `by_you`, newest first; a missing key reads as nil.
+func (b historyBody) byYou() []*bool {
+	var flags []*bool
+	for _, event := range b.Events {
+		var flag *bool
+		if raw, ok := event["by_you"]; ok {
+			_ = json.Unmarshal(raw, &flag)
+		}
+		flags = append(flags, flag)
+	}
+	return flags
+}
+
 func (b historyBody) kinds() []string {
 	var kinds []string
 	for _, event := range b.Events {
@@ -779,7 +819,9 @@ func TestTheHistoryIsAnonymousNewestFirstAndDayPrecise(t *testing.T) {
 	if got := body.kinds(); !slices.Equal(got, []string{"species_named", "location_corrected", "added"}) {
 		t.Fatalf("kinds = %v, want newest first", got)
 	}
-	wantKeys := []string{"from_coordinate", "from_species_id", "id", "kind", "occurred_at", "placement",
+	// `by_you` (migration 009) is a fact about the caller's own acts, computed from the actor columns
+	// in the store; the actor itself is still never a key.
+	wantKeys := []string{"by_you", "from_coordinate", "from_species_id", "id", "kind", "occurred_at", "placement",
 		"to_coordinate", "to_species_id"}
 	for _, event := range body.Events {
 		var keys []string

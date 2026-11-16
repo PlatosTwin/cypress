@@ -53,7 +53,8 @@ public enum AppSchema {
         Migration(version: 20, name: "the species chain and the community rows are reachable by the identity their readers bind", sql: v20),
         Migration(version: 21, name: "a reading can be taken back, so the outbox learns measurement_withdrawal", migrate: applyV21),
         Migration(version: 22, name: "a city record's data can be disputed, and the outbox learns both dispute kinds", migrate: applyV22),
-        Migration(version: 23, name: "a community tree has an adder, a location chain and other people's copies", migrate: applyV23)
+        Migration(version: 23, name: "a community tree has an adder, a location chain and other people's copies", migrate: applyV23),
+        Migration(version: 24, name: "a pin position remembers which installation set it", migrate: applyV24)
     ]
 
     /// The version a freshly migrated database reports.
@@ -2827,6 +2828,7 @@ public enum AppSchema {
     /// that writes it is not in this round, and SQLite cannot widen a CHECK in place, so admitting it
     /// now spares the round that builds the verb a second twelve-step rebuild. Nothing can write the
     /// value until that round adds `OutboxItem.Kind.treeWithdrawal`: the store binds `Kind.rawValue`.
+    /// That case now exists (`withdrawTree`), and needed no migration of its own.
     ///
     /// ── Idempotent by guard, per part ─────────────────────────────────────────────────────────
     ///
@@ -3105,6 +3107,86 @@ public enum AppSchema {
             DROP TABLE outbox_photos_parked_v23;
             """)
     }
+
+    // MARK: - v24
+
+    /// `tree_locations` learns **which installation set each position**, v16's question asked of a
+    /// pin instead of a photograph (the owner's decision of 2026-11-16, ROADMAP chip 152).
+    ///
+    /// **The defect.** Sign-in (`ContributionStore.claimDevice`) gives this installation's pin
+    /// moves to the account and clears their `device_id`, because the table allows at most one
+    /// owner. Visits keep their `device_id` through the claim. After sign-out, the Journal and the
+    /// export ask for "this device, or the signed-in account", so the visits stayed and the moves
+    /// left. The owner chose that both stay: "Everything, pin moves too".
+    ///
+    /// **Provenance, not a second owner**, on v16's terms. `set_on_device` answers one question:
+    /// did this installation write this row. Nothing that decides who may move a pin reads it
+    /// (`correctLocation` asks `community_trees`' adder), `claimDevice` does not touch it, nothing
+    /// sent to the service carries it, and the "at most one owner" CHECK is unchanged. Only the
+    /// Journal's pin-move arm reads it.
+    ///
+    /// **The backfill names this installation for the rows it can vouch for, and no others.**
+    /// Every row here was written on this phone today: `LocalAPI.addTree` and
+    /// `LocalAPI.correctLocation` are the only writers, and nothing syncs positions down. The fill
+    /// still skips two kinds of row, so it stays true once that changes:
+    /// - a row with neither owner, which an account deletion anonymized. It is nobody's for ever
+    ///   (R3, E157), and naming this phone on it would hand it to whoever holds the phone;
+    /// - a row a different installation owns (`device_id` set to another id).
+    ///
+    /// A row that already has a value keeps it, so a replay changes nothing.
+    ///
+    /// **`ALTER TABLE ADD COLUMN`, guarded on the column list**, v16's shape and reason: `ADD
+    /// COLUMN` has no `IF NOT EXISTS`. The fill runs unconditionally, also v16's reason: a database
+    /// that has the column and was never filled must still be filled.
+    ///
+    /// **When `app_state` has no `device_uuid`** the fill writes nothing. Only a fresh install has
+    /// no `device_uuid`, and it has no positions yet.
+    ///
+    /// **When the stored `device_uuid` is not a UUID** the fill writes nothing either. The decoder
+    /// (`TreeLocationStore.decode`, through `uuidIfPresent`) refuses a value `UUID(uuidString:)`
+    /// cannot parse, so writing one would make the tree's chain unreadable, and `correctLocation`
+    /// reads the chain's head before every move. The guard is a `GLOB` on the shape
+    /// `UUID(uuidString:)` accepts: 36 characters, hex digits in groups of 8-4-4-4-12 joined by
+    /// hyphens, either case. It catches an empty value, a short or long value, a non-hex character
+    /// and a misplaced hyphen. It does not check the version or variant digits, and neither does
+    /// `UUID(uuidString:)`. `DataLayer` writes only `uuidString` and mints a new id over a value it
+    /// cannot parse, so this case needs a corrupted `app_state`. The rows then keep NULL, and a move
+    /// an account made before the update is not in the Journal after sign-out (moves made after
+    /// the update carry the new id).
+    ///
+    /// **No index.** The Journal's pin-move arm already walks the table (`journalSQL`), and the
+    /// table holds one row per tree this phone added plus one per move.
+    ///
+    /// **Readable by v23 code?** No, the ordinary answer: a v24 file opened by a v23 build refuses
+    /// on `MigrationError.databaseIsAhead`.
+    private static func applyV24(_ connection: SQLiteConnection) throws {
+        if try !connection.columnNames(ofTable: "tree_locations").contains("set_on_device") {
+            try connection.execute("ALTER TABLE tree_locations ADD COLUMN set_on_device TEXT")
+        }
+        try connection.execute("""
+            -- Owned rows that this installation owns or that an account owns. Not an anonymized row,
+            -- not another installation's row, and not a row that already says who set it. Nothing
+            -- at all when the stored id does not have a UUID's shape: see the header.
+            UPDATE tree_locations
+               SET set_on_device = (SELECT upper(value) FROM app_state WHERE key = 'device_uuid')
+             WHERE set_on_device IS NULL
+               AND EXISTS (SELECT 1 FROM app_state
+                            WHERE key = 'device_uuid' AND value GLOB '\(uuidShapeGlob)')
+               AND NOT (user_id IS NULL AND device_id IS NULL)
+               AND (device_id IS NULL
+                    OR device_id = (SELECT value FROM app_state WHERE key = 'device_uuid') COLLATE NOCASE);
+            """)
+    }
+
+    /// A `GLOB` pattern that matches exactly the strings `UUID(uuidString:)` parses: 8-4-4-4-12
+    /// hex digits, either case, joined by hyphens. `GLOB` is case-sensitive, so each class names
+    /// both cases. Used by v24's fill.
+    static let uuidShapeGlob: String = {
+        let hex = "[0-9A-Fa-f]"
+        return [8, 4, 4, 4, 12]
+            .map { String(repeating: hex, count: $0) }
+            .joined(separator: "-")
+    }()
 
     /// The `CREATE TABLE` text SQLite holds for `outbox`, which is where the `kind` vocabulary
     /// actually lives — `pragma_table_info` reports columns, not their CHECKs.

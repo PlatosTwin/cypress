@@ -98,6 +98,16 @@ public struct CommunityTreeCacheStore {
             tile = excluded.tile, fetched_at = excluded.fetched_at
         """
 
+    /// When a page last served one cached tree (`fetched_at`), or nil when the cache does not hold it.
+    public func fetchedAt(id: UUID, connection: SQLiteConnection) throws -> Date? {
+        let statement = try connection.cachedStatement(
+            "SELECT fetched_at FROM main.community_tree_cache WHERE id = :id COLLATE NOCASE"
+        )
+        _ = try statement.bind([":id": id.uuidString])
+        defer { _ = try? statement.reset() }
+        return try statement.fetchOne { try $0.date("fetched_at") }
+    }
+
     /// Drops cached trees by id, from the whole cache. Returns how many were there.
     @discardableResult
     public func remove(ids: [UUID], connection: SQLiteConnection) throws -> Int {
@@ -115,7 +125,7 @@ public struct CommunityTreeCacheStore {
         return removed
     }
 
-    /// Forgets a tile: its cursor and every tree it last served, together.
+    /// Forgets a tile: its cursor, its complete mark and every tree it last served, together.
     @discardableResult
     public func dropTile(_ tile: String, connection: SQLiteConnection) throws -> Int {
         let trees = try connection.cachedStatement(
@@ -132,7 +142,48 @@ public struct CommunityTreeCacheStore {
         _ = try cursor.bind([":tile": tile])
         try cursor.run()
         _ = try cursor.reset()
+
+        // The trees the mark vouched for are gone, so the mark goes with them. The snapshot that
+        // follows writes it again only when it reaches the tile's last page.
+        let mark = try connection.cachedStatement("DELETE FROM main.app_state WHERE key = :key")
+        _ = try mark.bind(Self.completeKey(tile: tile), forName: ":key")
+        try mark.run()
+        _ = try mark.reset()
         return dropped
+    }
+
+    // MARK: - Fetched to the end
+
+    /// The `app_state` key prefix of the complete mark: one row per tile that a pass followed to
+    /// its last page at least once (ROADMAP 156). The rest of the key is the tile's path.
+    ///
+    /// **Why `app_state` and not a column.** A column on `community_tree_cache_tiles` needs a
+    /// migration. A row here needs none, and the refresher writes it in the same transaction as the
+    /// page that ends the pass, so the mark and the page land together or not at all.
+    public static let completeKeyPrefix = "community_tile_complete:"
+
+    /// The full `completeKeyPrefix` key for one tile.
+    public static func completeKey(tile: String) -> String { completeKeyPrefix + tile }
+
+    /// Records that a pass reached `tile`'s last page (`has_more` false). Call it in the same
+    /// transaction as the `apply` of that page.
+    ///
+    /// **Nothing but `dropTile` removes the mark.** A later delta that stops part way (a failure, or
+    /// the page limit) leaves it: the phone holds every tree the tile had as of the cursor that
+    /// completed it, and each delta page applied since then only brings that copy closer to now.
+    /// The value is the moment the last page was applied, for a person reading the table; nothing
+    /// reads it.
+    public func markComplete(tile: String, at moment: Date, connection: SQLiteConnection) throws {
+        let statement = try connection.cachedStatement("""
+            INSERT INTO main.app_state (key, value) VALUES (:key, :value)
+            ON CONFLICT(key) DO UPDATE SET value = excluded.value
+            """)
+        _ = try statement.bind([
+            ":key": Self.completeKey(tile: tile),
+            ":value": ISO8601DateFormatter().string(from: moment)
+        ])
+        try statement.run()
+        _ = try statement.reset()
     }
 
     // MARK: - Reading
@@ -148,25 +199,22 @@ public struct CommunityTreeCacheStore {
 
     /// Whether this phone has asked the service for the community trees over `bounds` (round C3,
     /// the owner's answer of 2026-11-15 on the map card): true when `bounds` touches at most
-    /// `maxTiles` zoom-14 tiles and every one of them has a row in `community_tree_cache_tiles`.
+    /// `maxTiles` zoom-14 tiles and a pass has followed every one of them to its last page at least
+    /// once. That is, each has a row in `community_tree_cache_tiles` **and** a complete mark
+    /// (`completeKey(tile:)`) in `app_state`.
     ///
-    /// **What a row means, read from the writers.** `apply` writes the row with each page it applies,
-    /// whether the page held trees or none, so a tile the service answered with no trees has one.
-    /// A failed request writes nothing itself (`CommunityTileRefresher` stops the pass before
-    /// `apply`), and a refused cursor deletes the row (`dropTile`) until the snapshot that follows
-    /// is applied. A shut remote gate never calls the refresher, so it leaves no rows. A row from an
-    /// earlier fetch counts as asked however old it is.
+    /// **Why a row alone is not enough (ROADMAP 156).** `apply` writes the row with each page, and
+    /// the service serves at most 100 trees a page. So in a tile with more than 100 added trees, a
+    /// request that failed after the first page, or a pass that stopped at
+    /// `Policy.maxPagesPerTile` pages, left a row for a tile only partly fetched. The refresher
+    /// writes the mark only with a page whose `has_more` is false, in that page's transaction.
     ///
-    /// **A row does not mean the tile was fetched to its end.** Each page is applied in its own
-    /// transaction, and the service serves at most 100 trees a page. So in a tile with more than
-    /// 100 added trees, a request that fails after the first page leaves the row the earlier pages
-    /// wrote, and this answers true for a tile only partly fetched. The same is true of a tile that
-    /// needs more than `Policy.maxPagesPerTile` (10) pages in one pass. The map card and the empty
-    /// list can then say neither kind of tree is here while the service holds added trees that the
-    /// phone never downloaded. The next pass for that tile corrects it: it continues from the
-    /// stored cursor, no sooner than `Policy.minimumInterval` (120 s) after the last attempt
-    /// started, and only once the phone is online again. Marking a tile complete across pages
-    /// needs a new column in this table (a migration) or a mark kept outside it; neither is built.
+    /// **What the writers leave, read from the code.** A tile the service answered with one empty
+    /// page has both. A failed request writes nothing (`CommunityTileRefresher` stops the pass
+    /// before `apply`). A refused cursor deletes the row and the mark together (`dropTile`) until a
+    /// snapshot reaches the last page again. A shut remote gate never calls the refresher, so it
+    /// leaves neither. A mark from an earlier pass counts however old it is, and a later delta that
+    /// stops part way does not remove it (`markComplete`).
     ///
     /// The same rule as the refresher's: more than `maxTiles` tiles is a map the refresher never
     /// asks about, so the answer there is false. A box across the antimeridian covers no tile
@@ -181,12 +229,14 @@ public struct CommunityTreeCacheStore {
         }
         let paths = tiles.map(\.path)
         let statement = try connection.cachedStatement("""
-            SELECT COUNT(*) AS fetched FROM main.community_tree_cache_tiles
-             WHERE tile IN (SELECT value FROM json_each(:tiles))
+            SELECT COUNT(*) AS fetched FROM main.community_tree_cache_tiles t
+             WHERE t.tile IN (SELECT value FROM json_each(:tiles))
+               AND EXISTS (SELECT 1 FROM main.app_state a WHERE a.key = :prefix || t.tile)
             """)
-        _ = try statement.bind(
-            "[\(paths.map { "\"\($0)\"" }.joined(separator: ","))]", forName: ":tiles"
-        )
+        _ = try statement.bind([
+            ":tiles": "[\(paths.map { "\"\($0)\"" }.joined(separator: ","))]",
+            ":prefix": Self.completeKeyPrefix
+        ])
         let fetched = try statement.fetchOne { try $0.int("fetched") } ?? 0
         return fetched == paths.count
     }

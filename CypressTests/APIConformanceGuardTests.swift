@@ -768,6 +768,7 @@ private struct ProbeAPI: CypressAPI {
     func correctLocation(
         treeID: UUID, to coordinate: Coordinate, placement: TreePlacement, locationAccuracyM: Double?
     ) async throws -> Tree { throw log.reached("correctLocation") }
+    func withdrawTree(treeID: UUID) async throws { throw log.reached("withdrawTree") }
     func claimSpecies(treeID: UUID, speciesID: UUID) async throws -> Tree { throw log.reached("claimSpecies") }
     func correctSpecies(treeID: UUID, speciesID: UUID) async throws -> Tree { throw log.reached("correctSpecies") }
     func flagWrongSpecies(treeID: UUID) async throws { throw log.reached("flagWrongSpecies") }
@@ -1117,6 +1118,7 @@ struct APIConformanceGuardTests {
                 treeID: id, to: coordinate, placement: .gps, locationAccuracyM: nil
             )
         }
+        await check("withdrawTree") { try await api.withdrawTree(treeID: id) }
         await check("claimSpecies") { _ = try await api.claimSpecies(treeID: id, speciesID: id) }
         await check("correctSpecies") { _ = try await api.correctSpecies(treeID: id, speciesID: id) }
         await check("flagWrongSpecies") { try await api.flagWrongSpecies(treeID: id) }

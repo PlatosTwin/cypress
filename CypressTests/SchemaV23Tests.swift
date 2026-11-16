@@ -23,13 +23,18 @@ import Testing
 /// 5. the schema's own rules hold: one head per chain, at most one adder, and a cached copy of a
 ///    tree this phone added cannot be stored.
 ///
-/// **When v24 lands**, filter this suite's ladder to `<= 23` the way `SchemaV22Tests.ladder` is
-/// filtered, and move the `currentVersion` expectation below into v24's own file.
+/// **v24 landed** (`set_on_device`), so the ladder test below runs `Self.ladder`, filtered to
+/// `<= 23`, and the `currentVersion` expectation moved to `SchemaV24Tests`. The other tests here
+/// still run the whole ladder: they read rows back through `TreeLocationStore`, which decodes the
+/// shipping schema, and v24 only adds a column, so every fact they check about v23 holds after it.
 @Suite("AppSchema · v23")
 struct SchemaV23Tests {
 
     private static let moment = Date(timeIntervalSince1970: 1_796_000_000)
     private static var version: Int32 { 23 }
+
+    /// The ladder the one-step test runs, which stops at v23.
+    private static var ladder: [Migration] { AppSchema.migrations.filter { $0.version <= version } }
 
     /// A pre-v23 tree, stored with a **lowercase** id — the spelling a JSON round trip produces —
     /// so the backfill's `upper()` is measured rather than assumed.
@@ -159,23 +164,19 @@ struct SchemaV23Tests {
     func aV22DatabaseRunsOnlyV23() async throws {
         let store = try await Self.v22Database()
         let applied = try await store.queue.write { connection in
-            try SchemaMigrator.migrate(AppSchema.migrations, on: connection)
+            try SchemaMigrator.migrate(Self.ladder, on: connection)
         }
         #expect(
             applied == [Self.version],
             """
-            a v22 database applied \(applied) rather than [\(Self.version)]. If this is a longer \
-            list, another migration was added without this fixture being moved forward — filter the \
-            ladder to `<= \(Self.version)` here and move the `currentVersion` claim below into the \
-            new version's own file
+            a v22 database applied \(applied) rather than [\(Self.version)]. If it is empty, v23 is \
+            not in `AppSchema.migrations`
             """
         )
         let version = try await store.queue.read { try $0.userVersion }
-        #expect(version == AppSchema.currentVersion, "user_version is \(version)")
-        #expect(
-            AppSchema.currentVersion == Self.version,
-            "`AppSchema.currentVersion` is \(AppSchema.currentVersion) and this file is written about \(Self.version)"
-        )
+        #expect(version == Self.version, "a v22 database run up this suite's ladder reports user_version \(version)")
+        // **The `currentVersion` claim is not here any more.** It moved to `SchemaV24Tests` the day
+        // v24 landed, as this file's header asked.
     }
 
     // MARK: - 2. The binaries

@@ -135,6 +135,15 @@ decodes to `server_error` rather than throwing and would look like an outage.
 | `GET /photos/{id}` | The photograph a device never wrote. |
 | `GET /public/trees/{id}` | **The only unauthenticated read.** The publicly visible community half of one tree — see below. |
 | `POST /operator/photos/{id}/reject` | Operator takedown. Not optional — see below. |
+| `POST /operator/community-trees/{id}/take-down` | Operator takedown of a community tree. |
+| `POST /operator/community-trees/{id}/species` | The operator corrects a community tree's species for everyone: `{"species_id": "…"}`. It clears "Somebody has reported this species as wrong." and ends a contributor's right to correct their own naming. **The species id is not checked**: this service holds no species catalog, so a mistyped id is stored, and no phone can name it. Copy the id from the species table. `404` for an id that names no live community tree. |
+| `POST /operator/community-trees/{id}/species-reports/clear` | The operator clears the reported state and keeps the species. A later report brings it back. |
+
+All three operator routes take `Authorization: Bearer $OPERATOR_TOKEN` and answer `forbidden` to
+anything else. The species rules for everybody else (who may name, correct, report, and keep) are
+in `internal/store/species.go`'s header.
+
+Both session answers (`POST /auth/oidc` and `POST /auth/refresh`) carry `license_version`: the version the account has accepted, or `null` when the account has no known acceptance (it declined, was never asked, or holds a version this service does not know). So a phone can read the account's answer back after a reinstall. The key is present whenever the service read the answer. One case leaves it out: a refresh whose read failed after the session had already rotated. That refresh still delivers the new tokens, because failing it would leave the phone with a spent refresh token. A phone reads a missing key as "not stated" and writes nothing.
 
 ### `GET /public/trees/{id}` is the one route with no credential, and what it may say is a ruling
 
@@ -379,7 +388,7 @@ credential and neither changes behaviour — the first is what Fly sets anyway, 
 | `APPLE_KEY_ID` | yes | `kid` of the Apple client secret. |
 | `APPLE_PRIVATE_KEY` | yes | The `.p8` file's full PEM text, newlines and all. Read as-is; a value whose newlines were flattened to `\n` is also accepted. |
 | `APPLE_BUNDLE_ID` | no | `app.cypress.Cypress`. In `fly.toml` `[env]`, not in secrets — it is in every copy of the app. |
-| `OPERATOR_TOKEN` | yes | Authorizes the takedown route. Required: a takedown with no credential configured is a takedown that cannot be performed. |
+| `OPERATOR_TOKEN` | yes | Authorizes the operator routes (the takedowns and the species correction). Required: a takedown with no credential configured is a takedown that cannot be performed. |
 | `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_ENDPOINT_URL_S3`, `AWS_REGION`, `BUCKET_NAME` | no | The **`cypress-cities`** bucket's, set as app secrets by `flyctl storage create`. The service itself no longer reads them — only the seed-publish relay does — but they must not be disturbed, which is the whole reason the photo bucket has its own names below. |
 | `PHOTOS_AWS_ACCESS_KEY_ID`, `PHOTOS_AWS_SECRET_ACCESS_KEY`, `PHOTOS_AWS_ENDPOINT_URL_S3`, `PHOTOS_AWS_REGION`, `PHOTOS_BUCKET_NAME` | yes | The **private photo bucket's**. The service refuses to boot without all five (`storage.PhotoConfig`), and each refusal names the variable it is missing. See "Provisioning the photo bucket" — photographs may not share `cypress-cities`, which is public-read. |
 
@@ -628,6 +637,40 @@ flyctl deploy --ha=false --build-arg GIT_SHA=$(git rev-parse HEAD)
 `--ha=false` still matters: without it Fly creates a second machine, which is outside this app's
 one-machine budget — and the rate limiter is in memory, so a second machine would also halve the
 limit it thinks it is enforcing.
+
+### Migration 009 (species on a tree somebody else added, ROADMAP 144)
+
+No existing report changes what anybody sees at this deploy: a report counts only through a
+`species_reported` event, and nothing before 009 wrote one. Two queries, against the production
+database (read only):
+
+1. **After the migration has run, this must read 0.** Anything else means a writer outside this
+   file made report events, and the profile's "Somebody has reported this species as wrong." could
+   light up on deploy.
+
+   ```sql
+   SELECT count(*) FROM community_tree_events WHERE kind = 'species_reported';
+   ```
+
+2. **For information only: the existing `wrong_species_report` rows that would qualify under the
+   new rules if they had arrived after 009** (a sharing account that is not the adder, on a live,
+   published, named tree). They never count; no backfill makes them count. The number says how
+   many reports the new line would have shown, if the owner wants to know.
+
+   ```sql
+   SELECT count(*) AS reports_that_would_qualify, count(DISTINCT c.tree_uuid) AS trees
+     FROM contributions c
+     JOIN community_trees t ON t.id = c.tree_uuid
+     JOIN users u ON u.id = c.user_id
+    WHERE c.kind = 'wrong_species_report' AND c.deleted_at IS NULL
+      AND t.deleted_at IS NULL AND t.published_at IS NOT NULL AND t.species_id IS NOT NULL
+      AND (t.user_id IS NULL OR t.user_id <> c.user_id)
+      AND u.license_version = 'odbl-1.0';
+   ```
+
+   Checked on 2026-11-16 against a test database with one stranger's report and one adder's own
+   report on the same named tree: it counts 1. When the license versions change, the last line
+   changes with `knownLicenseVersions` (`internal/store/community_trees.go`).
 
 **One thing that is a code change, not a deploy step.** The rate limiter is per-process. If this app
 ever runs more than one machine, it moves to Postgres or Redis first.

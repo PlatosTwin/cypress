@@ -188,6 +188,13 @@ public struct RemoteAPI: CypressAPI {
         throw RemoteSurface.noRouteOnThisService
     }
 
+    /// **No route.** A tree withdrawal is queued (`tree_withdrawal`) and reaches the service through
+    /// `/sync`; the service has no endpoint for it. Overrides `TreeWithdrawal.swift`'s `.notFound`
+    /// default, for `correctLocation`'s reason above.
+    public func withdrawTree(treeID: UUID) async throws {
+        throw RemoteSurface.noRouteOnThisService
+    }
+
     /// **No route.** A first species claim is one of spec §3.4's nine, and §3.4 rules them Class L
     /// "until they are queued" — which is a widened `outbox.kind` `CHECK`, its own ticket and its
     /// own migration author. The service was built to match and exposes nothing to call.
@@ -618,9 +625,13 @@ public struct RemoteAPI: CypressAPI {
 
     /// `POST /devices/claim` — the idempotent sweep that re-homes a device's unattributed rows onto
     /// an account (D9).
+    ///
+    /// `userID` is not sent: the service takes the account from the session's bearer and refuses an
+    /// unknown body field (`ClaimDeviceBody`). The parameter stays because the protocol requirement
+    /// is shared with `LocalAPI`, whose half needs it.
     public func claimDevice(deviceUUID: UUID, userID: UUID) async throws {
         _ = try await transport.send(
-            try request("devices/claim", method: "POST", body: ClaimDeviceBody(deviceUUID: deviceUUID, userID: userID))
+            try request("devices/claim", method: "POST", body: ClaimDeviceBody(deviceUUID: deviceUUID))
         )
     }
 
@@ -837,8 +848,32 @@ public extension RemoteAPI {
         /// hidden one alike, so its `false` is a fact about this tree only when it sent the tree.
         /// The profile reads it to decide whether to tell the adder that only they can see it.
         public var isPublished: Bool?
-        // The response's `community_tree` is decoded and deliberately not carried here:
-        // `TreeCommunityHalfResponse.communityTree` says why.
+        // The response's `community_tree` is decoded and deliberately not carried here, apart from
+        // its species below: `TreeCommunityHalfResponse.communityTree` says why.
+
+        /// The service's species answers on this tree (ROADMAP 144), or nil when it sent no
+        /// `community_tree` or sent none of the three keys (release v16 and older).
+        public var species: ServedSpecies?
+
+        /// What the service says about a community tree's species.
+        public struct ServedSpecies: Hashable, Sendable {
+            /// `community_tree.speciesCurrentID`: the species in force on the service.
+            public var speciesID: UUID?
+            /// `species_reported`.
+            public var isReported: Bool
+            /// `species_report_flag_id`, sent to the adder only.
+            public var reportFlagID: UUID?
+            /// `species_named_by_you`: the caller is the namer in force and shares, so may correct
+            /// their own answer now.
+            public var namedByYou: Bool
+
+            public init(speciesID: UUID?, isReported: Bool, reportFlagID: UUID?, namedByYou: Bool) {
+                self.speciesID = speciesID
+                self.isReported = isReported
+                self.reportFlagID = reportFlagID
+                self.namedByYou = namedByYou
+            }
+        }
     }
 
     /// `GET /community-trees?tile=14/x/y[&cursor=]` — one page of one tile of the community layer.
@@ -887,7 +922,8 @@ public extension RemoteAPI {
                     toCoordinate: event.toCoordinate,
                     fromSpeciesID: event.fromSpeciesID,
                     toSpeciesID: event.toSpeciesID,
-                    placement: event.placement.map(CommunityTreeHistory.Placement.init(wire:))
+                    placement: event.placement.map(CommunityTreeHistory.Placement.init(wire:)),
+                    byYou: event.byYou
                 )
             },
             isComplete: response.complete
@@ -962,7 +998,19 @@ public extension RemoteAPI {
                 uniquingKeysWith: { first, _ in first }
             ),
             addedByYou: response.addedByYou ?? false,
-            isPublished: response.communityTree == nil ? nil : response.isPublished
+            isPublished: response.communityTree == nil ? nil : response.isPublished,
+            // Only beside a tree the service sent, and only when it sent the keys: a service
+            // without them says nothing about reports, and its silence is not "no report".
+            species: response.communityTree.flatMap { tree in
+                response.speciesReported.map { reported in
+                    TreeCommunityDelta.ServedSpecies(
+                        speciesID: tree.speciesCurrentID,
+                        isReported: reported,
+                        reportFlagID: response.speciesReportFlagID,
+                        namedByYou: response.speciesNamedByYou ?? false
+                    )
+                }
+            }
         )
     }
 

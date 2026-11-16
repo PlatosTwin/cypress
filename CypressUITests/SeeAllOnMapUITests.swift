@@ -244,6 +244,10 @@ final class SeeAllOnMapUITests: XCTestCase {
         app.launchEnvironment["CYPRESS_SCREEN"] = "journalContributions"
         app.launchEnvironment[DebugMapCamera.key] = camera
         app.launchEnvironment["CYPRESS_LOCATION"] = location
+        // Chip 142: other classes' harness cases add community trees, which count as the reader's
+        // own, and a simulator that stays installed keeps them. This test is about a reader whose
+        // only trees are far from the city they stand in, so it starts without any community tree.
+        app.launchEnvironment["CYPRESS_WITHDRAW_COMMUNITY_TREES"] = "1"
         if probe { app.launchEnvironment["CYPRESS_PAN_PROBE"] = "1" }
         app.launch()
         return app

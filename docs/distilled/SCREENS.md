@@ -831,9 +831,42 @@ service for added trees over the 60 m around the reader:
    > held back.
    >
    > On a community tree somebody else added, the profile offers what a city tree offers (visit,
-   > check-in, care, favorite, share, measure). It offers no Move pin and, in this build, neither
-   > `Say what species you think this is` nor `Report the species as wrong` (the owner,
-   > 2026-11-15: "Hide species controls for now").
+   > check-in, care, favorite, share, measure). It offers no Move pin.
+   >
+   > **Changed by ROADMAP 144 (the owner's answers of 2026-11-15 and 2026-11-16).** The two species
+   > controls come back on such a tree, in the identity block's column under the species line, for
+   > a reader who is signed in and agreed to share tree records. For every other reader they stay
+   > hidden.
+   > - No species: `Say what species you think this is`. The first answer names the tree for
+   >   everyone, and the subtitle then carries `species named by a contributor`. The person who
+   >   named it sees `Correct the species` until the adder corrects or keeps the species.
+   > - A species: `Report the species as wrong`, and under it the muted note `This goes to the
+   >   person who added the tree and to a reviewer. The city is not notified.` A city tree has no
+   >   species report here; its species is disputed through R79's data dispute.
+   > - A report counts: every reader sees the muted line `Somebody has reported this species as
+   >   wrong.` The adder also sees `Correct the species` and `Keep the species`, and the keep clears
+   >   the line for everyone. The namer of a reported species sees the line and `Correct the
+   >   species`.
+   >
+   > History rows keep `Species named` and `Species corrected` whoever acted, and read `You …`
+   > only for the reader's own acts.
+   >
+   > **Added, the withdrawal round (the owner's answers of 2026-11-16).** On a community tree the
+   > reader added, the record controls near the bottom of the identity block end with the link
+   > **`Withdraw this tree`**, below `Report that there is no tree here`, in the same style,
+   > spacing and tokens as that link. A tap asks first, in an **alert** titled
+   > **`Withdraw this tree?`** with the buttons **`Withdraw tree`** (destructive) and **`Keep it`**.
+   > Its message, for a tree others can see:
+   > `Everyone using Cypress stops seeing this tree once this is sent. If someone else has visited or photographed it, it stays. This cannot be undone.`
+   > For a tree only the reader can see (whenever the profile draws an `Only you can see this tree.`
+   > line): `Only you can see this tree. It comes off the map. This cannot be undone.`
+   > `Withdraw tree` closes the profile; the tree leaves the map, the Journal, My Grove and the
+   > Yours map, and the reader's own visits, photos and favorite stay saved. No Journal row is
+   > made. When the phone already knows somebody else visited or photographed the tree, the link's
+   > place holds the muted line
+   > `Other people have added to this tree, so it stays on the map.` A signed-out reader gets no
+   > link on a tree their account added, and nobody gets one on a city tree or a tree somebody
+   > else added.
 9. **Stat grid** (C11) — `grid-template-columns:1fr 1fr; gap:8px; padding:10px 16px 30px; margin-top:auto`:
 
    | Label | Value | Badge |
@@ -1467,6 +1500,12 @@ scrim `rgba(14,24,17,.3)`.
    Not in the mock: a **pin move** (a community tree's `Move pin`) is titled
    `Pin moved · Grandmother Cypress` and has **no sub-line** (only the time). Refused, it reads
    `This couldn't be sent.`, the same as every other kind (the app owner's decisions of 2026-11-14).
+
+   Not in the mock: a **withdrawn tree** is titled `Tree withdrawn · Grandmother Cypress` and has
+   **no sub-line**. When it fails for good, the tree comes back on the map. When the service refused
+   it because somebody else visited or photographed the tree, the row reads
+   `Other people have added to this tree, so it stays on the map.`; any other refusal reads
+   `This couldn't be sent.` (the owner's answers of 2026-11-16).
 3. **Wifi setting row** — `margin:10px 16px 0`, fill `#fff`, `1px #E3E8D9`, radius 14px,
    `padding:13px 15px`, `gap:12px`:
    - `Sync photos on wifi only` — 13.5px/700.

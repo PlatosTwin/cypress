@@ -303,8 +303,9 @@ struct SessionRestoreBootTests {
 
     /// **What the restore may not invent** (DECISIONS constraint 21, and `AccountLinkRecord`).
     ///
-    /// No route on this service reports a role, a provider or a license consent, so none of the three
-    /// is written. The assertions are about what the You tab then *draws*, not about the table: a
+    /// No route on this service reports a role, and this fixture's stored session carries no license
+    /// answer (the shape an older build stored), so none of the three is written. The service's
+    /// answer, when the session carries one, is `LicenseReadbackTests`' subject. The assertions are about what the You tab then *draws*, not about the table: a
     /// missing provider is a shape `AccountSection.licenseLine(for:)` already answers with nil, so
     /// the restored state needs no drawn state of its own and none is added.
     @Test("a restore writes no role, no provider and no consent it cannot know")

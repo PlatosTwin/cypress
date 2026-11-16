@@ -63,6 +63,12 @@ enum DebugDeepLink {
     /// have to name a screen it does not want opened to get one.
     static let clearStatusOverridesEnvironmentKey = "CYPRESS_CLEAR_STATUS_OVERRIDES"
 
+    /// Set (to anything non-empty) to have this launch withdraw every community tree the phone
+    /// holds **before** it opens the screen `CYPRESS_SCREEN` names (ROADMAP chip 142). Unlike the
+    /// key above it does not stop: the launch carries on to its screen. For a test that needs a
+    /// reader with no community trees on a simulator that earlier runs have filled with them.
+    static let withdrawCommunityTreesEnvironmentKey = "CYPRESS_WITHDRAW_COMMUNITY_TREES"
+
     /// What `RootView` renders once the clear above has actually run, so the launching process has
     /// something in the accessibility tree to wait on rather than a fixed sleep. Mirrors
     /// `Failure.message`'s role for a deep link: proof the seam did its one job, not just that the
@@ -192,6 +198,19 @@ enum DebugDeepLink {
         /// The map, over a cached tree of somebody else's, to see its dashed pin. The camera is
         /// the test's to pin (`CYPRESS_MAP_CAMERA`); this case seeds the tree and opens the tab.
         case othersTreeOnMap
+        /// ROADMAP 144: the profile of somebody else's **named** cached tree, read by a debug
+        /// account that **shares** tree records, so "Report the species as wrong" shows. A new tree
+        /// id each launch, so a report made by the last run does not stand on this one.
+        case othersTreeSharing
+        /// The same reader on somebody else's **unnamed** cached tree, so "Say what species you
+        /// think this is" shows. A new tree id each launch, for the same reason.
+        case othersTreeUnnamedSharing
+        /// ROADMAP 144: the profile of a tree this reader added (signed out), named, with a species
+        /// report open against it, so the adder's "Somebody has reported this species as wrong."
+        /// and "Keep the species" show. With the remote gate shut the report is one raised on
+        /// this phone (`LocalAPI.debugSeedReview`); the service's own report reaches the same
+        /// control through `RoutedAPI`.
+        case ownTreeSpeciesReported
         /// The profile of a tree this reader added while **signed out**. Signs out first, so the
         /// state is the case's own and not the last launch's, then adds a tree through `addTree`.
         case unsharedSignedOut
@@ -199,6 +218,24 @@ enum DebugDeepLink {
         /// debug account that declined the license, then adds a tree. It leaves that account
         /// signed in; `unsharedSignedOut` is how a test puts the phone back.
         case unsharedNotSharing
+        /// The profile of a **fresh** tree this reader added while signed out, where the withdraw
+        /// control draws (the owner's answers of 2026-11-16). Its alert carries the "only you"
+        /// message. Fresh on every launch: the test that drives it withdraws the tree.
+        case withdrawTree
+        /// The same, added while **signed in and sharing**: links a fixed debug account that
+        /// accepted the license, so the alert carries the shared message. It leaves that account
+        /// signed in; any other deep link signs it out first.
+        case withdrawTreeShared
+        /// The profile of a fresh tree this reader added **signed in and sharing** (the same debug
+        /// account as `withdrawTreeShared`), with **another account's** visit on it, so the reason
+        /// line draws in place of the withdraw control. Signed in, because another account can only
+        /// have built on a tree everyone can see: a tree only its adder sees has no reason line in
+        /// production.
+        case withdrawTreeBuiltOn
+        /// The Outbox after the service refused a withdrawal with `conflict` (written by
+        /// `debugRefuseTreeWithdrawal`, since the UI suite has no service): the row with the owner's
+        /// sentence, and the tree back on the map.
+        case withdrawTreeRefused
         // Presented over the tab root.
         case careLog            // 09
         case share              // 10
@@ -340,6 +377,12 @@ enum DebugDeepLink {
             // starts as that account. Only that account: a session a test set up by other means
             // is left alone.
             if screen != .unsharedNotSharing, await api.userID == Self.notSharingAccount {
+                try await api.signOut()
+            }
+            // ROADMAP 144 and the withdrawal round: the sharing debug account, the same way.
+            if screen != .othersTreeSharing, screen != .othersTreeUnnamedSharing,
+               screen != .withdrawTreeShared, screen != .withdrawTreeBuiltOn,
+               await api.userID == Self.sharingAccount {
                 try await api.signOut()
             }
             switch screen {
@@ -514,6 +557,50 @@ enum DebugDeepLink {
                 } else {
                     router.push(.treeProfile(id))
                 }
+            case .othersTreeSharing, .othersTreeUnnamedSharing:
+                // ROADMAP 144. The sharing account first, through the shipping verb, then a fresh
+                // cached tree at the case's own spot.
+                if await api.userID != Self.sharingAccount {
+                    try await api.signOut()
+                    try await api.linkAccount(
+                        deviceUUID: api.deviceID,
+                        userID: Self.sharingAccount,
+                        provider: "apple",
+                        acceptsLicense: true
+                    )
+                }
+                var speciesID: UUID?
+                if screen == .othersTreeSharing {
+                    guard let species = try await api.searchSpecies(query: "Platanus", limit: 1).first else {
+                        throw Failure(screen: screen.rawValue, reason: "no species matches Platanus")
+                    }
+                    speciesID = species.id
+                }
+                let id = UUID()
+                try await api.debugSeedCommunityCache(
+                    Tree(
+                        id: id,
+                        source: .community,
+                        coordinate: screen == .othersTreeSharing ? Self.othersSharingSpot : Self.othersUnnamedSharingSpot,
+                        speciesCurrentID: speciesID,
+                        placement: .gps,
+                        createdAt: Self.othersTreeAddedDay,
+                        updatedAt: Self.othersTreeAddedDay
+                    )
+                )
+                router.push(.treeProfile(id))
+            case .ownTreeSpeciesReported:
+                // ROADMAP 144. Signed out, so the adder is this device; a named tree added through
+                // `addTree` somewhere new on the case's own patch of sea, and a report on it.
+                try await api.signOut()
+                let spot = VisitPinAdjust.offset(
+                    Self.ownReportedSpot,
+                    northM: Double.random(in: 0..<120),
+                    eastM: -Double.random(in: 0..<120)
+                )
+                let id = try await api.debugAddCommunityTree(near: spot, speciesQuery: "Platanus")
+                try await api.debugSeedReview(treeID: id, kind: .wrongSpecies)
+                router.push(.treeProfile(id))
             case .unsharedSignedOut, .unsharedNotSharing:
                 // Round C3. The account state first, through the shipping verbs, then a tree added
                 // through `addTree` in that state, on `.movePin`'s kind of slot line so a re-run
@@ -543,6 +630,50 @@ enum DebugDeepLink {
                 }
                 guard let id else { throw APIError.conflict }
                 router.push(.treeProfile(id))
+            case .withdrawTree, .withdrawTreeShared, .withdrawTreeBuiltOn, .withdrawTreeRefused:
+                // The withdrawal round. The account state first, through the shipping verbs, then a
+                // fresh tree through `addTree` on this case's own slot line. A withdrawn tree is in
+                // no read, so the slot it stood on is free again for the next run.
+                if screen == .withdrawTreeShared || screen == .withdrawTreeBuiltOn {
+                    if await api.userID != Self.sharingAccount {
+                        try await api.signOut()
+                        try await api.linkAccount(
+                            deviceUUID: api.deviceID,
+                            userID: Self.sharingAccount,
+                            provider: "apple",
+                            acceptsLicense: true
+                        )
+                    }
+                } else {
+                    try await api.signOut()
+                }
+                var id: UUID?
+                for step in 0..<Self.profileLinksSlots {
+                    let slot = VisitPinAdjust.offset(
+                        Self.withdrawTreeSpot(screen), northM: 0,
+                        eastM: -Self.movePinSlotSpacingM * Double(step)
+                    )
+                    let taken = try await api.treesNear(
+                        slot, radiusM: Self.movePinSlotSpacingM, limit: 1
+                    )
+                    if taken.isEmpty {
+                        id = try await api.debugAddCommunityTree(near: slot, speciesQuery: "Platanus")
+                        break
+                    }
+                }
+                guard let id else { throw APIError.conflict }
+                switch screen {
+                case .withdrawTreeBuiltOn:
+                    try await api.debugRecordOthersVisit(treeID: id, accountID: Self.othersVisitAccount)
+                    router.push(.treeProfile(id))
+                case .withdrawTreeRefused:
+                    try await api.withdrawTree(treeID: id)
+                    try await api.debugRefuseTreeWithdrawal(treeID: id)
+                    router.tab = .you
+                    router.push(.outbox)
+                default:
+                    router.push(.treeProfile(id))
+                }
             case .recordDefect:
                 // Resolved-then-added, like `.communityPhotos` and unlike `.speciesClaim`, because
                 // this case is meant to be *run twice*: the second run is how the withdrawal is
@@ -794,6 +925,32 @@ enum DebugDeepLink {
     /// remote gate shut, so there the id stays on the phone; a DEBUG build pointed at a live service
     /// should not run this case.
     static let notSharingAccount = UUID(uuidString: "C3000000-0000-4000-8000-00000000AC01")!
+
+    /// The account `othersTreeSharing`, `othersTreeUnnamedSharing`, `withdrawTreeShared`, and
+    /// `withdrawTreeBuiltOn` sign in as (ROADMAP 144, the withdrawal round): one that agreed to
+    /// share tree records. Not a real account, for `notSharingAccount`'s reason.
+    static let sharingAccount = UUID(uuidString: "C3000000-0000-4000-8000-00000000AC02")!
+
+    /// ROADMAP 144's spots, on the same line north of round C3's.
+    private static let othersSharingSpot = Coordinate(latitude: 37.7798, longitude: -122.5300)
+    private static let othersUnnamedSharingSpot = Coordinate(latitude: 37.7816, longitude: -122.5300)
+    private static let ownReportedSpot = Coordinate(latitude: 37.7834, longitude: -122.5300)
+
+    // ── The withdrawal round's spots, north of ROADMAP 144's, out at sea like the rest ───────
+
+    /// The start of each withdrawal case's line of slots, west to sea like `profileLinksSpot`'s,
+    /// `profileLinksSlots` long.
+    static func withdrawTreeSpot(_ screen: Screen) -> Coordinate {
+        switch screen {
+        case .withdrawTreeShared: return Coordinate(latitude: 37.7870, longitude: -122.5300)
+        case .withdrawTreeBuiltOn: return Coordinate(latitude: 37.7888, longitude: -122.5300)
+        case .withdrawTreeRefused: return Coordinate(latitude: 37.7906, longitude: -122.5300)
+        default: return Coordinate(latitude: 37.7852, longitude: -122.5300)
+        }
+    }
+
+    /// The other account whose visit `withdrawTreeBuiltOn` writes. Not a real account.
+    static let othersVisitAccount = UUID(uuidString: "C3000000-0000-4000-8000-00000000AC03")!
 
     /// The candidate window, **with this device's own status overrides laid over it**.
     ///

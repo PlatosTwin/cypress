@@ -372,6 +372,9 @@ type TreeCommunity struct {
 	// for a city tree, an id nobody sent, and a community tree hidden from this viewer — three
 	// cases this read answers identically.
 	Tree *CommunityTreeRecord
+	// Species is the reported state and the viewer's part in the species (migration 009). The zero
+	// value whenever Tree is nil, so a hidden tree still answers as an unknown id.
+	Species SpeciesState
 }
 
 // TreeCommunityHalf reads it, for one viewer.
@@ -402,7 +405,13 @@ func (s *Store) TreeCommunityHalf(ctx context.Context, treeUUID uuid.UUID, viewe
 	if err != nil {
 		return TreeCommunity{}, err
 	}
-	return TreeCommunity{Photos: photos, VisitCount: visits, Tree: tree}, nil
+	var species SpeciesState
+	if tree != nil {
+		if species, err = speciesStateFor(ctx, s.pool, treeUUID, viewer); err != nil {
+			return TreeCommunity{}, err
+		}
+	}
+	return TreeCommunity{Photos: photos, VisitCount: visits, Tree: tree, Species: species}, nil
 }
 
 // ── `POST /trees` ──────────────────────────────────────────────────────────────────────────────

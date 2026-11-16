@@ -271,7 +271,8 @@ final class TreeProfileModel {
     /// after a tap two hundred points away.
     private(set) var recordDefectFailure: String?
 
-    /// Whether the record this screen is about has just been withdrawn.
+    /// Whether the record this screen is about has just been withdrawn: by a lead answering a
+    /// report (`withdrawRecord`), or by its adder (`withdrawTree`).
     ///
     /// The view watches it and pops. Not a phase: the read that follows already answers `.notFound`
     /// — `LocalAPI.treeProfile` refuses a withdrawn community row — so the screen is honest either
@@ -317,6 +318,40 @@ final class TreeProfileModel {
             recordDefectFailure = TreeProfileCopy.recordDefectFailure(.serverError)
         }
         await reload()
+    }
+
+    // MARK: - Withdrawing a tree you added (the owner's answers of 2026-11-16)
+
+    /// Whether "Withdraw this tree?" is up. The alert on `TreeProfileView` is driven by it; nothing
+    /// is withdrawn until the reader answers.
+    var isConfirmingTreeWithdrawal = false
+
+    /// While a withdrawal is in flight. A second call returns at once, for
+    /// `isWithdrawingDataDispute`'s reason.
+    private(set) var isWithdrawingTree = false
+
+    /// The adder withdraws this tree for everyone. On success the screen leaves, through
+    /// `withdrewRecord`, exactly as after a lead's withdrawal: the tree is gone from this phone, and
+    /// the reload that follows answers `.notFound`.
+    ///
+    /// `.notFound` leaves too: the tree is already withdrawn, which is what the reader asked for.
+    /// Any other refusal (the reader signed out, or the tree's adder changed, between the read
+    /// that drew the control and the tap) reloads, and the reload draws the record controls as
+    /// they now are. No sentence is drawn for it: the owner has not given one.
+    func withdrawTree() async {
+        guard !isWithdrawingTree else { return }
+        isWithdrawingTree = true
+        defer { isWithdrawingTree = false }
+        do {
+            try await api.withdrawTree(treeID: treeID)
+            withdrewRecord = true
+            return
+        } catch APIError.notFound {
+            withdrewRecord = true
+            return
+        } catch {
+            await reload()
+        }
     }
 
     // MARK: - Disputing a city record's data (RULINGS R79)

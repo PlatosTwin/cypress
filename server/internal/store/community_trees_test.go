@@ -352,7 +352,11 @@ func TestMigration007RunsOverEveryKindOfRowProductionHolds(t *testing.T) {
 			"published_at, and %d were published before their account accepted", unrecorded, early007)
 	}
 
-	// The post-007 writers work on backfilled rows.
+	// The post-007 writers work on backfilled rows. They are this build's writers, so the later
+	// migrations run first: since 009 the writers read columns 007 does not have.
+	if err := s.Migrate(ctx); err != nil {
+		t.Fatalf("migrating the backfilled database to the newest version: %v", err)
+	}
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
 		t.Fatal(err)

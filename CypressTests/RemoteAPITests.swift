@@ -769,6 +769,8 @@ struct RemoteAPITests {
             // refusal rather than a missing route — `POST /trees` exists and names the tree by the
             // act's key, not the tree's id (the one-id rule, `CommunityLayer`).
             "addTree", "correctLocation",
+            // The adder's withdrawal (decision 8): queued as `tree_withdrawal`, never called.
+            "withdrawTree",
             // Spec §3.4's nine unqueued mutations, plus the export D12 has not built.
             "claimSpecies", "correctSpecies", "flagWrongSpecies", "dismissSpeciesReview",
             "flagNeverExisted", "withdrawRecord", "dismissRecordReview", "setPhotoVote",
@@ -983,10 +985,24 @@ struct RemoteAPITests {
         #expect(transport.calls.isEmpty)
     }
 
+    /// A tree withdrawal is queued, never called: `withdrawTree` has no route on the service.
+    @Test("withdrawTree has no route here")
+    func withdrawTreeHasNoRoute() async throws {
+        let transport = ScriptedTransport()
+        await #expect(throws: RemoteSurface.noRouteOnThisService) {
+            try await Self.api(transport).withdrawTree(treeID: UUID())
+        }
+        #expect(transport.calls.isEmpty)
+    }
+
     // MARK: The account
 
-    @Test("claimDevice sends both identities")
-    func claimDeviceSendsBothIdentities() async throws {
+    /// **The body is the device and nothing else** (ROADMAP chip 146). The service's `claimRequest`
+    /// refuses an unknown field, so a `user_id` here failed every claim; and a `license_version`
+    /// here would write the account's consent (a `null` withdraws it). The account travels as the
+    /// bearer.
+    @Test("claimDevice sends only the device, the one key the service's sweep reads")
+    func claimDeviceSendsOnlyTheDevice() async throws {
         let deviceUUID = UUID()
         let userID = UUID()
         let transport = ScriptedTransport()
@@ -996,8 +1012,8 @@ struct RemoteAPITests {
 
         let body = try #require(transport.call("POST /devices/claim")?.body)
         let sent = try #require(try JSONSerialization.jsonObject(with: body) as? [String: Any])
+        #expect(sent.keys.sorted() == ["device_uuid"], "the claim body carried \(sent.keys.sorted())")
         #expect(sent["device_uuid"] as? String == deviceUUID.uuidString)
-        #expect(sent["user_id"] as? String == userID.uuidString)
     }
 
     /// **`DELETE /me` refuses rather than claiming the queue is empty.**

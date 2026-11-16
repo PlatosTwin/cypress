@@ -237,14 +237,21 @@ public final class CypressStore: Sendable {
 
     public func setAppState(_ key: AppStateKey, to value: String) async throws {
         try await queue.write { connection in
-            let statement = try connection.cachedStatement("""
-                INSERT INTO app_state (key, value) VALUES (:key, :value)
-                ON CONFLICT(key) DO UPDATE SET value = excluded.value
-                """)
-            _ = try statement.bind([":key": key.rawValue, ":value": value])
-            try statement.run()
-            _ = try statement.reset()
+            try Self.setAppState(key, to: value, connection: connection)
         }
+    }
+
+    /// The same write on a connection the caller already holds, so it can share the caller's
+    /// transaction. `LocalAPI.claimDevice` writes the account and clears the previous answer this way,
+    /// all in the one transaction that sweeps the rows.
+    public static func setAppState(_ key: AppStateKey, to value: String, connection: SQLiteConnection) throws {
+        let statement = try connection.cachedStatement("""
+            INSERT INTO app_state (key, value) VALUES (:key, :value)
+            ON CONFLICT(key) DO UPDATE SET value = excluded.value
+            """)
+        _ = try statement.bind([":key": key.rawValue, ":value": value])
+        try statement.run()
+        _ = try statement.reset()
     }
 
     /// Removes a key entirely, rather than writing an empty string over it (ERRATA **E131**).
@@ -257,20 +264,27 @@ public final class CypressStore: Sendable {
     /// `AccountDeletion` already deletes rows for this reason; sign-out needs the same verb.
     public func clearAppState(_ key: AppStateKey) async throws {
         try await queue.write { connection in
-            let statement = try connection.cachedStatement("DELETE FROM app_state WHERE key = :key")
-            _ = try statement.bind(key.rawValue, forName: ":key")
-            try statement.run()
-            _ = try statement.reset()
+            try Self.clearAppState(key, connection: connection)
         }
+    }
+
+    /// The same removal on a connection the caller already holds. See `setAppState(_:to:connection:)`.
+    public static func clearAppState(_ key: AppStateKey, connection: SQLiteConnection) throws {
+        let statement = try connection.cachedStatement("DELETE FROM app_state WHERE key = :key")
+        _ = try statement.bind(key.rawValue, forName: ":key")
+        try statement.run()
+        _ = try statement.reset()
     }
 }
 
 /// The keys `app_state` recognizes. An enum rather than free strings so a typo is a compile error
 /// and the set of persisted settings is enumerable.
 ///
-/// Two families of key are written outside this enum, because neither is a setting:
-/// `AccountDeletion.erasureSentinelKey`, which lives only for the length of one transaction, and
-/// one key per photograph whose send was refused for good (`OutboxStore.refusedPhotoKeyPrefix`).
+/// Some keys are written outside this enum, because none is a setting:
+/// `AccountDeletion.erasureSentinelKey`, which lives only for the length of one transaction; one
+/// key per photograph whose send was refused for good (`OutboxStore.refusedPhotoKeyPrefix`); one
+/// per community tree sent once (`CommunityTreeStore.queuedOnceKeyPrefix`); and one per community
+/// tile fetched to its last page (`CommunityTreeCacheStore.completeKeyPrefix`).
 public enum AppStateKey: String, CaseIterable, Sendable {
     /// Screen 17's toggle. "Sync photos on wifi only"; notes and numbers sync on any connection.
     case syncPhotosOnWifiOnly = "sync_photos_on_wifi_only"

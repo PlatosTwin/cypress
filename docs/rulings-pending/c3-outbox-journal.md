@@ -47,3 +47,7 @@ nearest specified thing, not a new design.
   move and visit again, sign out; the Journal then reads 0 moves and 2 visits.
 - The arm has no column that could keep these moves after sign-out without a schema change. The
   owner has not ruled on it. The arm's behavior was not changed.
+- **Resolved on 2026-11-16** by `feat/journal-keeps-pin-moves`. The owner chose "Everything, pin
+  moves too". Migration v24 adds `tree_locations.set_on_device`, and the fifth arm also matches a
+  move this phone set, so the probe above now reads 2 moves and 2 visits. The ruling is
+  `journal-keeps-pin-moves.md` in this folder.

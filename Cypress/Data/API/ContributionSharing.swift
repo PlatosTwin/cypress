@@ -8,7 +8,7 @@ import Foundation
 /// "agreed" line when, and only when, it says `.sharing`. `ContributionSharingTests` pins that.
 ///
 /// **A signed-out phone is `.signedOut`, whatever record it still holds.** `LocalAPI.signOut()`
-/// keeps the consent record on disk, because the record is the account's and comes back with it.
+/// keeps the consent record on disk until the next claim clears it (`LocalAPI.claimDevice`).
 /// So the user id is read first, and an old stored answer never speaks for a phone with nobody
 /// signed in. (`LocalAPI.accountLink()` already returns nil when nobody is signed in; this type
 /// does not rely on that.)
@@ -19,8 +19,9 @@ public enum ContributionSharing: Sendable, Hashable {
     case signedOut
     /// Signed in, and the account did not agree to the license.
     case notSharing
-    /// Signed in, but the phone holds no answer: no record, or an account not linked through
-    /// screen 15 (`provider == nil`), which is every account linked before the record existed.
+    /// Signed in, but the phone holds no answer (`provider == nil`): an account linked before the
+    /// record existed, or one restored from a stored session that carried no answer and not yet
+    /// refreshed (`LocalAPI.adoptLicenseAnswer`).
     case unknown
 
     public init(userID: UUID?, link: AccountLinkRecord?) {

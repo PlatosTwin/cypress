@@ -252,4 +252,66 @@ struct LocationCorrectionFixtureTests {
             """
         )
     }
+
+    // MARK: - sync_wrong_species_report.json (ROADMAP 144)
+
+    /// A queued report on a community tree, with the species it disputes. The account id is the
+    /// fixture's placeholder, which the Go test replaces with a real account; here it is the value.
+    private static func reportBody(disputed: UUID?) throws -> Data {
+        let occurred = try instant("2026-11-20T18:30:00Z")
+        let report = ReviewReport(
+            clientUUID: UUID(uuidString: "2D4F6A8C-0E1B-4C3D-9E5F-7A9B1C3D5E01")!,
+            flagID: UUID(uuidString: "4E7A2C10-9B3D-4F5E-8A6C-1D2E3F4A5B02")!,
+            treeID: UUID(uuidString: "C3A1F7E2-5D4B-4E8A-9B6C-2F1E0D9C8B7B")!,
+            kind: .wrongSpecies,
+            attribution: Attribution(
+                userID: UUID(uuidString: "A0B1C2D3-E4F5-4A6B-8C7D-9E0F1A2B3C4D")!,
+                deviceID: UUID(uuidString: "D1E2F3A4-B5C6-4D7E-8F90-A1B2C3D4E5F7")!
+            ),
+            occurredAt: occurred,
+            disputedSpeciesID: disputed
+        )
+        let item = try OutboxPayload.wrongSpeciesReport(report).makeItem(createdAt: occurred)
+        return try RemoteCoding.encoder.encode(SyncRequestBody(items: [try RemoteAPI.syncItemBody(for: item)]))
+    }
+
+    /// Red-proof: rename `ReviewReport.disputedSpeciesID` to `disputedSpecies` — red here, and on
+    /// the service the report would dispute whatever species is in force when it arrives.
+    @Test("a queued species report is sent with its disputed species, exactly as the service's golden holds it")
+    func theReportMatchesTheGolden() throws {
+        let disputed = UUID(uuidString: "7F3C1D22-5E6A-4B90-8C11-2D3E4F5A6B7C")!
+        let goldenData = try Self.fixture("sync_wrong_species_report.json")
+        let golden = try Self.object(goldenData)
+        #expect(golden.isEqual(NSDictionary()) == false, "sync_wrong_species_report.json parsed as nothing")
+        // Calibration: the same report without the disputed species is not the golden.
+        #expect(!(try Self.object(try Self.reportBody(disputed: nil))).isEqual(golden),
+                "a report with no disputedSpeciesID compared equal; the comparison ignores it")
+
+        let oursData = try Self.reportBody(disputed: disputed)
+        #expect(
+            try Self.object(oursData).isEqual(golden),
+            """
+            the phone's wrong_species_report body is not the golden.
+            ours:   \(String(decoding: oursData, as: UTF8.self))
+            golden: \(String(decoding: goldenData, as: UTF8.self))
+            """
+        )
+    }
+
+    /// A report queued by an older build has no `disputedSpeciesID`, and still decodes.
+    @Test("a queued report from an older build decodes, with no disputed species")
+    func anOlderReportStillDecodes() throws {
+        let older = """
+            {"clientUUID":"2D4F6A8C-0E1B-4C3D-9E5F-7A9B1C3D5E01","flagID":"4E7A2C10-9B3D-4F5E-8A6C-1D2E3F4A5B02",
+             "treeID":"C3A1F7E2-5D4B-4E8A-9B6C-2F1E0D9C8B7B","kind":"wrong_species",
+             "attribution":{"deviceID":"D1E2F3A4-B5C6-4D7E-8F90-A1B2C3D4E5F7"},"occurredAt":"2026-11-20T18:30:00Z"}
+            """
+        let payload = try OutboxPayload.decode(kind: .wrongSpeciesReport, from: Data(older.utf8))
+        guard case let .wrongSpeciesReport(report) = payload else {
+            Issue.record("decoded as \(payload)")
+            return
+        }
+        #expect(report.disputedSpeciesID == nil)
+        #expect(report.kind == .wrongSpecies)
+    }
 }

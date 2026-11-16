@@ -35,6 +35,9 @@
       "shot_type": "full_tree"
     }
   ],
+  "species_named_by_you": false,
+  "species_report_flag_id": null,
+  "species_reported": false,
   "tree_uuid": "5a1e7c0d-0000-4000-8000-00000000f030",
   "visit_count": 2
 }
