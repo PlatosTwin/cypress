@@ -97,6 +97,52 @@ func TestSessionAnswersCarryTheAccountsLicenseAnswer(t *testing.T) {
 	}
 }
 
+// TestAFailedLicenseReadStillDeliversTheRotatedSession: the rotation commits before the license
+// answer is read. If that read fails, the response must still carry the new refresh token, or the
+// phone keeps a spent one and its next refresh signs the person out. The key is left out (the
+// phone writes nothing), never sent as null (which would read as "did not agree").
+//
+// The read is made to fail at the database: `RotateSession` never reads `users`, and
+// `UserByID` selects `license_version`, so renaming that column breaks only the read.
+func TestAFailedLicenseReadStillDeliversTheRotatedSession(t *testing.T) {
+	h := newHarness(t)
+	session := signInAs(t, h, "sl.unread", nil, accepted())
+
+	execSQL(t, h, `ALTER TABLE users RENAME COLUMN license_version TO license_version_hidden`)
+	restored := false
+	restore := func() {
+		if !restored {
+			execSQL(t, h, `ALTER TABLE users RENAME COLUMN license_version_hidden TO license_version`)
+			restored = true
+		}
+	}
+	t.Cleanup(restore)
+
+	refreshed := h.do(t, http.MethodPost, Prefix+"/auth/refresh", "", map[string]any{"refresh_token": session.RefreshToken})
+	if refreshed.Code != http.StatusOK {
+		t.Fatalf("a refresh whose license read failed answered %d: %s; the rotation had committed, so "+
+			"the phone keeps a spent token and its next refresh signs the person out", refreshed.Code, refreshed.Body.String())
+	}
+	if _, present := sessionLicenseKey(t, refreshed); present {
+		t.Fatalf("a refresh whose license read failed sent license_version: %s", refreshed.Body.String())
+	}
+	var rotated sessionResponse
+	if err := json.Unmarshal(refreshed.Body.Bytes(), &rotated); err != nil {
+		t.Fatal(err)
+	}
+	if rotated.RefreshToken == "" || rotated.RefreshToken == session.RefreshToken || rotated.AccessToken == "" {
+		t.Fatalf("the refresh did not deliver a new session: %s", refreshed.Body.String())
+	}
+
+	// The token it delivered is the live one: with the read working again, it refreshes, and the
+	// answer is back.
+	restore()
+	again := h.do(t, http.MethodPost, Prefix+"/auth/refresh", "", map[string]any{"refresh_token": rotated.RefreshToken})
+	if value, present := sessionLicenseKey(t, again); !present || value == nil || *value != *accepted() {
+		t.Fatalf("the delivered refresh token did not refresh with the answer: (%v, present %v)", value, present)
+	}
+}
+
 func TestARefreshCarriesALaterAcceptance(t *testing.T) {
 	h := newHarness(t)
 	deviceUUID := uuid.New()

@@ -118,11 +118,6 @@ decodes to `server_error` rather than throwing and would look like an outage.
 | `GET /health` | Liveness, and the git sha of the running build. |
 | `POST /auth/oidc` | Verifies an Apple identity token, **exchanges the authorization code**, mints a session. Optionally registers and claims the device in the same round trip. |
 | `POST /auth/refresh` | Rotates the refresh token, mints a new access token. |
-
-Both session answers carry `license_version`: the version the account has accepted, or `null` when the account has no known acceptance (it declined, was never asked, or holds a version this service does not know). The key is always present, so a phone can read the account's answer back after a reinstall.
-
-| Route | What it does |
-|---|---|
 | `POST /devices/register` | Exchanges `app_state.deviceUUID` for a device token authorizing `POST /sync` for items carrying a deviceID and no userID. |
 | `POST /devices/claim` | The idempotent sweep that re-homes a device's unattributed rows onto an account. |
 | `DELETE /me` | Applies the client-sent `AccountDeletionChoice`, writes tombstones, calls Apple's revocation endpoint. |
@@ -140,6 +135,8 @@ Both session answers carry `license_version`: the version the account has accept
 | `GET /photos/{id}` | The photograph a device never wrote. |
 | `GET /public/trees/{id}` | **The only unauthenticated read.** The publicly visible community half of one tree — see below. |
 | `POST /operator/photos/{id}/reject` | Operator takedown. Not optional — see below. |
+
+Both session answers (`POST /auth/oidc` and `POST /auth/refresh`) carry `license_version`: the version the account has accepted, or `null` when the account has no known acceptance (it declined, was never asked, or holds a version this service does not know). So a phone can read the account's answer back after a reinstall. The key is present whenever the service read the answer. One case leaves it out: a refresh whose read failed after the session had already rotated. That refresh still delivers the new tokens, because failing it would leave the phone with a spent refresh token. A phone reads a missing key as "not stated" and writes nothing.
 
 ### `GET /public/trees/{id}` is the one route with no credential, and what it may say is a ruling
 
