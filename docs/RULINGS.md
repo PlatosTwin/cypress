@@ -11697,7 +11697,7 @@ inventory on this phone covers where you are yet.` Ruling (a) withdrew it; it wa
 
 Each is the authoring agent's call, for the orchestrator or owner to confirm or reverse.
 
-**Superseded by the owner's answers of 2026-11-16, in **R238**: the verb is
+**Superseded by the owner's answers of 2026-11-16, in R238: the verb is
 built, the phone withdraws first, and a refusal brings the tree back.** Do not splice this entry. The
 original text follows for the record.
 
@@ -11710,7 +11710,7 @@ the phone withdraws first and reconciles, or waits for the answer, is a product 
 
 ### ~~R175 — Every tree added before v23 has an adder of nobody, and a root position owned by nobody~~
 
-**Replaced by the owner's ruling of 2026-11-12, in **R179**: every
+**Replaced by the owner's ruling of 2026-11-12, in R179: every
 pre-v23 tree belongs to this installation's own owner.** Do not splice this entry. The original text
 follows for the record.
 
