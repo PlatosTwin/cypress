@@ -645,6 +645,8 @@ struct TreeProfileView: View {
                 Text(TreeProfileCopy.claimSpeciesAction)
                     .font(CypressFont.body13Bold)
                     .foregroundStyle(CypressColor.ctaFill)
+                    // Each line on the leading edge when it wraps, as in `recordLinkAction`.
+                    .multilineTextAlignment(.leading)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .contentShape(Rectangle())
             }
@@ -661,8 +663,9 @@ struct TreeProfileView: View {
     }
 
     /// The adder's withdraw control (the owner's answers of 2026-11-16): in the record controls,
-    /// below "Report that there is no tree here", drawn the way its neighbors are. Asks first: the
-    /// alert on `body` is what withdraws.
+    /// drawn the way its neighbors are. While it is drawn, "Report that there is no tree here" is
+    /// not (`TreeProfilePresentation.recordDefect`). Asks first: the alert on `body` is what
+    /// withdraws.
     ///
     /// Where this phone already knows the service would refuse, the owner's reason line is drawn in
     /// the control's place, in the muted sentence style of the block's other notices. It sits
@@ -847,6 +850,10 @@ struct TreeProfileView: View {
             Text(label)
                 .font(CypressFont.body13Bold)
                 .foregroundStyle(CypressColor.ctaFill)
+                // The default button style centers a label's lines, so a link that wraps at a large
+                // text size drew its second line in the middle of the column (ROADMAP 183). The frame
+                // below puts the text block on the leading edge; this puts each line there.
+                .multilineTextAlignment(.leading)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .contentShape(Rectangle())
         }

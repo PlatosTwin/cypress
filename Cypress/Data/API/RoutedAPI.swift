@@ -243,8 +243,8 @@ public struct RoutedAPI: CypressAPI {
     /// A tree this installation's inventories do not carry at all is a piece of the service's answer
     /// that **did not make it** — under D16 an ordinary case, the other device was in another city —
     /// and `.fellBackToLocal` is the honest mark for it. A tree the inventories *do* carry, which
-    /// D15 gives no name, is not a loss: it is the rule being applied, correctly, to a complete
-    /// answer. Recording that as a degraded read would tell a §4.3 surface "showing what's on this
+    /// the row name rule gives no name, is not a loss: it is the rule being applied, correctly, to a
+    /// complete answer. Recording that as a degraded read would tell a §4.3 surface "showing what's on this
     /// phone" about a read where nothing was missing.
     ///
     /// PR #144's review is what separated them. The first cut had only the named dictionary, so an
@@ -252,12 +252,13 @@ public struct RoutedAPI: CypressAPI {
     /// the read degraded.
     public struct CityFileRows: Sendable {
 
-        /// Trees the city file carries and D15 names.
+        /// Trees the city file carries and the row name rule names: a nickname, else the species
+        /// the tree's profile title shows (the owner's answer of 2026-11-16, "Yes, use the species").
         public let named: [UUID: CityFileRow]
 
-        /// Trees the city file **carries** and D15 declines to name — a nickname-less community
-        /// record, whose only species is one somebody asserted about it. Dropped from the grove, and
-        /// not a reason to call the read degraded.
+        /// Trees the city file **carries** and the rule gives no name — no nickname and no species —
+        /// and trees this phone withdrew. Dropped from the grove, and not a reason to call the read
+        /// degraded.
         public let unnamed: Set<UUID>
 
         public init(named: [UUID: CityFileRow], unnamed: Set<UUID>) {
@@ -324,6 +325,19 @@ public struct RoutedAPI: CypressAPI {
     /// The reports the service named to this phone's adder. See `ServedSpeciesReports`.
     public let servedSpeciesReports: ServedSpeciesReports
 
+    /// Sends the outbox before a keep-records deletion, and answers how many of the account's tree
+    /// withdrawals are still unsent (`OutboxQueue.sendBeforeAccountDeletion`; ROADMAP 192).
+    /// `DataLayer.boot` wires it when the network gate is open. Nil keeps the deletion as it was:
+    /// no send first, which is right for a router with no outbox behind it.
+    public let sendQueueBeforeDeletion: (@Sendable (UUID) async throws -> Int)?
+
+    /// Thrown by `deleteAccount` under the keep-records door when a tree withdrawal the account
+    /// queued could not be sent first. Nothing was deleted, on the service or on this phone.
+    public struct WithdrawalNotSentBeforeDeletion: Error, Equatable {
+        /// How many of the account's withdrawals are still unsent.
+        public let unsent: Int
+    }
+
     public init(
         local: any CypressAPI,
         remote: RemoteAPI,
@@ -336,8 +350,10 @@ public struct RoutedAPI: CypressAPI {
         deletePhotoNamingServiceRow: (@Sendable (UUID, UUID) async throws -> PhotoDeletion)? = nil,
         withdrawServicePhoto: (@Sendable (UUID, UUID) async throws -> PhotoDeletion)? = nil,
         speciesSeam: CommunitySpeciesSeam? = nil,
-        servedSpeciesReports: ServedSpeciesReports = ServedSpeciesReports()
+        servedSpeciesReports: ServedSpeciesReports = ServedSpeciesReports(),
+        sendQueueBeforeDeletion: (@Sendable (UUID) async throws -> Int)? = nil
     ) {
+        self.sendQueueBeforeDeletion = sendQueueBeforeDeletion
         self.speciesSeam = speciesSeam
         self.servedSpeciesReports = servedSpeciesReports
         self.local = local
@@ -607,8 +623,10 @@ public struct RoutedAPI: CypressAPI {
     ///   phone did.
     /// - Throws: whatever the remote half threw — `APIError`, or a `SessionError` for a credential
     ///   that could not be refreshed — unchanged and unwrapped, so a caller can tell an offline
-    ///   phone from a refusal. `AccountModel.deleteAccount` turns any of them into the one fact the
-    ///   deletion sheet can draw: nothing was deleted.
+    ///   phone from a refusal. Under the keep-records door it can also throw
+    ///   `WithdrawalNotSentBeforeDeletion`, before the service is asked, or whatever the outbox's
+    ///   own read or write threw. `AccountModel.deleteAccount` turns any of them into the one fact
+    ///   the deletion sheet can draw: nothing was deleted.
     @discardableResult
     public func deleteAccount(_ choice: AccountDeletionChoice) async throws -> AccountDeletion.Outcome {
         // ── What this guard reads, and what the screen above it reads ──────────────────────────
@@ -627,8 +645,28 @@ public struct RoutedAPI: CypressAPI {
         //
         // That is the extent of what is verified here: the two convergence paths exist and run in
         // the direction of signed-out. It is not a claim that no in-run window exists.
-        guard let signedInUserID, await signedInUserID() != nil else {
+        guard let signedInUserID, let userID = await signedInUserID() else {
             return try await local.deleteAccount(choice)
+        }
+        // ── Under the keep-records door, the queue goes first (ROADMAP 192) ────────────────────
+        //
+        // That door makes the account's published trees anonymous on the service, and nobody may
+        // withdraw an anonymous tree. A withdrawal still queued would be refused after the
+        // deletion, its tree would come back here, and it would stay public for good, against
+        // what the person asked. So, when the account has a withdrawal queued, the account's queue
+        // is sent now, while the account still owns its trees. With none queued, nothing is sent
+        // first and the requests are the ones this method made before. If a withdrawal still did
+        // not go (no connection, the service is down), this throws before `DELETE /me`, so
+        // nothing is deleted anywhere and the person can try again:
+        // the same state, and the same failure line, as a deletion that could not reach the service.
+        //
+        // The erasing door does not wait for the queue. It discards the account's queued rows and
+        // puts back the tree of an unsent withdrawal (`OutboxStore.forgetAccount`), and the service
+        // deletes or anonymizes the account's trees itself, so sending first would change nothing
+        // it ends with.
+        if choice == .leaveRecords, let sendQueueBeforeDeletion {
+            let unsent = try await sendQueueBeforeDeletion(userID)
+            guard unsent == 0 else { throw WithdrawalNotSentBeforeDeletion(unsent: unsent) }
         }
         // The service's answer about the trees the account added goes to the local half, which
         // acts on it instead of guessing (`ROADMAP` 104 and 105). Nil from an older service keeps
@@ -661,9 +699,11 @@ public struct RoutedAPI: CypressAPI {
     /// they are this *device's* rows").
     ///
     /// **A row the service names and this phone has never seen is resolved through the city file**,
-    /// which is where a name and a coordinate live. The rule for the name is
-    /// `LocalAPI.displayNameIfPresent`'s, restated through the payload it already returns: the one
-    /// active nickname (D15), else the species common name, and **never a fabricated label**. A tree
+    /// which is where a name and a coordinate live. The name follows the row name rule the Journal,
+    /// the Outbox and My Grove share (the owner's answers of 2026-11-16, "Use the species" and "Yes,
+    /// use the species"): the one active nickname, else the common name of the species the tree's
+    /// profile title shows, for a city tree and a community tree alike, and **never a fabricated
+    /// label** (`resolvedCityFileRows`). A tree
     /// this installation's city file does not carry at all — the other device was in another city,
     /// which D16 makes an ordinary case — is left out rather than drawn nameless at a coordinate
     /// this client would have to invent, and the read is marked degraded because part of the answer
@@ -766,7 +806,7 @@ public struct RoutedAPI: CypressAPI {
             }
             guard let resolved = cityFileRows.named[row.treeID] else {
                 // **Degraded only when the city file could not answer at all.** A tree it holds and
-                // D15 declines to name (`CityFileRows.unnamed`) is the rule being applied to a
+                // the rule gives no name (`CityFileRows.unnamed`) is the rule being applied to a
                 // complete answer, not a piece of the answer going missing — see `CityFileRows`.
                 if !cityFileRows.unnamed.contains(row.treeID) { everythingResolved = false }
                 continue
@@ -1494,27 +1534,28 @@ extension RoutedAPI {
     /// Names and positions for trees only the account knows about, from the city file.
     ///
     /// **Three outcomes per tree, and the difference between the last two is the whole of `CityFileRows`.**
-    /// A tree is `named`; or it is `unnamed` — the inventories hold it and D15 gives it no name; or it
-    /// is in neither, which means the inventories do not carry it at all. Under D16 the last is an
-    /// ordinary case rather than an error (the other device may have been in a city this installation
-    /// has not installed), and it is the only one of the three that marks the read degraded, because
-    /// it is the only one where part of the service's answer did not make it.
+    /// A tree is `named`; or it is `unnamed` — the inventories hold it and the row name rule gives it
+    /// no name; or it is in neither, which means the inventories do not carry it at all. Under D16
+    /// the last is an ordinary case rather than an error (the other device may have been in a city
+    /// this installation has not installed), and it is the only one of the three that marks the read
+    /// degraded, because it is the only one where part of the service's answer did not make it.
     ///
-    /// ── The name rule, which is D15's and which both arms now apply ────────────────────────────
+    /// ── The name rule, which both arms apply ───────────────────────────────────────────────────
     ///
-    /// The one active nickname; else the **seed** species' common name; never a fabricated label. The
-    /// second fallback deliberately does not consult a *community* record's species, and PR #144's
-    /// review is why that sentence is here rather than merely implied: this loop used to read
-    /// `profile.species?.commonName` unconditionally, and `LocalAPI.treeProfile` fills that field for
-    /// a community record out of `tree.speciesCurrentID` — somebody's self-assertion about a tree they
-    /// added. So a nickname-less community tree carrying a claimed species got named after it, which
-    /// `LocalAPI.grove()` has always refused to do ("a self-asserted species is not a name the app
-    /// puts on a tree", D15) and which this method's own comment already claimed it refused. The
-    /// reviewer proved the two arms disagreed on exactly that row. The batch's rule is the ruled one;
-    /// the loop was the drift, and the `source == .community` guard below is the correction.
+    /// The one active nickname; else the species the tree's profile title shows, for a city tree and
+    /// a community tree alike; never a fabricated label. This loop reads that species off
+    /// `treeProfile`, which is the profile title's own source. The provider arm
+    /// (`LocalAPI.groveCityFileRows`) reads it through `LocalAPI.communitySpeciesNames`, the same
+    /// rule the Journal and the Outbox use.
+    ///
+    /// **History, kept because it is why the two arms are tested against each other.** PR #144's
+    /// review found this loop naming a nickname-less community tree after its species while the
+    /// batch did not, and the fix then made the loop refuse the species (D15's "a self-asserted
+    /// species is not a name the app puts on a tree"). The owner's answer of 2026-11-16, "Yes, use
+    /// the species", replaced that rule for My Grove, so both arms now name the tree by its species.
     ///
     /// `GroveCityFileBatchTests` holds the two arms against each other row for row over a fixture
-    /// that now carries that shape, because "the same answer, in one query" is exactly the kind of
+    /// that carries that shape, because "the same answer, in one query" is exactly the kind of
     /// claim this project has been wrong about in a comment.
     func resolvedCityFileRows(for treeIDs: [UUID]) async -> CityFileRows {
         guard !treeIDs.isEmpty else { return CityFileRows(named: [:], unnamed: []) }
@@ -1524,8 +1565,9 @@ extension RoutedAPI {
         var unnamed: Set<UUID> = []
         for treeID in treeIDs {
             guard let profile = try? await local.treeProfile(id: treeID) else { continue }
-            // D15: a community record's species is a self-assertion, not a name. See the note above.
-            let speciesName = profile.tree.source == .community ? nil : profile.species?.commonName
+            // The species the profile title shows, for a city tree and a community tree alike (the
+            // owner's answer of 2026-11-16, "Yes, use the species"). See the note above.
+            let speciesName = profile.species?.commonName
             guard let name = profile.activeName?.name ?? speciesName, !name.isEmpty else {
                 unnamed.insert(treeID)
                 continue

@@ -89,6 +89,25 @@ public struct SpeciesAssertionStore {
         return try statement.fetchOne(Self.decode)
     }
 
+    /// The text `treesWithAClaim(among:)` runs, named so `GroveStatementCensusTests` can pin the
+    /// statement that runs to this text rather than to a copy of it.
+    static let treesWithAClaimSQL = """
+        SELECT DISTINCT tree_uuid FROM main.species_assertions
+         WHERE tree_uuid COLLATE NOCASE IN (SELECT value FROM json_each(:trees))
+           AND superseded_by IS NULL
+        """
+
+    /// The trees among `treeIDs` that have a claim in force, in one statement. `current(treeID:)`'s
+    /// question for a set, answered yes or no (`LocalAPI.displayNames(for:)`).
+    public func treesWithAClaim(among treeIDs: [UUID], connection: SQLiteConnection) throws -> Set<UUID> {
+        guard !treeIDs.isEmpty else { return [] }
+        let statement = try connection.cachedStatement(Self.treesWithAClaimSQL)
+        _ = try statement.bind(
+            "[\(treeIDs.map { "\"\($0.uuidString)\"" }.joined(separator: ","))]", forName: ":trees"
+        )
+        return Set(try statement.fetchAll { try $0.uuid("tree_uuid") })
+    }
+
     /// The whole chain for a tree, oldest first — what was claimed, and what replaced it.
     public func chain(treeID: UUID, connection: SQLiteConnection) throws -> [SpeciesAssertion] {
         let statement = try connection.cachedStatement("""

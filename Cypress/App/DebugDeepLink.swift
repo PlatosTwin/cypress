@@ -169,10 +169,10 @@ enum DebugDeepLink {
         case movePin
         /// 03 over a **fresh** community tree this installation just added, with **no species**: the
         /// state where the identity block draws its full column of links, one under the next — `Show
-        /// me where this is`, `Move pin`, `Say what species you think this is` and `Report that there
-        /// is no tree here` (ROADMAP 119). Fresh on every launch, like `.movePin`, because the test
-        /// that drives it presses `Report`, which writes a flag, and a tree a previous run reported
-        /// no longer draws that link. Each launch takes the first free slot on its own line
+        /// me where this is`, `Move pin`, `Say what species you think this is` and `Withdraw this
+        /// tree` (ROADMAP 119; the report link is hidden while the withdraw link shows, the owner's
+        /// answer of 2026-11-16). Fresh on every launch, like `.movePin`, so no earlier run's state
+        /// reaches the column. Each launch takes the first free slot on its own line
         /// (`profileLinksSpot`).
         case profileLinks
         /// Screen 07 with a nearby hero drawn from a photograph **this installation took under an
@@ -632,8 +632,11 @@ enum DebugDeepLink {
                 router.push(.treeProfile(id))
             case .withdrawTree, .withdrawTreeShared, .withdrawTreeBuiltOn, .withdrawTreeRefused:
                 // The withdrawal round. The account state first, through the shipping verbs, then a
-                // fresh tree through `addTree` on this case's own slot line. A withdrawn tree is in
-                // no read, so the slot it stood on is free again for the next run.
+                // fresh tree through `addTree` on this case's own slot line, in its first free slot.
+                // A tree that ends withdrawn is in no read, so its slot is free again for the next
+                // run. On the `withdrawTreeBuiltOn` and `withdrawTreeRefused` lines the tree stays
+                // (nothing withdraws it, or the refusal puts it back on the map), so every launch
+                // takes a new slot, and a line holds `profileLinksSlots` (200) launches.
                 if screen == .withdrawTreeShared || screen == .withdrawTreeBuiltOn {
                     if await api.userID != Self.sharingAccount {
                         try await api.signOut()
@@ -875,9 +878,9 @@ enum DebugDeepLink {
     private static let movePinSlotSpacingM: Double = 30
     private static let movePinSlots = 60
     /// The sixth, ~200 m north of the fifth, with a line of slots west of it the same way. One tree
-    /// per launch. `ProfileLinkColumnUITests` has two tests and each launches this case once, so one
-    /// run of that class takes two slots, and 200 slots is 100 runs on one simulator before
-    /// `.conflict` says the line is full.
+    /// per launch. `ProfileLinkColumnUITests` has three tests: two launch this case once each, and
+    /// the third launches it once at each of two text sizes. So one run of that class takes four
+    /// slots, and 200 slots is 50 runs on one simulator before `.conflict` says the line is full.
     private static let profileLinksSpot = Coordinate(latitude: 37.7690, longitude: -122.5300)
     private static let profileLinksSlots = 200
     /// The seventh, ~200 m north of the sixth's line, and the start of a line of slots running west,
@@ -898,17 +901,56 @@ enum DebugDeepLink {
 
     /// The cached trees of somebody else's: one fixed id and spot per case, so a case never writes
     /// onto a tree another case reads, and a re-run replaces its own row.
+    ///
+    /// `othersTree` and `othersTreeUnnamed` sat on `addTreeNearbySpot` and `addTreeAloneSpot` until
+    /// ROADMAP 193, so a run of `OthersTreeUITests` left a cached tree where `.addTreeAlone` needs
+    /// open water, and `.addTreeAlone` then failed on that simulator. They now have spots of their
+    /// own, north of the withdrawal round's. `treeSpot(for:)` lists every case's spot, and
+    /// `DebugDeepLinkSpotTests` holds them 100 m apart.
     static func othersTreeSeat(_ screen: Screen) -> (id: UUID, spot: Coordinate) {
         switch screen {
         case .othersTreeUnnamed:
             return (UUID(uuidString: "C3000000-0000-4000-8000-0000000000B2")!,
-                    Coordinate(latitude: 37.7726, longitude: -122.5300))
+                    Coordinate(latitude: 37.7942, longitude: -122.5300))
         case .othersTreeOnMap:
             return (UUID(uuidString: "C3000000-0000-4000-8000-0000000000B3")!,
                     Coordinate(latitude: 37.7744, longitude: -122.5300))
         default:
             return (UUID(uuidString: "C3000000-0000-4000-8000-0000000000B1")!,
-                    Coordinate(latitude: 37.7708, longitude: -122.5300))
+                    Coordinate(latitude: 37.7924, longitude: -122.5300))
+        }
+    }
+
+    /// Where each case puts its tree, or the start of its line of slots: `nil` for a case that
+    /// places no tree of its own at sea. `DebugDeepLinkSpotTests` reads it for every case in
+    /// `Screen.allCases` and fails when two spots are closer than 100 m.
+    ///
+    /// **How a new spot gets in.** The switch has no `default`, so a new `Screen` case does not
+    /// compile until it is given a line here. A case that places a tree returns the spot it uses,
+    /// read from the same constant or function the case itself reads.
+    static func treeSpot(for screen: Screen) -> Coordinate? {
+        switch screen {
+        case .speciesClaim: return claimedSpot
+        case .speciesUnclaimed: return unclaimedSpot
+        case .communityPhotos: return communityPhotoSpot
+        case .recordDefect: return recordDefectSpot
+        case .movePin: return movePinSpot
+        case .profileLinks: return profileLinksSpot
+        case .addTreeNearby: return addTreeNearbySpot
+        case .addTreeAlone: return addTreeAloneSpot
+        case .othersTree, .othersTreeUnnamed, .othersTreeOnMap: return othersTreeSeat(screen).spot
+        case .othersTreeSharing: return othersSharingSpot
+        case .othersTreeUnnamedSharing: return othersUnnamedSharingSpot
+        case .ownTreeSpeciesReported: return ownReportedSpot
+        case .unsharedSignedOut: return signedOutSpot
+        case .unsharedNotSharing: return notSharingSpot
+        case .withdrawTree, .withdrawTreeShared, .withdrawTreeBuiltOn, .withdrawTreeRefused:
+            return withdrawTreeSpot(screen)
+        case .treeProfile, .site, .species, .checkIn, .report, .growthHistory, .activity, .measure,
+             .fullyMeasured, .outbox, .memorial, .deadProfile, .photos, .photoHero, .anonymizedPhotos,
+             .dataDispute, .strandedPhotoHero, .careLog, .share, .accountAsk, .grove, .journal,
+             .journalList, .journalContributions, .journalCity, .you, .moderationReview, .pinAdjust:
+            return nil
         }
     }
 

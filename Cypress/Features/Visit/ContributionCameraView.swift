@@ -30,7 +30,7 @@ struct ContributionCameraView: View {
     let onCapture: (Data) -> Void
     let onDone: () -> Void
 
-    @State private var camera = VisitCameraController()
+    @State private var camera: VisitCameraController
     @State private var libraryItems: [PhotosPickerItem] = []
     /// How many frames this session has handed out — the tray's receipt, and the flash's key.
     @State private var captureCount = 0
@@ -38,6 +38,28 @@ struct ContributionCameraView: View {
     @State private var fadedCount = 0
     @State private var captureFailed = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    /// - Parameter camera: the controller the viewfinder and the pinch both drive. The app passes
+    ///   nothing and gets a new one. `CameraZoomPinchTests` passes its own, so it can check that the
+    ///   pinch drives that controller and not another (ROADMAP 143).
+    ///
+    /// **Seeded through `State(initialValue:)` on purpose.** With Xcode 27.2, a `@State` property
+    /// written with an initializer (`= VisitCameraController()`) is stored as `LazyState`, which
+    /// holds a closure until the view is installed. A view built in a test is never installed, so
+    /// the controller did not exist to be found. `State(initialValue:)` stores the value itself on
+    /// every toolchain this project builds with, and it is what Xcode 26 already did for the old
+    /// spelling. SwiftUI keeps the first controller for the life of the screen either way.
+    init(
+        camera: VisitCameraController? = nil,
+        onCapture: @escaping (Data) -> Void,
+        onDone: @escaping () -> Void
+    ) {
+        // Built here rather than as a default argument: a default argument is evaluated outside the
+        // main actor, and the controller's `init` is main-actor isolated.
+        _camera = State(initialValue: camera ?? VisitCameraController())
+        self.onCapture = onCapture
+        self.onDone = onDone
+    }
 
     var body: some View {
         VStack(spacing: 0) {

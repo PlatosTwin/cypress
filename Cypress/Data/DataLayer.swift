@@ -430,6 +430,43 @@ public struct DataLayer: Sendable {
             signedInUserID = { await session.signedInUserID }
         }
 
+        // ── Two sinks, and this is the round that wires the second (RULINGS R72 §1) ─────────────
+        //
+        // `apply` is the local commit: a contribution is on its tree the moment the drain runs,
+        // offline or not. It names `local` rather than `api` deliberately — `RoutedAPI` does route
+        // `sync` to the phone, but a wiring that depended on that would be one router edit away from
+        // deleting the local write while every layer carried on behaving exactly as written
+        // (ERRATA E261 §2).
+        //
+        // `send` is `APIOutboxSendSink` over `RemoteAPI` and **not over `api`**, for the mirror
+        // reason: a router in this position would "send" through `local` and mark the row
+        // `remote_sent` with no byte having left the phone. The type signature is what refuses it —
+        // see `APIOutboxSendSink`.
+        //
+        // **The send sink is omitted entirely when the gate is off**, rather than pointed at a
+        // refusing transport. A refusing send sink would still count failures, move rows onto the
+        // backoff and put reasons on screen 17 — observable behavior a UI test would then be
+        // asserting against a network that is not there. Omitting it restores exactly the wiring
+        // every build before #158 shipped, which is the one the UI suite was green on.
+        //
+        // Built before the router, because the router's keep-records deletion sends this queue
+        // first (ROADMAP 192). It needs only `local`, `remote` and the store, never `api`.
+        let outbox = OutboxQueue(
+            queue: store.queue,
+            apply: APIOutboxTransport(api: local),
+            send: access.allowsNetwork ? APIOutboxSendSink(remote: remote) : nil,
+            // The wi-fi toggle's other half (F35). Without it the queue cannot call a connection
+            // metered, and every photograph goes on whatever connection there is.
+            networkPath: networkPath
+        )
+
+        // Only with the gate open, for `signedInUserID`'s reason: with it shut the deletion stays
+        // local and no send sink is wired, so there is nothing to send first.
+        var sendQueueBeforeDeletion: (@Sendable (UUID) async throws -> Int)?
+        if access.allowsNetwork {
+            sendQueueBeforeDeletion = { userID in try await outbox.sendBeforeAccountDeletion(userID: userID) }
+        }
+
         // The two batched resolvers the router cannot reach through `CypressAPI` (see
         // `RoutedAPI.resolveGroveRows`). They are asked only about rows the *service* named that
         // this phone's own grove did not, so on a single-device installation neither is ever called.
@@ -461,7 +498,8 @@ public struct DataLayer: Sendable {
                     await local.adoptServedSpecies(treeID: id, observed: observed, served: served)
                 },
                 keep: { treeID, flagID in try await local.keepServedSpeciesReport(treeID: treeID, flagID: flagID) }
-            )
+            ),
+            sendQueueBeforeDeletion: sendQueueBeforeDeletion
         )
 
         // ── The background half of the grove's two reads (the owner's ruling of 2026-09-01) ─────
@@ -501,39 +539,28 @@ public struct DataLayer: Sendable {
             refreshCommunityTrees = { bounds in await refresher.refresh(covering: bounds).changedCache }
         }
 
-        // ── Two sinks, and this is the round that wires the second (RULINGS R72 §1) ─────────────
-        //
-        // `apply` is the local commit: a contribution is on its tree the moment the drain runs,
-        // offline or not. It names `local` rather than `api` deliberately — `RoutedAPI` does route
-        // `sync` to the phone, but a wiring that depended on that would be one router edit away from
-        // deleting the local write while every layer carried on behaving exactly as written
-        // (ERRATA E261 §2).
-        //
-        // `send` is `APIOutboxSendSink` over `RemoteAPI` and **not over `api`**, for the mirror
-        // reason: a router in this position would "send" through `local` and mark the row
-        // `remote_sent` with no byte having left the phone. The type signature is what refuses it —
-        // see `APIOutboxSendSink`.
-        //
-        // **The send sink is omitted entirely when the gate is off**, rather than pointed at a
-        // refusing transport. A refusing send sink would still count failures, move rows onto the
-        // backoff and put reasons on screen 17 — observable behavior a UI test would then be
-        // asserting against a network that is not there. Omitting it restores exactly the wiring
-        // every build before #158 shipped, which is the one the UI suite was green on.
-        let outbox = OutboxQueue(
-            queue: store.queue,
-            apply: APIOutboxTransport(api: local),
-            send: access.allowsNetwork ? APIOutboxSendSink(remote: remote) : nil,
-            // The wi-fi toggle's other half (F35). Without it the queue cannot call a connection
-            // metered, and every photograph goes on whatever connection there is.
-            networkPath: networkPath
-        )
-
         // Anything left `uploading` belongs to a previous launch that was killed mid-drain. It is
         // recovered on the first drain; doing it here as well means the outbox screen shows the
         // truth before any sync is attempted.
         try await store.queue.write { connection in
             _ = try OutboxStore().recoverInterrupted(at: Date(), connection: connection)
         }
+
+        // ── Finished rows older than a day, once per launch (ROADMAP 184) ──────────────────────
+        //
+        // `OutboxQueue.pruneCompleted` deletes `done` rows whose `updated_at` is more than
+        // `completedRetention` ago, and nothing else: pending, uploading and failed rows of any age
+        // stay. No build before this one called it, so every receipt stayed on the phone.
+        //
+        // Here and not in the drain, for three reasons. The drain is the hot path, and a test or
+        // gate that moves the queue's clock past a day would see its receipts go in the middle of
+        // the case. Screen 17 keeps one set of receipts for the whole session instead of losing a
+        // row while it is open. And it runs before the backfill below, which looks again at a
+        // tree only once its `done` add row is gone (`CommunityTreeBackfill`), so that pass sees
+        // the swept queue. The cost is that a receipt can outlive its day until the next launch.
+        //
+        // `try?`: a failed sweep leaves the receipts for the next launch, and must not stop this one.
+        _ = try? await outbox.pruneCompleted()
 
         // ── The community trees this phone never sent, once (ROADMAP 139) ───────────────────────
         //

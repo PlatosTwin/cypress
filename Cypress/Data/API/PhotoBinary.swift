@@ -69,7 +69,14 @@ enum PhotoBinary {
     ///
     /// - Throws: `APIError.validationFailed` when the file is not an image container this can
     ///   rewrite. The caller decides what to do about that; it must not decide to publish it.
-    static func writeStrippingMetadata(from source: URL, to destination: URL) throws {
+    ///
+    /// - Parameter whileScratchExists: runs after the first pass has written the scratch file and
+    ///   before the second pass reads it. Only a test passes one, to sweep at that moment.
+    static func writeStrippingMetadata(
+        from source: URL,
+        to destination: URL,
+        whileScratchExists: () -> Void = {}
+    ) throws {
         let sourceProperties = CGImageSourceCreateWithURL(source as CFURL, nil)
             .flatMap { CGImageSourceCopyPropertiesAtIndex($0, 0, nil) as? [CFString: Any] }
         let orientation = sourceProperties?[kCGImagePropertyOrientation]
@@ -91,10 +98,18 @@ enum PhotoBinary {
         ]
 
         let scratch = destination.appendingPathExtension("stripping")
-        defer { try? FileManager.default.removeItem(at: scratch) }
+        // Held before the file can exist and released after it is gone, so a sweep that runs while
+        // this strip is in progress leaves the scratch alone (`removeAbandonedCleanCopies`). The
+        // `defer` does not run when the process is killed, which is what leaves the file behind.
+        stripsInProgress.insert(scratch.lastPathComponent)
+        defer {
+            try? FileManager.default.removeItem(at: scratch)
+            stripsInProgress.remove(scratch.lastPathComponent)
+        }
 
         try copyContainer(from: source, to: needsOrientationRestored ? scratch : destination, options: stripping)
         if needsOrientationRestored {
+            whileScratchExists()
             try copyContainer(
                 from: scratch,
                 to: destination,
@@ -251,36 +266,45 @@ enum PhotoBinary {
     /// destination. When the destination is a clean copy, that scratch is part of the same strip.
     private static let strippingScratchSuffix = ".stripping"
 
-    /// The clean copies of strips running in this process now, by file name.
+    /// The end of the name `LocalAPI.uploadPhoto` gives the photograph it writes, `<UUID>.jpg`.
+    private static let uploadedPhotoSuffix = ".jpg"
+
+    /// The clean copies and scratch files of strips running in this process now, by file name.
     private static let stripsInProgress = InProgressNames()
 
-    /// Removes the clean copies that strips killed part-way left in `directory`, and returns the
-    /// files it removed.
+    /// Removes the files that strips killed part-way left in `directory`, and returns the files it
+    /// removed.
     ///
-    /// `stripMetadataInPlace` removes its copy in a `defer`, which does not run when the process is
-    /// killed during the strip. Nothing reads such a file; it only takes disk space.
+    /// `stripMetadataInPlace` removes its clean copy, and `writeStrippingMetadata` its scratch file,
+    /// in a `defer`, which does not run when the process is killed during the strip. Nothing reads
+    /// such a file; it only takes disk space, and it is a copy of a photograph the person may have
+    /// withdrawn since.
     ///
-    /// A file is removed only when its name has the exact shape that method gives its copy,
-    /// `.<name>-<UUID>.clean`, or that copy's own scratch, `.<name>-<UUID>.clean.stripping`, and only
-    /// when no strip in this process holds that name. A strip holds its name from before the file
-    /// is created until after it is removed or renamed, and every name carries a fresh UUID, so a
-    /// copy that is in progress is never removed, whenever this runs. The app is one process, so a
-    /// copy no strip in this process holds is one a killed process left. Folders, and names that
-    /// only look similar, are kept.
+    /// A file is removed only when its name has one of three exact shapes, and only when no strip in
+    /// this process holds that name:
+    /// - the clean copy, `.<name>-<UUID>.clean`;
+    /// - that copy's own scratch, `.<name>-<UUID>.clean.stripping`, held under its copy's name;
+    /// - the scratch of `LocalAPI.uploadPhoto`'s strip, `<UUID>.jpg.stripping` (ROADMAP 177), held
+    ///   under its own name.
+    ///
+    /// A strip holds its name from before the file is created until after it is removed or renamed,
+    /// and the check and the removal happen under the lock that guards the names, so a file that is
+    /// in progress is never removed, whenever this runs. The app is one process, so a file no strip
+    /// in this process holds is one a killed process left. Folders, and names that only look
+    /// similar, are kept.
     @discardableResult
     static func removeAbandonedCleanCopies(in directory: URL) -> [URL] {
         let manager = FileManager.default
         guard let names = try? manager.contentsOfDirectory(atPath: directory.path) else { return [] }
         var removed: [URL] = []
         for name in names {
-            guard let copyName = cleanCopyName(of: name) else { continue }
+            guard let heldName = cleanCopyName(of: name) ?? uploadScratchName(of: name) else { continue }
             let file = directory.appendingPathComponent(name)
             var isDirectory: ObjCBool = false
             guard manager.fileExists(atPath: file.path, isDirectory: &isDirectory), !isDirectory.boolValue
             else { continue }
-            // Checked and removed under the lock, so a strip cannot take this name in between. It
-            // never would: the name carries a UUID that only the strip that made it ever used.
-            let didRemove = stripsInProgress.unlessHeld(copyName) {
+            // Checked and removed under the lock, so a strip cannot take this name in between.
+            let didRemove = stripsInProgress.unlessHeld(heldName) {
                 (try? manager.removeItem(at: file)) != nil
             }
             if didRemove == true { removed.append(file) }
@@ -303,6 +327,17 @@ enum PhotoBinary {
         let hyphen = body.dropLast(uuidLength).last
         guard hyphen == "-", UUID(uuidString: String(uuid)) != nil else { return nil }
         return copyName
+    }
+
+    /// `name` itself when it is the scratch file of `LocalAPI.uploadPhoto`'s strip,
+    /// `<UUID>.jpg.stripping`, and nil otherwise. The whole name before `.jpg.stripping` must be a
+    /// UUID, which is how `uploadPhoto` names the photograph (`photos.id`).
+    static func uploadScratchName(of name: String) -> String? {
+        let suffix = uploadedPhotoSuffix + strippingScratchSuffix
+        guard name.hasSuffix(suffix) else { return nil }
+        let stem = String(name.dropLast(suffix.count))
+        guard stem.count == 36, UUID(uuidString: stem) != nil else { return nil }
+        return name
     }
 
     /// One container-level rewrite, source to destination, under the given ImageIO options.
@@ -378,20 +413,23 @@ enum PhotoBinary {
     }
 }
 
-/// A set of file names behind a lock: the clean copies `PhotoBinary` is writing now.
+/// File names behind a lock: the clean copies and scratch files `PhotoBinary` is writing now.
 final class InProgressNames: @unchecked Sendable {
     private let lock = NSLock()
-    private var names: Set<String> = []
+    /// How many strips hold each name. Counted, because an upload's scratch is named for its
+    /// photograph rather than with a fresh UUID: if two strips ever held one name, the first to end
+    /// must not release it for the other.
+    private var names: [String: Int] = [:]
 
     func insert(_ name: String) {
         lock.lock()
-        names.insert(name)
+        names[name, default: 0] += 1
         lock.unlock()
     }
 
     func remove(_ name: String) {
         lock.lock()
-        names.remove(name)
+        if let count = names[name] { names[name] = count > 1 ? count - 1 : nil }
         lock.unlock()
     }
 
@@ -400,7 +438,7 @@ final class InProgressNames: @unchecked Sendable {
     func unlessHeld<T>(_ name: String, _ body: () -> T) -> T? {
         lock.lock()
         defer { lock.unlock() }
-        guard !names.contains(name) else { return nil }
+        guard names[name] == nil else { return nil }
         return body()
     }
 }

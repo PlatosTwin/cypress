@@ -51,3 +51,120 @@ nearest specified thing, not a new design.
   moves too". Migration v24 adds `tree_locations.set_on_device`, and the fifth arm also matches a
   move this phone set, so the probe above now reads 2 moves and 2 visits. The ruling is
   `journal-keeps-pin-moves.md` in this folder.
+
+---
+
+*Added after the sections above, by the branch `feat/withdraw-owner-answers`.*
+
+### R??? — A pin move on a tree with no name (the owner's answer, 2026-11-16; ROADMAP 159)
+
+Q: "A community tree with no species reads "Moved the pin of Tree" in the Journal and "Pin moved ·
+Tree" in the Outbox. Which words should those two rows use for such a tree?"
+Chosen: **""Moved a tree's pin""**. Journal: `Moved a tree's pin`. Outbox: `Pin moved`.
+Not chosen: "Leave as is"; ""an unnamed tree"".
+
+How the branch `feat/withdraw-owner-answers` built it (the author's notes):
+
+- **The apostrophe on screen is the typographic one** (`Moved a tree’s pin`, U+2019), as in the
+  app's other on-screen strings, for example `Report a mistake in the city’s record`.
+- **Only where the row would otherwise read the fallback title "Tree".** Each row knows that from a
+  fact, not from the word: the Journal row from an empty `treeDisplayName`, and the Outbox row from
+  no resolved name (`treeName` nil). Both come from `LocalAPI.displayNames`, which follows the
+  next entry's rule: the words show only for a tree with no given name and no species.
+- **Only the pin move changes.** Every other kind on an unnamed tree still reads the fallback, for
+  example "Visit · Tree" and "Visited Tree".
+- **A city tree cannot reach either row.** A pin move is made only on a community tree the reader
+  added (`LocalAPI.correctLocation`).
+
+### R??? — Rows name a community tree by its species (the owner's answer, 2026-11-16)
+
+The question in the entry above (the owner's answer 6) said "a community tree with no species":
+
+Q: "A community tree with no species reads "Moved the pin of Tree" in the Journal and "Pin moved ·
+Tree" in the Outbox. Which words should those two rows use for such a tree?"
+Chosen: **""Moved a tree's pin""**. Journal: `Moved a tree's pin`. Outbox: `Pin moved`.
+Not chosen: "Leave as is"; ""an unnamed tree"".
+
+The branch first built "no given name", because the code's name rule never used an added tree's
+species as its name in a row. The review found the difference, and the owner was asked (answer 10):
+
+Q: "A tree someone added has a species but no given name. Its profile title is the species (for
+example "Sycamore, London Plane"), but its Outbox and Journal rows never use the species. They
+read "Pin moved" and "Moved a tree’s pin" (your new words), and other rows read "Visit · Tree".
+My earlier question said "no species"; the built rule is "no given name". What should those rows
+call such a tree?"
+A: "Use the species (Recommended)". Option text: "Rows name the tree as its profile does: "Pin
+moved · Sycamore, London Plane", "Moved the pin of Sycamore, London Plane", "Visit · Sycamore,
+London Plane". Your new words then show only for a tree with no name and no species. This changes
+an older rule in the code that an added tree's species is not used as its name in rows."
+Not chosen: "Keep as built" ("Rows use only a given name. Every added tree without one reads
+"Pin moved" and "Moved a tree’s pin", and its other rows read "· Tree", even when it has a
+species.").
+
+**Answer 10 replaces the old code rule** that an added tree's species is not used as its name in
+rows (D15's "a self-asserted species is not a name the app puts on a tree", as the Journal and
+Outbox applied it).
+
+How the branch `feat/withdraw-owner-answers` built it (the author's notes):
+
+- **One rule, in `LocalAPI.displayNameIfPresent` and `LocalAPI.displayNames`:** the tree's active
+  given name; else, for a tree in the city inventory, its species' common name (as before); else,
+  for a community tree, the common name of the species its profile title shows. That species is
+  the row's `species_current`, with the reader's own naming or correction laid over a cached tree
+  while it is in force (`localSpeciesAnswers`, ROADMAP 144), the same overlay `treeProfile` uses.
+  A species with no common name reads its scientific name, as the profile does.
+- **A withdrawn tree this phone still holds keeps its species name**, so `Tree withdrawn · …` and
+  the refused row still name it.
+- **The callers:** the Journal (its rows and their VoiceOver labels), the Outbox, and the private
+  reminders list on the Account screen. The export does not carry a tree name.
+- **My Grove's Trees list was left on the old rule by this branch.** The entry below records the
+  owner's answer and how the next branch built it.
+- **The profile is one read ahead in one case.** After a service read, `RoutedAPI` can show a
+  species the service served before this phone's cache holds it. The rows use what the phone
+  holds, so for that window the row can name the older species.
+
+### R??? — My Grove names a community tree by its species (the owner's answer, 2026-11-16)
+
+The branch above left My Grove's Trees list on the old rule, and the owner was asked (answer 11):
+
+Q: "You chose that Outbox and Journal rows name an added tree by its species, as its profile
+does. My Grove's Trees list still uses the older rule: an added tree with a species and no given
+name is listed there as "Tree", while its profile title reads, for example, "Sycamore, London
+Plane". Should My Grove's list use the species too?"
+A: "Yes, use the species (Recommended)". Option text: "My Grove lists the tree as "Sycamore,
+London Plane", the same as its profile, the Journal, and the Outbox. An added tree with no name
+and no species still reads "Tree". I build it as its own small change after this pull request,
+before the next release."
+Not chosen: "No, leave My Grove" ("My Grove keeps listing such a tree as "Tree". Its profile, the
+Journal, and the Outbox use the species. Nothing more to build.").
+
+How the branch `feat/grove-names-by-species` built it (the author's notes):
+
+- **One rule, one resolver.** `LocalAPI.grove()` and `LocalAPI.groveCityFileRows(for:)` name a tree
+  by its active given name; else the seed species' common name; else, for a community tree, the
+  common name of the species its profile title shows. The last step is
+  `LocalAPI.communitySpeciesNames`, the same code the Journal and the Outbox reach through
+  `displayNames`. An empty name is drawn `Tree` by `GroveTreesPresentation`.
+- **The routed arms agree.** `RoutedAPI.resolvedCityFileRows` (the per-tree loop) now names a
+  community tree by `profile.species?.commonName`, as the provider arm does. A tree with no name
+  and no species is `unnamed` in both arms, and the page is not marked unresolved for it (PR
+  #144's fix).
+- **Where this differs from the owner's sentence, and is not fixed here.** The owner's answer
+  says "An added tree with no name and no species still reads "Tree"". That holds for a tree in
+  this phone's own grove. A tree with no name and no species that this phone reaches only through
+  the account's grove (`RoutedAPI.refreshedGrove`) is dropped from the list instead: for example,
+  a tree you added, seen from a second phone, or somebody else's cached tree you visited from
+  another device. The drop is older than this branch. It is an open item in ROADMAP, to be fixed
+  in its own change.
+- **"As its profile does" has one more exception.** A city tree with no species shows its street
+  address as its profile title, and reads `Tree` in My Grove and the Journal. This is older
+  behavior, and the owner's answers do not cover it.
+- **A withdrawn tree is not named.** The owner's earlier answer took it out of My Grove, and the
+  species step skips it.
+- **A fixed number of statements per page.** The species step adds at most two statements, once
+  per page, and only when the page holds a community tree with no given name
+  (`GroveStatementCensusTests.theSpeciesArmIsAFixedCount`).
+- **A difference between the two routed arms, found and not changed.** For a tree this phone
+  withdrew, the provider arm answers `unnamed` and the loop arm answers neither (its
+  `treeProfile` read throws), which marks the read as fallen back to local. Production always
+  sets the provider, so the loop arm's answer shows only in tests.

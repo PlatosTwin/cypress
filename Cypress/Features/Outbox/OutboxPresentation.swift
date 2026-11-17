@@ -23,7 +23,9 @@
 //  visible retry button (screen 17)". `OutboxItem.State.failed` is that terminal state and is the
 //  only one `OutboxItemSnapshot.showsRetryAffordance` admits — a row that has failed four times and
 //  is still inside the window is `pending` and still reads `waiting`, because it is still trying.
-//  The terminal row is the amber C24 card, and it is the only row with a control on it.
+//  The terminal row is the amber C24 card, and it is the only row with a control on it. One
+//  terminal row has none: a withdrawal the service refused with `conflict` keeps its reason and no
+//  button, for good (the owner's answers of 2026-11-16; `OutboxRetryPolicy.acceptsRetry`).
 //
 //  ── 3. Never "sent to the city" ──────────────────────────────────────────────────────────
 //  ARCHITECTURE §5.4. Nothing in `OutboxCopy` says an authority was told anything: `synced` here
@@ -88,9 +90,13 @@ struct OutboxPresentation {
         /// Terminal rows take C24's amber card. A row inside its retry window does not, however many
         /// times it has failed.
         var isTerminal: Bool { state != .waiting }
+        /// Whether the row's item may be retried (`OutboxRetryPolicy.acceptsRetry`).
+        var acceptsRetry: Bool = true
         /// Every terminal row gets the control (BUILD-PLAN §4 attaches it to `failed`, and the
-        /// owner's ruling 3 of 2026-08-14 keeps a refused row in that same failed row).
-        var showsRetryButton: Bool { state == .retry }
+        /// owner's ruling 3 of 2026-08-14 keeps a refused row in that same failed row), except a
+        /// withdrawal the service refused with `conflict`: the owner's answers of 2026-11-16 keep
+        /// that row with its reason and no button. It is still a terminal (amber) row.
+        var showsRetryButton: Bool { state == .retry && acceptsRetry }
     }
 
     /// One dimmed receipt in §4's `Synced earlier today`.
@@ -178,7 +184,8 @@ struct OutboxPresentation {
             timeText: detail == nil && quantity == nil ? time : OutboxCopy.metaSeparator + time,
             reason: reason(for: item),
             state: state(for: item),
-            tile: tile(for: item)
+            tile: tile(for: item),
+            acceptsRetry: OutboxRetryPolicy.acceptsRetry(kind: item.kind, errorCode: item.errorCode)
         )
     }
 
@@ -242,8 +249,11 @@ struct OutboxPresentation {
 
     /// The receipts, newest first.
     ///
-    /// `OutboxQueue.completedRetention` is 24 h and `pruneCompleted` sweeps past it, so this section
-    /// can never become a week — **but 24 h of retention spans two calendar days for most of the
+    /// `OutboxQueue.completedRetention` is 24 h and `pruneCompleted` sweeps past it at each launch
+    /// (`DataLayer.boot`), so this section holds the receipts of the day before this launch and the
+    /// ones since. It becomes a week only for a process that runs a week without a relaunch.
+    /// No build before ROADMAP 184's fix called the sweep, so every receipt stayed until then.
+    /// **But 24 h of retention spans two calendar days for most of the
     /// day**, and this line used to argue from the first fact that the section "is exactly what its
     /// heading claims". It is not: the two-day case is precisely the one that flips the stamps to
     /// dates, and it is common rather than exotic (PR #102 review). The heading asks the same
@@ -297,7 +307,8 @@ struct OutboxPresentation {
     /// `today · 14 synced · 0 lost`, or nil.
     ///
     /// **The mock's window is not the one the app keeps.** §5 draws `this week · 14 synced · 0
-    /// lost`, and a `done` row is swept after `OutboxQueue.completedRetention`, which is one day. A
+    /// lost`, and a `done` row is swept at the first launch after `OutboxQueue.completedRetention`,
+    /// which is one day. A
     /// week's figure is not a number this app has, so the line says the window it can actually
     /// answer for. `0 lost` is computed rather than asserted, which is why it is worth printing.
     /// Absent when nothing has gone today, because `0 synced` is a zero (ARCHITECTURE §5.6).
@@ -337,8 +348,14 @@ enum OutboxCopy {
     ///
     /// The tree falls back to `TreeProfilePresentation.fallbackTitle`, the same word every other
     /// surface uses for a tree with no name in hand, rather than to a blank half-title.
+    ///
+    /// **One exception: a pin move on a tree with no name reads `Pin moved` alone**, the app owner's
+    /// words of 2026-11-16 over "Pin moved · Tree". `treeName` is nil exactly when no name was
+    /// resolved for the tree: no given name and no species (`LocalAPI.displayNames`, which names an
+    /// added tree by its species since the owner's answer of 2026-11-16, "Use the species").
     static func title(kind: OutboxItem.Kind, treeName: String?) -> String {
-        "\(kindLabel(kind)) · \(treeName ?? TreeProfilePresentation.fallbackTitle)"
+        if kind == .locationCorrection, treeName == nil { return kindLabel(kind) }
+        return "\(kindLabel(kind)) · \(treeName ?? TreeProfilePresentation.fallbackTitle)"
     }
 
     /// §2 names four of the six kinds it was written against. `Favorite` and `Reminder` are **NOT
@@ -564,7 +581,9 @@ enum OutboxCopy {
     /// ── **Why the year appears and usually does not** ─────────────────────────────────────────
     ///
     /// `Aug 19` is unambiguous inside a list that cannot reach back a year, and the synced section
-    /// cannot: `OutboxQueue.completedRetention` sweeps it at 24 h. The **queue** has no such sweep —
+    /// cannot: `pruneCompleted` sweeps it at the first launch after `OutboxQueue.completedRetention`
+    /// (24 h), and a process that ran a year without a relaunch is not a case worth a stamp. The
+    /// **queue** has no such sweep —
     /// a terminally failed row waits for a tap and waits as long as it takes — so a queue really can
     /// hold two rows whose `Aug 19`s are twelve months apart. A stamp carries its year when it is
     /// not in `now`'s year, which costs nothing in the ordinary case and stops the one case where

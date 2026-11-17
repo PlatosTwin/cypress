@@ -156,13 +156,17 @@ struct CameraZoomPinchTests {
     ///
     /// Walked from `body`: the viewfinder is a `ZStack` inside a `VStack`, with no `GeometryReader`
     /// or other closure between them.
+    ///
+    /// **The test hands the view its controller rather than digging it out** (ROADMAP 143). It used
+    /// to read `_camera` out of the view with `Mirror`. With Xcode 27.2 that property was stored as
+    /// SwiftUI's `LazyState` (`__camera`, a closure until the view is installed), so there was no
+    /// controller to find and the test failed on every local run while passing on CI's Xcode 26.6.
+    /// The view now takes the controller in its `init`, and the identity check below compares the
+    /// pinch's controller with the one passed in.
     @Test("05 and 09's camera hands the pinch its own controller, armed, on its viewfinder")
     func contributionCameraWiresItsAimToThePinch() throws {
-        let view = ContributionCameraView(onCapture: { _ in }, onDone: {})
-        let camera: VisitCameraController = try #require(
-            Self.stateModel(of: view, label: "_camera"),
-            "no camera controller in the view"
-        )
+        let camera = VisitCameraController()
+        let view = ContributionCameraView(camera: camera, onCapture: { _ in }, onDone: {})
 
         let pinches = Self.pinches(in: view.body)
         #expect(
@@ -210,10 +214,12 @@ struct CameraZoomPinchTests {
 
     // MARK: - The walk
 
-    /// The model a view holds in `@State`, read the way the view reads it when it is not installed.
-    /// `label` is the property's storage name, the property's name with a leading underscore.
-    private static func stateModel<Model: AnyObject>(of view: some View, label: String = "_model") -> Model? {
-        for child in Mirror(reflecting: view).children where child.label == label {
+    /// The model a view holds in `@State` as `_model`, read the way the view reads it when it is not
+    /// installed. Both views it is used on seed the state with an explicit `State(...)` in their
+    /// `init`, which stores the value itself; a property written `= Model()` is stored as a closure
+    /// with Xcode 27.2 and would not be found (ROADMAP 143).
+    private static func stateModel<Model: AnyObject>(of view: some View) -> Model? {
+        for child in Mirror(reflecting: view).children where child.label == "_model" {
             for inner in Mirror(reflecting: child.value).children {
                 if let model = inner.value as? Model { return model }
             }

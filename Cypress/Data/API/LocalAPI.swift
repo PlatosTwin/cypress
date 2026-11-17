@@ -3198,15 +3198,25 @@ public actor LocalAPI: CypressAPI {
     /// above this loop. A hundred trees would have been half a minute. The *after* column has no
     /// such spread — 25.9 ms and 26.8 ms, measured independently.
     ///
-    /// Three statements now answer for the whole set, and the semantics are preserved one for one:
+    /// Three statements now answer for the whole set (two more when the page holds a community tree
+    /// with a species and no nickname), and the semantics are preserved one for one:
     ///
     /// - a tree the inventory holds, else one added on this device, else **skipped** — a row whose
     ///   tree resolves to neither is not a grove entry, exactly as `treeIfPresent` returning nil
     ///   dropped it;
-    /// - the display name is the tree's one active nickname, else the **seed** species' common
-    ///   name, else empty (D15). That second fallback deliberately does not consult the community
-    ///   row: `displayNameIfPresent` answers nil for a community tree with no nickname, because a
-    ///   self-asserted species is not a name the app puts on a tree.
+    /// - the display name is the row name rule the Journal and the Outbox use
+    ///   (`displayNameIfPresent`): the tree's one active nickname, else the seed species' common
+    ///   name, else, for a community tree, the common name of the species its profile title shows
+    ///   (`communitySpeciesNames`), else empty, which the screen draws as "Tree". The rule is the
+    ///   owner's answers of 2026-11-16: "Use the species" for the Journal and the Outbox, and "Yes,
+    ///   use the species" for My Grove. Its extra statements run once per page, only when the page
+    ///   holds such a tree: the species' common names, and the claim check when one of them is
+    ///   somebody else's cached tree. One step runs **per tree**: for each cached tree with a claim
+    ///   in force on this phone, `localSpeciesAnswers` adds three statements (`species_assertions`,
+    ///   the outbox `SELECT kind`, `review_flags`). The review of 2026-11-16 measured `grove()` at 2
+    ///   statements with no community trees, 8 with 2 added species trees, 8 with 50, and 158 in two
+    ///   queue reads with 50 cached trees each with a queued claim. `resolvedDisplayNames` says why
+    ///   that step stays per tree.
     ///
     /// `GroveBatchReadTests` holds this against the per-tree form over a grove carrying one of each
     /// case, because "preserved one for one" is exactly the kind of claim this project has been
@@ -3324,18 +3334,26 @@ public actor LocalAPI: CypressAPI {
             )
         }
         let treeIDs = rows.map(\.treeID)
-        let (seedRecords, community, activeNames) = try await store.queue.read { connection in
-            (
-                try treeQueries?.trees(ids: treeIDs, connection: connection) ?? [:],
-                try layer.trees(ids: treeIDs, connection: connection),
-                try contributions.activeNames(treeIDs: treeIDs, connection: connection)
+        let (seedRecords, community, activeNames, speciesNames) = try await store.queue.read { connection in
+            let seedRecords = try treeQueries?.trees(ids: treeIDs, connection: connection) ?? [:]
+            let community = try layer.rows(ids: treeIDs, connection: connection)
+            let activeNames = try contributions.activeNames(treeIDs: treeIDs, connection: connection)
+            // The community arm of the row name rule, for the trees still unnamed: no given name,
+            // not in the inventory, not withdrawn (a withdrawn tree leaves My Grove below).
+            let needSpecies = community.filter { id, row in
+                activeNames[id] == nil && seedRecords[id] == nil
+                    && !Self.isWithdrawnCommunityTree(row.tree)
+            }
+            return (
+                seedRecords, community, activeNames,
+                try communitySpeciesNames(rows: needSpecies, connection: connection)
             )
         }
         var entries: [GroveEntry] = []
         entries.reserveCapacity(rows.count)
         for row in rows {
             let seedRecord = seedRecords[row.treeID]
-            guard let profileTree = seedRecord?.tree ?? community[row.treeID] else { continue }
+            guard let profileTree = seedRecord?.tree ?? community[row.treeID]?.tree else { continue }
             // A withdrawn community tree leaves My Grove; the person's own rows on it stay saved
             // (the owner's answer of 2026-11-16). `CommunityLayer.trees` does not filter it,
             // because its other callers read a withdrawn row on purpose.
@@ -3345,6 +3363,7 @@ public actor LocalAPI: CypressAPI {
                     treeID: row.treeID,
                     displayName: activeNames[row.treeID]?.name
                         ?? seedRecord?.species?.commonName
+                        ?? speciesNames[row.treeID]
                         ?? "",
                     coordinate: profileTree.coordinate,
                     lastVisitedAt: row.lastVisitedAt,
@@ -3392,33 +3411,30 @@ public actor LocalAPI: CypressAPI {
     /// that way ran the app's most expensive single-row query once per row, which is the N+1 `grove()`
     /// above had removed from itself (#250) and `speciesGuide` had removed from itself before that.
     ///
-    /// **The same three statements `grove()` runs, and the same rule for the name**: the tree's one
-    /// active nickname, else the *seed* species' common name (D15). That second fallback deliberately
-    /// does not consult the community row, for the reason `grove()` states — a self-asserted species
-    /// is not a name the app puts on a tree.
+    /// **The same statements `grove()` runs, and the same rule for the name**: the row name rule
+    /// (`displayNameIfPresent`), including its community arm (`communitySpeciesNames`), so a
+    /// community tree with a species and no nickname is named by the species its profile title
+    /// shows (the owner's answer of 2026-11-16, "Yes, use the species").
     ///
-    /// **It is `grove()`'s rule and it was NOT `entryFromCityFile`'s, which is a behavior change and
-    /// is meant to be one.** PR #144's review proved the divergence rather than reasoning about it: a
-    /// community record with a claimed species and no nickname was *named after the claim* by the
-    /// per-row loop this replaces, because `treeProfile` fills `species` for a community row out of
-    /// `tree.speciesCurrentID`. The owner's D15 rule is `grove()`'s, so that row has no name the app
-    /// will draw, and the loop has been corrected to agree (`RoutedAPI.resolvedCityFileRows`) rather
-    /// than this read being loosened to match it. In production the shape is close to unreachable —
-    /// a community tree this device added is already in `local.grove()` and never reaches this
-    /// resolver — but it is a shape a contributor can produce, and two arms answering it differently
-    /// is what the review found.
+    /// **The two arms must still agree.** PR #144's review found them disagreeing: the per-row loop
+    /// named a community tree after its species while this read did not. The fix then made the loop
+    /// refuse the species. Answer 11 changed the rule, so both now name it, and
+    /// `GroveCityFileBatchTests` still holds the two arms against each other row for row. In
+    /// production the shape is close to unreachable — a community tree this device added is already
+    /// in `local.grove()` and never reaches this resolver — but somebody else's cached tree can.
     ///
     /// ── Three outcomes, and the caller treats two of them differently ──────────────────────────
     ///
-    /// - **named** — a nickname or a seed species name;
-    /// - **unnamed** — the inventories hold the tree and D15 gives it no name. Dropped from the
-    ///   grove, and **not** a degraded read: nothing the service said was lost, a rule was applied;
+    /// - **named** — a nickname, a seed species name, or a community tree's species name;
+    /// - **unnamed** — the inventories hold the tree and the rule gives it no name (no nickname and
+    ///   no species), or this phone withdrew it. Dropped from the grove, and **not** a degraded
+    ///   read: nothing the service said was lost, a rule was applied;
     /// - **in neither** — the inventories do not carry the tree at all. Under D16 an ordinary case
     ///   (the other device may have been in a city this installation has not installed), and the one
     ///   that marks the read degraded.
     ///
-    /// The first cut of this method collapsed the last two into one absence, so a D15 refusal
-    /// reported as `.fellBackToLocal`. `RoutedAPI.CityFileRows` is where that is separated.
+    /// The first cut of this method collapsed the last two into one absence, so a tree the rule
+    /// gave no name reported as `.fellBackToLocal`. `RoutedAPI.CityFileRows` is where that is separated.
     /// Whether a tree read through `CommunityLayer.trees` is a community tree this phone withdrew.
     /// The layer returns this phone's own row withdrawn or not (its header says why).
     static func isWithdrawnCommunityTree(_ tree: Tree) -> Bool {
@@ -3429,13 +3445,19 @@ public actor LocalAPI: CypressAPI {
         let nothing = RoutedAPI.CityFileRows(named: [:], unnamed: [])
         guard !treeIDs.isEmpty else { return nothing }
         let resolved = try? await store.queue.read { connection in
-            (
-                try treeQueries?.trees(ids: treeIDs, connection: connection) ?? [:],
-                try layer.trees(ids: treeIDs, connection: connection),
-                try contributions.activeNames(treeIDs: treeIDs, connection: connection)
+            let seedRecords = try treeQueries?.trees(ids: treeIDs, connection: connection) ?? [:]
+            let community = try layer.rows(ids: treeIDs, connection: connection)
+            let activeNames = try contributions.activeNames(treeIDs: treeIDs, connection: connection)
+            let needSpecies = community.filter { id, row in
+                activeNames[id] == nil && seedRecords[id] == nil
+                    && !Self.isWithdrawnCommunityTree(row.tree)
+            }
+            return (
+                seedRecords, community, activeNames,
+                try communitySpeciesNames(rows: needSpecies, connection: connection)
             )
         }
-        guard let (seedRecords, community, activeNames) = resolved else { return nothing }
+        guard let (seedRecords, community, activeNames, speciesNames) = resolved else { return nothing }
 
         var named: [UUID: RoutedAPI.CityFileRow] = [:]
         var unnamed: Set<UUID> = []
@@ -3444,7 +3466,7 @@ public actor LocalAPI: CypressAPI {
             let seedRecord = seedRecords[treeID]
             // Absent from **both** answers: the installed inventories do not carry this tree. Left
             // out of both sets, which is what tells the caller the service's answer lost a row.
-            guard let tree = seedRecord?.tree ?? community[treeID] else { continue }
+            guard let tree = seedRecord?.tree ?? community[treeID]?.tree else { continue }
             // A tree this phone withdrew. The service's grove still lists it (it reads the
             // person's contributions, which stay), and the owner's answer of 2026-11-16 takes it
             // off My Grove. A rule applied, not a row lost, so it joins the unnamed set.
@@ -3452,11 +3474,14 @@ public actor LocalAPI: CypressAPI {
                 unnamed.insert(treeID)
                 continue
             }
-            guard let name = activeNames[treeID]?.name ?? seedRecord?.species?.commonName,
+            guard let name = activeNames[treeID]?.name
+                    ?? seedRecord?.species?.commonName
+                    ?? speciesNames[treeID],
                   !name.isEmpty
             else {
-                // Held, and D15 gives it no name — the caller drops the row without calling the
-                // read degraded. See `RoutedAPI.CityFileRows`.
+                // Held, and the row name rule gives it no name (no given name, no species) — the
+                // caller drops the row without calling the read degraded. See
+                // `RoutedAPI.CityFileRows`.
                 unnamed.insert(treeID)
                 continue
             }
@@ -3615,11 +3640,12 @@ public actor LocalAPI: CypressAPI {
     /// anyway. `readConsistently` would close the window at the price of a transaction per page;
     /// `grove()` made that trade and this follows it deliberately, not by inheritance.
     ///
-    /// The four statements inside the second read are:
+    /// The four statements inside the second read, on a page of city trees, are:
     ///
     /// - `TreeQueries.trees(ids:)` and `ContributionStore.activeNames(treeIDs:)`, through
-    ///   `Self.displayNames(for:treeQueries:contributions:connection:)`, which is the one
-    ///   implementation of the name rule and is what `displayNames(for:)` now calls too;
+    ///   `resolvedDisplayNames(for:connection:)`, which is the one implementation of the name rule
+    ///   and is what `displayNames(for:)` now calls too. A page that holds a community tree with no
+    ///   given name runs that method's three community statements as well (see it);
     /// - `ContributionStore.heroPhotoIDs(treeIDs:attribution:)` rather than the unscoped
     ///   `heroPhotoIDs()` (ERRATA E204), so the thumbnails for a page of at most
     ///   `Page.maximumLimit` trees are answered by two narrowed statements instead of
@@ -3668,12 +3694,7 @@ public actor LocalAPI: CypressAPI {
         let attribution = attribution
         let (names, heroPhotoIDs) = try await store.queue.read { connection in
             (
-                try Self.displayNames(
-                    for: Array(treeIDs),
-                    treeQueries: treeQueries,
-                    contributions: contributions,
-                    connection: connection
-                ),
+                try resolvedDisplayNames(for: Array(treeIDs), connection: connection),
                 try contributions.heroPhotoIDs(
                     treeIDs: treeIDs,
                     attribution: attribution,
@@ -5071,26 +5092,61 @@ public actor LocalAPI: CypressAPI {
         }
     }
 
-    /// The name a tree shows: its one active nickname, else the species common name (D15). Never a
-    /// fabricated label.
+    /// The name a tree shows in a row: its one active given name; else, for a tree in the city
+    /// inventory, its species' common name; else, for a community tree, the common name of the
+    /// species its profile shows. Never a fabricated label.
+    ///
+    /// **The community arm is the owner's answer of 2026-11-16** ("Use the species"): rows name a
+    /// tree as its profile does, so an added tree with a species reads `Pin moved · Sycamore,
+    /// London Plane` rather than `Pin moved`. It replaces the older rule that an added tree's
+    /// species was never used as its name in a row. The species is the one `treeProfile(id:)`
+    /// resolves: the row's `species_current`, with the reader's own naming or correction laid over
+    /// a cached tree while it is in force (`localSpeciesAnswers`, ROADMAP 144). A withdrawn tree
+    /// this phone still holds keeps its name, so its Outbox rows still name it.
     public func displayNameIfPresent(for id: UUID) async throws -> String? {
         try await store.queue.read { connection -> String? in
             if let name = try contributions.activeName(treeID: id, connection: connection) {
                 return name.name
             }
-            guard let record = try treeQueries?.tree(id: id, connection: connection) else { return nil }
-            return record.species?.commonName
+            if let record = try treeQueries?.tree(id: id, connection: connection) {
+                return record.species?.commonName
+            }
+            guard let row = try layer.row(id: id, connection: connection) else { return nil }
+            let shown = row.isAddedHere
+                ? row.tree.speciesCurrentID
+                : try localSpeciesAnswers(
+                    tree: row.tree, addedHere: false, isAdder: false, connection: connection
+                ).shownSpeciesID
+            guard let shown, let speciesQueries else { return nil }
+            return try speciesQueries.species(id: shown, connection: connection)?.commonName
         }
     }
 
-    /// **The name rule for a whole set, in two statements against one open connection.**
+    /// **The name rule for a whole set, against one open connection.**
     ///
-    /// This is `displayNameIfPresent`'s rule — the tree's one active nickname, else the **seed**
-    /// species' common name, else nothing — asked of every id at once. The species fallback is
-    /// `TreeQueries`-only here exactly as it is there: a community tree with no nickname answers
-    /// nothing even when its row carries a self-asserted species, because a self-assertion is not a
-    /// name the app puts on a tree (D15). An id with no name is absent from the result, which is
-    /// how the caller spells `nil`.
+    /// This is `displayNameIfPresent`'s rule asked of every id at once. An id with no name is
+    /// absent from the result, which is how the caller spells `nil`.
+    ///
+    /// **Statements.** Two always: `TreeQueries.trees(ids:)` and `activeNames`. Up to three more,
+    /// once per call, only when some id is neither named nor in the inventory (a community tree):
+    /// `CommunityLayer.rows(ids:)`; `SpeciesAssertionStore.treesWithAClaim(among:)`, when one of
+    /// those is somebody else's cached tree; and `SpeciesQueries.commonNames(ids:)`, when one has a
+    /// species. One more step runs **per tree**, and only for a cached tree that has a claim in
+    /// force on this phone: `localSpeciesAnswers`, the profile's own overlay, so a row and the
+    /// profile cannot disagree about the reader's own naming. That set is the cached trees the
+    /// reader named or corrected, not the page.
+    ///
+    /// **The per-tree step is a choice, made with these numbers** (one call, one queue read each,
+    /// measured by the review of 2026-11-16): 8 city trees, 2 statements; the same and 1 added
+    /// tree, 4; 50 added trees, 4; 50 cached trees each with a claim this phone queued, 155, which
+    /// is 2 + 3 + 3 per claimed tree. The step reuses `localSpeciesAnswers` rather than a batched
+    /// copy of its chain logic, because a second copy of that logic is how a row and the profile
+    /// would come to disagree. The count grows only with the trees one reader has named or
+    /// corrected on somebody else's record, which is small. `JournalStatementCensusTests` and
+    /// `GroveStatementCensusTests` pin the per-page counts.
+    ///
+    /// **Why an added tree's species counts:** the owner's answer of 2026-11-16, "Use the species"
+    /// (see `displayNameIfPresent`).
     ///
     /// Two folds differ from the per-tree form and neither is reachable. `activeNames` keeps the
     /// last row per tree where `activeName`'s `LIMIT 1` keeps the first, and `idx_tree_names_one_active`
@@ -5101,10 +5157,8 @@ public actor LocalAPI: CypressAPI {
     ///
     /// `JournalBatchReadTests` checks every answer against `displayNameIfPresent` itself rather
     /// than restating this paragraph as assertions.
-    private static func displayNames(
+    private func resolvedDisplayNames(
         for ids: [UUID],
-        treeQueries: TreeQueries?,
-        contributions: ContributionStore,
         connection: SQLiteConnection
     ) throws -> [UUID: String] {
         guard !ids.isEmpty else { return [:] }
@@ -5112,19 +5166,66 @@ public actor LocalAPI: CypressAPI {
         let active = try contributions.activeNames(treeIDs: ids, connection: connection)
         var names: [UUID: String] = [:]
         names.reserveCapacity(ids.count)
+        var unresolved: [UUID] = []
         for id in ids {
-            guard let name = active[id]?.name ?? records[id]?.species?.commonName,
-                  !name.isEmpty else { continue }
+            if let name = active[id]?.name {
+                if !name.isEmpty { names[id] = name }
+            } else if let record = records[id] {
+                if let common = record.species?.commonName, !common.isEmpty { names[id] = common }
+            } else {
+                unresolved.append(id)
+            }
+        }
+        guard !unresolved.isEmpty, speciesQueries != nil else { return names }
+
+        let rows = try layer.rows(ids: unresolved, connection: connection)
+        for (id, name) in try communitySpeciesNames(rows: rows, connection: connection) {
             names[id] = name
+        }
+        return names
+    }
+
+    /// **The community arm of the row name rule, for rows a caller has already read**: the common
+    /// name of the species each tree's profile title shows. It is `resolvedDisplayNames`' last step,
+    /// and `grove()` and `groveCityFileRows(for:)` call it too, over the `CommunityLayer.rows(ids:)`
+    /// answer they read anyway, so My Grove, the Journal, the Outbox and the profile title name a
+    /// tree the same way (the owner's answers of 2026-11-16, "Use the species" and "Yes, use the
+    /// species").
+    ///
+    /// The species is the row's `species_current`; on a cached tree with a claim in force on this
+    /// phone, `localSpeciesAnswers`' overlay, as `treeProfile` lays it. At most two statements:
+    /// `SpeciesAssertionStore.treesWithAClaim(among:)` when a row is cached, and
+    /// `SpeciesQueries.commonNames(ids:)` when a row has a species. `localSpeciesAnswers` runs only
+    /// for a cached tree the reader named or corrected. A tree with no species is absent.
+    private func communitySpeciesNames(
+        rows: [UUID: CommunityLayer.Row],
+        connection: SQLiteConnection
+    ) throws -> [UUID: String] {
+        guard !rows.isEmpty, let speciesQueries else { return [:] }
+        var shown: [UUID: UUID] = [:]
+        for (id, row) in rows {
+            if let species = row.tree.speciesCurrentID { shown[id] = species }
+        }
+        let cached = rows.filter { !$0.value.isAddedHere }
+        for id in try assertions.treesWithAClaim(among: Array(cached.keys), connection: connection) {
+            guard let row = cached[id] else { continue }
+            shown[id] = try localSpeciesAnswers(
+                tree: row.tree, addedHere: false, isAdder: false, connection: connection
+            ).shownSpeciesID
+        }
+        let common = try speciesQueries.commonNames(ids: Array(Set(shown.values)), connection: connection)
+        var names: [UUID: String] = [:]
+        for (id, species) in shown {
+            if let name = common[species], !name.isEmpty { names[id] = name }
         }
         return names
     }
 
     /// Resolves several tree names in one pass, for `OutboxViewState` and for `journal`.
     ///
-    /// **One round-trip and two statements**, where this was a serial loop of one `queue.read` hop
-    /// per id, each running `TreeQueries.tree(id:)` on the nickname miss. See the static above for
-    /// the rule and for the two folds that differ from the per-tree form.
+    /// **One round-trip**, where this was a serial loop of one `queue.read` hop per id, each running
+    /// `TreeQueries.tree(id:)` on the nickname miss. See `resolvedDisplayNames` above for the rule,
+    /// its statements, and the two folds that differ from the per-tree form.
     ///
     /// **What the batch changes about failure, stated because it is a real difference.** The loop
     /// wrapped each id in `try?`, so one unreadable row cost that id its name and no other; one
@@ -5136,12 +5237,7 @@ public actor LocalAPI: CypressAPI {
     public func displayNames(for ids: [UUID]) async -> [UUID: String] {
         guard !ids.isEmpty else { return [:] }
         return (try? await store.queue.read { connection in
-            try Self.displayNames(
-                for: ids,
-                treeQueries: treeQueries,
-                contributions: contributions,
-                connection: connection
-            )
+            try resolvedDisplayNames(for: ids, connection: connection)
         }) ?? [:]
     }
 }

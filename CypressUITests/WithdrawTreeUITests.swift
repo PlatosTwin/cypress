@@ -7,12 +7,15 @@
 //
 //  1. A tree this installation just added, signed out, offers `Withdraw this tree`. The alert asks
 //     first, with the "only you" message. `Withdraw tree` takes the reader back off the profile, and
-//     the tree's profile no longer opens.
+//     the tree's profile no longer opens. While the control shows, `Report that there is no tree
+//     here` does not (the owner's answer of 2026-11-16).
 //  2. Signed in and sharing, the alert carries the shared message.
 //  3. Signed in and sharing, with another account's visit on the tree, the reason line draws in
-//     place of the control, and the profile does not say only the reader can see the tree.
+//     place of the control, below the report link that comes back in this state, and the profile
+//     does not say only the reader can see the tree.
 //  4. After the service refuses (`debugRefuseTreeWithdrawal`), the Outbox row reads
-//     `Tree withdrawn · …` with the owner's sentence.
+//     `Tree withdrawn · Sycamore, London Plane` with the owner's sentence, and that row draws no
+//     Retry.
 //  5. A city tree offers no control.
 //
 //  The "Keep it" press is in `DialogCancelUITests`, with the app's other cancels.
@@ -42,12 +45,43 @@ final class WithdrawTreeUITests: XCTestCase, DeepLinkHarness {
         static let reportNoTree = "Report that there is no tree here"
         static let cityRecordReport = "Report a mistake in the city’s record"
         static let showWhere = "Show me where this is"
-        static let outboxRowPrefix = "Tree withdrawn · "
+        /// The debug tree is added with the seed's first `Platanus` match, whose common name is
+        /// "Sycamore, London Plane". Rows name an added tree by its species (the owner's answer of
+        /// 2026-11-16, "Use the species"), as its profile title does.
+        static let outboxRowTitle = "Tree withdrawn · Sycamore, London Plane"
+        /// `OutboxCopy.retryAction`, the retry control's accessibility label.
+        static let retry = "Retry"
+    }
+
+    /// `DebugLocationOverride.westernAddition`, the same point `DebugMapCamera.dense` pins the
+    /// camera to, spelled out because a UI test cannot import the app target.
+    private static let fix = "37.78485,-122.4215"
+
+    /// `launch(_:)` with the location pinned (`CYPRESS_LOCATION`).
+    ///
+    /// **Pinned because an unpinned launch can block the app's main thread for 30 s and more**
+    /// (found 2026-11-16). `MapLocationProvider.init` reads `CLLocationManager.authorizationStatus`,
+    /// a synchronous call to the location daemon, on the main thread. On a fresh install the
+    /// daemon was seen to hold that reply long enough that XCUITest reported "main thread busy for
+    /// 30.0s", most often in `withdrawTreeBuiltOn` run alone. The pinned provider never makes that
+    /// call.
+    private func launchPinned(
+        _ screen: String, contentSize: String? = nil
+    ) -> XCUIApplication {
+        let app = XCUIApplication()
+        app.launchEnvironment[Self.deepLinkScreenKey] = screen
+        app.launchEnvironment["CYPRESS_LOCATION"] = Self.fix
+        if let contentSize {
+            app.launchArguments += ["-UIPreferredContentSizeCategoryName", contentSize]
+        }
+        DebugMapCamera.pin(app)
+        app.launch()
+        return app
     }
 
     /// Opens `screen` and waits for the profile's withdraw control, scrolled into reach.
     private func arriveAtControl(_ screen: String) -> (XCUIApplication, XCUIElement)? {
-        let app = launch(screen)
+        let app = launchPinned(screen)
         let action = app.buttons[Copy.action]
         guard action.waitForExistence(timeout: 60) else {
             XCTFail(
@@ -65,12 +99,17 @@ final class WithdrawTreeUITests: XCTestCase, DeepLinkHarness {
     func testWithdrawingATreeOnlyYouCanSeeAsksAndThenLeavesTheProfile() {
         guard let (app, action) = arriveAtControl("withdrawTree") else { return }
 
-        // The control sits below "Report that there is no tree here", in the same column. The
-        // report link is on this screen for a tree the reader added, so its absence is a failure.
-        let report = app.buttons[Copy.reportNoTree]
-        XCTAssertTrue(report.exists, "the profile drew no '\(Copy.reportNoTree)' to place the control under")
-        XCTAssertLessThan(report.frame.midY, action.frame.midY, "the control is not below the report link")
-        XCTAssertEqual(report.frame.minX, action.frame.minX, accuracy: 1, "the control is not in the report link's column")
+        // The control is present (`arriveAtControl`) and sits in the column of the links above it,
+        // with `Show me where this is` as the reference: it is drawn on every profile. While the
+        // control shows, the report link is not drawn (the owner's answer of 2026-11-16, "Hide it
+        // while withdraw shows"); the control's presence is what makes that absence a fact.
+        let showWhere = app.buttons[Copy.showWhere]
+        XCTAssertTrue(showWhere.exists, "the profile drew no '\(Copy.showWhere)' to measure the column by")
+        XCTAssertLessThan(showWhere.frame.midY, action.frame.midY, "the control is not below the column's first link")
+        XCTAssertEqual(showWhere.frame.minX, action.frame.minX, accuracy: 1, "the control is not in the links' column")
+        XCTAssertFalse(app.buttons[Copy.reportNoTree].exists,
+                       "'\(Copy.reportNoTree)' is drawn beside '\(Copy.action)'")
+        attachScreenshot(app, "withdraw-profile-control-only-you")
 
         action.tap()
         let title = app.staticTexts[Copy.title]
@@ -108,7 +147,7 @@ final class WithdrawTreeUITests: XCTestCase, DeepLinkHarness {
     // MARK: - 3 · Somebody else built on it
 
     func testAnotherAccountsVisitDrawsTheReasonLineInPlaceOfTheControl() {
-        let app = launch("withdrawTreeBuiltOn")
+        let app = launchPinned("withdrawTreeBuiltOn")
         let line = app.staticTexts[Copy.staysOnTheMap]
         guard line.waitForExistence(timeout: 60) || scrollUntilExists(line, in: app) else {
             XCTFail(
@@ -117,6 +156,11 @@ final class WithdrawTreeUITests: XCTestCase, DeepLinkHarness {
             )
             return
         }
+        // The report link comes back in this state, as the adder's way to say the tree is gone (the
+        // owner's answer of 2026-11-16), and the reason line sits below it.
+        let report = app.buttons[Copy.reportNoTree]
+        XCTAssertTrue(report.exists, "the reason line is drawn without '\(Copy.reportNoTree)' above it")
+        XCTAssertLessThan(report.frame.midY, line.frame.midY, "the reason line is not below the report link")
         XCTAssertFalse(app.buttons[Copy.action].exists, "the control is drawn beside its reason line")
         // A screen a person can reach: another account can only build on a tree everyone sees, so
         // the profile must not also say that only the reader can see it.
@@ -129,13 +173,9 @@ final class WithdrawTreeUITests: XCTestCase, DeepLinkHarness {
     /// The reason line at AX5, for its spacing under the report link's caption. A screenshot only:
     /// the line's presence is test 3's assertion.
     func testTheReasonLineAtTheLargestTextSize() {
-        let app = XCUIApplication()
-        app.launchEnvironment[Self.deepLinkScreenKey] = "withdrawTreeBuiltOn"
-        app.launchArguments += [
-            "-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXXXL"
-        ]
-        DebugMapCamera.pin(app)
-        app.launch()
+        let app = launchPinned(
+            "withdrawTreeBuiltOn", contentSize: "UICTContentSizeCategoryAccessibilityXXXL"
+        )
 
         let line = app.staticTexts[Copy.staysOnTheMap]
         guard line.waitForExistence(timeout: 60) || scrollUntilExists(line, in: app) else {
@@ -149,19 +189,44 @@ final class WithdrawTreeUITests: XCTestCase, DeepLinkHarness {
     // MARK: - 4 · The Outbox after a refusal
 
     func testARefusedWithdrawalReadsTheOwnersSentenceInTheOutbox() {
-        let app = launch("withdrawTreeRefused")
+        let app = launchPinned("withdrawTreeRefused")
         let row = app.staticTexts
-            .matching(NSPredicate(format: "label BEGINSWITH %@", Copy.outboxRowPrefix))
+            .matching(NSPredicate(format: "label == %@", Copy.outboxRowTitle))
             .firstMatch
         guard row.waitForExistence(timeout: 60) else {
             XCTFail(
                 deepLinkFailure(app).map { "withdrawTreeRefused: \($0)" }
-                    ?? "the Outbox drew no row titled '\(Copy.outboxRowPrefix)…'"
+                    ?? "the Outbox drew no row titled '\(Copy.outboxRowTitle)'"
             )
             return
         }
-        XCTAssertTrue(app.staticTexts[Copy.staysOnTheMap].waitForExistence(timeout: 10),
+        // The refused row stays for good (the owner's answer of 2026-11-16, "Row stays, reason
+        // only"), so a second run on one install finds several rows carrying the same sentence.
+        // Match them as a set, then take the one that belongs to the row found above: the first
+        // sentence below its title, within the row (the time line sits between the two).
+        let sentences = app.staticTexts.matching(NSPredicate(format: "label == %@", Copy.staysOnTheMap))
+        XCTAssertTrue(sentences.firstMatch.waitForExistence(timeout: 10),
                       "the refused row does not carry the owner's sentence")
+        reach(row, in: app)
+        let title = row.frame
+        let reason = sentences.allElementsBoundByIndex
+            .map(\.frame)
+            .filter { $0.minY > title.maxY }
+            .min { $0.minY < $1.minY }
+        guard let reason, reason.minY - title.maxY < 60 else {
+            XCTFail("no owner's sentence sits directly below the row titled '\(Copy.outboxRowTitle)'")
+            return
+        }
+        // No Retry in that row. The row's state word sits at the top of the row, beside its title;
+        // its 44 pt hit area starts above the title (measured: button minY 717, title minY 732), so
+        // the band starts 24 pt above the title and ends at the sentence. The row above ends more
+        // than 24 pt higher (padding and gap), so the band holds one row.
+        let band = (title.minY - 24)...(reason.maxY + 4)
+        let retries = app.buttons
+            .matching(NSPredicate(format: "label == %@", Copy.retry))
+            .allElementsBoundByIndex
+        XCTAssertFalse(retries.contains { band.contains($0.frame.midY) },
+                       "the refused row draws '\(Copy.retry)'")
         attachScreenshot(app, "withdraw-outbox-refused")
     }
 
@@ -170,13 +235,9 @@ final class WithdrawTreeUITests: XCTestCase, DeepLinkHarness {
     /// At AX5 the control is still reachable, and the alert still draws its title and both buttons
     /// where they can be pressed. The test presses `Keep it`, so it withdraws nothing.
     func testTheControlAndTheAlertAtTheLargestTextSize() {
-        let app = XCUIApplication()
-        app.launchEnvironment[Self.deepLinkScreenKey] = "withdrawTree"
-        app.launchArguments += [
-            "-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXXXL"
-        ]
-        DebugMapCamera.pin(app)
-        app.launch()
+        let app = launchPinned(
+            "withdrawTree", contentSize: "UICTContentSizeCategoryAccessibilityXXXL"
+        )
 
         let action = app.buttons[Copy.action]
         guard action.waitForExistence(timeout: 60) else {
@@ -203,7 +264,7 @@ final class WithdrawTreeUITests: XCTestCase, DeepLinkHarness {
     // MARK: - 6 · Not on a city tree
 
     func testACityTreeOffersNoWithdrawal() {
-        let app = launch("treeProfile")
+        let app = launchPinned("treeProfile")
         let showWhere = app.buttons[Copy.showWhere]
         guard showWhere.waitForExistence(timeout: 60) else {
             XCTFail(deepLinkFailure(app).map { "treeProfile: \($0)" } ?? "treeProfile: the profile never drew")

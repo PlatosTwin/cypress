@@ -853,8 +853,9 @@ service for added trees over the 60 m around the reader:
    >
    > **Added, the withdrawal round (the owner's answers of 2026-11-16).** On a community tree the
    > reader added, the record controls near the bottom of the identity block end with the link
-   > **`Withdraw this tree`**, below `Report that there is no tree here`, in the same style,
-   > spacing and tokens as that link. A tap asks first, in an **alert** titled
+   > **`Withdraw this tree`**, in the same style, spacing and tokens as the links above it. While
+   > that link is drawn, `Report that there is no tree here` and its caption are not (the owner's
+   > answer of 2026-11-16, "Hide it while withdraw shows"). A tap asks first, in an **alert** titled
    > **`Withdraw this tree?`** with the buttons **`Withdraw tree`** (destructive) and **`Keep it`**.
    > Its message, for a tree others can see:
    > `Everyone using Cypress stops seeing this tree once this is sent. If someone else has visited or photographed it, it stays. This cannot be undone.`
@@ -864,7 +865,10 @@ service for added trees over the 60 m around the reader:
    > Yours map, and the reader's own visits, photos and favorite stay saved. No Journal row is
    > made. When the phone already knows somebody else visited or photographed the tree, the link's
    > place holds the muted line
-   > `Other people have added to this tree, so it stays on the map.` A signed-out reader gets no
+   > `Other people have added to this tree, so it stays on the map.`, drawn below
+   > `Report that there is no tree here` and its caption, which come back in that state as the
+   > adder's way to say the tree is gone. A report the adder already raised keeps its line
+   > `This record has been reported as never having held a tree.` A signed-out reader gets no
    > link on a tree their account added, and nobody gets one on a city tree or a tree somebody
    > else added.
 9. **Stat grid** (C11) — `grid-template-columns:1fr 1fr; gap:8px; padding:10px 16px 30px; margin-top:auto`:
@@ -1115,6 +1119,14 @@ Intro: *Where taps lead: the species field guide, the running list of species yo
    `padding:9px 2px`, radius **11px**, 13.5px:
    - `Trees`, `Journal` — fill `#fff`, `1px #E3E8D9`, `#66735F`, 600.
    - **`Species`** — fill `#1D4634`, border `1px #1D4634`, `#fff`, 700.
+
+   Not in the mock: **the Trees tab titles each tree by a given name; else the species' common
+   name, for a tree someone added as for a city tree; else `Tree`** (the owner's answer of
+   2026-11-16, "Yes, use the species"). `Tree` holds for a tree this phone holds in its own grove.
+   A tree that reaches the list only through the account's grove (for example, a tree you added,
+   seen on a second phone) and has neither a given name nor a species is not listed today. That
+   is an open item in ROADMAP. A city tree with no species reads `Tree` here, while its profile
+   title is its street address.
 3. **Progress block** — `padding:2px 18px 0`, `HStack(spacing:16)`:
    ProgressRing (C27, `30%`) + `12 of 40 species` (Serif 19px/600) and
    `you can recognize in the Outer Sunset` (13px, `#66735F`).
@@ -1505,7 +1517,22 @@ scrim `rgba(14,24,17,.3)`.
    **no sub-line**. When it fails for good, the tree comes back on the map. When the service refused
    it because somebody else visited or photographed the tree, the row reads
    `Other people have added to this tree, so it stays on the map.`; any other refusal reads
-   `This couldn't be sent.` (the owner's answers of 2026-11-16).
+   `This couldn't be sent.` (the owner's answers of 2026-11-16). **The row refused because others
+   added to the tree is the one failed row with no `retry`**: it keeps the amber card and its
+   reason, draws no state word, and stays in the list for good (the owner's answers of 2026-11-16,
+   "Remove Retry there" and "Row stays, reason only"). An account deletion that erases everything
+   removes it when the withdrawal names that account; a withdrawal made signed out, on a tree this
+   phone added signed out, names only the device, and no deletion removes it. A deletion that keeps
+   records keeps the row and takes the account out of it, so no later deletion removes it either;
+   the tree's adder becomes nobody, the profile loses the reason line, and it offers
+   `Report that there is no tree here` instead. A withdrawal refused for any other reason keeps
+   `retry`.
+
+   Not in the mock: **the tree in a row title is named as its profile names it** (the owner's
+   answer of 2026-11-16, "Use the species"). A given name wins; else the species' common name, for
+   a tree someone added as for a city tree, for example `Pin moved · Sycamore, London Plane`. A
+   tree with neither reads `Tree`, except a pin move, which reads `Pin moved` alone. My Grove's
+   Trees list uses the same rule (the owner's answer of 2026-11-16, "Yes, use the species").
 3. **Wifi setting row** — `margin:10px 16px 0`, fill `#fff`, `1px #E3E8D9`, radius 14px,
    `padding:13px 15px`, `gap:12px`:
    - `Sync photos on wifi only` — 13.5px/700.

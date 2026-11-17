@@ -259,8 +259,11 @@ public struct OutboxItemSnapshot: Identifiable, Sendable, Hashable {
     ///
     /// It agrees with `OutboxPresentation.Row.showsRetryButton` again as of the owner's ruling 3 of
     /// 2026-08-14: a terminally refused item folds into the same failed row rather than drawing a
-    /// fourth state of its own, so every `failed` row carries the control.
-    public var showsRetryAffordance: Bool { state == .failed }
+    /// fourth state of its own, so every `failed` row carries the control, except the one
+    /// `OutboxRetryPolicy.acceptsRetry` refuses (a withdrawal the service refused with `conflict`).
+    public var showsRetryAffordance: Bool {
+        state == .failed && OutboxRetryPolicy.acceptsRetry(kind: kind, errorCode: errorCode)
+    }
 }
 
 /// Everything screen 17 renders, in one value.

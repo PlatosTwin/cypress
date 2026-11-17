@@ -166,6 +166,10 @@ public actor OutboxQueue {
     /// Set when a drain is asked for while one is running; the running drain passes again before
     /// it returns. See `drain(photoUploadsAllowed:)`.
     private var drainRequested = false
+    /// Callers waiting for the running drain to end (`sendBeforeAccountDeletion`). `drain` drops a
+    /// call that arrives while it runs, which is right for a trigger and wrong for a caller that
+    /// must know the queue was sent before it goes on.
+    private var idleWaiters: [CheckedContinuation<Void, Never>] = []
 
     /// One row's progress through a single drain.
     ///
@@ -325,7 +329,7 @@ public actor OutboxQueue {
             return DrainReport()
         }
         isDraining = true
-        defer { isDraining = false }
+        defer { endDraining() }
 
         let report = try await passReleasingMoves(photoUploadsAllowed: photoUploadsAllowed)
         // A drain asked for while this one ran gets its pass now, deciding about photographs
@@ -336,6 +340,83 @@ public actor OutboxQueue {
             _ = try await passReleasingMoves(photoUploadsAllowed: await photoUploadsAllowedNow())
         }
         return report
+    }
+
+    /// Clears `isDraining` and wakes every caller waiting for it.
+    private func endDraining() {
+        isDraining = false
+        let waiters = idleWaiters
+        idleWaiters = []
+        for waiter in waiters { waiter.resume() }
+    }
+
+    /// Suspends until no drain is running. A woken caller checks again, because another caller
+    /// may have taken the queue first.
+    private func waitUntilIdle() async {
+        while isDraining {
+            await withCheckedContinuation { idleWaiters.append($0) }
+        }
+    }
+
+    // MARK: - Before a keep-records account deletion (ROADMAP 192)
+
+    /// How many drains `sendBeforeAccountDeletion` makes at most. A drain's first pass takes
+    /// `batchSize` rows, so this covers 200 due rows; a withdrawal a longer queue leaves unsent is
+    /// counted in the answer, not lost.
+    static let passesBeforeAccountDeletion = 8
+
+    /// Sends what this account queued, now, before `DELETE /me` under the keep-records door.
+    ///
+    /// **Why.** The keep-records door makes the account's published trees anonymous on the service,
+    /// and nobody may withdraw an anonymous tree (`withdrawCommunityTree` answers `ErrNotTheAdder`,
+    /// `forbidden`). A withdrawal still queued at the deletion would then be refused, its tree would
+    /// come back on this phone, and nobody could ever withdraw it (ROADMAP 192). Sent first, it
+    /// reaches the service while the account still owns the tree.
+    ///
+    /// **What it does.**
+    /// 0. Reads the account's unsent withdrawals first, and does nothing more when there are none.
+    /// 1. Makes every row naming the account that the service has not accepted due now
+    ///    (`OutboxStore.makeAccountRowsDueNow`), so a row in backoff is not skipped.
+    /// 2. Calls `drain()` up to `passesBeforeAccountDeletion` times, and stops at the first drain
+    ///    that finds nothing due. Before each, it waits for a running drain to end, so a row that
+    ///    drain holds `uploading` is settled first. **The wait matters**: `drain()` returns at once
+    ///    when another drain runs, so calling it without the wait would prove nothing was sent.
+    ///    `drain()` reads the wi-fi decision before it checks, so another drain can still start in
+    ///    between; an empty report while a drain runs is therefore not taken as "nothing due".
+    ///    It is the ordinary drain, so the wi-fi toggle is honored and a row that fails is settled
+    ///    as on any other day: a `conflict` on a withdrawal fails it and brings the tree back with
+    ///    the owner's sentence, and a failure that can be retried leaves it pending.
+    ///
+    /// - Returns: how many `tree_withdrawal` rows naming the account are still unsent and not
+    ///   failed (`OutboxStore.unsentTreeWithdrawals`). The caller does not delete the account while
+    ///   this is above zero. A row another drain holds `uploading` at the read counts as unsent,
+    ///   which errs toward not deleting.
+    public func sendBeforeAccountDeletion(userID: UUID) async throws -> Int {
+        // **Only when the account has a withdrawal to send** (the orchestrator's decision on the
+        // review of ROADMAP 192). With none, the deletion makes exactly the requests it made before
+        // this step existed: no drain, and no row made due. A drain sends every identity's due rows
+        // and, on wi-fi, every owed photograph, with no request timeout, so running it for nothing
+        // could hold the sheet for minutes on a connection that reaches nothing. A withdrawal a
+        // running drain holds `uploading` counts here, so that case still waits for it.
+        let queued = try await queue.read { connection in
+            try store.unsentTreeWithdrawals(userID: userID, connection: connection)
+        }
+        guard queued > 0 else { return 0 }
+
+        try await queue.write { connection in
+            _ = try store.makeAccountRowsDueNow(userID: userID, connection: connection)
+        }
+        for _ in 0..<Self.passesBeforeAccountDeletion {
+            await waitUntilIdle()
+            let report = try await drain()
+            // An empty report while another drain runs may mean this call was the one turned away
+            // (`drain()` reads the wi-fi decision before it checks), so wait for that drain and
+            // ask again rather than stopping.
+            if report.attempted == 0 && !isDraining { break }
+        }
+        return try await queue.read { connection in
+            try store.unsentTreeWithdrawals(userID: userID, connection: connection)
+        }
     }
 
     /// One pass, and up to two more if it released a pin move.
@@ -877,7 +958,8 @@ public actor OutboxQueue {
         return changed
     }
 
-    /// Sweeps `done` receipts older than `completedRetention`.
+    /// Sweeps `done` receipts older than `completedRetention`. `DataLayer.boot` calls it once per
+    /// launch (ROADMAP 184); nothing else in the app does.
     @discardableResult
     public func pruneCompleted() async throws -> Int {
         let removed = try await queue.write { connection in
