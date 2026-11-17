@@ -384,10 +384,9 @@ public actor LocalAPI: CypressAPI {
                     speciesScientificName: species?.scientific,
                     speciesCommonName: species?.common,
                     // No curated tell: the seed carries `id_tips` for some species (40 of 731 on
-                    // 2026-11-16), but a tell on this card would be the species' botany offered to
-                    // tell apart a tree whose species is one person's guess, which is the step
-                    // `VisitDistinguisher` keeps to inventory data. Before this change an added
-                    // tree carried no tell either.
+                    // 2026-11-16), but the owner's answers of that day put an added tree's species
+                    // in the title and the species banner, not its curated tips. Before this
+                    // change an added tree carried no tell either.
                     tell: nil
                 )
             }

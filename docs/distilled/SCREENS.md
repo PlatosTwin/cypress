@@ -768,8 +768,9 @@ the reader's species while it is in force. An added tree with no species reads `
 tree`, as a city tree with no species does. A given name is never shown on these cards. The same
 title rule names a tree in the Add this tree screen's `ALREADY ON RECORD` note and in a planting
 site's nearest-tree line (neither has a mock); those two show the title only, with no Latin line.
-The "Tell them apart" banner does not use an added tree's species: a pair that includes an added
-tree is told apart by inventory facts only, as before this note.
+The "Tell them apart" banner counts an added tree's species too (the owner's answer of
+2026-11-16, "Yes, any species counts"): an added `Sycamore, London Plane` beside a tree of a
+different species reads `Tell them apart by species`, and that hint can rest on one person's guess.
 
 ---
 
