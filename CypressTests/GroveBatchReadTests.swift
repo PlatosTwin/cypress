@@ -30,7 +30,10 @@ import Testing
 /// Journal and the Outbox share, so the claim is a comparison rather than a restatement of what the
 /// new code does. `aCommunityTreeIsNamedByItsSpeciesInMyGrove` adds the five community shapes
 /// (a species; none; a nickname and a species; somebody else's cached tree with a species; a
-/// withdrawn tree) and holds My Grove, the Journal and the profile title to one name per tree.
+/// withdrawn tree) and holds My Grove, the Journal and the profile title to one name for each of
+/// those community trees. It does not cover a city tree with no species, whose profile title is
+/// its street address while My Grove and the Journal read "Tree" (older behavior, outside the
+/// owner's answers).
 @Suite("My Grove · the batched read answers what the loop answered")
 struct GroveBatchReadTests {
 
@@ -167,8 +170,9 @@ struct GroveBatchReadTests {
     /// - somebody else's cached tree with a species, which this person visited, reads the species;
     /// - an added tree this phone withdrew leaves My Grove (the owner's earlier answer).
     ///
-    /// Then, for every tree in My Grove, the title My Grove draws, the name the Journal resolves and
-    /// the profile's title must be one string. Red-proof: in `LocalAPI.groveEntries`, drop
+    /// Then, for every tree in this fixture's grove (all community trees), the title My Grove draws,
+    /// the name the Journal resolves and the profile's title must be one string. A city tree with
+    /// no species is outside this check: its profile title is its street address. Red-proof: in `LocalAPI.groveEntries`, drop
     /// `?? speciesNames[row.treeID]` from the name — red on "an added tree with a species read ''"
     /// and on "My Grove, the Journal and the profile disagree".
     @Test("My Grove names a community tree by its species, as the Journal and the profile do")

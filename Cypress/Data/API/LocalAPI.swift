@@ -3209,8 +3209,14 @@ public actor LocalAPI: CypressAPI {
     ///   name, else, for a community tree, the common name of the species its profile title shows
     ///   (`communitySpeciesNames`), else empty, which the screen draws as "Tree". The rule is the
     ///   owner's answers of 2026-11-16: "Use the species" for the Journal and the Outbox, and "Yes,
-    ///   use the species" for My Grove. Its two extra statements run only when the page holds such
-    ///   a tree.
+    ///   use the species" for My Grove. Its extra statements run once per page, only when the page
+    ///   holds such a tree: the species' common names, and the claim check when one of them is
+    ///   somebody else's cached tree. One step runs **per tree**: for each cached tree with a claim
+    ///   in force on this phone, `localSpeciesAnswers` adds three statements (`species_assertions`,
+    ///   the outbox `SELECT kind`, `review_flags`). The review of 2026-11-16 measured `grove()` at 2
+    ///   statements with no community trees, 8 with 2 added species trees, 8 with 50, and 158 in two
+    ///   queue reads with 50 cached trees each with a queued claim. `resolvedDisplayNames` says why
+    ///   that step stays per tree.
     ///
     /// `GroveBatchReadTests` holds this against the per-tree form over a grove carrying one of each
     /// case, because "preserved one for one" is exactly the kind of claim this project has been
