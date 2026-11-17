@@ -154,33 +154,83 @@ struct NearbySpeciesTests {
 
     // MARK: - The distinguisher
 
-    /// **What the shortlist's "Tell them apart" line does with an added tree's species.** Unchanged
-    /// code (`VisitDistinguisher`), new input: two trees of the same species are never told apart
-    /// by species (the rule compares the two names and moves on when they match), a tree with a
-    /// species against one without is not either (the rule needs both), and two different species
-    /// are, which before this change could not happen for an added tree.
-    @Test("the distinguisher separates by species only when both trees name a different one")
+    /// **The shortlist's "Tell them apart" banner does not use an added tree's species.** The owner's
+    /// answer of 2026-11-16 put that species in the card's title; the banner keeps to inventory data
+    /// (`VisitDistinguisher`'s header), so any pair that includes an added tree gets the banner it
+    /// got before the title changed: the answer for the same pair with the added tree's species
+    /// taken away. Two city trees of different species are still told apart by species.
+    ///
+    /// Red-proof: remove the `source != .community` guard in `VisitDistinguisher`'s `.species`
+    /// case — red on "an added tree's species reached the banner".
+    @Test("the banner reads as before for a pair with an added tree, and by species for two city trees")
     func theDistinguisher() async throws {
         let (api, _) = try await Self.open()
         let plane = try await OthersTreeControlsTests.plane(api)
         let oak = try await OthersTreeControlsTests.oak(api, besides: plane)
         let device = OthersTreeControlsTests.readerDevice
+
+        // Two city trees with different species, on a street in the Inner Sunset.
+        let street = Coordinate(latitude: 37.7600, longitude: -122.4750)
+        let city = try await api.treesNear(street, radiusM: 80, limit: 200)
+            .filter { $0.tree.source != .community && $0.speciesScientificName != nil }
+        let cityA = try #require(
+            city.first { $0.speciesScientificName != plane.scientificName },
+            "no city tree with a species near the street"
+        )
+        let cityB = try #require(
+            city.first { $0.speciesScientificName != nil && $0.speciesScientificName != cityA.speciesScientificName },
+            "no second city species near the street"
+        )
+
+        // Added trees: a plane on the city tree's spot, an oak, and one with no species.
+        let planeOnStreet = try await OthersTreeControlsTests.add(
+            api, device: device, at: cityA.tree.coordinate, species: plane.id
+        ).id
         let planeA = try await OthersTreeControlsTests.add(api, device: device, at: Self.north(4), species: plane.id).id
-        let planeB = try await OthersTreeControlsTests.add(api, device: device, at: Self.north(8), species: plane.id).id
         let oakTree = try await OthersTreeControlsTests.cached(api, species: oak.id, at: Self.north(12))
         let bare = try await OthersTreeControlsTests.add(api, device: device, at: Self.north(16)).id
 
-        let rows = try await Self.near(api)
+        var rows = try await Self.near(api)
+        for row in try await api.treesNear(street, radiusM: 80, limit: 200) { rows[row.tree.id] = row }
         func candidate(_ id: UUID) throws -> VisitCandidate { VisitCandidate(nearby: try #require(rows[id])) }
 
-        let same = VisitDistinguisher.traits(try candidate(planeA), try candidate(planeB))
-        #expect(same?.first.dimension != VisitDistinguisher.Dimension.species.label, "two planes were told apart by species")
-        let oneBare = VisitDistinguisher.traits(try candidate(planeA), try candidate(bare))
-        #expect(oneBare?.first.dimension != VisitDistinguisher.Dimension.species.label)
-        let different = try #require(VisitDistinguisher.traits(try candidate(planeA), try candidate(oakTree)))
-        #expect(different.first.dimension == VisitDistinguisher.Dimension.species.label)
-        #expect(different.first.value == plane.commonName && different.second.value == oak.commonName)
-        #expect(different.first.isRedundantWithCard, "the species trait is the card's own title")
+        /// The record as `treesNear` gave it on main: an added tree carried no species.
+        func onMain(_ candidate: VisitCandidate) -> VisitCandidate {
+            guard candidate.tree.source == .community else { return candidate }
+            return VisitCandidate(nearby: NearbyTree(
+                tree: candidate.tree, distanceM: candidate.distanceM,
+                speciesScientificName: nil, speciesCommonName: nil, tell: candidate.tell
+            ))
+        }
+        func banner(_ a: VisitCandidate, _ b: VisitCandidate) -> String {
+            guard let traits = VisitDistinguisher.traits(a, b) else { return VisitDistinguisher.indistinguishableCopy }
+            return "\(traits.first.dimension): \(traits.first.value) / \(traits.second.value)"
+        }
+
+        // Calibration: the added trees really carry a species now, so the guard is what is tested.
+        #expect(try candidate(planeA).nearby.speciesScientificName == plane.scientificName)
+        #expect(try candidate(planeOnStreet).nearby.speciesScientificName == plane.scientificName)
+
+        let pairs: [(String, VisitCandidate, VisitCandidate)] = [
+            ("an added plane beside a city tree", try candidate(planeOnStreet), try candidate(cityA.tree.id)),
+            ("two added trees of different species", try candidate(planeA), try candidate(oakTree)),
+            ("an added tree with a species beside one without", try candidate(planeA), try candidate(bare))
+        ]
+        for (label, a, b) in pairs {
+            let now = banner(a, b)
+            #expect(
+                now == banner(onMain(a), onMain(b)),
+                "an added tree's species reached the banner for \(label): '\(now)'"
+            )
+            #expect(!now.hasPrefix(VisitDistinguisher.Dimension.species.label), "\(label): '\(now)'")
+        }
+
+        let cities = try #require(VisitDistinguisher.traits(VisitCandidate(nearby: cityA), VisitCandidate(nearby: cityB)))
+        #expect(
+            cities.first.dimension == VisitDistinguisher.Dimension.species.label,
+            "two city trees of different species were told apart by '\(cities.first.dimension)'"
+        )
+        #expect(cities.first.isRedundantWithCard, "the species trait is the card's own title")
     }
 
     // MARK: - The list and the profile agree

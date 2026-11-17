@@ -29,10 +29,17 @@ What the code does (branch `feat/picker-names-and-second-phone-grove`):
   shown in them.
 - The same record feeds the saved screen's "Next nearest" line and the subject of a visit started
   from the "What tree is this?" list, which follow the same rule.
-- The shortlist's "Tell them apart" line can now separate an added tree from a neighbor by
-  species, when both name a species and the two differ. Two trees of the same species, or a tree
-  with a species next to one without, are told apart by the next fact (address, planting site,
-  age, trunk size), as before.
+- The shortlist's "Tell them apart" banner does **not** use an added tree's species
+  (`VisitDistinguisher`, the `.species` case returns nothing for a tree whose `source` is
+  `.community`). The owner's answer approved the species as the title in the three lists. It did
+  not speak to the banner, and the banner keeps to inventory data, as `VisitDistinguisher`'s header
+  requires: a self-reported species is one person's guess, and a duplicate add of a city tree
+  with a wrong guess would otherwise be told apart "by species". So a pair that includes an added
+  tree gets the same banner as before this branch: the next inventory fact (address, planting
+  site, age, trunk size), or "These two records carry the same details. Pick the one you are
+  standing at." Two city trees of different species are still told apart by species. Whether a
+  self-reported species may separate two trees is being put to the owner; this entry does not
+  record a decision on it.
 
 This branch also meets R253's sentence "An added tree with no name and no species still reads
 "Tree"" for a tree a second phone reaches only through the account's grove (ROADMAP chip 206):

@@ -2818,7 +2818,7 @@ into this section in the round that finds it, and nowhere else. Each item stands
     `TreeMembershipKinds` (`server/internal/store/reads.go`) counts species statements and reports,
     so since 144 a stranger's tree joins the sender's "Yours" grove on the service. Found by the
     planner of 144 (finding h4) and repeated by its service author. Owner's call whether that is
-    wanted.~~ **DECIDED, 2026-11-16:** the owner chose "Yes, it counts": "Naming or reporting a
+    wanted.~~ **DECIDED, 2026-11-16:** the owner chose "Yes, it counts (Recommended)": "Naming or reporting a
     species is a contribution like a visit, so the tree joins your trees. This is how the service
     works today. Nothing to build." Nothing was built. The answer is written up in
     `docs/rulings-pending/owner-answers-2026-11-16-names-and-rows.md` until it is spliced.
@@ -3073,9 +3073,9 @@ into this section in the round that finds it, and nowhere else. Each item stands
     `withdrawTreeRefused` debug screen makes such a row. Both are written into
     **RULINGS R249** and SCREENS.md. No unit test in the tree
     covers case (a); a reviewer's probe ran it. ~~Owner's call whether such a row needs a way out.~~
-    **The owner chose "Leave it", 2026-11-16:** "Both cases are rare, and the row is one line that
-    says why the tree stays on the map. Nothing to build. The roadmap keeps the note." The note
-    stays here as the record of the two cases.
+    **DECIDED, 2026-11-16:** the owner chose "Leave it (Recommended)": "Both cases are rare, and the
+    row is one line that says why the tree stays on the map. Nothing to build. The roadmap keeps the
+    note." Such a row gets no way out, and this note stays as the record of the two cases.
     Found by the reviewer of the assembled second train, 2026-11-16.
 205. ~~**Three pickers call an added tree with a species "Unidentified tree" (owner's call).** The
     "What tree is this?" shortlist (`VisitShortlist.swift`), the Add-this-tree "ALREADY ON RECORD"
@@ -3128,6 +3128,18 @@ into this section in the round that finds it, and nowhere else. Each item stands
     merge", as it has since 2026-08-21, and no ruling matches it. (d) A splice gets the
     "server-only" or "only prose" CI decision, so CI never runs the two guards on it; a local run
     is the only evidence. Found by the reviewer of the splice, 2026-11-16.
+209. **Five things around the nearby lists, older than chip 205's change or left by it (not
+    fixed).** (a) `LocalAPI.treesNear` does not apply a lead's status overrides, so a community
+    tree a lead took down is listed with its inventory status, and a site's "nearest standing
+    tree" filter (`SiteModel.isStanding`) reads that status. (b) At the largest text size the
+    "What tree is this?" card title breaks inside words for every tree, city trees too ("Syca /
+    more, Londo / n Plane"). (c) A single added candidate on that list draws no "Closest" eyebrow
+    where a single city tree does (seen on screen, not investigated). (d) `VisitThumbnail` picks a
+    card's gradient from `tree.speciesCurrentID`, which does not include the reader's own naming
+    of a cached tree, so the gradient can differ from the species in the title. (e) A site's
+    nearest-tree line and the saved screen's "Next nearest" line have unit tests for an added
+    tree's species but no screen check. Found by the author and the reviewer of
+    `feat/picker-names-and-second-phone-grove`, 2026-11-16.
 
 
 **Retire the format-1 manifest — DONE, 2026-08-23.** The owner overrode the trigger the day after

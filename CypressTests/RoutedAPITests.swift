@@ -471,8 +471,9 @@ struct RoutedAPITests {
     func aTreeTheCityFileCannotNameIsKeptWithAnEmptyName() async throws {
         let treeID = UUID()
         var local = LocalDouble()
-        // A real profile, with neither a nickname (D15) nor a species — 12,830 of the seed's rows
-        // carry `species_current IS NULL`, so this is an ordinary row and not a contrived one.
+        // A real profile, with neither a nickname (D15) nor a species — 25,087 of the seed's 198,625
+        // rows carry `species_current IS NULL` (counted on 2026-11-16), so this is an ordinary row
+        // and not a contrived one.
         local.profilesByID = [treeID: TreeProfile(tree: Self.tree(treeID))]
 
         let transport = ScriptedTransport()

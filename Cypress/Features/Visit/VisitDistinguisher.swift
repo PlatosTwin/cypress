@@ -99,6 +99,12 @@ enum VisitDistinguisher {
                 // rows are not distinguished by their placeholder.
                 guard candidate.nearby.speciesCommonName != nil || candidate.nearby.speciesScientificName != nil
                 else { return nil }
+                // A tree someone added carries the species a person said it is, not an inventory
+                // fact, so it is not a species to tell two trees apart by (this file's header: facts
+                // the record carries, nothing made up). The owner's answer of 2026-11-16 put the
+                // species in the card's title; it did not put it in this banner, so a pair with an
+                // added tree reads as it did before the title changed.
+                guard candidate.tree.source != .community else { return nil }
                 return candidate.displayName
             case .address:
                 return candidate.tree.address?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
