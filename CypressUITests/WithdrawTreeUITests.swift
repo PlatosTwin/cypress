@@ -217,9 +217,11 @@ final class WithdrawTreeUITests: XCTestCase, DeepLinkHarness {
             XCTFail("no owner's sentence sits directly below the row titled '\(Copy.outboxRowTitle)'")
             return
         }
-        // No Retry in that row. The row's state word sits at the top of the row, beside its title,
-        // so the band runs from the title's top to the sentence's bottom: one row, never the next.
-        let band = (title.minY - 4)...(reason.maxY + 4)
+        // No Retry in that row. The row's state word sits at the top of the row, beside its title;
+        // its 44 pt hit area starts above the title (measured: button minY 717, title minY 732), so
+        // the band starts 24 pt above the title and ends at the sentence. The row above ends more
+        // than 24 pt higher (padding and gap), so the band holds one row.
+        let band = (title.minY - 24)...(reason.maxY + 4)
         let retries = app.buttons
             .matching(NSPredicate(format: "label == %@", Copy.retry))
             .allElementsBoundByIndex
