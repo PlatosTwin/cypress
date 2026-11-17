@@ -22,9 +22,11 @@ import Testing
 /// 2. the nickname match is case-insensitive on `tree_uuid`, which is what `activeNamesSQL`'s
 ///    `COLLATE NOCASE` is for and what a `lower()` "optimization" would silently change.
 ///
-/// Every name below is checked **against `displayNameIfPresent` itself** — untouched by this round
-/// and still the per-tree implementation — so the claim is a comparison rather than a restatement
-/// of what the new code does.
+/// Every name below is checked **against `displayNameIfPresent` itself**, the per-tree form of the
+/// same rule, so the claim is a comparison rather than a restatement of what the new code does.
+/// `theReadersOwnClaimNamesTheRows` and `theReadersCorrectionNamesTheRowsUntilTheCacheWins` hold
+/// the set form, the per-tree form, My Grove and the profile to one name while the reader's own
+/// naming or correction of somebody else's tree is in force.
 ///
 /// The thumbnails move from the unscoped `ContributionStore.heroPhotoIDs()` to the scoped
 /// `heroPhotoIDs(treeIDs:attribution:)` (ERRATA E204), and the two do not answer identically in
@@ -380,6 +382,84 @@ struct JournalBatchReadTests {
                 #expect(outboxVisit == "Visit · Tree", "\(what): \(outboxVisit)")
             }
         }
+    }
+
+    // MARK: - The reader's own naming of somebody else's tree
+
+    /// One name for `id` on every surface that names it: the set form (the Journal and the Outbox),
+    /// the per-tree form, the profile's species, and My Grove's row. `expected` is the species
+    /// common name the case says the profile shows.
+    private static func expectOneName(
+        _ id: UUID, _ expected: String, _ what: String, api: LocalAPI
+    ) async throws {
+        let batched = await api.displayNames(for: [id])[id]
+        let perTree = try await api.displayNameIfPresent(for: id)
+        let profile = try await api.treeProfile(id: id).species?.commonName
+        let grove = try await api.grove().first { $0.treeID == id }?.displayName
+        #expect(profile == expected, "calibration, \(what): the profile shows '\(profile ?? "nil")', not '\(expected)'")
+        #expect(
+            batched == profile && perTree == profile && grove == profile,
+            """
+            \(what): the rows and the profile disagree. Set form '\(batched ?? "nil")', per-tree \
+            '\(perTree ?? "nil")', My Grove '\(grove ?? "<absent>")', profile '\(profile ?? "nil")'
+            """
+        )
+    }
+
+    /// **The overlay arm of the batched resolver**: a cached tree with no species, which this reader
+    /// (signed in and sharing) names a plane. Until a page serves the tree again, the cache holds no
+    /// species, and only `localSpeciesAnswers`' overlay gives the profile its plane. The rows have to
+    /// say the same, which is what `resolvedDisplayNames`' `treesWithAClaim` loop exists for.
+    ///
+    /// Red-proof: make `communitySpeciesNames` skip that loop (iterate an empty set) — red on "the
+    /// rows and the profile disagree", with the set form, the per-tree form and My Grove all 'nil'.
+    @Test("a cached tree the reader named reads the reader's species in the rows, as in the profile")
+    func theReadersOwnClaimNamesTheRows() async throws {
+        typealias O = OthersTreeControlsTests
+        let store = try await O.seededStore()
+        let api = LocalAPI(store: store, deviceID: O.readerDevice)
+        try await O.signIn(api)
+        let plane = try await O.plane(api)
+        let id = try await O.cached(api, species: nil)
+        try await Self.visit(id, api: api, store: store)
+
+        _ = try await api.claimSpecies(treeID: id, speciesID: plane.id)
+        try await Self.expectOneName(id, plane.commonName, "the claim queued", api: api)
+        try await O.answerEverything(store)
+        try await Self.expectOneName(id, plane.commonName, "the claim answered, no page since", api: api)
+    }
+
+    /// **The chain branch of the same arm**, `OthersTreeControlsTests
+    /// .theAdderSettingTheReplacedSpeciesBackWins`'s story: the reader names the tree a plane, a
+    /// page serves plane, the reader corrects it to an oak and the service accepts that. Before the
+    /// next page the overlay shows the oak; once a page serves plane again (the adder set it back),
+    /// the cache wins. The rows follow the profile in both states.
+    ///
+    /// Red-proof: the same break as above — red on "the correction accepted, no page since", where
+    /// the rows read the cache's plane and the profile the oak.
+    @Test("the reader's correction names the rows until the adder's species is served, then the cache does")
+    func theReadersCorrectionNamesTheRowsUntilTheCacheWins() async throws {
+        typealias O = OthersTreeControlsTests
+        let store = try await O.seededStore()
+        let api = LocalAPI(store: store, deviceID: O.readerDevice)
+        try await O.signIn(api)
+        let plane = try await O.plane(api)
+        let oak = try await O.oak(api, besides: plane)
+        let id = try await O.cached(api, species: nil)
+        try await Self.visit(id, api: api, store: store)
+        let day = { (n: Double) in Date(timeIntervalSince1970: 1_790_000_000 + n * 86_400) }
+
+        _ = try await api.claimSpecies(treeID: id, speciesID: plane.id)
+        try await O.acceptEverything(store, at: day(1))
+        try await O.serve(api, store, id: id, species: plane.id, at: day(2))
+        try await Self.expectOneName(id, plane.commonName, "the claim served", api: api)
+
+        _ = try await api.correctSpecies(treeID: id, speciesID: oak.id)
+        try await O.acceptEverything(store, at: day(3))
+        try await Self.expectOneName(id, oak.commonName, "the correction accepted, no page since", api: api)
+
+        try await O.serve(api, store, id: id, species: plane.id, at: day(4))
+        try await Self.expectOneName(id, plane.commonName, "the adder's plane served after the correction", api: api)
     }
 
     /// **An empty page asks for nothing.** `json_each('[]')` is legal but `IN ()` is not, and a
