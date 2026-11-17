@@ -242,23 +242,26 @@ public struct RoutedAPI: CypressAPI {
     /// Two different things make a row not appear on screen, and collapsing them mislabels the read.
     /// A tree this installation's inventories do not carry at all is a piece of the service's answer
     /// that **did not make it** — under D16 an ordinary case, the other device was in another city —
-    /// and `.fellBackToLocal` is the honest mark for it. A tree the inventories *do* carry, which
-    /// the row name rule gives no name, is not a loss: it is the rule being applied, correctly, to a
+    /// and `.fellBackToLocal` is the honest mark for it. A tree the inventories *do* carry and a
+    /// rule leaves off the list is not a loss: it is the rule being applied, correctly, to a
     /// complete answer. Recording that as a degraded read would tell a §4.3 surface "showing what's on this
     /// phone" about a read where nothing was missing.
     ///
     /// PR #144's review is what separated them. The first cut had only the named dictionary, so an
     /// intended D15 refusal and a genuinely unresolvable row were the same absence and both marked
-    /// the read degraded.
+    /// the read degraded. **A tree with no name and no species is no longer one of those rows**
+    /// (ROADMAP chip 206, the owner's answer of 2026-11-16 that such a tree "still reads "Tree""):
+    /// it is `named` with an empty title, as `LocalAPI.grove()` names it, so it reaches My Grove and
+    /// still does not mark the read degraded.
     public struct CityFileRows: Sendable {
 
-        /// Trees the city file carries and the row name rule names: a nickname, else the species
-        /// the tree's profile title shows (the owner's answer of 2026-11-16, "Yes, use the species").
+        /// Trees the city file carries, with the name the row name rule gives them: a nickname,
+        /// else the species the tree's profile title shows (the owner's answer of 2026-11-16, "Yes,
+        /// use the species"), else empty, which My Grove draws as "Tree".
         public let named: [UUID: CityFileRow]
 
-        /// Trees the city file **carries** and the rule gives no name — no nickname and no species —
-        /// and trees this phone withdrew. Dropped from the grove, and not a reason to call the read
-        /// degraded.
+        /// Trees the city file **carries** and My Grove leaves out: a community tree this phone
+        /// withdrew. Dropped from the grove, and not a reason to call the read degraded.
         public let unnamed: Set<UUID>
 
         public init(named: [UUID: CityFileRow], unnamed: Set<UUID>) {
@@ -806,8 +809,9 @@ public struct RoutedAPI: CypressAPI {
             }
             guard let resolved = cityFileRows.named[row.treeID] else {
                 // **Degraded only when the city file could not answer at all.** A tree it holds and
-                // the rule gives no name (`CityFileRows.unnamed`) is the rule being applied to a
-                // complete answer, not a piece of the answer going missing — see `CityFileRows`.
+                // a rule leaves out (`CityFileRows.unnamed`, a withdrawn tree) is the rule being
+                // applied to a complete answer, not a piece of the answer going missing — see
+                // `CityFileRows`.
                 if !cityFileRows.unnamed.contains(row.treeID) { everythingResolved = false }
                 continue
             }
@@ -1534,8 +1538,9 @@ extension RoutedAPI {
     /// Names and positions for trees only the account knows about, from the city file.
     ///
     /// **Three outcomes per tree, and the difference between the last two is the whole of `CityFileRows`.**
-    /// A tree is `named`; or it is `unnamed` — the inventories hold it and the row name rule gives it
-    /// no name; or it is in neither, which means the inventories do not carry it at all. Under D16
+    /// A tree is `named` (with an empty title when the rule gives it no name, drawn as "Tree"); or
+    /// it is `unnamed` — a community tree this phone withdrew, which only the provider arm can see;
+    /// or it is in neither, which means the inventories do not carry it at all. Under D16
     /// the last is an ordinary case rather than an error (the other device may have been in a city
     /// this installation has not installed), and it is the only one of the three that marks the read
     /// degraded, because it is the only one where part of the service's answer did not make it.
@@ -1562,19 +1567,19 @@ extension RoutedAPI {
         if let resolveGroveRows { return await resolveGroveRows(treeIDs) }
 
         var named: [UUID: CityFileRow] = [:]
-        var unnamed: Set<UUID> = []
         for treeID in treeIDs {
             guard let profile = try? await local.treeProfile(id: treeID) else { continue }
             // The species the profile title shows, for a city tree and a community tree alike (the
             // owner's answer of 2026-11-16, "Yes, use the species"). See the note above.
+            // A tree with neither is named with an empty title, which My Grove draws as "Tree"
+            // (ROADMAP chip 206). A tree this phone withdrew throws `notFound` from `treeProfile`
+            // and lands in neither set here, where the provider arm answers `unnamed`; production
+            // always takes the provider arm.
             let speciesName = profile.species?.commonName
-            guard let name = profile.activeName?.name ?? speciesName, !name.isEmpty else {
-                unnamed.insert(treeID)
-                continue
-            }
+            let name = profile.activeName?.name ?? speciesName ?? ""
             named[treeID] = CityFileRow(displayName: name, coordinate: profile.tree.coordinate)
         }
-        return CityFileRows(named: named, unnamed: unnamed)
+        return CityFileRows(named: named, unnamed: [])
     }
 
     /// The two names of species only the account knows about, from the city file.
