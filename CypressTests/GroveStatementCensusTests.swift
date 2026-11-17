@@ -348,6 +348,91 @@ struct GroveStatementCensusTests {
         )
     }
 
+    /// **A grove that holds community trees named by their species is still a fixed count**, the
+    /// same for two such trees as for six (the owner's answer of 2026-11-16, "Yes, use the species").
+    ///
+    /// The species arm adds at most two statements to hop 2, once per page and never once per tree:
+    /// `SpeciesAssertionStore.treesWithAClaimSQL`, because a cached tree is on the page, and
+    /// `SpeciesQueries.commonNamesSQL()`, because a tree with no nickname has a species. Each is
+    /// skipped on an empty input, which is why the seed-only gate above still counts seven. The
+    /// fixture adds added trees with a species, and one cached tree with a species, to the eight seed
+    /// trees, then counts the same read at two sizes. A per-tree species lookup would make the larger
+    /// count larger. Red-proof: resolve each tree in `communitySpeciesNames` by its own
+    /// `commonNames(ids: [species])` call, and the larger grove runs that text more than once.
+    @Test("a grove with species-named community trees runs nine statements at any size", arguments: [2, 6])
+    func theSpeciesArmIsAFixedCount(_ added: Int) async throws {
+        let (api, store, trees) = try await Self.seeded()
+        let schema = try #require(store.seed, "the store opened without a seed attached")
+        let expected = try Self.expected(store)
+            + [SpeciesAssertionStore.treesWithAClaimSQL, SpeciesQueries(schema: schema).commonNamesSQL()]
+        try #require(expected.count == Set(expected).count, "two expected statements share a text")
+
+        let candidates = try await api.treesNear(
+            Coordinate(latitude: 37.7694, longitude: -122.4862), radiusM: 900, limit: 200
+        )
+        let speciesID = try #require(
+            candidates.compactMap(\.tree.speciesCurrentID).first,
+            "no seed tree near the opening center carries a species id"
+        )
+        let attribution = await api.attribution
+        var community: [UUID] = []
+        for index in 0..<added {
+            community.append(try await api.addTree(
+                TreeDraft(
+                    coordinate: Coordinate(latitude: 37.7700 + Double(index) * 0.0001, longitude: -122.4870),
+                    speciesID: speciesID,
+                    photoLocalPath: "/tmp/cypress-grove-census-species-\(index).jpg",
+                    attribution: attribution
+                )
+            ).id)
+        }
+        let cached = UUID(uuidString: "C0000000-0000-4000-8000-0000000003CA")!
+        let stamp = SQLiteTimestamp.string(from: Self.moment)
+        try await store.queue.write { connection in
+            try connection.execute("""
+                INSERT INTO community_tree_cache
+                    (id, lat, lon, placement, status, verification_state, species_current,
+                     created_at, updated_at, tile, fetched_at)
+                VALUES ('\(cached.uuidString)', 37.7710, -122.4870, 'gps', 'alive', 'unverified',
+                        '\(speciesID.uuidString.lowercased())', '\(stamp)', '\(stamp)', 't', '\(stamp)');
+                """)
+        }
+        community.append(cached)
+        for id in community {
+            try await store.queue.write { connection in
+                try ContributionStore().insert(
+                    Visit(treeID: id, attribution: attribution, capturedAt: Self.moment),
+                    connection: connection
+                )
+            }
+        }
+
+        let census = StatementCensus()
+        await store.queue.installCensus(census)
+        let entries = try await api.grove()
+        await store.queue.installCensus(nil)
+
+        // The species arm has to have named every community tree, or the count is not about it.
+        let named = entries.filter { community.contains($0.treeID) && !$0.displayName.isEmpty }
+        try #require(
+            entries.count == trees.count + community.count && named.count == community.count,
+            "the grove holds \(entries.count) rows and names \(named.count) of \(community.count) community trees"
+        )
+
+        let ran = census.statements
+        #expect(census.readCount == 2, "`grove()` made \(census.readCount) hops, not 2")
+        #expect(
+            ran.count == expected.count,
+            "\(ran.count) statements ran for a grove with \(community.count) community trees, not \(expected.count): \(Self.histogram(ran))"
+        )
+        for sql in expected {
+            #expect(
+                ran.filter { $0 == sql }.count == 1,
+                "\(Self.firstLine(of: sql)) ran \(ran.filter { $0 == sql }.count) times, not once: \(Self.histogram(ran))"
+            )
+        }
+    }
+
     // MARK: - Failure text
 
     private static func histogram(_ statements: [String]) -> String {
