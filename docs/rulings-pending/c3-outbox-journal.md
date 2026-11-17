@@ -147,8 +147,18 @@ How the branch `feat/grove-names-by-species` built it (the author's notes):
   `displayNames`. An empty name is drawn `Tree` by `GroveTreesPresentation`.
 - **The routed arms agree.** `RoutedAPI.resolvedCityFileRows` (the per-tree loop) now names a
   community tree by `profile.species?.commonName`, as the provider arm does. A tree with no name
-  and no species is `unnamed` in both arms: it leaves the grove and does not mark the page as
-  unresolved (PR #144's fix).
+  and no species is `unnamed` in both arms, and the page is not marked unresolved for it (PR
+  #144's fix).
+- **Where this differs from the owner's sentence, and is not fixed here.** The owner's answer
+  says "An added tree with no name and no species still reads "Tree"". That holds for a tree in
+  this phone's own grove. A tree with no name and no species that this phone reaches only through
+  the account's grove (`RoutedAPI.refreshedGrove`) is dropped from the list instead: for example,
+  a tree you added, seen from a second phone, or somebody else's cached tree you visited from
+  another device. The drop is older than this branch. It is an open item in ROADMAP, to be fixed
+  in its own change.
+- **"As its profile does" has one more exception.** A city tree with no species shows its street
+  address as its profile title, and reads `Tree` in My Grove and the Journal. This is older
+  behavior, and the owner's answers do not cover it.
 - **A withdrawn tree is not named.** The owner's earlier answer took it out of My Grove, and the
   species step skips it.
 - **A fixed number of statements per page.** The species step adds at most two statements, once

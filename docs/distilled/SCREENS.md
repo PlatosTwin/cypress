@@ -1120,9 +1120,13 @@ Intro: *Where taps lead: the species field guide, the running list of species yo
    - `Trees`, `Journal` — fill `#fff`, `1px #E3E8D9`, `#66735F`, 600.
    - **`Species`** — fill `#1D4634`, border `1px #1D4634`, `#fff`, 700.
 
-   Not in the mock: **the Trees tab titles each tree as its profile does** (the owner's answer of
-   2026-11-16, "Yes, use the species"). A given name wins; else the species' common name, for a
-   tree someone added as for a city tree; a tree with neither reads `Tree`.
+   Not in the mock: **the Trees tab titles each tree by a given name; else the species' common
+   name, for a tree someone added as for a city tree; else `Tree`** (the owner's answer of
+   2026-11-16, "Yes, use the species"). `Tree` holds for a tree this phone holds in its own grove.
+   A tree that reaches the list only through the account's grove (for example, a tree you added,
+   seen on a second phone) and has neither a given name nor a species is not listed today. That
+   is an open item in ROADMAP. A city tree with no species reads `Tree` here, while its profile
+   title is its street address.
 3. **Progress block** — `padding:2px 18px 0`, `HStack(spacing:16)`:
    ProgressRing (C27, `30%`) + `12 of 40 species` (Serif 19px/600) and
    `you can recognize in the Outer Sunset` (13px, `#66735F`).
