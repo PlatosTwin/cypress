@@ -448,23 +448,27 @@ struct RoutedAPITests {
         )
     }
 
-    /// A tree the city file **has** but cannot name is dropped too, and this is a second case
-    /// rather than a restatement of the one above.
+    /// A tree the city file **has** but cannot name is a second case rather than a restatement of
+    /// the one above.
     ///
     /// Red-proving the previous gate found that out: replacing the name resolution with a `"Tree"`
     /// placeholder left it **green**, because its row is unresolvable for the earlier reason — the
-    /// city file has no such tree, so the name rule is never reached. A conformance that named an
-    /// unnameable tree would have shipped past it. "Never a fabricated label"
+    /// city file has no such tree, so the name rule is never reached. "Never a fabricated label"
     /// (`LocalAPI.displayNameIfPresent`) needs a tree that exists and has no name, which is this.
     ///
-    /// **And the read stays `.live`, which is the half PR #144's review changed.** Dropping this row
-    /// is D15 being applied to an answer that arrived whole, not a piece of the answer going
-    /// missing; `.fellBackToLocal` would offer a §4.3 surface the sentence "showing what's on this
-    /// phone" about a read where nothing was. The case that *does* degrade is
+    /// **The row is kept, with an empty name** (ROADMAP chip 206; the owner's answer of 2026-11-16
+    /// that a tree with no name and no species "still reads "Tree""). It used to be dropped, so a
+    /// tree reached only through the account's grove went missing on a second phone while the phone
+    /// that holds it drew "Tree". The router still writes no label: the name is empty, and the
+    /// screen draws `TreeProfilePresentation.fallbackTitle`, as it does for `grove()`'s own row.
+    ///
+    /// **And the read stays `.live`, which is the half PR #144's review changed.** Nothing of the
+    /// answer went missing; `.fellBackToLocal` would offer a §4.3 surface the sentence "showing
+    /// what's on this phone" about a read where nothing was. The case that *does* degrade is
     /// `anUnresolvableRowIsDroppedAndTheReadSaysSo` above — a tree no installed inventory carries at
     /// all — and the two being told apart is what `RoutedAPI.CityFileRows` exists for.
-    @Test("a tree the city file cannot name is dropped rather than labeled, and the read stays live")
-    func aTreeTheCityFileCannotNameIsDropped() async throws {
+    @Test("a tree the city file cannot name is kept with an empty name, and the read stays live")
+    func aTreeTheCityFileCannotNameIsKeptWithAnEmptyName() async throws {
         let treeID = UUID()
         var local = LocalDouble()
         // A real profile, with neither a nickname (D15) nor a species — 12,830 of the seed's rows
@@ -483,7 +487,13 @@ struct RoutedAPITests {
         let log = RemoteReadLog()
         let entries = try await RoutedAPI(local: local, remote: Self.remote(transport), log: log).refreshedGrove()
 
-        #expect(entries.isEmpty, "a tree with no name and no species was given a fabricated label")
+        #expect(
+            entries.map(\.treeID) == [treeID] && entries.first?.displayName == "",
+            """
+            a tree with no name and no species came back as \(entries.map(\.displayName)), not one row \
+            with an empty name (a dropped row, or a fabricated label)
+            """
+        )
         let outcome = await log.outcome(of: .grove)
         #expect(
             outcome == .live,
