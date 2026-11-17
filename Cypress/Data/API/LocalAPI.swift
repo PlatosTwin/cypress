@@ -383,8 +383,11 @@ public actor LocalAPI: CypressAPI {
                     distanceM: coordinate.distance(to: row.tree.coordinate),
                     speciesScientificName: species?.scientific,
                     speciesCommonName: species?.common,
-                    // A curated tell belongs to the inventory's species record, and the seed ships
-                    // none (`NearbyTree.tell`); a self-reported species gets none either.
+                    // No curated tell: the seed carries `id_tips` for some species (40 of 731 on
+                    // 2026-11-16), but a tell on this card would be the species' botany offered to
+                    // tell apart a tree whose species is one person's guess, which is the step
+                    // `VisitDistinguisher` keeps to inventory data. Before this change an added
+                    // tree carried no tell either.
                     tell: nil
                 )
             }

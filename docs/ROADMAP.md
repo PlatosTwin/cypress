@@ -3138,7 +3138,10 @@ into this section in the round that finds it, and nowhere else. Each item stands
     card's gradient from `tree.speciesCurrentID`, which does not include the reader's own naming
     of a cached tree, so the gradient can differ from the species in the title. (e) A site's
     nearest-tree line and the saved screen's "Next nearest" line have unit tests for an added
-    tree's species but no screen check. Found by the author and the reviewer of
+    tree's species but no screen check. (f) The doc comments on `NearbyTree.tell` and in
+    `VisitDistinguisher` say no curated tell ships yet, but the bundled seed carries `id_tips`
+    for 40 of its 731 species (counted 2026-11-16), and the banner's first step uses them for
+    city trees. Found by the author and the reviewer of
     `feat/picker-names-and-second-phone-grove`, 2026-11-16.
 
 

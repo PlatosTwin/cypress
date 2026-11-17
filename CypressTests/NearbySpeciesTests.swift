@@ -169,10 +169,12 @@ struct NearbySpeciesTests {
         let oak = try await OthersTreeControlsTests.oak(api, besides: plane)
         let device = OthersTreeControlsTests.readerDevice
 
-        // Two city trees with different species, on a street in the Inner Sunset.
+        // Two city trees with different species, on a street in the Inner Sunset. Neither may carry
+        // a curated tell (some seed species do), because a tell is the banner's first step and
+        // would answer before the species step this test is about.
         let street = Coordinate(latitude: 37.7600, longitude: -122.4750)
         let city = try await api.treesNear(street, radiusM: 80, limit: 200)
-            .filter { $0.tree.source != .community && $0.speciesScientificName != nil }
+            .filter { $0.tree.source != .community && $0.speciesScientificName != nil && $0.tell == nil }
         let cityA = try #require(
             city.first { $0.speciesScientificName != plane.scientificName },
             "no city tree with a species near the street"
