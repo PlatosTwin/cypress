@@ -2697,9 +2697,17 @@ into this section in the round that finds it, and nowhere else. Each item stands
 158. **A photo taken between build 55 and F30 and never sent stays on the phone.** Found by the
     planner of chip 139, 2026-11-15, and outside that chip: the owner's ruling covers community
     trees and what is recorded on them, and these photos are on city trees.
-159. **A community tree with no name reads "Moved the pin of Tree" in the Journal and "Pin moved ·
+159. ~~**A community tree with no name reads "Moved the pin of Tree" in the Journal and "Pin moved ·
     Tree" in the Outbox.** The fallback title is the same one every community tree row uses. Owner's
-    call whether those two rows want other words for an unnamed tree.
+    call whether those two rows want other words for an unnamed tree.~~ **DONE, 2026-11-16**, in
+    `feat/withdraw-owner-answers`, with two owner answers. First: a tree with no name reads `Moved a
+    tree’s pin` in the Journal and `Pin moved` in the Outbox. Second ("Use the species"): Outbox and
+    Journal rows name an added tree as its profile does, so a tree with a species and no given name
+    reads by its species (`Pin moved · Sycamore, London Plane`), and the new words show only for a
+    tree with no name and no species. The second answer replaces the older code rule that an added
+    tree's species is not used as its name in rows (`LocalAPI.displayNameIfPresent` and
+    `resolvedDisplayNames`). Both answers are quoted in
+    `docs/rulings-pending/c3-outbox-journal.md`. My Grove's list is chip 202.
 160. **The pending rulings and errata are not numbered yet.** After the third merge train of
     2026-11-15, `docs/rulings-pending/` holds 35 files and `docs/errata-pending/` holds 26, from
     the community-tree rounds and from earlier ones, and SCREENS.md cites several by filename. The splice is its own docs-only change: it
@@ -2817,11 +2825,15 @@ into this section in the round that finds it, and nowhere else. Each item stands
     that raised it.** The line comes from the reporter's own open flag, and nothing on that phone
     closes it. Against release v17 the service's `species_reported` decides instead. Found by the
     phone author of 144, 2026-11-16; it matters only if the phone build ships before the deploy.
-172. **The adder can report their own tree as never having been there (owner's call).**
+172. ~~**The adder can report their own tree as never having been there (owner's call).**
     `recordDefectOffer` answers `.reportable` for a tree the reader added, so the profile of their
     own tree shows `Report that there is no tree here` directly above `Withdraw this tree`. Whether
     the adder should still see the report once they can withdraw is the owner's question. Found by
-    the withdrawal round's planner, 2026-11-16.
+    the withdrawal round's planner, 2026-11-16.~~ **DONE, 2026-11-16**, in
+    `feat/withdraw-owner-answers`. The owner chose "Hide it while withdraw shows":
+    `TreeProfilePresentation.recordDefect` draws no report link while the withdrawal offer is
+    `.available`. When withdraw is not offered (others have added to the tree, and the reason line
+    shows), the report link is drawn. A report already under review stays drawn.
 173. **Rows and photographs on a withdrawn tree are kept with no end date (ROADMAP 61).** The
     service keeps every contribution and photograph on a withdrawn or taken-down tree and hides it
     from every read. Withdrawal (`feat/withdraw-tree`) adds more such rows. How long they are kept
@@ -2972,7 +2984,11 @@ into this section in the round that finds it, and nowhere else. Each item stands
     deleted. Check your connection and try again.", for up to the 48-hour window. When the window
     ends the row fails for good, the deletion goes ahead, and the tree stays public and anonymous.
     The pending ruling (`docs/rulings-pending/community-trees-withdraw.md`) names both cases. Found
-    by the reviewer of `fix/withdraw-keep-records-door`, 2026-11-16.
+    by the reviewer of `fix/withdraw-keep-records-door`, 2026-11-16. The same holds for a
+    withdrawal that already failed for good for another reason (`forbidden`, or the window ended
+    before the deletion): the door counts only rows that have not failed, so the deletion goes
+    ahead and that tree becomes anonymous with its withdrawal never applied (read by the reviewer
+    of `feat/withdraw-owner-answers`).
 197. **An unsent pin move does not hold a keep-records deletion.** The door sends the whole queue
     first only when a withdrawal is queued, and only an unsent withdrawal refuses the deletion. A
     pin move still queued when the account is deleted is refused by the service afterward, as chip
@@ -2997,6 +3013,43 @@ into this section in the round that finds it, and nowhere else. Each item stands
     about 2 pt further right there too. It may be an inset difference between the two profile
     kinds. Measured by the reviewer of `fix/record-links-and-test-harness` on the iPhone Air,
     2026-11-16; not investigated.
+201. ~~**A withdrawal the service refused because others added to the tree offered Retry, and a
+    retry could never succeed.**~~ **DONE, 2026-11-16**, in `feat/withdraw-owner-answers`, with two
+    owner answers: "Remove Retry there", then "Row stays, reason only". A `tree_withdrawal` row
+    that failed with `conflict` draws its reason and no Retry, and the queue refuses to retry it
+    (`OutboxRetryPolicy.acceptsRetry`, and the same rule in SQL in `OutboxStore.retry` and
+    `retryAllFailed`). The row is what keeps the reason line on the tree's profile, and the launch
+    sweep of chip 184 never removes it (it deletes `done` rows only). A withdrawal refused for
+    another reason keeps Retry. Chip 204 lists when the row can never leave.
+202. **My Grove's Trees list names an added tree by the old rule (decided, being built).** An added
+    tree with a species and no given name is listed as "Tree" there, while its profile, the
+    Journal, and the Outbox read its species since chip 159. The owner chose "Yes, use the
+    species" on 2026-11-16. It is being built on `feat/grove-names-by-species` as its own pull
+    request, with a sweep of the other places that title an added tree (`LocalAPI.grove()`,
+    `RoutedAPI.resolvedCityFileRows`). Land it before the next release.
+203. **The app reads the location permission on the main thread at launch, and it can block for
+    30 s.** `MapLocationProvider.init` reads `CLLocationManager.authorizationStatus` (a
+    synchronous call to the location daemon), reached from `RootView.init` inside
+    `CypressApp.body`. On a fresh install on the simulator one `WithdrawTreeUITests` test failed
+    once in four runs with "Unable to perform work on main run loop, process main thread busy for
+    30.0s", and a sample showed the main thread waiting in that read. `WithdrawTreeUITests` now
+    launches with `CYPRESS_LOCATION` pinned, which builds a provider that does not make the call,
+    so the class is stable (three of three alone on a clean install, twice). The read is still in
+    the app, and other UI classes that launch with no pinned location (`DialogCancelUITests`
+    among them) can meet it. Not seen on a phone. Owed: move the read off the main thread or to
+    the delegate callback, and say why the sign-in in that one test makes it more likely (not
+    found). Found by the author of `feat/withdraw-owner-answers`, 2026-11-16.
+204. **A refused withdrawal row can stay in the Outbox for the life of the install.** The owner's
+    "Row stays" ruling (chip 201) expected the row to leave with an account deletion that erases
+    everything. Two cases never reach that: (a) after a keep-records deletion the row stays
+    `failed` with its reason, its payload names no account any more, so a later erasing deletion
+    does not match it; the tree has no adder then, the profile's reason line goes away, and
+    `Report that there is no tree here` is offered. (b) A withdrawal made while signed out names
+    only the device, and `OutboxStore.forgetAccount` matches rows by account; the
+    `withdrawTreeRefused` debug screen makes such a row. Both are written into
+    `docs/rulings-pending/community-trees-withdraw.md` and SCREENS.md. No unit test in the tree
+    covers case (a); a reviewer's probe ran it. Owner's call whether such a row needs a way out.
+    Found by the reviewer of the assembled second train, 2026-11-16.
 
 
 **Retire the format-1 manifest — DONE, 2026-08-23.** The owner overrode the trigger the day after
