@@ -3128,7 +3128,7 @@ into this section in the round that finds it, and nowhere else. Each item stands
     merge", as it has since 2026-08-21, and no ruling matches it. (d) A splice gets the
     "server-only" or "only prose" CI decision, so CI never runs the two guards on it; a local run
     is the only evidence. Found by the reviewer of the splice, 2026-11-16.
-209. **Five things around the nearby lists, older than chip 205's change or left by it (not
+209. **Six things around the nearby lists, older than chip 205's change or left by it (not
     fixed).** (a) `LocalAPI.treesNear` does not apply a lead's status overrides, so a community
     tree a lead took down is listed with its inventory status, and a site's "nearest standing
     tree" filter (`SiteModel.isStanding`) reads that status. (b) At the largest text size the
