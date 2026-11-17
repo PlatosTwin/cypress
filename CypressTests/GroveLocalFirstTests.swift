@@ -860,7 +860,7 @@ struct GroveCityFileBatchTests {
     /// Red-proofs: in `LocalAPI.groveCityFileRows`, drop `?? speciesNames[treeID]` from the name —
     /// red on "the cached tree with a species reached My Grove as …". In
     /// `LocalAPI.communityShownSpecies`, skip the `treesWithAClaim` loop — red on "the provider arm
-    /// named the cached tree the reader claimed '<unnamed>'". In `LocalAPI.groveCityFileRows`, put a
+    /// named the cached tree the reader claimed '', not 'Sycamore, London Plane'". In `LocalAPI.groveCityFileRows`, put a
     /// tree with an empty name back in `unnamed` — red on "a cached tree with no name and no species,
     /// reached only through the account's grove, came back as '<dropped>'".
     @Test("the shipping router names a cached tree by its species, draws one with none as Tree, and stays live")
