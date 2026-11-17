@@ -3021,12 +3021,15 @@ into this section in the round that finds it, and nowhere else. Each item stands
     `retryAllFailed`). The row is what keeps the reason line on the tree's profile, and the launch
     sweep of chip 184 never removes it (it deletes `done` rows only). A withdrawal refused for
     another reason keeps Retry. Chip 204 lists when the row can never leave.
-202. **My Grove's Trees list names an added tree by the old rule (decided, being built).** An added
-    tree with a species and no given name is listed as "Tree" there, while its profile, the
-    Journal, and the Outbox read its species since chip 159. The owner chose "Yes, use the
-    species" on 2026-11-16. It is being built on `feat/grove-names-by-species` as its own pull
-    request, with a sweep of the other places that title an added tree (`LocalAPI.grove()`,
-    `RoutedAPI.resolvedCityFileRows`). Land it before the next release.
+202. ~~**My Grove's Trees list names an added tree by the old rule.**~~ **DONE, 2026-11-16**, in
+    `feat/grove-names-by-species`. The owner chose "Yes, use the species". My Grove
+    (`LocalAPI.grove()`, `groveCityFileRows`, and `RoutedAPI.resolvedCityFileRows`) now names a
+    tree through the same resolver as the Journal and the Outbox: the active given name, else the
+    seed species, else the species the profile title shows. An added tree with neither still reads
+    "Tree". `GroveBatchReadTests` fails if My Grove, the Journal, and the profile title disagree
+    for a tree, and `GroveStatementCensusTests` pins the statement count. The author's sweep of
+    other places found the map card, memorial, photos, share, activity, and reminders already read
+    the profile or the resolver. Chip 205 lists the three that do not.
 203. **The app reads the location permission on the main thread at launch, and it can block for
     30 s.** `MapLocationProvider.init` reads `CLLocationManager.authorizationStatus` (a
     synchronous call to the location daemon), reached from `RootView.init` inside
@@ -3050,6 +3053,17 @@ into this section in the round that finds it, and nowhere else. Each item stands
     `docs/rulings-pending/community-trees-withdraw.md` and SCREENS.md. No unit test in the tree
     covers case (a); a reviewer's probe ran it. Owner's call whether such a row needs a way out.
     Found by the reviewer of the assembled second train, 2026-11-16.
+205. **Three pickers call an added tree with a species "Unidentified tree" (owner's call).** The
+    "What tree is this?" shortlist (`VisitShortlist.swift`), the Add-this-tree "ALREADY ON RECORD"
+    note (`VisitAddTreeView.swift`), and the site neighbor title (`SitePresentation.swift`,
+    `VisitDistinguisher.swift`) are fed by `LocalAPI.treesNear`, which sets `speciesCommonName` to
+    nil for added trees. These lists show species only and never a given name, and the
+    distinguisher logic reads the same fields, so the owner's two answers on row names (chips 159
+    and 202) do not clearly cover them. Also, for the record: the two routed arms of
+    `resolvedCityFileRows` disagree about a withdrawn tree (the provider arm answers `unnamed`, the
+    loop arm answers neither and marks the read as fallen back); production always uses the
+    provider arm, so only tests see it. Found by the author of `feat/grove-names-by-species`,
+    2026-11-16.
 
 
 **Retire the format-1 manifest — DONE, 2026-08-23.** The owner overrode the trigger the day after
