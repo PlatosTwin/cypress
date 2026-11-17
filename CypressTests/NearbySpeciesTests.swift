@@ -238,7 +238,8 @@ struct NearbySpeciesTests {
 @Suite("Nearby lists · what treesNear runs")
 struct NearbyStatementCensusTests {
 
-    private static let center = Coordinate(latitude: 37.7694, longitude: -122.4862)
+    /// A street in the Inner Sunset with city trees on it, so the city read has rows to return.
+    private static let center = Coordinate(latitude: 37.7600, longitude: -122.4750)
 
     private static func open() async throws -> (api: LocalAPI, store: CypressStore) {
         let store = try await OthersTreeControlsTests.seededStore()
@@ -284,7 +285,7 @@ struct NearbyStatementCensusTests {
         let names = SpeciesQueries(schema: schema).commonNamesSQL()
 
         let cityOnly = try await Self.census(store) {
-            try await api.treesNear(Self.center, radiusM: 60, limit: 200)
+            try await api.treesNear(Self.center, radiusM: 60, limit: 500)
         }
         try #require(!cityOnly.rows.isEmpty, "no city tree near the center; the fixture is vacuous")
         #expect(cityOnly.census.readCount == 2, "city trees only made \(cityOnly.census.readCount) hops")
@@ -309,7 +310,7 @@ struct NearbyStatementCensusTests {
         ]
 
         let mixed = try await Self.census(store) {
-            try await api.treesNear(Self.center, radiusM: 60, limit: 200)
+            try await api.treesNear(Self.center, radiusM: 60, limit: 500)
         }
         let carried = mixed.rows.filter { (added + cached).contains($0.tree.id) && $0.speciesCommonName != nil }
         try #require(carried.count == 52, "the list carried a species for \(carried.count) of the 52 added trees")
@@ -347,7 +348,7 @@ struct NearbyStatementCensusTests {
             "the 1 m read held \(one.rows.filter { claimed.contains($0.tree.id) }.count) claimed trees, not 1"
         )
         let both = try await Self.census(store) {
-            try await api.treesNear(Self.center, radiusM: 60, limit: 200)
+            try await api.treesNear(Self.center, radiusM: 60, limit: 500)
         }
         try #require(
             both.rows.filter { claimed.contains($0.tree.id) && $0.speciesCommonName == plane.commonName }.count == 2,

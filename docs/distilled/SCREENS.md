@@ -760,6 +760,14 @@ service for added trees over the 60 m around the reader:
   `Nothing in the city inventory is within 60 m of you. If there is a tree in front of you, it is
   not on the map yet.` This is the message as it shipped before round C3.
 
+**ADDED — owner's answer 2026-11-16, "Yes, show the species"** (extends RULINGS R251 and R253).
+A card for an added tree, this phone's or somebody else's, is named by the species its profile
+shows: the common name, with the Latin name under it, for example `Sycamore, London Plane`. On
+somebody else's tree that the reader named or corrected, that is the reader's species while it is
+in force. An added tree with no species reads `Unidentified tree`, as a city tree with no species
+does. A given name is never shown on these cards. The same rule names a tree in the Add this tree
+screen's `ALREADY ON RECORD` note and in a planting site's nearest-tree line (neither has a mock).
+
 ---
 
 #### 03 · Tree profile
