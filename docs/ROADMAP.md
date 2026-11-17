@@ -436,12 +436,12 @@ that had not yet reached a build). What remains OPEN:
   number as the human typed it, in the unit it was typed in". Converting on the flip is what would
   break it, and nothing converts. The field's own doc comment now records this.
   The copy and its placement are **NOT SPECIFIED** by SCREENS.md and go to the owner under
-  DECISIONS constraint 21; see `docs/rulings-pending/measurements-round.md`.
+  DECISIONS constraint 21; see **RULINGS R114**.
 - ~~**F27 — measurements can be neither edited nor deleted. BLOCKED ON A SCHEMA MIGRATION**, and the
   premise needs splitting in two.~~ **SHIPPED.** The withdrawal half is `AppSchema` v21 (PR #154) and
   the service's `measurement_withdrawal` kind (migration 004, PR #156); the edit half needed
   nothing. **Only paperwork remains**: the third entry of
-  `docs/rulings-pending/measurements-round.md` was held for this round to land, and can now splice
+  the measurements round's rulings (**RULINGS R115**) was held for this round to land, and can now splice
   as an outcome (chip 56). What follows is the entry as written while it was blocked, kept because
   it records the two rejected shortcuts.
   **"Edited" is already answered and needs nothing built.** This app has no edit verb for any
@@ -457,7 +457,7 @@ that had not yet reached a build). What remains OPEN:
   `CommunityOutboxKindTests`' "every kind the app can build is one the outbox can store" is the
   guard that makes this unavoidable rather than optional. **One migration author per round and this
   round had none**, so the design is written down and the code is not: see
-  `docs/rulings-pending/measurements-round.md`. The two rejected shortcuts are recorded there too —
+  **RULINGS R115**. The two rejected shortcuts are recorded there too —
   riding the existing `measurement` kind with a payload discriminator (which `OutboxItem.Kind`'s own
   comment forbids: it would put the distinction "inside a payload field where `outbox.kind` cannot
   see it"), and shipping the UI local-only, which would re-create the Class L debt spec §3.4's nine
@@ -632,7 +632,7 @@ file.
      the rule chosen, for example a smaller radius, or an override that states the reader has
      checked the nearby record. **Decided by the owner on 2026-11-14: the rule stops refusing, for
      new trees and for pin moves.** See chip 140 and
-     `docs/rulings-pending/community-trees-no-proximity-rule.md`. **Built on the phone in
+     **RULINGS R190**. **Built on the phone in
      `feat/no-proximity-refusal-phone`**: the add screen shows "ALREADY ON RECORD" as a note before
      the tap, at the top of the form above the photo, and adds the tree anyway. The service half is
      `feat/no-proximity-refusal-server` (PR 236), **deployed 2026-11-15** as `cypress-sync` release
@@ -650,7 +650,7 @@ file.
   (`preferredMaxZoom`) and the "not zoomable" gate. **Owner confirmation** that R80 item 5 covers
   this viewfinder as well as screen 04's; it is the same gesture on the same controller.
   **SHIPPED** by `feat/f33-add-tree-zoom`. The owner confirmed on 2026-09-28
-  (`docs/rulings-pending/f33-add-tree-zoom.md`, unnumbered). The gesture moved out of
+  (**RULINGS R168**). The gesture moved out of
   `VisitCameraView` into `VisitCameraZoomPinch`, which screen 04 and add-a-tree's photo well now
   both apply, armed by screen 04's rule (a lens to move, and no photograph yet).
   `CypressTests/CameraZoomPinchTests` proves that add-a-tree carries it, and that each of the two
@@ -677,10 +677,10 @@ everyone as soon as it reaches the service. A tree added signed out stays on the
 then goes live for everyone at once. The adder alone may move its pin, and may withdraw it for
 everyone while nobody else has built on it. Its history is shown on the profile without saying who.
 ~~Trees added before the sync path existed stay local for ever (R77 is kept, and there is no
-backfill).~~ **Reversed by the owner on 2026-11-14:** a community tree added before syncing existed is sent, automatically, with everything recorded on it; see chip 139 and `docs/rulings-pending/community-trees-old-trees.md`. Others see a photograph's capture **date** and never its time; the owner keeps the exact
+backfill).~~ **Reversed by the owner on 2026-11-14:** a community tree added before syncing existed is sent, automatically, with everything recorded on it; see chip 139 and **RULINGS R183**. Others see a photograph's capture **date** and never its time; the owner keeps the exact
 time (decision 14, made client-assisted as 14a). The decisions, and what the server rounds ruled
-inside them, are in `docs/rulings-pending/community-trees.md` and
-`docs/rulings-pending/community-trees-reads.md`.
+inside them, are in **RULINGS R141-R157** and
+**RULINGS R158-R167**.
 
 **The server half is on `main` (2026-09-29).** S1 is PR #187 (migration 007: publication, moves,
 withdrawal, and both deletion doors) and S2 is PR #190 (the tile, the profile's additions, and the
@@ -695,7 +695,7 @@ or redeploy would change that (chip 12: merging server work changes nothing in p
   Move pin"). Two owner decisions of 2026-11-12 rode with it: v23 gives every pre-v23 tree this
   install's own owner as its adder (not nobody), and a minimal **Move pin** control on the profile of
   a tree the reader added, with no distance bound because the service has none
-  (`docs/rulings-pending/community-trees-adder-backfill.md`, `community-trees-move-pin.md`). **F37
+  (**RULINGS R179**, **R180-R182**). **F37
   ("Put the pin in the wrong place") is answered for trees the reader added.** What follows is the
   round's original scope, kept for the record. Migration v23
   is C1's. The one client migration author
@@ -739,7 +739,7 @@ or redeploy would change that (chip 12: merging server work changes nothing in p
   city layer can use the rest, the phone's own trees first, and the map's narrowing runs before
   that cut. The owner ruled on 2026-11-15: every phone downloads, registering its device if it never
   has; the cache has no limit for now; and the download starts at the first zoom that draws cluster
-  badges. The design decisions are in `docs/rulings-pending/community-trees-sync-down.md`.
+  badges. The design decisions are in **RULINGS R198-R206**.
   **Left:** seeing it work on a signed-in phone against the live service (no test calls
   production, and the UI suite runs with the gate off). **Revisit the cache's limit when the
   community layer grows** (the owner's ruling: no limit for now). The map narrows and counts the
@@ -763,7 +763,7 @@ or redeploy would change that (chip 12: merging server work changes nothing in p
   `LocalAPI.debugSeedCommunityCache`, and a cached tree's "Added" day is the UTC day.
 - ~~**C3 — the UI (`feat/community-trees-ui`). The owner answered every question on 2026-11-14; not
   built; merges last, and strikes F31.** The answers, with each chosen string word for word, are in
-  `docs/rulings-pending/community-trees-c3-answers.md`. In short. *Move the pin*: no distance limit,
+  **RULINGS R184-R189**. In short. *Move the pin*: no distance limit,
   the draft strings stay, the Outbox row is "Pin moved", and a refused move says "This couldn't be
   sent." *History on the profile*: in the profile's activity list, all four events, "Pin moved · 12 m
   north", dates as "Mar 20", the reader's own rows say "you" on their own phone, and with no history
@@ -782,16 +782,16 @@ or redeploy would change that (chip 12: merging server work changes nothing in p
   Outbox and Journal rows (`feat/c3-outbox-journal`). Where the build differs from the summary
   above, the owner decided it on 2026-11-15, and each answer is in a pending rulings file:
   - **Species controls are hidden on a tree someone else added**, until the service change of chip
-    144 (`community-trees-answers-2026-11-15.md`).
+    144 (**RULINGS R209**).
   - **An unshared tree says "Only you can see it"**, not "only on this phone", because the phone
-    does send such a tree and the service keeps it private (`community-trees-only-you-can-see.md`).
+    does send such a tree and the service keeps it private (**RULINGS R223**).
     A person who declined can agree later from the You tab's "Share my tree records" row
-    (`account-agree-later.md`).
+    (**RULINGS R215**).
   - **The map card and the empty "What tree is this?" list keep their old text where the phone has
     not asked the service for added trees** (zoomed out past 16 tiles, offline, a failed download,
-    or the gate shut), and name both kinds of tree everywhere else (`c3-add-note.md`).
-  - **A history row's square draws the community tree mark** (`c3-profile.md`,
-    `c3-outbox-journal.md`).
+    or the gate shut), and name both kinds of tree everywhere else (**RULINGS R230** and **R231**).
+  - **A history row's square draws the community tree mark** (**RULINGS R224-R227**,
+    **R222**).
 
   **F31 is answered:** a person can move a tree they added (C1), and other people see it (C2, C3,
   and chip 139 for trees older than syncing). **Owed on a physical phone,** because no simulator
@@ -801,7 +801,7 @@ or redeploy would change that (chip 12: merging server work changes nothing in p
 
 - **Withdrawing a tree you added — BUILT, 2026-11-16, in `feat/withdraw-tree`; no migration, no
   service change.** The last piece of F31. The owner's answers of 2026-11-16 are in
-  `docs/rulings-pending/community-trees-withdraw.md`: `Withdraw this tree` in the record controls,
+  **RULINGS R238**: `Withdraw this tree` in the record controls,
   an alert with two messages, the Outbox row `Tree withdrawn`, the tree back on the map with the
   owner's sentence when the service refuses, and the tree off the Journal, My Grove and the Yours
   map. No Journal row (the orchestrator's choice). The Journal and My Grove now drop a lead's
@@ -836,7 +836,7 @@ or redeploy would change that (chip 12: merging server work changes nothing in p
   Citations were rewritten with it, including two that had moved *into* `RULINGS.md` as danglers —
   the failure that made splice #134 go red — and one stale pointer in `Tools/publish_cities.py`
   that had been deferring to `docs/rulings-pending/` for a rule numbered **R83** weeks ago.
-  **One file is deliberately held**: `docs/rulings-pending/measurements-round.md`, whose third
+  **One file is deliberately held**: the measurements round's rulings (now **RULINGS R113-R115**), whose third
   entry is the withdrawal design the live F27 round is building; it splices when that round lands,
   so the numbered entry records the outcome instead of "proposed, blocked".
   **That round has landed** (F27, #154 and #156) — the splice is due, and is chip 56.
@@ -1100,7 +1100,7 @@ into this section in the round that finds it, and nowhere else. Each item stands
    iPhone 16e (`3A1F212D`) on 2026-09-09, one `-only-testing` UI test each, each against a
    directory listed empty first: exported → the PNG in the chosen directory; unset → the runner's
    own container tmp; argument → the same container tmp and the chosen directory still empty.
-   Receipts in `docs/errata-pending/shot-dir-runner-forwarding.md`. The convention is now argued
+   Receipts in **ERRATA E322**. The convention is now argued
    once, in `Tools/run_tests.sh`'s header, and the four files that stated it point there (a fifth,
    `DebugDeepLink.swift`, named the key only as a naming example and now separates key from
    channel); `CypressTests/ShotDirectoryConventionTests` keeps the key the writers read and the
@@ -1678,9 +1678,9 @@ into this section in the round that finds it, and nowhere else. Each item stands
 56. **Splice the pending shelf: 33 files are waiting (orchestrator's alone).** Twenty are in
     `docs/errata-pending/` and thirteen in `docs/rulings-pending/`, counted on 2026-09-29 against
     `origin/main` with the two READMEs left out. Two are overdue for a reason of their own.
-    `docs/rulings-pending/measurements-round.md` was held by the 2026-09-09 splice until F27's round
+    The measurements round's rulings (now **RULINGS R113-R115**) were held by the 2026-09-09 splice until F27's round
     landed, and it has (#154 and #156), so its third entry can now record an outcome instead of
-    "proposed, blocked". `docs/errata-pending/measurement-withdrawal-arrival-order.md` is F27's
+    "proposed, blocked". **ERRATA E325** is F27's
     server companion. The rest is everything filed since: the web rounds, the city-disputes round,
     and the community-trees server rounds. Run it the way the last one ran (gate the cleanup on the
     script, assert the placeholder counts, and sweep the deleted files' basenames across the whole
@@ -1694,7 +1694,7 @@ into this section in the round that finds it, and nowhere else. Each item stands
 58. **Two things assume `cypress-sync` is one machine on the default deploy strategy.** (a) Migration
     006's constraint plus a binary older than #182 fails sign-in itself with a 500. That is safe
     today, because a boot runs the migrations before the new binary serves and the old one never
-    serves beside it (`docs/rulings-pending/approve-adopted-photos.md`), and it opens the day the app
+    serves beside it (**RULINGS R140**), and it opens the day the app
     runs on two machines or deploys with a canary or bluegreen strategy. (b) The community tile's
     delta cursor trails the present by the request timeout, which is correct only with one clock;
     `server/internal/api/community_reads.go` says so in as many words, and with two machines it
@@ -1888,7 +1888,7 @@ into this section in the round that finds it, and nowhere else. Each item stands
     `ContributionCameraView`, the camera check-in (05) and care log (09) open to attach photographs,
     owned a `VisitCameraController` like screen 04 and add-a-tree but had no pinch, and neither R80
     item 5 nor the F33 ruling named it. The owner ruled on 2026-09-29, verbatim: *"Yes, same pinch
-    (Recommended)"* (`docs/rulings-pending/contribution-camera-zoom.md`, unnumbered). It now applies
+    (Recommended)"* (**RULINGS R169**). It now applies
     `VisitCameraZoomPinch` to its viewfinder with `isAiming: true`, because that viewfinder never
     shows a still and so always has something to aim; `isZoomable` still gates it.
     `CameraZoomPinchTests.contributionCameraWiresItsAimToThePinch` proves the pinch is there once,
@@ -1944,7 +1944,7 @@ into this section in the round that finds it, and nowhere else. Each item stands
     `feat/dc-street-trees`) built the `us-dc-dc` pack from DDOT's street tree layer: 200,313 rows
     (194,086 alive, 3,332 standing dead, 2,895 vacant sites), published beside the seven live packs
     by `publish_cities.py --add-pack`. Detail: `docs/investigations/dc-street-trees.md`. Species
-    coverage under D20 is 86.27% and was waived for D.C. (`docs/rulings-pending/dc-species-gate.md`).
+    coverage under D20 is 86.27% and was waived for D.C. (**RULINGS R172**).
     Follow-up: a D.C. species round, the way `nyc_species.yaml` was built. Two parts. First, cited
     rules for the notation the R0 to R3 cascade misses (`Ginkgo biloba (male)`/`(female)` 3,682 rows,
     `Genus species` 12,000+ rows, curly-quoted cultivars, `Liquidambar Stryaciflua`). Second, a
@@ -2018,7 +2018,7 @@ into this section in the round that finds it, and nowhere else. Each item stands
     source (ERRATA E81 names the missing source, not this effect). Fix: one `NWPathMonitor`-backed
     source, passed to every `drain()`, with a test that fails if a writer drains without it.
 99. **DONE (PR #207): the ring follows the reader's location, owner decision 2026-11-12; strings
-    in `docs/rulings-pending/grove-ring-follows-location.md`.** ~~**The Grove ring names the most-visited neighborhood, not where the reader is (F38,
+    in RULINGS R173.** ~~**The Grove ring names the most-visited neighborhood, not where the reader is (F38,
     2026-11-12).** The tester, in D.C., saw My Grove > Species say "in the Castro/Upper Market".
     `LocalAPI.groveSpecies` follows R29 (most-visited neighborhood) and the caption does not say so;
     F17 fixed the same complaint on the Journal's stats but not on screen 08. Owner choice: label it
@@ -2149,8 +2149,8 @@ into this section in the round that finds it, and nowhere else. Each item stands
     (`NWPathMonitor`), the source E81 said was missing. Out of scope for F35, logged here.~~
     **DONE in the overnight round of 2026-11-14 (`claude/overnight-bug-fixes-8154ea`).** Screen 17's pill reads `N waiting · offline` when rows are waiting and
     `NWPath.status` is `.unsatisfied` right now; cellular and `.requiresConnection` are not offline,
-    and nothing is claimed before the first reading. The erratum that amends E81 is in
-    `docs/errata-pending/outbox-pill-offline.md`. No UI test reads the pill (follow-up below).
+    and nothing is claimed before the first reading. The erratum that amends E81 is
+    **ERRATA E353**. No UI test reads the pill (follow-up below).
 111. ~~**The agent simulators in CLAUDE.md no longer exist.** None of the four UDIDs listed under
     "Simulators" is on the owner's Mac (checked with `xcrun simctl list devices`, 2026-11-13). This
     round's agents made their own. Update the list, or say how an agent makes its device. On 2026-11-14 the Mac
@@ -2201,7 +2201,7 @@ into this section in the round that finds it, and nowhere else. Each item stands
     loss; reports, dismissals, photo votes, redirects and disputes are recorded with no tree lookup.
     So `species_claim` and `species_correction` now wait behind their tree's add like
     `location_correction` (`OutboxItem.Kind.waitsForItsTreeAdd`), and the other kinds do not. The
-    table is in `docs/errata-pending/c1-followups.md`.
+    table is in **ERRATA E350**.
 116. ~~**C1 follow-up: a pin move's time held behind its tree's add counts toward its 48 h window.**
     The held move has no reason on its row, so the F35 credit (`OutboxStore.window`) does not
     leave the held time out. If the add is in backoff for 47 h and then sends, the released move
@@ -2428,14 +2428,14 @@ into this section in the round that finds it, and nowhere else. Each item stands
     new tree does; other people see the day the tree was added, not the day it went live. The
     ruling, and the three facts the building round must verify first (no `add_tree` row exists for
     these trees, a proximity conflict on an old add, which chip 140 removes, and whether the
-    service keeps the phone's dates), are in `docs/rulings-pending/community-trees-old-trees.md`. Rows on a city tree are
+    service keeps the phone's dates), are in **RULINGS R183**. Rows on a city tree are
     still under R77; the owner was not asked about them. Not built. It belongs with C2, because
     nobody else sees any community tree until C2 lands.~~ **Built, 2026-11-15**, in two pieces: the
     service keeps the phone's added day (`feat/community-tree-added-day-server`, server migration
     008), and the phone sends each old tree once, with its rows and its photographs, retries once
     each add refused under the 10 m rule, and sends every tree's add photo
     (`feat/community-trees-send-old`; the reading and its limits are in
-    `docs/rulings-pending/community-trees-send-old.md`). The build that carries the phone piece
+    **RULINGS R216-R221**). The build that carries the phone piece
     should ship only after `cypress-sync` runs the 10 m change and migration 008: the retry
     happens once, so a refusal under the old rule would be final. **`cypress-sync` release v16
     (`4b0e35b7`, deployed 2026-11-15) runs both.**
@@ -2448,14 +2448,14 @@ into this section in the round that finds it, and nowhere else. Each item stands
     record within 10 m of here. Add this tree only if it is a different one."). **The service change
     deploys before any build that stops refusing on the phone**, and each `cypress-sync` deploy needs
     the owner's go-ahead. The ruling and the build notes are in
-    `docs/rulings-pending/community-trees-no-proximity-rule.md`. Not built. It goes before chip 139,
+    **RULINGS R190**. Not built. It goes before chip 139,
     whose old trees can otherwise come back as conflicts.~~ **DONE, 2026-11-15:** the phone half is
     `feat/no-proximity-refusal-phone` and the service half `feat/no-proximity-refusal-server`
     (PR 236), deployed with the owner's approval as `cypress-sync` release v15 (`bd8a35af`). The
     owner placed the note at the top of the Add this tree form, above the photo, made a row of the
     note open its tree over the add screen with the draft kept, and made the note show at 10 m and
     hide past 15 m (three decisions of 2026-11-15,
-    `docs/rulings-pending/community-trees-no-proximity-rule-phone.md`). **Owed on the physical phone:
+    **RULINGS R192**, **R193** and **R195**). **Owed on the physical phone:
     the shutter's position with a tree nearby.** A simulator has no live camera; the reviewer measured
     "Choose a photo from this phone" at about 646 pt with a tree nearby on the 390 pt iPhone 17e, still
     above the pinned button at about 696 pt.
@@ -2514,7 +2514,7 @@ into this section in the round that finds it, and nowhere else. Each item stands
     itself among them. It is reported to pass on CI; this round did not check a CI log. Until it is fixed, every local full unit run ends `VERIFY-FAIL` with exactly this
     one issue, so read the failing test's name before treating a local red as anything else.
 144. **A species answer on a community tree someone else added counts for everyone.** Owner decision,
-    2026-11-15 (`docs/rulings-pending/community-trees-answers-2026-11-15.md`, second entry). Today
+    2026-11-15 (**RULINGS R209**). Today
     the service keeps a non-adder's species statement and applies it to nobody, and the phone
     refuses the two species verbs on a tree the reader did not add, so C3 hides "Say what species
     you think this is" and "Report the species as wrong" on such a profile. The round that builds
@@ -2538,7 +2538,7 @@ into this section in the round that finds it, and nowhere else. Each item stands
     the three history kinds; the namer may correct; the adder keeps through
     `species_report_flag_id`; the owner's note names the adder. The phone-only correction arms the
     service never honored (the claim's author, and a lead) are removed. The design is in
-    `docs/rulings-pending/community-trees-species-for-everyone.md`. **Still to do:** the
+    **RULINGS R233-R237**. **Still to do:** the
     `cypress-sync` deploy (owner's go-ahead), then a second account seen against the live service
     (a naming reaching another phone, the adder's phone taking it, the line on a third phone and
     the keep clearing it). This chip stays open until then. A build with the phone half must not
@@ -2582,7 +2582,7 @@ into this section in the round that finds it, and nowhere else. Each item stands
     **It takes effect only after `cypress-sync` is deployed with this change, which needs the
     owner's go-ahead and has not happened.** Until then the service sends no key and the phone
     behaves as before. Two behaviors are the orchestrator's choice, to be confirmed by the owner
-    (`docs/rulings-pending/account-agree-later.md`). **Its release note
+    (**RULINGS R215**). **Its release note
     (`docs/whats-new/feat-account-license-readback.md`) is true only after that deploy, so the
     same rule as chip 144 holds: deploy `cypress-sync` before the release resumes.**
     **DEPLOYED, 2026-11-16**, as `cypress-sync` release v17 (`27d69a6e`), with the owner's
@@ -2633,7 +2633,7 @@ into this section in the round that finds it, and nowhere else. Each item stands
     **DONE, 2026-11-16,** in `feat/journal-keeps-pin-moves`. The owner chose "Everything, pin moves
     too". Migration v24 adds `tree_locations.set_on_device`, the phone that set each position, and
     the Journal's pin-move part also matches it; the probe now reads 2 moves and 2 visits. The
-    ruling is `docs/rulings-pending/journal-keeps-pin-moves.md`. The second side is chip 163.
+    ruling is **RULINGS R232**. The second side is chip 163.
 153. ~~**Row text breaks badly at the largest text size.** At AX5, `ActivityRow` breaks inside words
     ("Specie s", "drippi ng"): its timestamp is `.fixedSize()` and squeezes the label. The You tab's
     SYNC tile shows "…", and "Watered" breaks mid-word. All three predate C3; its authors and
@@ -2685,7 +2685,7 @@ into this section in the round that finds it, and nowhere else. Each item stands
     reached its last page once. The mark is an `app_state` row per tile
     (`CommunityTreeCacheStore.completeKey(tile:)`), written with the last page in its transaction,
     kept through a delta that fails or stops part way, and removed only by `dropTile`. No migration.
-    The reasoning is in `docs/rulings-pending/c3-add-note.md` (the map card entry).
+    The reasoning is in **RULINGS R230** (the map card entry).
 157. ~~**`Tools/run_tests.sh` prints `screen-width-pt unknown` on this Mac's simulators.** Seen in
     every local log of 2026-11-15 on the four iPhone 17-family devices (Xcode 27.2); CI's header
     prints 402. A width-sensitive UI result from a local log has to take its width from the device
@@ -2707,12 +2707,20 @@ into this section in the round that finds it, and nowhere else. Each item stands
     tree with no name and no species. The second answer replaces the older code rule that an added
     tree's species is not used as its name in rows (`LocalAPI.displayNameIfPresent` and
     `resolvedDisplayNames`). Both answers are quoted in
-    `docs/rulings-pending/c3-outbox-journal.md`. My Grove's list is chip 202.
-160. **The pending rulings and errata are not numbered yet.** After the third merge train of
+    **RULINGS R250** and **R251**. My Grove's list is chip 202.
+160. ~~**The pending rulings and errata are not numbered yet.** After the third merge train of
     2026-11-15, `docs/rulings-pending/` holds 35 files and `docs/errata-pending/` holds 26, from
     the community-tree rounds and from earlier ones, and SCREENS.md cites several by filename. The splice is its own docs-only change: it
     replaces the `R???` and `E???` placeholders, rewrites those citations to numbers, and runs
-    `DocumentCitationGuardTests` red and green before it merges.
+    `DocumentCitationGuardTests` red and green before it merges.~~ **DONE, 2026-11-16**, on
+    `docs/splice-pending-2026-11-16`: 45 pending files are now **RULINGS R113-R253** and
+    **ERRATA E322-E355**, numbered in the order they were written. Every citation of a spliced file
+    now names its numbers, and the entries that later rulings replace in part carry a mark (R45,
+    R77, R79, R108, R164, R187, R188 and R238). **Left out on purpose:** the 18 files of the web
+    round, which is live in another session (every file whose name starts `web-` or `w1-`, and
+    the public tree read, the public photo grid, and the guard CI skips), and the harness-hardening
+    erratum, which the unmerged branch `tools/fetch-seed-diagnostics` changes. They splice when
+    that work lands.
 161. **CI does not write a HEIC, because writing one stalls the unit suite there.** **The reading
     half is DONE (2026-11-16):** CI run 43946695783 (PR 241) read the checked-in HEIC on the
     virtual runner. The unit log says "reading the checked-in HEIC took 38765 ms (hv_vmm_present:
@@ -2846,7 +2854,7 @@ into this section in the round that finds it, and nowhere else. Each item stands
     owner chose "Nothing": the profile reloads without the control and says nothing, as built. If the reader signs out between the
     profile's read and the tap, the verb answers `forbidden`, and the profile reloads without the
     control and without saying why. The owner has given no sentence for it, so none was written
-    (`docs/rulings-pending/community-trees-withdraw.md`). Owner's call.
+    (**RULINGS R246**). Owner's call.
 176. **Two more breaks at the largest text size on screen 03.** At AX5 the title "Grandmother
     Cypress" breaks inside the word ("Grandmoth / er"; ERRATA records it as cosmetic), and a history
     detail such as "· 12 m north" breaks between the number and its unit, where a non-breaking space
@@ -2891,7 +2899,7 @@ into this section in the round that finds it, and nowhere else. Each item stands
     `Cypress/` (checked by search, 2026-11-16), so `done` rows stay past
     `OutboxQueue.completedRetention`. Comments in `OutboxPresentation`, `CommunityTreeStore`,
     `CommunityTreeBackfill`, and `AppSchema` describe a sweep that does not run, and so does item 3
-    of `docs/rulings-pending/community-trees-species-for-everyone.md`. Found by the reviewer of chip
+    of **RULINGS R237**. Found by the reviewer of chip
     144's phone half.~~ **DONE, 2026-11-16**, in `fix/outbox-and-photo-sweeps`: `DataLayer.boot`
     calls `pruneCompleted()` once at each launch, after `recoverInterrupted` and before the
     backfill. It deletes `done` rows more than 24 hours old and nothing else. The comments now
@@ -2940,7 +2948,7 @@ into this section in the round that finds it, and nowhere else. Each item stands
     sends the queue through the ordinary drain (`OutboxQueue.sendBeforeAccountDeletion`), and it
     refuses the deletion with `WithdrawalNotSentBeforeDeletion` if a withdrawal is still unsent
     after that. With no withdrawal queued, the deletion goes ahead as before. The design is in
-    `docs/rulings-pending/community-trees-withdraw.md`; tests in
+    **RULINGS R252**; tests in
     `WithdrawBeforeAccountDeletionTests`. The original report follows. Steps: a sharing account adds a tree, the tree is published, the account
     withdraws it while offline, and the account is then deleted with the keep-records door
     (`RoutedAPI.deleteAccount` does not send the queue first). The withdrawal stays queued with no
@@ -2983,7 +2991,7 @@ into this section in the round that finds it, and nowhere else. Each item stands
     with an error the phone retries, the deletion is refused each time with "Your account was not
     deleted. Check your connection and try again.", for up to the 48-hour window. When the window
     ends the row fails for good, the deletion goes ahead, and the tree stays public and anonymous.
-    The pending ruling (`docs/rulings-pending/community-trees-withdraw.md`) names both cases. Found
+    The ruling (**RULINGS R252**) names both cases. Found
     by the reviewer of `fix/withdraw-keep-records-door`, 2026-11-16. The same holds for a
     withdrawal that already failed for good for another reason (`forbidden`, or the window ended
     before the deletion): the door counts only rows that have not failed, so the deletion goes
@@ -3050,7 +3058,7 @@ into this section in the round that finds it, and nowhere else. Each item stands
     `Report that there is no tree here` is offered. (b) A withdrawal made while signed out names
     only the device, and `OutboxStore.forgetAccount` matches rows by account; the
     `withdrawTreeRefused` debug screen makes such a row. Both are written into
-    `docs/rulings-pending/community-trees-withdraw.md` and SCREENS.md. No unit test in the tree
+    **RULINGS R249** and SCREENS.md. No unit test in the tree
     covers case (a); a reviewer's probe ran it. Owner's call whether such a row needs a way out.
     Found by the reviewer of the assembled second train, 2026-11-16.
 205. **Three pickers call an added tree with a species "Unidentified tree" (owner's call).** The
@@ -3118,7 +3126,7 @@ city inventory stays read-only, and sync-back to the city is explicitly deferred
 migration seat after the §3.4 round's. Sequenced after §3.4 lands; exact slot at scheduling.
 
 **Part 1 is in flight** (owner decision round, 2026-09-10; the round's decisions and rulings are
-staged in `docs/rulings-pending/city-inventory-disputes.md`). The owner split this entry into four
+**RULINGS R117-R124**). The owner split this entry into four
 scheduled pieces, and part 1 is **the record and its two verbs**: `AppSchema` v22's
 `tree_data_disputes` and its two children, `raiseDataDispute` / `withdrawDataDispute` on
 `CypressAPI`, the two `OutboxItem.Kind` cases that carry them to `cypress-sync`, and city rows
@@ -3132,7 +3140,7 @@ species* · *Wrong planted year* · *There's no tree here*), a suggestion under 
 fix with its accuracy and the 10 m floor explained, the app's species picker, a year field, nothing
 for the empty plot), notes, and a disclosure that the city has not been notified. A standing dispute
 draws *You reported a mistake…* and *Take back your report*. The screen's decisions are in
-`docs/rulings-pending/city-inventory-disputes.md`, part 2. PR #185's fix round implemented the
+**RULINGS R125-R139**, part 2. PR #185's fix round implemented the
 owner's and orchestrator's rulings 1–10 after review (no-tree stands alone, *The city has: …* under
 each section, a confirmation before the take-back, a refusal sentence that reads Precise Location
 and never quotes a substituted accuracy, a later fix replacing a refused one, and *Send* waiting for

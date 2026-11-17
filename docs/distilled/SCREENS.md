@@ -675,11 +675,11 @@ tap the FAB → 02; filter chips switch the pin set; search opens species/street
 selection is single-select with `All` default. **NOT SPECIFIED:** search results, zoom controls,
 empty/no-GPS state.
 
-**ADDED — round C3, owner ruling 2026-11-15** (see `docs/rulings-pending/community-trees-c3-answers.md`,
+**ADDED — round C3, owner ruling 2026-11-15** (see RULINGS R189,
 "Places with no city inventory"). The built map's empty-inventory card (title `No trees on record
 here`, drawn when a settled, unnarrowed read has nothing to draw) has two bodies, by whether this
 phone has asked the service for added trees over the viewport (the owner's answer of 2026-11-15,
-"Show the old text there"; see `docs/rulings-pending/c3-add-note.md`):
+"Show the old text there"; see RULINGS R230):
 - **Asked** (the viewport touches at most 16 zoom-14 tiles, and every one has been fetched):
   `Cypress draws a city street-tree inventory and trees people have added. Neither has a tree here.`
 - **Not asked** (zoomed out past 16 tiles, a tile in view never fetched because the phone was
@@ -729,9 +729,9 @@ The trigger is unchanged: the card draws only when no pin or cluster of either k
 4. **Footer CTA** — `margin-top:auto`, `padding:14px 16px 40px`, C7 outline button
    `padding:14px`, 15px: **`None of these? Add this tree`**
 
-   **ADDED — round C3, owner rulings 2026-11-15** (see `docs/rulings-pending/community-trees-c3-answers.md`,
-   "The note under the Add this tree button", `docs/rulings-pending/community-trees-answers-2026-11-15.md`,
-   the last entry, and the rulings-pending file `community-trees-only-you-can-see.md`, written by
+   **ADDED — round C3, owner rulings 2026-11-15** (see RULINGS R187,
+   "The note under the Add this tree button", RULINGS R210,
+   and RULINGS R223, written by
    another author of this round). The add screen
    this button opens has no mock. The note under its own `Add this tree` button now says who can
    see the tree, by the account's state, read each time the add screen appears:
@@ -747,8 +747,8 @@ The trigger is unchanged: the card draws only when no pin or cluster of either k
 
 **States:** selected (2px `#2F6B4F` border + shadow + eyebrow + confidence bar) vs. idle.
 
-**ADDED — round C3, owner ruling 2026-11-15** (see `docs/rulings-pending/community-trees-c3-answers.md`,
-"Places with no city inventory", and `docs/rulings-pending/c3-add-note.md`, "The empty list where
+**ADDED — round C3, owner ruling 2026-11-15** (see RULINGS R189,
+"Places with no city inventory", and RULINGS R231, "The empty list where
 the phone has not asked for added trees"). The built empty state, `No trees on record here`, has
 two messages. The number in each is the list's search radius. The list reads the city inventory and
 every added tree on the phone, this phone's and other people's, so it is empty only when neither
@@ -1133,7 +1133,7 @@ Intro: *Where taps lead: the species field guide, the running list of species yo
    *F38 (owner decisions 2026-11-12 and 2026-11-13, strings pending ratification):* the area
    follows the reader's location and keeps this wording there; otherwise the ring falls back to the
    most-visited area and its caption says "most-visited". The captions are in
-   `docs/rulings-pending/grove-ring-follows-location.md`.
+   RULINGS R173.
 4. **Celebration callout** (C14 gradient) — `margin:14px 16px 0`:
    **`New species!`** ` First Victorian Box, spotted yesterday on Noriega.`
 5. **Species grid** (C29) — `grid-template-columns:repeat(3,1fr); gap:9px; padding:14px 16px 0`:
