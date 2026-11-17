@@ -24007,12 +24007,12 @@ bugs survive. Red-proved by removing `ON DELETE CASCADE` from both children: the
 ---
 
 ### E325 — `photo_withdrawal`'s "names something this service never held" is a **success that stays**
+### true; the same sentence about a measurement is a success that expires
 
 One entry, found while wiring `measurement_withdrawal` into `POST /sync` (`server/`, pairs with PR
 #154). It is not a defect that shipped — nothing in `server/` has ever accepted this kind — but it
 is the trap the obvious implementation walks into, and the obvious implementation is the one the
 existing precedent hands you.
-### true; the same sentence about a measurement is a success that expires
 
 `store.withdrawPhoto` has three answers and the first is *no row → success, changing nothing*. Its
 comment justifies that with ERRATA E264: the client has no send path for binaries, so a photo
