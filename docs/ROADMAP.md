@@ -3084,8 +3084,10 @@ into this section in the round that finds it, and nowhere else. Each item stands
     nil for added trees. These lists show species only and never a given name, and the
     distinguisher logic reads the same fields, so the owner's two answers on row names (chips 159
     and 202) do not clearly cover them.~~ **DONE, 2026-11-16**, in
-    `feat/picker-names-and-second-phone-grove`. The owner chose "Yes, show the species": "An added
-    tree with a species reads, for example, "Sycamore, London Plane" in those three lists".
+    `feat/picker-names-and-second-phone-grove`. The owner chose "Yes, show the species
+    (Recommended)": "An added tree with a species reads, for example, "Sycamore, London Plane" in
+    those three lists". The owner also chose "Yes, any species counts" for the "Tell them apart by
+    species" banner, so an added tree's species counts there too.
     `LocalAPI.treesNear` now gives an added tree's nearby record the species its profile title
     shows, with the reader's own naming laid over a cached tree, through the same overlay as the
     row names. A tree with no species still reads "Unidentified tree", and a given name is not
