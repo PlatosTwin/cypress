@@ -351,8 +351,8 @@ enum OutboxCopy {
     ///
     /// **One exception: a pin move on a tree with no name reads `Pin moved` alone**, the app owner's
     /// words of 2026-11-16 over "Pin moved · Tree". `treeName` is nil exactly when no name was
-    /// resolved for the tree (`LocalAPI.displayNames` leaves out a tree with no given name and no
-    /// species).
+    /// resolved for the tree: no given name and no species (`LocalAPI.displayNames`, which names an
+    /// added tree by its species since the owner's answer of 2026-11-16, "Use the species").
     static func title(kind: OutboxItem.Kind, treeName: String?) -> String {
         if kind == .locationCorrection, treeName == nil { return kindLabel(kind) }
         return "\(kindLabel(kind)) · \(treeName ?? TreeProfilePresentation.fallbackTitle)"

@@ -14,7 +14,8 @@
 //     place of the control, below the report link that comes back in this state, and the profile
 //     does not say only the reader can see the tree.
 //  4. After the service refuses (`debugRefuseTreeWithdrawal`), the Outbox row reads
-//     `Tree withdrawn · …` with the owner's sentence, and that row draws no Retry.
+//     `Tree withdrawn · Sycamore, London Plane` with the owner's sentence, and that row draws no
+//     Retry.
 //  5. A city tree offers no control.
 //
 //  The "Keep it" press is in `DialogCancelUITests`, with the app's other cancels.
@@ -44,7 +45,10 @@ final class WithdrawTreeUITests: XCTestCase, DeepLinkHarness {
         static let reportNoTree = "Report that there is no tree here"
         static let cityRecordReport = "Report a mistake in the city’s record"
         static let showWhere = "Show me where this is"
-        static let outboxRowPrefix = "Tree withdrawn · "
+        /// The debug tree is added with the seed's first `Platanus` match, whose common name is
+        /// "Sycamore, London Plane". Rows name an added tree by its species (the owner's answer of
+        /// 2026-11-16, "Use the species"), as its profile title does.
+        static let outboxRowTitle = "Tree withdrawn · Sycamore, London Plane"
         /// `OutboxCopy.retryAction`, the retry control's accessibility label.
         static let retry = "Retry"
     }
@@ -187,23 +191,37 @@ final class WithdrawTreeUITests: XCTestCase, DeepLinkHarness {
     func testARefusedWithdrawalReadsTheOwnersSentenceInTheOutbox() {
         let app = launchPinned("withdrawTreeRefused")
         let row = app.staticTexts
-            .matching(NSPredicate(format: "label BEGINSWITH %@", Copy.outboxRowPrefix))
+            .matching(NSPredicate(format: "label == %@", Copy.outboxRowTitle))
             .firstMatch
         guard row.waitForExistence(timeout: 60) else {
             XCTFail(
                 deepLinkFailure(app).map { "withdrawTreeRefused: \($0)" }
-                    ?? "the Outbox drew no row titled '\(Copy.outboxRowPrefix)…'"
+                    ?? "the Outbox drew no row titled '\(Copy.outboxRowTitle)'"
             )
             return
         }
-        let reason = app.staticTexts[Copy.staysOnTheMap]
-        XCTAssertTrue(reason.waitForExistence(timeout: 10),
+        // The refused row stays for good (the owner's answer of 2026-11-16, "Row stays, reason
+        // only"), so a second run on one install finds several rows carrying the same sentence.
+        // Match them as a set, then take the one that belongs to the row found above: the first
+        // sentence below its title, within the row (the time line sits between the two).
+        let sentences = app.staticTexts.matching(NSPredicate(format: "label == %@", Copy.staysOnTheMap))
+        XCTAssertTrue(sentences.firstMatch.waitForExistence(timeout: 10),
                       "the refused row does not carry the owner's sentence")
-        // No Retry in that row (the owner's answers of 2026-11-16, "Row stays, reason only"). The
-        // row's state word sits at the top of the row, beside its title, about 45 pt above the
-        // reason at this size; 60 pt covers it and stops short of the row above.
-        reach(reason, in: app)
-        let band = (reason.frame.minY - 60)...(reason.frame.maxY + 4)
+        reach(row, in: app)
+        let title = row.frame
+        let reason = sentences.allElementsBoundByIndex
+            .map(\.frame)
+            .filter { $0.minY > title.maxY }
+            .min { $0.minY < $1.minY }
+        guard let reason, reason.minY - title.maxY < 60 else {
+            XCTFail("no owner's sentence sits directly below the row titled '\(Copy.outboxRowTitle)'")
+            return
+        }
+        // No Retry in that row. The row's state word sits at the top of the row, beside its title;
+        // its 44 pt hit area starts above the title (measured: button minY 717, title minY 732), so
+        // the band starts 24 pt above the title and ends at the sentence. The row above ends more
+        // than 24 pt higher (padding and gap), so the band holds one row.
+        let band = (title.minY - 24)...(reason.maxY + 4)
         let retries = app.buttons
             .matching(NSPredicate(format: "label == %@", Copy.retry))
             .allElementsBoundByIndex

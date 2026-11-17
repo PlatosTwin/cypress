@@ -22,9 +22,10 @@ import Testing
 /// 3. a row whose tree resolves to **neither** is not a grove entry at all — the old `guard let …
 ///    else { continue }`, which is the only way a grove row can be dropped;
 /// 4. the display name is the one active nickname, else the **seed** species' common name, else
-///    empty. The second fallback is `TreeQueries`-only on purpose: `displayNameIfPresent` returns
-///    nil for a community tree with no nickname even though that row may carry a self-asserted
-///    species, because a self-assertion is not a name the app puts on a tree (D15).
+///    empty. The second fallback is `TreeQueries`-only on purpose: My Grove does not use a
+///    community tree's species as its name (D15). `displayNameIfPresent` does since the owner's
+///    answer of 2026-11-16 ("Use the species", for the Journal and the Outbox), so the comparison
+///    below holds only because this fixture's added trees carry no species.
 ///
 /// Every name below is checked **against `displayNameIfPresent` itself**, which is untouched by
 /// this round and still the per-tree implementation, so the claim is a comparison rather than a

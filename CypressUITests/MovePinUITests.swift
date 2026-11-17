@@ -37,9 +37,11 @@ final class MovePinUITests: XCTestCase, DeepLinkHarness {
         static let fromGPS = "position from GPS"
         static let byHand = "position placed by hand"
         // `OutboxCopy.kindLabel(.locationCorrection)` and `JournalCopy.verb(for: .pinMoved)`: the
-        // app owner's words of 2026-11-14.
-        static let outboxRowPrefix = "Pin moved · "
-        static let journalRowPrefix = "Moved the pin of "
+        // app owner's words of 2026-11-14. The debug tree is added with the seed's first `Platanus`
+        // match, "Sycamore, London Plane", and rows name an added tree by its species (the owner's
+        // answer of 2026-11-16, "Use the species").
+        static let outboxRowPrefix = "Pin moved · Sycamore, London Plane"
+        static let journalRowPrefix = "Moved the pin of Sycamore, London Plane"
     }
 
     // MARK: - 1 · Move a tree you added

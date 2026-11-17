@@ -256,10 +256,28 @@ is also what keeps the reason line on the tree's profile, so that line stays cor
 Not chosen: "Keep Retry after all"; "Add a way to clear it".
 
 **The consequence, stated plainly: that row never leaves the Outbox.** Nothing sweeps a failed
-row, and the row has no control. It leaves only through an account deletion that erases
-everything (`OutboxStore.forgetAccount`, `.eraseEverything`). While it stays, the tree's profile
-draws `Other people have added to this tree, so it stays on the map.`, because
+row, and the row has no control. An account deletion that erases everything removes it
+(`OutboxStore.forgetAccount`, `.eraseEverything`) **when the withdrawal's payload names that
+account** (`$.attribution.userID`). A withdrawal can name no account: `LocalAPI.withdrawTree`
+accepts the adder by device as well as by account (`ContributionOwner.isOwned(by:)`), so a person
+who added a tree signed out can withdraw it signed out, and that payload carries only the device.
+`forgetAccount` matches rows by account only, so no deletion ever matches such a row, and it stays
+for the life of the install. The `withdrawTreeRefused` debug screen makes exactly such a row: it
+signs out first (`DebugDeepLink`), so its withdrawal names only the device. While the row stays,
+the tree's profile draws `Other people have added to this tree, so it stays on the map.`, because
 `CommunityTreeStore.othersHaveAddedTo` reads that row.
+
+**A deletion that keeps records keeps the row, for good.** With a `failed`/`conflict` withdrawal
+present, a keep-records deletion sends only `DELETE /me`. `forgetAccount`'s `.leaveRecords` arm
+treats a withdrawal as a contribution: it tombstones the payload's `clientUUID` and removes the
+account from the payload (`json_remove` of `$.userID` and `$.attribution.userID`). The row keeps
+its state, its `conflict` code and its reason, and its payload no longer names any account, so a
+later deletion that erases everything never matches it either: it stays for the life of the
+install. `AccountDeletion.forgetCommunityTrees` sets the tree's `user_id` to NULL, so the tree's
+adder becomes nobody and the withdraw offer becomes `.unavailable`: the reason line goes away.
+The tree is still this phone's own row, so `recordDefectOffer` answers `.reportable`, and the
+profile offers `Report that there is no tree here`. The review of the assembled train ran this as
+a probe; the author read each step in the code. No test in this branch covers it.
 
 How the branch `feat/withdraw-owner-answers` built it (the author's notes):
 

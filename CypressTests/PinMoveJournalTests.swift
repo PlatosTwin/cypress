@@ -124,6 +124,60 @@ struct PinMoveJournalTests {
         )
     }
 
+    /// **End to end: a pin move on an added tree that has a species**, read back through the Journal
+    /// and the Outbox (the owner's answer of 2026-11-16, "Use the species"). The tree is added
+    /// with the seed's first `Platanus` match, as the `movePin` debug screen adds it, and moved
+    /// through `correctLocation`. The Journal row comes from `journal()`, and the Outbox row from
+    /// the queue's own records named through `displayNames(for:)`, the resolver `DataLayer` hands
+    /// `OutboxViewState`. Red-proof: in `LocalAPI.resolvedDisplayNames`, make the community arm
+    /// return early — red on "the Journal row read Moved a tree’s pin".
+    @Test("a pin move on an added tree with a species names the species in the Journal and the Outbox")
+    func aPinMoveOnATreeWithASpeciesNamesIt() async throws {
+        let url = try #require(InventoryContractTests.seedURL, "no seed database; set CYPRESS_SEED_PATH")
+        let store = try await CypressStore.inMemory(seedURL: url)
+        let clock = OutboxTestSupport.Clock(Self.start)
+        let api = LocalAPI(store: store, deviceID: Self.deviceID, now: clock.closure)
+        let species = try #require(
+            try await api.searchSpecies(query: "Platanus", limit: 1).first,
+            "the seed has no Platanus species"
+        )
+        let tree = try await api.addTree(
+            TreeDraft(
+                coordinate: Self.offshore,
+                speciesID: species.id,
+                photoLocalPath: Self.capture(),
+                attribution: .anonymous(deviceID: Self.deviceID)
+            )
+        )
+        clock.advance(by: 3_600)
+        try await Self.move(api, tree, meters: 30)
+
+        let move = try #require(
+            try await Self.wholeJournal(api).first { $0.kind == .pinMoved },
+            "the journal holds no pin move"
+        )
+        let journalRow = try #require(JournalPresentation(entries: [move], nextCursor: nil).rows.first)
+        #expect(
+            journalRow.title == "Moved the pin of \(species.commonName)",
+            "the Journal row read \(journalRow.title)"
+        )
+
+        let records = try await store.queue.read { try OutboxStore().allItems(connection: $0) }
+        let names = await api.displayNames(for: [tree.id])
+        let snapshot = OutboxSnapshot(
+            records: records, treeNames: names, now: clock.now, syncPhotosOnWifiOnly: true
+        )
+        let titles = OutboxPresentation(snapshot: snapshot, now: clock.now).queue.map(\.title)
+        #expect(
+            titles.contains("Pin moved · \(species.commonName)"),
+            "the Outbox rows read \(titles)"
+        )
+        #expect(
+            titles.contains("New tree · \(species.commonName)"),
+            "the Outbox rows read \(titles)"
+        )
+    }
+
     /// The app owner's words of 2026-11-16 for a tree with no name, over "Moved the pin of Tree".
     /// Only the pin move changes: every other kind keeps the fallback title. Red-proof: drop the
     /// `.pinMoved` early return from `JournalCopy.rowTitle` — red on "an unnamed tree's pin move
