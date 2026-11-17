@@ -312,7 +312,9 @@ struct NearbyStatementCensusTests {
         let mixed = try await Self.census(store) {
             try await api.treesNear(Self.center, radiusM: 60, limit: 500)
         }
-        let carried = mixed.rows.filter { (added + cached).contains($0.tree.id) && $0.speciesCommonName != nil }
+        // The scientific name, which every species has; the oak the catalog answers may have no
+        // common name.
+        let carried = mixed.rows.filter { (added + cached).contains($0.tree.id) && $0.speciesScientificName != nil }
         try #require(carried.count == 52, "the list carried a species for \(carried.count) of the 52 added trees")
         #expect(mixed.census.readCount == 2, "the list made \(mixed.census.readCount) hops")
         #expect(
