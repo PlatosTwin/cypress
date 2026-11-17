@@ -3064,6 +3064,22 @@ into this section in the round that finds it, and nowhere else. Each item stands
     loop arm answers neither and marks the read as fallen back); production always uses the
     provider arm, so only tests see it. Found by the author of `feat/grove-names-by-species`,
     2026-11-16.
+206. **On a second phone, an added tree with no name and no species is missing from My Grove.** The
+    owner's answer on My Grove (chip 202) says such a tree "still reads "Tree"". That holds for a
+    tree this phone holds in its own grove. A tree this phone reaches only through the account's
+    grove (`RoutedAPI.refreshedGrove`: your own added tree seen from another phone, or somebody
+    else's cached tree you visited from another device) is put in `unnamed` by both routed arms,
+    and `refreshedGrove` drops the row (`RoutedAPI.swift`, near line 807). The drop is older than
+    chip 202 (commit `3c9f3197`), and before chip 202 it also dropped such trees that had a
+    species. Fix: answer a held tree with no name as named with an empty title, so the list draws
+    "Tree" as the local arm does, and keep `unnamed` for a withdrawn tree only. Run by the
+    reviewer of `feat/grove-names-by-species`, 2026-11-16 (`own none: local='' provider=unnamed`).
+207. **Two name differences the species rule leaves (not investigated).** (a) A city tree with no
+    species shows its street address as its profile title (`TreeProfilePresentation.title`), while
+    My Grove and the Journal show "Tree" for it. (b) My Grove's Species tab and ring leave out an
+    added tree's species (`GroveQueries`, on purpose until now), while the Trees list beside them
+    now names that tree by it. The owner may want both to agree. Seen by the reviewer of
+    `feat/grove-names-by-species`, 2026-11-16.
 
 
 **Retire the format-1 manifest — DONE, 2026-08-23.** The owner overrode the trigger the day after
