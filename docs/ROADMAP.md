@@ -2814,11 +2814,14 @@ into this section in the round that finds it, and nowhere else. Each item stands
     erased, the phone reverts the species that account named on its own trees
     (`AccountDeletion.swift`), while the service keeps the species (the owner's "The species
     stays", 2026-11-16). Found by the planner of 144 (finding h2); not changed by 144's phone half.
-168. **Naming or reporting a species puts somebody else's tree in your grove on the service.**
+168. ~~**Naming or reporting a species puts somebody else's tree in your grove on the service.**
     `TreeMembershipKinds` (`server/internal/store/reads.go`) counts species statements and reports,
     so since 144 a stranger's tree joins the sender's "Yours" grove on the service. Found by the
     planner of 144 (finding h4) and repeated by its service author. Owner's call whether that is
-    wanted.
+    wanted.~~ **DECIDED, 2026-11-16:** the owner chose "Yes, it counts (Recommended)": "Naming or reporting a
+    species is a contribution like a visit, so the tree joins your trees. This is how the service
+    works today. Nothing to build." Nothing was built. The answer is written up in
+    `docs/rulings-pending/owner-answers-2026-11-16-names-and-rows.md` until it is spliced.
 169. **A tree you added on another phone gets a stranger's species controls on this one, until the
     service says it is yours.** It reaches this phone only through the community cache, and this
     phone has no record that you added it. **The local profile**, which is drawn first and stays
@@ -3069,20 +3072,32 @@ into this section in the round that finds it, and nowhere else. Each item stands
     only the device, and `OutboxStore.forgetAccount` matches rows by account; the
     `withdrawTreeRefused` debug screen makes such a row. Both are written into
     **RULINGS R249** and SCREENS.md. No unit test in the tree
-    covers case (a); a reviewer's probe ran it. Owner's call whether such a row needs a way out.
+    covers case (a); a reviewer's probe ran it. ~~Owner's call whether such a row needs a way out.~~
+    **DECIDED, 2026-11-16:** the owner chose "Leave it (Recommended)": "Both cases are rare, and the
+    row is one line that says why the tree stays on the map. Nothing to build. The roadmap keeps the
+    note." Such a row gets no way out, and this note stays as the record of the two cases.
     Found by the reviewer of the assembled second train, 2026-11-16.
-205. **Three pickers call an added tree with a species "Unidentified tree" (owner's call).** The
+205. ~~**Three pickers call an added tree with a species "Unidentified tree" (owner's call).** The
     "What tree is this?" shortlist (`VisitShortlist.swift`), the Add-this-tree "ALREADY ON RECORD"
     note (`VisitAddTreeView.swift`), and the site neighbor title (`SitePresentation.swift`,
     `VisitDistinguisher.swift`) are fed by `LocalAPI.treesNear`, which sets `speciesCommonName` to
     nil for added trees. These lists show species only and never a given name, and the
     distinguisher logic reads the same fields, so the owner's two answers on row names (chips 159
-    and 202) do not clearly cover them. Also, for the record: the two routed arms of
+    and 202) do not clearly cover them.~~ **DONE, 2026-11-16**, in
+    `feat/picker-names-and-second-phone-grove`. The owner chose "Yes, show the species
+    (Recommended)": "An added tree with a species reads, for example, "Sycamore, London Plane" in
+    those three lists". The owner also chose "Yes, any species counts" for the "Tell them apart by
+    species" banner, so an added tree's species counts there too.
+    `LocalAPI.treesNear` now gives an added tree's nearby record the species its profile title
+    shows, with the reader's own naming laid over a cached tree, through the same overlay as the
+    row names. A tree with no species still reads "Unidentified tree", and a given name is not
+    shown. `NearbySpeciesTests` fails if a list and the profile disagree, and
+    `NearbyStatementCensusTests` pins the statement count. Still open, for the record: the two routed arms of
     `resolvedCityFileRows` disagree about a withdrawn tree (the provider arm answers `unnamed`, the
     loop arm answers neither and marks the read as fallen back); production always uses the
     provider arm, so only tests see it. Found by the author of `feat/grove-names-by-species`,
     2026-11-16.
-206. **On a second phone, an added tree with no name and no species is missing from My Grove.** The
+206. ~~**On a second phone, an added tree with no name and no species is missing from My Grove.** The
     owner's answer on My Grove (chip 202) says such a tree "still reads "Tree"". That holds for a
     tree this phone holds in its own grove. A tree this phone reaches only through the account's
     grove (`RoutedAPI.refreshedGrove`: your own added tree seen from another phone, or somebody
@@ -3091,7 +3106,12 @@ into this section in the round that finds it, and nowhere else. Each item stands
     chip 202 (commit `3c9f3197`), and before chip 202 it also dropped such trees that had a
     species. Fix: answer a held tree with no name as named with an empty title, so the list draws
     "Tree" as the local arm does, and keep `unnamed` for a withdrawn tree only. Run by the
-    reviewer of `feat/grove-names-by-species`, 2026-11-16 (`own none: local='' provider=unnamed`).
+    reviewer of `feat/grove-names-by-species`, 2026-11-16 (`own none: local='' provider=unnamed`).~~
+    **DONE, 2026-11-16**, in `feat/picker-names-and-second-phone-grove`, as proposed: both routed
+    arms name a held tree with no name and no species with an empty title, which My Grove draws as
+    "Tree", and the read is still not marked as fallen back. `unnamed` now holds only a tree this
+    phone withdrew. A seed tree with no species and no name, reached the same way, also reads
+    "Tree" now (it was dropped too).
 207. **Two name differences the species rule leaves (not investigated).** (a) A city tree with no
     species shows its street address as its profile title (`TreeProfilePresentation.title`), while
     My Grove and the Journal show "Tree" for it. (b) My Grove's Species tab and ring leave out an
@@ -3110,6 +3130,21 @@ into this section in the round that finds it, and nowhere else. Each item stands
     merge", as it has since 2026-08-21, and no ruling matches it. (d) A splice gets the
     "server-only" or "only prose" CI decision, so CI never runs the two guards on it; a local run
     is the only evidence. Found by the reviewer of the splice, 2026-11-16.
+209. **Six things around the nearby lists, older than chip 205's change or left by it (not
+    fixed).** (a) `LocalAPI.treesNear` does not apply a lead's status overrides, so a community
+    tree a lead took down is listed with its inventory status, and a site's "nearest standing
+    tree" filter (`SiteModel.isStanding`) reads that status. (b) At the largest text size the
+    "What tree is this?" card title breaks inside words for every tree, city trees too ("Syca /
+    more, Londo / n Plane"). (c) A single added candidate on that list draws no "Closest" eyebrow
+    where a single city tree does (seen on screen, not investigated). (d) `VisitThumbnail` picks a
+    card's gradient from `tree.speciesCurrentID`, which does not include the reader's own naming
+    of a cached tree, so the gradient can differ from the species in the title. (e) A site's
+    nearest-tree line and the saved screen's "Next nearest" line have unit tests for an added
+    tree's species but no screen check. (f) The doc comments on `NearbyTree.tell` and in
+    `VisitDistinguisher` say no curated tell ships yet, but the bundled seed carries `id_tips`
+    for 40 of its 731 species (counted 2026-11-16), and the banner's first step uses them for
+    city trees. Found by the author and the reviewer of
+    `feat/picker-names-and-second-phone-grove`, 2026-11-16.
 
 
 **Retire the format-1 manifest — DONE, 2026-08-23.** The owner overrode the trigger the day after

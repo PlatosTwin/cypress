@@ -64,6 +64,26 @@ public struct SpeciesQueries {
         return names
     }
 
+    /// Both names of each species, as the seed stores them: the scientific name, and the common
+    /// name or nil. **The same statement as `commonNames(ids:)`**, without its fallback, because the
+    /// caller is `LocalAPI.treesNear`, whose city rows carry these two columns raw
+    /// (`TreeQueries.nearest`) and whose readers apply the fallback themselves. An id the
+    /// inventories do not carry is absent.
+    public func names(ids: [UUID], connection: SQLiteConnection) throws -> [UUID: (scientific: String, common: String?)] {
+        guard !ids.isEmpty else { return [:] }
+        let statement = try connection.cachedStatement(commonNamesSQL())
+        _ = try statement.bind(
+            "[\(ids.map { "\"\($0.uuidString)\"" }.joined(separator: ","))]", forName: ":ids"
+        )
+        var names: [UUID: (scientific: String, common: String?)] = [:]
+        for (id, scientific, common) in try statement.fetchAll({ row -> (UUID, String, String?) in
+            (try row.uuid("species_uuid"), try row.string("scientific_name"), try row.stringIfPresent("common_name"))
+        }) {
+            names[id] = (scientific, common)
+        }
+        return names
+    }
+
     /// The text `commonNames(ids:)` runs. `lower(value)` for `species(id:)`'s reason: the app
     /// binds upper-case uuids, and every inventory stores them lower case.
     func commonNamesSQL() -> String {

@@ -307,12 +307,35 @@ public struct CommunityLayer {
         limit: Int,
         connection: SQLiteConnection
     ) throws -> [Tree] {
+        try nearRows(coordinate, radiusM: radiusM, limit: limit, connection: connection).map(\.tree)
+    }
+
+    /// `near`'s answer with `row(id:)`'s answer to which table holds each tree. The same one
+    /// statement (`inBoundsSQL`), which already projects the `cached` column. `LocalAPI.treesNear`
+    /// needs the flag to lay the reader's own species answer over a cached tree, as the profile does.
+    public func nearRows(
+        _ coordinate: Coordinate,
+        radiusM: Double,
+        limit: Int,
+        connection: SQLiteConnection
+    ) throws -> [Row] {
         let bounds = BoundingBox(around: coordinate, radiusM: radiusM)
-        return try inBounds(bounds, limit: nil, connection: connection)
-            .filter { coordinate.distance(to: $0.coordinate) <= radiusM }
-            .sorted { coordinate.distance(to: $0.coordinate) < coordinate.distance(to: $1.coordinate) }
-            .prefix(limit)
-            .map { $0 }
+        let statement = try connection.cachedStatement(Self.inBoundsSQL)
+        _ = try statement.bind([
+            ":minLat": bounds.minLatitude,
+            ":maxLat": bounds.maxLatitude,
+            ":minLon": bounds.minLongitude,
+            ":maxLon": bounds.maxLongitude,
+            // A negative LIMIT is SQLite's documented "no upper bound".
+            ":limit": -1
+        ])
+        return try statement.fetchAll { row in
+            Row(tree: try CommunityTreeStore.decode(row), isAddedHere: try row.int("cached") == 0)
+        }
+        .filter { coordinate.distance(to: $0.tree.coordinate) <= radiusM }
+        .sorted { coordinate.distance(to: $0.tree.coordinate) < coordinate.distance(to: $1.tree.coordinate) }
+        .prefix(limit)
+        .map { $0 }
     }
 
     /// One tree by id, whichever table holds it. Like `CommunityTreeStore.tree(id:)` this does

@@ -345,28 +345,53 @@ public actor LocalAPI: CypressAPI {
         return max(0, min(communityPins, ceiling))
     }
 
+    /// The trees near a point, city and community alike: the "What tree is this?" shortlist, the
+    /// Add this tree "ALREADY ON RECORD" note, a site's neighbor line and the saved screen's next
+    /// tree all read it.
+    ///
+    /// **Statements.** Two always, one per queue read: `TreeQueries.nearest` and
+    /// `CommunityLayer.inBoundsSQL`. Up to two more, once per call, only when a community tree is
+    /// in range: `SpeciesAssertionStore.treesWithAClaim(among:)`, when one of them is somebody
+    /// else's cached tree; and `SpeciesQueries.commonNamesSQL()`, when one has a species. Then
+    /// `localSpeciesAnswers` **per tree**, only for a cached tree the reader named or corrected, for
+    /// `resolvedDisplayNames`' reason: the list and the profile read one overlay.
+    /// `NearbyStatementCensusTests` pins the counts.
     public func treesNear(_ coordinate: Coordinate, radiusM: Double, limit: Int) async throws -> [NearbyTree] {
         let fromSeed = try await store.queue.read { connection -> [NearbyTree] in
             guard let treeQueries else { return [] }
             return try treeQueries.nearest(to: coordinate, radiusM: radiusM, limit: limit, connection: connection)
         }
-        let added = try await store.queue.read { connection in
+        let addedRows = try await store.queue.read { connection -> [NearbyTree] in
             // The whole community layer, other people's cached trees included: this is the list the
             // Add this tree screen's "ALREADY ON RECORD" note draws, and a tree somebody else
             // published 5 m away is as much on record as one this phone added (`AppSchema` v23).
-            try layer.near(coordinate, radiusM: radiusM, limit: limit, connection: connection)
-        }
-        guard !added.isEmpty else { return Array(fromSeed.prefix(limit)) }
-
-        let addedRows = added.map {
-            NearbyTree(
-                tree: $0,
-                distanceM: coordinate.distance(to: $0.coordinate),
-                speciesScientificName: nil,
-                speciesCommonName: nil,
-                tell: nil
+            let rows = try layer.nearRows(coordinate, radiusM: radiusM, limit: limit, connection: connection)
+            guard !rows.isEmpty else { return [] }
+            // **The species its profile title shows** (the owner's answer of 2026-11-16, "Yes,
+            // show the species"): the row's species, with the reader's own naming or correction
+            // laid over a cached tree while it is in force (`communityShownSpecies`, the overlay the
+            // row names use). Species only: these lists never show a given name.
+            let shown = try communityShownSpecies(
+                rows: Dictionary(rows.map { ($0.tree.id, $0) }, uniquingKeysWith: { first, _ in first }),
+                connection: connection
             )
+            let names = try speciesQueries?.names(ids: Array(Set(shown.values)), connection: connection) ?? [:]
+            return rows.map { row in
+                let species = shown[row.tree.id].flatMap { names[$0] }
+                return NearbyTree(
+                    tree: row.tree,
+                    distanceM: coordinate.distance(to: row.tree.coordinate),
+                    speciesScientificName: species?.scientific,
+                    speciesCommonName: species?.common,
+                    // No curated tell: the seed carries `id_tips` for some species (40 of 731 on
+                    // 2026-11-16), but the owner's answers of that day put an added tree's species
+                    // in the title and the species banner, not its curated tips. Before this
+                    // change an added tree carried no tell either.
+                    tell: nil
+                )
+            }
         }
+        guard !addedRows.isEmpty else { return Array(fromSeed.prefix(limit)) }
         return (fromSeed + addedRows).sorted { $0.distanceM < $1.distanceM }.prefix(limit).map { $0 }
     }
 
@@ -3425,10 +3450,12 @@ public actor LocalAPI: CypressAPI {
     ///
     /// ── Three outcomes, and the caller treats two of them differently ──────────────────────────
     ///
-    /// - **named** — a nickname, a seed species name, or a community tree's species name;
-    /// - **unnamed** — the inventories hold the tree and the rule gives it no name (no nickname and
-    ///   no species), or this phone withdrew it. Dropped from the grove, and **not** a degraded
-    ///   read: nothing the service said was lost, a rule was applied;
+    /// - **named** — a nickname, a seed species name, or a community tree's species name; or, for a
+    ///   tree held with neither, an empty name, which the list draws as "Tree" (ROADMAP chip 206:
+    ///   this used to put such a tree in `unnamed`, so a tree reached only through the account's
+    ///   grove went missing on a second phone);
+    /// - **unnamed** — a community tree this phone withdrew. Dropped from the grove, and **not** a
+    ///   degraded read: nothing the service said was lost, a rule was applied;
     /// - **in neither** — the inventories do not carry the tree at all. Under D16 an ordinary case
     ///   (the other device may have been in a city this installation has not installed), and the one
     ///   that marks the read degraded.
@@ -3474,17 +3501,15 @@ public actor LocalAPI: CypressAPI {
                 unnamed.insert(treeID)
                 continue
             }
-            guard let name = activeNames[treeID]?.name
-                    ?? seedRecord?.species?.commonName
-                    ?? speciesNames[treeID],
-                  !name.isEmpty
-            else {
-                // Held, and the row name rule gives it no name (no given name, no species) — the
-                // caller drops the row without calling the read degraded. See
-                // `RoutedAPI.CityFileRows`.
-                unnamed.insert(treeID)
-                continue
-            }
+            // Held, and named by the row name rule — or, with no given name and no species, named
+            // with an empty title, which My Grove draws as `TreeProfilePresentation.fallbackTitle`
+            // ("Tree"), as `grove()` does for the same tree (the owner's answer of 2026-11-16, "An
+            // added tree with no name and no species still reads "Tree""). `grove()`'s own
+            // expression, so the local paint and the routed paint give one title.
+            let name = activeNames[treeID]?.name
+                ?? seedRecord?.species?.commonName
+                ?? speciesNames[treeID]
+                ?? ""
             named[treeID] = RoutedAPI.CityFileRow(displayName: name, coordinate: tree.coordinate)
         }
         return RoutedAPI.CityFileRows(named: named, unnamed: unnamed)
@@ -5202,23 +5227,40 @@ public actor LocalAPI: CypressAPI {
         connection: SQLiteConnection
     ) throws -> [UUID: String] {
         guard !rows.isEmpty, let speciesQueries else { return [:] }
-        var shown: [UUID: UUID] = [:]
-        for (id, row) in rows {
-            if let species = row.tree.speciesCurrentID { shown[id] = species }
-        }
-        let cached = rows.filter { !$0.value.isAddedHere }
-        for id in try assertions.treesWithAClaim(among: Array(cached.keys), connection: connection) {
-            guard let row = cached[id] else { continue }
-            shown[id] = try localSpeciesAnswers(
-                tree: row.tree, addedHere: false, isAdder: false, connection: connection
-            ).shownSpeciesID
-        }
+        let shown = try communityShownSpecies(rows: rows, connection: connection)
         let common = try speciesQueries.commonNames(ids: Array(Set(shown.values)), connection: connection)
         var names: [UUID: String] = [:]
         for (id, species) in shown {
             if let name = common[species], !name.isEmpty { names[id] = name }
         }
         return names
+    }
+
+    /// **The species each community tree's profile title shows**, by id: the row's
+    /// `species_current`, and on a cached tree with a claim in force on this phone,
+    /// `localSpeciesAnswers`' overlay, as `treeProfile` lays it. A tree with no species is absent.
+    ///
+    /// The one overlay both `communitySpeciesNames` (the row names) and `treesNear` (the nearby
+    /// lists) read, so a list, a row and the profile cannot disagree about the reader's own naming.
+    /// One statement, `SpeciesAssertionStore.treesWithAClaim(among:)`, only when a row is cached;
+    /// then `localSpeciesAnswers` per cached tree the reader named or corrected.
+    private func communityShownSpecies(
+        rows: [UUID: CommunityLayer.Row],
+        connection: SQLiteConnection
+    ) throws -> [UUID: UUID] {
+        var shown: [UUID: UUID] = [:]
+        for (id, row) in rows {
+            if let species = row.tree.speciesCurrentID { shown[id] = species }
+        }
+        let cached = rows.filter { !$0.value.isAddedHere }
+        guard !cached.isEmpty else { return shown }
+        for id in try assertions.treesWithAClaim(among: Array(cached.keys), connection: connection) {
+            guard let row = cached[id] else { continue }
+            shown[id] = try localSpeciesAnswers(
+                tree: row.tree, addedHere: false, isAdder: false, connection: connection
+            ).shownSpeciesID
+        }
+        return shown
     }
 
     /// Resolves several tree names in one pass, for `OutboxViewState` and for `journal`.
