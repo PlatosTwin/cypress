@@ -699,9 +699,11 @@ public struct RoutedAPI: CypressAPI {
     /// they are this *device's* rows").
     ///
     /// **A row the service names and this phone has never seen is resolved through the city file**,
-    /// which is where a name and a coordinate live. The rule for the name is
-    /// `LocalAPI.displayNameIfPresent`'s, restated through the payload it already returns: the one
-    /// active nickname (D15), else the species common name, and **never a fabricated label**. A tree
+    /// which is where a name and a coordinate live. The name follows the row name rule the Journal,
+    /// the Outbox and My Grove share (the owner's answers of 2026-11-16, "Use the species" and "Yes,
+    /// use the species"): the one active nickname, else the common name of the species the tree's
+    /// profile title shows, for a city tree and a community tree alike, and **never a fabricated
+    /// label** (`resolvedCityFileRows`). A tree
     /// this installation's city file does not carry at all — the other device was in another city,
     /// which D16 makes an ordinary case — is left out rather than drawn nameless at a coordinate
     /// this client would have to invent, and the read is marked degraded because part of the answer

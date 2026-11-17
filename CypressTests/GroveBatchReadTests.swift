@@ -146,8 +146,9 @@ struct GroveBatchReadTests {
             """
         )
 
-        // …and every one of them against the per-tree implementation itself, which this round did
-        // not touch. A rule restated is a rule that can be restated wrong; this is the comparison.
+        // …and every one of them against the per-tree form the Journal and the Outbox use, which
+        // applies the same row name rule. A rule restated is a rule that can be restated wrong;
+        // this is the comparison.
         for entry in grove {
             let perTree = (try await api.displayNameIfPresent(for: entry.treeID)) ?? ""
             #expect(
