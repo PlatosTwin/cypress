@@ -436,7 +436,7 @@ that had not yet reached a build). What remains OPEN:
   number as the human typed it, in the unit it was typed in". Converting on the flip is what would
   break it, and nothing converts. The field's own doc comment now records this.
   The copy and its placement are **NOT SPECIFIED** by SCREENS.md and go to the owner under
-  DECISIONS constraint 21; see **RULINGS R114**.
+  DECISIONS constraint 21; see **RULINGS R113**.
 - ~~**F27 — measurements can be neither edited nor deleted. BLOCKED ON A SCHEMA MIGRATION**, and the
   premise needs splitting in two.~~ **SHIPPED.** The withdrawal half is `AppSchema` v21 (PR #154) and
   the service's `measurement_withdrawal` kind (migration 004, PR #156); the edit half needed
@@ -790,8 +790,7 @@ or redeploy would change that (chip 12: merging server work changes nothing in p
   - **The map card and the empty "What tree is this?" list keep their old text where the phone has
     not asked the service for added trees** (zoomed out past 16 tiles, offline, a failed download,
     or the gate shut), and name both kinds of tree everywhere else (**RULINGS R230** and **R231**).
-  - **A history row's square draws the community tree mark** (**RULINGS R224-R227**,
-    **R222**).
+  - **A history row's square draws the community tree mark** (**RULINGS R210**, **R222**).
 
   **F31 is answered:** a person can move a tree they added (C1), and other people see it (C2, C3,
   and chip 139 for trees older than syncing). **Owed on a physical phone,** because no simulator
@@ -839,7 +838,8 @@ or redeploy would change that (chip 12: merging server work changes nothing in p
   **One file is deliberately held**: the measurements round's rulings (now **RULINGS R113-R115**), whose third
   entry is the withdrawal design the live F27 round is building; it splices when that round lands,
   so the numbered entry records the outcome instead of "proposed, blocked".
-  **That round has landed** (F27, #154 and #156) — the splice is due, and is chip 56.
+  **That round has landed** (F27, #154 and #156), and the splice of 2026-11-16 numbered it (chip
+  160).
 
 
 - ~~**Map camera fits the filtered set.**~~ **SHIPPED** (`feat/see-all-camera`). The owner ruled
@@ -1675,7 +1675,10 @@ into this section in the round that finds it, and nowhere else. Each item stands
     Documentation-only: read both files, verify the encoder's actual case empirically (a real
     `JSONEncoder` round-trip, not another comment), and correct both in one pass so they agree
     with each other and with `sync.go`.
-56. **Splice the pending shelf: 33 files are waiting (orchestrator's alone).** Twenty are in
+56. ~~**Splice the pending shelf: 33 files are waiting (orchestrator's alone).**~~ **DONE,
+    2026-11-16**, by the splice of chip 160, which numbered every file here except the web
+    round's and one erratum (chip 160 lists them; chip 208 keeps them open). The original text
+    follows, with its citations renumbered. Twenty are in
     `docs/errata-pending/` and thirteen in `docs/rulings-pending/`, counted on 2026-09-29 against
     `origin/main` with the two READMEs left out. Two are overdue for a reason of their own.
     The measurements round's rulings (now **RULINGS R113-R115**) were held by the 2026-09-09 splice until F27's round
@@ -2474,8 +2477,10 @@ into this section in the round that finds it, and nowhere else. Each item stands
     (~139) still describe the 10 m dedupe or its resolution sheet. Decide whether applied
     migrations' comments are corrected in place or left as the record of their day.~~
     **(b) CLOSED, 2026-11-16** (the orchestrator's choice): the comments of an applied migration
-    stay as the record of their day. A migration file that has run is not edited, and the later
-    migrations and their comments say what changed.
+    stay as the record of their day. What an applied migration's comment says is not rewritten to
+    match later behavior, and the later migrations and their comments say what changed. (A
+    citation in such a comment is still renumbered at a splice, as chip 160's did in migration
+    005; nothing checksums the files.)
 142. ~~**UI tests leave community trees in the app's database, and they break another test on a
     reused simulator.** Found in round C2 (2026-11-15). `ProfileLinkColumnUITests` has two tests, and
     each launches `CYPRESS_SCREEN=profileLinks`, which adds one community tree in a line of slots
@@ -2714,13 +2719,18 @@ into this section in the round that finds it, and nowhere else. Each item stands
     replaces the `R???` and `E???` placeholders, rewrites those citations to numbers, and runs
     `DocumentCitationGuardTests` red and green before it merges.~~ **DONE, 2026-11-16**, on
     `docs/splice-pending-2026-11-16`: 45 pending files are now **RULINGS R113-R253** and
-    **ERRATA E322-E355**, numbered in the order they were written. Every citation of a spliced file
+    **ERRATA E322-E355**, numbered by the date each file was first written, with each file's own
+    order kept (so a block a later round appended can sit a few numbers away from strict time
+    order). Every citation of a spliced file
     now names its numbers, and the entries that later rulings replace in part carry a mark (R45,
     R77, R79, R108, R164, R187, R188 and R238). **Left out on purpose:** the 18 files of the web
-    round, which is live in another session (every file whose name starts `web-` or `w1-`, and
+    round (every file whose name starts `web-` or `w1-`, and
     the public tree read, the public photo grid, and the guard CI skips), and the harness-hardening
-    erratum, which the unmerged branch `tools/fetch-seed-diagnostics` changes. They splice when
-    that work lands.
+    erratum, which the unmerged branch `tools/fetch-seed-diagnostics` changes. The web files
+    stay for the web round's own splice; its worktree showed no unmerged work on 2026-11-16, so
+    check with the owner whether that round is still live. Chip 208 keeps these 19 files open.
+    One citation was corrected by the review (the unit flip's copy is R113), and the history
+    square's citation now names R210 and R222.
 161. **CI does not write a HEIC, because writing one stalls the unit suite there.** **The reading
     half is DONE (2026-11-16):** CI run 43946695783 (PR 241) read the checked-in HEIC on the
     virtual runner. The unit log says "reading the checked-in HEIC took 38765 ms (hv_vmm_present:
@@ -3088,6 +3098,18 @@ into this section in the round that finds it, and nowhere else. Each item stands
     added tree's species (`GroveQueries`, on purpose until now), while the Trees list beside them
     now names that tree by it. The owner may want both to agree. Seen by the reviewer of
     `feat/grove-names-by-species`, 2026-11-16.
+208. **Nineteen pending files are not spliced, and the citation guards have three gaps.** (a) The
+    splice of chip 160 left the web round's 18 files in `docs/rulings-pending/` and
+    `docs/errata-pending/`, and `docs/errata-pending/harness-hardening.md`, which the unmerged
+    branch `tools/fetch-seed-diagnostics` changes. They splice when that work lands. (b)
+    `DocumentCitationGuardTests` and `PendingCitationGuardTests` do not catch a pending file cited
+    by its bare filename, a number above the highest entry (`R999`), a number that names the
+    wrong entry, or any citation in Go, SQL, or scripts. A check of the highest R and E numbers
+    cited across the tree would cost one line. (c) `CypressTests/OutboxStampTests.swift` (about
+    line 255) still defers to "the entry the orchestrator splices into `docs/RULINGS.md` at
+    merge", as it has since 2026-08-21, and no ruling matches it. (d) A splice gets the
+    "server-only" or "only prose" CI decision, so CI never runs the two guards on it; a local run
+    is the only evidence. Found by the reviewer of the splice, 2026-11-16.
 
 
 **Retire the format-1 manifest — DONE, 2026-08-23.** The owner overrode the trigger the day after

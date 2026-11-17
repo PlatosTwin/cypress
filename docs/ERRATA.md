@@ -24006,8 +24006,7 @@ bugs survive. Red-proved by removing `ON DELETE CASCADE` from both children: the
 
 ---
 
-### E325 — `photo_withdrawal`'s "names something this service never held" is a **success that stays**
-### true; the same sentence about a measurement is a success that expires
+### E325 — `photo_withdrawal`'s "names something this service never held" is a **success that stays** true; the same sentence about a measurement is a success that expires
 
 One entry, found while wiring `measurement_withdrawal` into `POST /sync` (`server/`, pairs with PR
 #154). It is not a defect that shipped — nothing in `server/` has ever accepted this kind — but it

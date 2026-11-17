@@ -11698,7 +11698,7 @@ inventory on this phone covers where you are yet.` Ruling (a) withdrew it; it wa
 Each is the authoring agent's call, for the orchestrator or owner to confirm or reverse.
 
 **Superseded by the owner's answers of 2026-11-16, in R238: the verb is
-built, the phone withdraws first, and a refusal brings the tree back.** Do not splice this entry. The
+built, the phone withdraws first, and a refusal brings the tree back.** Kept for the record. The
 original text follows for the record.
 
 The service accepts `tree_withdrawal` (decision 8) and its Go guard expects a Swift `treeWithdrawal`
@@ -11711,7 +11711,7 @@ the phone withdraws first and reconciles, or waits for the answer, is a product 
 ### ~~R175 — Every tree added before v23 has an adder of nobody, and a root position owned by nobody~~
 
 **Replaced by the owner's ruling of 2026-11-12, in R179: every
-pre-v23 tree belongs to this installation's own owner.** Do not splice this entry. The original text
+pre-v23 tree belongs to this installation's own owner.** Kept for the record. The original text
 follows for the record.
 
 The phone never recorded who added a tree. The migration declines to guess (R45 arm 3): the backfilled
@@ -11733,6 +11733,10 @@ yours" and "no such tree".
 sync-status screen's row for a queued move. C3 owns the wording; the move has no UI of its own in C1.
 
 ### R178 — A pin move has no distance bound
+
+> **Superseded in part, 2026-11-14.** The owner's ruling of that day removed the 10 m rule
+> (**R190**), so `correctLocation` no longer applies the 10 m dedupe. The text below is the record
+> of its day and is kept as it was.
 
 `correctLocation` applies the 10 m dedupe against every other tree and nothing else. How far a pin may
 move, and from where, is C3's question to the owner; the service applies no bound either.
