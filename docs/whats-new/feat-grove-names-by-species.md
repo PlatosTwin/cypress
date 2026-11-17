@@ -1,1 +1,1 @@
-My Grove now lists a tree you added by its species, the same name its profile and the Journal show.
+My Grove now names a tree with no given name by its species, the same name its profile and the Journal show.

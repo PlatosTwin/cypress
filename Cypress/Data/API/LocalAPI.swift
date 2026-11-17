@@ -3204,12 +3204,13 @@ public actor LocalAPI: CypressAPI {
     /// - a tree the inventory holds, else one added on this device, else **skipped** — a row whose
     ///   tree resolves to neither is not a grove entry, exactly as `treeIfPresent` returning nil
     ///   dropped it;
-    /// - the display name is the row name rule `displayNameIfPresent` states: the tree's one active
-    ///   nickname, else the seed species' common name, else, for a community tree, the common name
-    ///   of the species its profile title shows (`communitySpeciesNames`), else empty, which the
-    ///   screen draws as "Tree". The community arm is the owner's answer of 2026-11-16, "Yes, use
-    ///   the species", which replaced the rule that My Grove never named an added tree by its
-    ///   species. Its two statements run only when the page holds such a tree.
+    /// - the display name is the row name rule the Journal and the Outbox use
+    ///   (`displayNameIfPresent`): the tree's one active nickname, else the seed species' common
+    ///   name, else, for a community tree, the common name of the species its profile title shows
+    ///   (`communitySpeciesNames`), else empty, which the screen draws as "Tree". The rule is the
+    ///   owner's answers of 2026-11-16: "Use the species" for the Journal and the Outbox, and "Yes,
+    ///   use the species" for My Grove. Its two extra statements run only when the page holds such
+    ///   a tree.
     ///
     /// `GroveBatchReadTests` holds this against the per-tree form over a grove carrying one of each
     /// case, because "preserved one for one" is exactly the kind of claim this project has been
@@ -5120,13 +5121,23 @@ public actor LocalAPI: CypressAPI {
     /// This is `displayNameIfPresent`'s rule asked of every id at once. An id with no name is
     /// absent from the result, which is how the caller spells `nil`.
     ///
-    /// **Statements.** Two always: `TreeQueries.trees(ids:)` and `activeNames`. Three more only
-    /// when some id is neither named nor in the inventory (a community tree): `CommunityLayer
-    /// .rows(ids:)`, `SpeciesAssertionStore.treesWithAClaim(among:)` and `SpeciesQueries
-    /// .commonNames(ids:)`. One more step runs per tree, and only for a tree held in the community
-    /// cache that has a claim in force on this phone: `localSpeciesAnswers`, the profile's own
-    /// overlay, so a row and the profile cannot disagree about the reader's own naming. That set is
-    /// the cached trees the reader named or corrected, not the page.
+    /// **Statements.** Two always: `TreeQueries.trees(ids:)` and `activeNames`. Up to three more,
+    /// once per call, only when some id is neither named nor in the inventory (a community tree):
+    /// `CommunityLayer.rows(ids:)`; `SpeciesAssertionStore.treesWithAClaim(among:)`, when one of
+    /// those is somebody else's cached tree; and `SpeciesQueries.commonNames(ids:)`, when one has a
+    /// species. One more step runs **per tree**, and only for a cached tree that has a claim in
+    /// force on this phone: `localSpeciesAnswers`, the profile's own overlay, so a row and the
+    /// profile cannot disagree about the reader's own naming. That set is the cached trees the
+    /// reader named or corrected, not the page.
+    ///
+    /// **The per-tree step is a choice, made with these numbers** (one call, one queue read each,
+    /// measured by the review of 2026-11-16): 8 city trees, 2 statements; the same and 1 added
+    /// tree, 4; 50 added trees, 4; 50 cached trees each with a claim this phone queued, 155, which
+    /// is 2 + 3 + 3 per claimed tree. The step reuses `localSpeciesAnswers` rather than a batched
+    /// copy of its chain logic, because a second copy of that logic is how a row and the profile
+    /// would come to disagree. The count grows only with the trees one reader has named or
+    /// corrected on somebody else's record, which is small. `JournalStatementCensusTests` and
+    /// `GroveStatementCensusTests` pin the per-page counts.
     ///
     /// **Why an added tree's species counts:** the owner's answer of 2026-11-16, "Use the species"
     /// (see `displayNameIfPresent`).

@@ -431,6 +431,32 @@ struct GroveStatementCensusTests {
                 "\(Self.firstLine(of: sql)) ran \(ran.filter { $0 == sql }.count) times, not once: \(Self.histogram(ran))"
             )
         }
+
+        // …and the first page, which is what screen 08 paints from: the same nine, with the bounded
+        // id statement in place of the unbounded one.
+        let pagedExpected = expected.map {
+            $0 == ContributionStore.groveTreeIDsSQL ? ContributionStore.groveTreeIDsPageSQL : $0
+        }
+        census.reset()
+        await store.queue.installCensus(census)
+        let page = try await api.grovePage(cursor: nil, limit: GroveLimits.pageSize)
+        await store.queue.installCensus(nil)
+        try #require(
+            page.items.filter { community.contains($0.treeID) && !$0.displayName.isEmpty }.count == community.count,
+            "the first page did not name every community tree: \(page.items.map(\.displayName))"
+        )
+        let pageRan = census.statements
+        #expect(census.readCount == 2, "the first page made \(census.readCount) hops, not 2")
+        #expect(
+            pageRan.count == pagedExpected.count,
+            "the first page ran \(pageRan.count) statements, not \(pagedExpected.count): \(Self.histogram(pageRan))"
+        )
+        for sql in pagedExpected {
+            #expect(
+                pageRan.filter { $0 == sql }.count == 1,
+                "on the first page \(Self.firstLine(of: sql)) ran \(pageRan.filter { $0 == sql }.count) times, not once: \(Self.histogram(pageRan))"
+            )
+        }
     }
 
     // MARK: - Failure text
