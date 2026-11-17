@@ -169,11 +169,11 @@ struct NearbySpeciesTests {
         let oak = try await OthersTreeControlsTests.oak(api, besides: plane)
         let device = OthersTreeControlsTests.readerDevice
 
-        // Two city trees with different species, on a street in the Inner Sunset. Neither may carry
-        // a curated tell (some seed species do), because a tell is the banner's first step and
-        // would answer before the species step this test is about.
-        let street = Coordinate(latitude: 37.7600, longitude: -122.4750)
-        let city = try await api.treesNear(street, radiusM: 80, limit: 200)
+        // Two city trees with different species, around the map's opening center. Neither may
+        // carry a curated tell (some seed species do), because a tell is the banner's first step
+        // and would answer before the species step this test is about.
+        let street = Coordinate(latitude: 37.7694, longitude: -122.4862)
+        let city = try await api.treesNear(street, radiusM: 900, limit: 2000)
             .filter { $0.tree.source != .community && $0.speciesScientificName != nil && $0.tell == nil }
         let cityA = try #require(
             city.first { $0.speciesScientificName != plane.scientificName },
@@ -193,7 +193,7 @@ struct NearbySpeciesTests {
         let bare = try await OthersTreeControlsTests.add(api, device: device, at: Self.north(16)).id
 
         var rows = try await Self.near(api)
-        for row in try await api.treesNear(street, radiusM: 80, limit: 200) { rows[row.tree.id] = row }
+        for row in try await api.treesNear(cityA.tree.coordinate, radiusM: 5, limit: 50) { rows[row.tree.id] = row }
         func candidate(_ id: UUID) throws -> VisitCandidate { VisitCandidate(nearby: try #require(rows[id])) }
 
         /// The record as `treesNear` gave it on main: an added tree carried no species.
