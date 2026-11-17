@@ -117,10 +117,44 @@ How the branch `feat/withdraw-owner-answers` built it (the author's notes):
   the refused row still name it.
 - **The callers:** the Journal (its rows and their VoiceOver labels), the Outbox, and the private
   reminders list on the Account screen. The export does not carry a tree name.
-- **Not changed: My Grove's Trees list and its city-file rows** (`LocalAPI.grove()`,
-  `RoutedAPI.resolvedCityFileRows`). They keep the old rule, so an added tree with a species and
-  no given name still reads with no name there. Answer 10 named the Outbox and the Journal; whether
-  My Grove follows is open with the owner.
+- **My Grove's Trees list was left on the old rule by this branch.** The entry below records the
+  owner's answer and how the next branch built it.
 - **The profile is one read ahead in one case.** After a service read, `RoutedAPI` can show a
   species the service served before this phone's cache holds it. The rows use what the phone
   holds, so for that window the row can name the older species.
+
+### R??? — My Grove names a community tree by its species (the owner's answer, 2026-11-16)
+
+The branch above left My Grove's Trees list on the old rule, and the owner was asked (answer 11):
+
+Q: "You chose that Outbox and Journal rows name an added tree by its species, as its profile
+does. My Grove's Trees list still uses the older rule: an added tree with a species and no given
+name is listed there as "Tree", while its profile title reads, for example, "Sycamore, London
+Plane". Should My Grove's list use the species too?"
+A: "Yes, use the species (Recommended)". Option text: "My Grove lists the tree as "Sycamore,
+London Plane", the same as its profile, the Journal, and the Outbox. An added tree with no name
+and no species still reads "Tree". I build it as its own small change after this pull request,
+before the next release."
+Not chosen: "No, leave My Grove" ("My Grove keeps listing such a tree as "Tree". Its profile, the
+Journal, and the Outbox use the species. Nothing more to build.").
+
+How the branch `feat/grove-names-by-species` built it (the author's notes):
+
+- **One rule, one resolver.** `LocalAPI.grove()` and `LocalAPI.groveCityFileRows(for:)` name a tree
+  by its active given name; else the seed species' common name; else, for a community tree, the
+  common name of the species its profile title shows. The last step is
+  `LocalAPI.communitySpeciesNames`, the same code the Journal and the Outbox reach through
+  `displayNames`. An empty name is drawn `Tree` by `GroveTreesPresentation`.
+- **The routed arms agree.** `RoutedAPI.resolvedCityFileRows` (the per-tree loop) now names a
+  community tree by `profile.species?.commonName`, as the provider arm does. A tree with no name
+  and no species is `unnamed` in both arms: it leaves the grove and does not mark the page as
+  unresolved (PR #144's fix).
+- **A withdrawn tree is not named.** The owner's earlier answer took it out of My Grove, and the
+  species step skips it.
+- **A fixed number of statements per page.** The species step adds at most two statements, once
+  per page, and only when the page holds a community tree with no given name
+  (`GroveStatementCensusTests.theSpeciesArmIsAFixedCount`).
+- **A difference between the two routed arms, found and not changed.** For a tree this phone
+  withdrew, the provider arm answers `unnamed` and the loop arm answers neither (its
+  `treeProfile` read throws), which marks the read as fallen back to local. Production always
+  sets the provider, so the loop arm's answer shows only in tests.

@@ -1119,6 +1119,10 @@ Intro: *Where taps lead: the species field guide, the running list of species yo
    `padding:9px 2px`, radius **11px**, 13.5px:
    - `Trees`, `Journal` — fill `#fff`, `1px #E3E8D9`, `#66735F`, 600.
    - **`Species`** — fill `#1D4634`, border `1px #1D4634`, `#fff`, 700.
+
+   Not in the mock: **the Trees tab titles each tree as its profile does** (the owner's answer of
+   2026-11-16, "Yes, use the species"). A given name wins; else the species' common name, for a
+   tree someone added as for a city tree; a tree with neither reads `Tree`.
 3. **Progress block** — `padding:2px 18px 0`, `HStack(spacing:16)`:
    ProgressRing (C27, `30%`) + `12 of 40 species` (Serif 19px/600) and
    `you can recognize in the Outer Sunset` (13px, `#66735F`).
@@ -1524,8 +1528,7 @@ scrim `rgba(14,24,17,.3)`.
    answer of 2026-11-16, "Use the species"). A given name wins; else the species' common name, for
    a tree someone added as for a city tree, for example `Pin moved · Sycamore, London Plane`. A
    tree with neither reads `Tree`, except a pin move, which reads `Pin moved` alone. My Grove's
-   Trees list does not follow this yet: an added tree with a species and no given name has no name
-   there.
+   Trees list uses the same rule (the owner's answer of 2026-11-16, "Yes, use the species").
 3. **Wifi setting row** — `margin:10px 16px 0`, fill `#fff`, `1px #E3E8D9`, radius 14px,
    `padding:13px 15px`, `gap:12px`:
    - `Sync photos on wifi only` — 13.5px/700.
