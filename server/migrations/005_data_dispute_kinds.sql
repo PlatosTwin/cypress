@@ -92,7 +92,7 @@ ALTER TABLE contributions ADD CONSTRAINT contributions_kind_admits_a_disputed_re
 -- `::uuid` for the two reasons 004 sets out: the same value reaches this service in two spellings
 -- (`SQLiteValue`'s uppercase, `JSONEncoder`'s lowercase), and a cast can *error* rather than merely
 -- miss on a payload of some other kind whose `id` is not a UUID. That second reason is not
--- theoretical here — `docs/errata-pending/grove-species-known-unscoped-cast.md` is exactly that
+-- theoretical here — ERRATA E326 is exactly that
 -- defect, live in this schema today, one file away.
 CREATE INDEX contributions_disputed_record_id
     ON contributions (upper(payload ->> 'id'))

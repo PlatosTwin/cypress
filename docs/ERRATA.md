@@ -23822,3 +23822,1270 @@ The suite also carries the two tests that pass on a build with the defect and sa
 comments — one asserts the fixture really contains a straddling tie (so the pair above cannot go
 vacuously green), one is the negative control for an over-correction that would make the cursor
 inclusive and return the tie twice.
+
+---
+
+### E322 — `TEST_RUNNER_CYPRESS_SHOT_DIR` on the `xcodebuild` command line reaches no process
+
+**Status: instructions corrected in `tools/shot-dir-and-sql-properties`. No code was broken. One doc
+comment prescribed a spelling that reaches no process; three more named the variable without saying
+how to set it, so a reader could not act on any of the four. One screenshot round paid for it.**
+
+Four suites write a PNG per state to the directory named by `CYPRESS_SHOT_DIR`. **Exactly one of
+them said how to put it there, and what it said was false.** This is the account of what each file
+actually said, quoted from `b5a929c` — the base of the branch that corrected them — because the
+first draft of this erratum widened one file's defect to four, which is the same habit the erratum
+exists to record:
+
+| file at `b5a929c` | what it said about *how* | verdict |
+| --- | --- | --- |
+| `CypressUITests/AreaPickerUITests.swift:13-14` | "Set `CYPRESS_SHOT_DIR` (as `TEST_RUNNER_CYPRESS_SHOT_DIR` on the `xcodebuild` command line) to choose where." | **false** — the one instruction that reaches no process |
+| `CypressUITests/AlmanacGroupTapTests.swift:14` | "`CYPRESS_SHOT_DIR` in the runner's environment to choose where; otherwise the paths are printed." | true, and incomplete — names the right channel, does not say how a shell reaches it |
+| `CypressUITests/AlmanacGroupTapTests.swift:342-343` | "`TEST_RUNNER_CYPRESS_SHOT_DIR` chooses the directory — the `TEST_RUNNER_` prefix is what forwards an `xcodebuild` variable into the runner's environment." | imprecise, not false — "an `xcodebuild` variable" is the ambiguity the whole defect lives in: it forwards one from `xcodebuild`'s *environment*, never one written as an argument |
+| `CypressTests/ScreenSweepShots.swift:30` | "Output goes to `CYPRESS_SHOT_DIR` if set, otherwise a temporary directory. Paths are printed." | silent on how |
+| `CypressTests/DynamicTypeScreenshotTests.swift:27` | "Output goes to `CYPRESS_SHOT_DIR` if set, otherwise the temporary directory…" | silent on how |
+| `Cypress/App/DebugDeepLink.swift:46` | nothing — it names `CYPRESS_SHOT_DIR` once as an example of this codebase's environment-key naming, while explaining `CYPRESS_SCREEN` | did not state the convention at all |
+
+A `NAME=value` argument to `xcodebuild` is a **build-setting override**. It does not enter any
+process's environment, `xcodebuild` does not object to a name it has never heard of, and the tests
+pass either way — they fall back to `NSTemporaryDirectory()` and print the path they used. So the
+instruction failed by doing nothing, which is the failure mode that leaves no trace: in the
+2026-08-31 picker round the shots landed inside the simulator's app container and the round fell
+back to reading the printed `CYPRESS-SHOT:` lines out of the captured log.
+
+The mechanism the comments were reaching for is real and was already in use one target over.
+`xcodebuild` forwards every variable in **its own environment** whose name begins `TEST_RUNNER_` to
+the process that hosts the test bundle, with the prefix stripped. That process is the app under test
+for `CypressTests` and the `…-Runner.app` for `CypressUITests`, so one exported variable serves both
+targets:
+
+    export TEST_RUNNER_CYPRESS_SHOT_DIR=/some/dir
+    Tools/run_tests.sh <udid> <log> …
+
+`XCUIApplication.launchEnvironment` is a different channel and cannot do this job. It sets the
+environment of the **app under test** — which is how `CYPRESS_SCREEN` and `CYPRESS_LOCATION` travel
+— and the UI tests' `record(_:named:)` runs in the runner, not in the app.
+
+## Measured, three ways, on one device
+
+iPhone 16e `3A1F212D-8F3A-41F1-AF72-EC95E155A4C9`, 390 pt, worktree
+`cypress-wt-shotdir` at `b5a929c`, 2026-09-09. Each run was
+`Tools/run_tests.sh … -only-testing:CypressUITests/AreaPickerUITests/testASanJoseReaderIsToldWhatActuallyChoseItsArea`,
+one shot per run, and each target directory was listed **before** the run and shown empty.
+
+| spelling | where the PNG went |
+| --- | --- |
+| `export TEST_RUNNER_CYPRESS_SHOT_DIR=<dir>` before the script | `<dir>/picker-10-san-jose-fallback.png` — 387,880 bytes, `PNG image data, 1170 x 2532`, mtime inside the run window |
+| nothing set | `…/CoreSimulator/Devices/3A1F212D…/data/Containers/Data/Application/<uuid>/tmp/picker-10-san-jose-fallback.png` |
+| `TEST_RUNNER_CYPRESS_SHOT_DIR=<dir>` as an `xcodebuild` argument | the same container `tmp`; `<dir>` still empty afterwards |
+
+1170 px at 3× is 390 pt, the 16e's own screen, which is the check that the image came from the run
+being described rather than from a directory something else had written to.
+
+## What now keeps it true
+
+`CypressTests/ShotDirectoryConventionTests` asserts two facts, both silent when they break: that all
+four shot writers read one key out of their environment, and that every name this repository tells
+an operator to export is that key behind the forwarding prefix. It deliberately does **not** police
+the prose that says *how* to set the variable — the defect here was a false instruction, and a gate
+matching the words "command line" would go green on the same instruction reworded, which is the
+worst shape a guard takes in this repository. **That gap is real and unguarded** — a reworded false
+instruction still passes, verified by planting one — and it is recorded in `docs/ROADMAP.md` rather
+than only here, so the next round that touches these files meets it without reading this page first.
+
+The argument itself lives in one place, `Tools/run_tests.sh`'s header, with the table above. The
+four writers point at it, and `DebugDeepLink` — which named the key only as a naming example — now
+separates the key's spelling from the channel it arrives on, since conflating those is the defect
+this page is about. The guard's third
+test now proves its own sweep reached each of those files by name rather than merely counting a
+plausible number of them — the first cut counted 477 files with a whole target missing and passed.
+
+---
+
+### E323 — The two pragmas that look like they save a table rebuild from its own cascade, and do not
+
+Two entries, both measured this round while writing the fifth rebuild of the `outbox` table. Neither
+is a defect that shipped — both are traps the next author of a rebuild would otherwise walk into,
+and one of them was walked into here and caught only by running a red-proof.
+
+`outbox_photos.outbox_id` is `ON DELETE CASCADE` against `outbox`. Every widening of the
+`outbox.kind` `CHECK` is a rebuild, and a rebuild drops `outbox`. Under `PRAGMA foreign_keys = ON` —
+which `SQLiteConnection` and `DatabaseQueue` both set on every connection — the implicit
+`DELETE FROM` inside `DROP TABLE` performs the cascade, so **every staged binary in the queue is
+deleted**. `AppSchema` v18's header records this from the round that first met it.
+
+What v18 does not record, and what cost an hour here, is that the two obvious escapes both fail:
+
+- **`PRAGMA defer_foreign_keys = ON`** is the tempting one, because it is the only relevant pragma
+  that can be set *inside* a transaction — `PRAGMA foreign_keys` is documented as a no-op inside one,
+  and `SchemaMigrator` wraps every migration in a transaction, so the standard `foreign_keys=OFF`
+  procedure from SQLite's own ALTER TABLE documentation is unavailable to a migration here. It does
+  not help: it defers constraint *checking*, and a cascade is an *action*. Measured on SQLite 3.51:
+  one parent, one child, rebuild inside `BEGIN` with `defer_foreign_keys = ON`, `children=0`
+  afterwards.
+- **`PRAGMA legacy_alter_table = ON`** changes what `ALTER TABLE … RENAME` rewrites in other tables'
+  `REFERENCES` clauses. The loss happens one statement earlier, at the `DROP`. Measured the same way,
+  same result: `children=0`.
+
+The only shape that works is v18's own, and v21 repeats it: park the child rows in a table with no
+foreign key, empty the child, rebuild the parent, put the rows back, drop the parking table.
+Measured: `children=1`, content intact, `PRAGMA foreign_key_check` clean.
+
+**A second, quieter half.** The implicit delete inside `DROP TABLE` fires **no triggers**, so
+v18's `outbox_photos_counted_out` never runs and `outbox.photos_outstanding` is copied to the new
+table unchanged — every item goes on owing binaries that no longer exist, can never satisfy
+`CHECK (state <> 'done' OR (local_applied = 1 AND photos_outstanding = 0))`, and can never settle.
+That is a permanently wedged queue with no error anywhere. v21 recomputes the counter from the child
+table at the end rather than reasoning about what the triggers did, and asserts it against
+`outbox_photos` in `SchemaV21Tests`.
+
+---
+
+### E324 — A counter asserted against the fixture instead of against the table stays green while the counter drifts
+
+`SchemaV21Tests.theStagedBinariesSurviveTheRebuild` was written asserting that each item's
+`photos_outstanding` equals the number of binaries the fixture staged for it. That assertion is
+green under exactly the defect above, and it was: the red-proof produced **one** issue where the
+suite header predicted two.
+
+The reason is worth stating because it generalizes. The rebuild copies `photos_outstanding` **before**
+the drop cascades the children away, so after an unparked rebuild the number is the correct one and
+the rows behind it are gone. Any assertion that compares the counter to what the test *put in*
+therefore agrees with a database whose counter and contents disagree. Asked instead against
+`outbox_photos` — the counter is the count — it fails immediately: `(outstanding → 2) == (live → 0)`.
+
+This is the project's dominant test-suite defect (a guard green while its defect is present), and it
+was found by running the red-proof rather than by reading the test. The general form of the question
+is: **is this assertion comparing two things the defect changes together?** A counter and the fixture
+that produced it move together under a cascade; a counter and the table it counts do not.
+
+**Both assertions are load-bearing, in opposite directions, and the paragraphs above argue only one
+of them.** PR #154's adversarial review measured the other half and reported it: with the parking
+block removed but step 5's recompute *left in place*, the recompute drives `photos_outstanding` to 0
+against a child table the cascade has already emptied — so `outstanding == live[id]` passes on
+`0 == 0`, and it is `outstanding == staged[id]`, the fixture comparison this entry warns about, that
+catches the loss: `(outstanding → 0) == (staged[id] → 2)`. Which of the two goes red depends on how
+much of the parking block a given edit takes out, so neither may be dropped in favour of the other.
+The table comparison catches a counter left too *high* by a cascade that fired no triggers; the
+fixture comparison catches one recomputed too *low* against children that are already gone. The
+lesson is not "assert against the table" — it is that a counter needs an assertion on each side of
+it, because the two failures are not the same failure.
+
+---
+
+## Addendum, 2026-09-10 — the same trap now has a second parent in this schema
+
+`AppSchema` v22 (`RULINGS R79`) adds `tree_data_disputes` with **two** `ON DELETE CASCADE` children,
+`tree_dispute_issues` and `tree_dispute_suggestions`. Everything in the first entry above applies to
+that parent unchanged: a rebuild of `tree_data_disputes` — which any widening of its `tree_source`
+`CHECK` would be, since SQLite cannot widen one in place — drops the parent, the drop cascades, and
+both children are emptied with no error anywhere. `defer_foreign_keys` does not help, for the reason
+measured above.
+
+Two things are different and both are worth writing down.
+
+**There is no counter here, and that is the smaller half of the hazard rather than none of it.**
+`outbox.photos_outstanding` is what made the v18/v21 loss *permanent* — a queue that can never
+settle. A dispute has no derived count, so the failure mode is a plain silent deletion: every checked
+issue and every suggested value gone, the parent rows intact, and a dispute that now says a person
+objected to nothing in particular. That is quieter, not better.
+
+**Widening the *children's* vocabularies is a different and much cheaper operation, and the round's
+contract asked the question directly.** `tree_dispute_suggestions.field` and
+`tree_dispute_issues.kind` are both CHECKs, so widening either needs a table rebuild — but the table
+being rebuilt is a **child**, and a cascade runs parent to child. Dropping and recreating
+`tree_dispute_suggestions` cascades nothing. So: widening the suggestion vocabulary is a migration
+and is *not* free, and it is also not the dangerous rebuild. Rebuilding `tree_data_disputes` is.
+
+`SchemaV22Tests.theCascadeIsRealOnThisSQLite` measures the cascade on this build's own SQLite,
+inside a transaction, with `PRAGMA foreign_keys` asserted on first so the measurement cannot be
+vacuous — because the whole thing standing between the next author of that rebuild and two emptied
+tables is a paragraph in a comment, and this project's rule is that a confident comment is where
+bugs survive. Red-proved by removing `ON DELETE CASCADE` from both children: the test reports
+`(issues == 0 → false)`.
+
+---
+
+### E325 — `photo_withdrawal`'s "names something this service never held" is a **success that stays** true; the same sentence about a measurement is a success that expires
+
+One entry, found while wiring `measurement_withdrawal` into `POST /sync` (`server/`, pairs with PR
+#154). It is not a defect that shipped — nothing in `server/` has ever accepted this kind — but it
+is the trap the obvious implementation walks into, and the obvious implementation is the one the
+existing precedent hands you.
+
+`store.withdrawPhoto` has three answers and the first is *no row → success, changing nothing*. Its
+comment justifies that with ERRATA E264: the client has no send path for binaries, so a photo
+withdrawal names bytes this service has never held and never will. That reasoning is sound and it is
+**specific to photographs**.
+
+Copying the three answers to a reading looks free and is not. `measurement` is one of the six kinds
+`POST /sync` has accepted since 001, so it drains through this same handler — "the reading is not
+here yet" is a state that **ends**, and the way it ends decides whether the withdrawal was true.
+
+**The bad order is reachable, not theoretical, and the client's own queue is what makes it so.**
+`OutboxStore.dueItems` is
+
+    WHERE state = 'pending' AND (next_attempt_at IS NULL OR next_attempt_at <= :now)
+    ORDER BY seq
+
+— the ordering is over what is **due**, not over the queue. A `measurement` that failed once is in
+backoff and is not due. A `measurement_withdrawal` enqueued afterwards has `next_attempt_at` NULL
+and is. So:
+
+1. the withdrawal drains first, finds no reading, answers `applied`;
+2. screen 17 settles the row `done` and reads `Trunk · DBH withdrawn`;
+3. the backoff expires, the reading drains, and `GET /me/grove` counts it — from then on, forever.
+
+Nothing errors anywhere. The person is told the number is gone on the same screen that is about to
+put it back on every other device they own. That is E280's sentence — a service reporting a removal
+it did not perform — arriving by the clock rather than by the code, which is why no ownership bug or
+missing `UPDATE` would have shown it.
+
+**The fix is the mechanism `anonymized_contributions` already is**, and it needs no new table. The
+withdrawal is recorded as an ordinary `contributions` row whose payload names the reading, so a
+`measurement` looks for its own withdrawal on the way in and is born tombstoned if it finds one
+(`store.measurementWasWithdrawn`, `004_measurement_withdrawal_kind.sql`). Same argument `Apply`
+makes for consulting the tombstone before the insert: an item written on Wednesday and drained on
+Thursday cannot be stopped by a column on a row that does not exist yet, so the mark has to be
+waiting for it.
+
+**What that fix covers, stated exactly — and what it leaves open.** It covers the ordering above:
+the withdrawal **committed in an earlier drain** than the reading it withdraws, whether that is an
+earlier `POST /sync` or an earlier position in the same batch (the handler's loop applies one item
+per transaction, sequentially, so both orderings inside one batch are the committed-first case).
+It does **not** cover two drains overlapping in time. The guard is a lookup, not a lock, and a
+lookup can only find a row that has committed: `Apply` runs at READ COMMITTED — `Store.Tx` calls
+`pool.Begin` with no `TxOptions`, so the isolation is the server's default — and there is **no
+unique key on the reading id** anywhere in this schema (both indexes 004 adds are plain), so
+nothing makes two transactions about one reading block each other. Reading in transaction A,
+withdrawal in transaction B: B counts `matched == 0` and answers `applied`, A's arrival check finds
+no committed withdrawal and the reading is born live, both commit, and the grove counts it. That is
+this entry's own sentence at millisecond scale rather than at backoff scale, and it is reachable in
+the multi-device case — one device draining the reading while another drains the withdrawal.
+
+It is not a regression (before this round the kind was refused outright) and it is not fixed here.
+The direction on file, **unverified**, is a transaction-scoped advisory lock keyed on the reading id
+taken at the top of both `withdrawMeasurement` and `measurementWasWithdrawn`, which would serialise
+only same-reading pairs; it is the top server item in `docs/ROADMAP.md`'s chip backlog. **The
+distinction is the point of writing it down**: a mark that waits closes the clock-scale race, and a
+mark that waits is not a lock.
+
+**The lookup is scoped to the same owner, and that is the whole safety argument rather than a
+detail.** Reading ids travel in every `GET /me/journal` payload. Unscoped, a stranger could file a
+withdrawal naming somebody else's reading id and have that person's next drain arrive already
+tombstoned — silencing a number by getting there first, with a `applied` on both items and no error
+anywhere. `TestAStrangersWithdrawalDoesNotSilenceALaterReading` is the control, and it was
+red-proved by deleting the owner clause: the author's tree left the grove entirely.
+
+**What to carry forward — and the property that actually separates the two cases.** It is not
+"photographs are further behind". It is **who mints the id**. `beginPhoto` does `photoID :=
+uuid.New()` server-side and hands it back, so a `photo_withdrawal` can only ever name an id this
+service issued, which means the row exists (or has been deleted) before the withdrawal can be
+written. A reading's id is `TreeMeasurement.id`, minted on the phone when the shutter of the measure
+sheet closes, so a withdrawal naming it can be composed — and drained — before this service has ever
+heard of the reading.
+
+So the question to ask of the next withdrawable thing is not "does it reach us yet" but "**can the
+client name it before we know it**". Where the answer is yes, a withdrawal that finds nothing is not
+the end of the story and needs a mark that waits.
+
+---
+
+### E326 — One non-UUID `speciesID` in any payload permanently 500s that identity's Species tab
+
+One entry. Found by PR #159's adversarial reviewer, reproduced independently by that PR's author
+against a throwaway Postgres 16.15 before this was written. **It is not PR #159's defect** — it has
+been reachable since `species_claim` became a kind in `002_community_mutation_kinds.sql` — and it is
+filed here because that PR admits a new payload family into the same unfiltered read.
+
+`store.GroveSpeciesKnown` (`server/internal/store/reads.go`) answers `GET /me/grove/species`:
+
+```sql
+SELECT (payload->>'speciesID')::uuid AS species_id, min(occurred_at) AS first_met
+  FROM contributions
+ WHERE (($1::uuid IS NOT NULL AND user_id = $1) OR ($2::uuid IS NOT NULL AND device_id = $2))
+   AND deleted_at IS NULL
+   AND payload->>'speciesID' IS NOT NULL
+ GROUP BY species_id
+ ORDER BY first_met ASC
+```
+
+Owner and `deleted_at`, and **no filter on `kind`**. So the cast is applied to every payload that
+carries a key spelled `speciesID`, whatever kind of contribution it belongs to, and the cast can
+fail. When it does, the whole query fails, the handler answers `500 server_error`, and — because the
+offending row is a stored contribution the phone cannot un-send — that identity's Species tab is
+broken for good.
+
+**Reproduced, three arms, against Postgres 16.15 in Docker (destroyed afterwards):**
+
+| arm | item | `GET /me/grove/species` |
+|---|---|---|
+| valid id on a dispute | `data_dispute` payload with a top-level `"speciesID":"<uuid>"` | `200 {"known":[{"species_id":"d376bb09-…"}],"total":1}` |
+| invalid id on a dispute | same, `"speciesID":"not-a-uuid"` | `500 {"error":{"code":"server_error","message":"Something went wrong on our end.","retryable":true}}` |
+| invalid id on an existing kind | `species_claim` payload `{"speciesID":"also-not-a-uuid"}` | `500`, identical |
+
+The third arm is the one that fixes the blame: this is a live defect in the current service, not
+something PR #159 introduces. Both bad items were answered `applied` by `POST /sync` — the write
+path validates nothing about `speciesID` for either kind — so the row is stored and the read stays
+broken until somebody deletes it in SQL.
+
+**The valid-id arm is a defect too, and quieter.** A dispute is a complaint about a species, not an
+encounter with one. A top-level `speciesID` that parses enrols that species in "species you have
+met", recorded because the person said the city had it wrong.
+
+**004 reasoned about exactly this hazard, one file away, and designed around it.**
+`server/migrations/004_measurement_withdrawal_kind.sql` chose `upper(payload ->> 'id')` over
+`(payload->>'id')::uuid` for its two indexes and its two lookups, and said why in as many words: a
+cast "can *error* here rather than merely miss … nothing in the standard promises Postgres evaluates
+the `kind` qual before the cast. A payload of some other kind carrying a non-UUID `id` would then
+fail the whole request."
+
+**That is a related worry and not this defect, and the two are worth keeping apart.** 004 was
+guarding against a planner evaluating a cast *ahead of* a `kind` qual that would have excluded the
+row — an ordering that neither this PR's author nor its second reviewer could reproduce on
+Postgres 16, in three shapes each, and which PR #159's prose now marks unverified where it is
+cited. This entry needs no such ordering: `GroveSpeciesKnown` has **no `kind` qual at
+all**, so its cast reaches every kind's payload by construction. What the two share is the remedy,
+which is why 004 is worth citing here at all — comparing extracted text never errors on a value it
+was not meant to read, whatever the planner does. The unsafe instance 004 cites by name —
+`GroveSpeciesKnown` — was left as it was, and 004's own note is the reason nobody should call this
+one unforeseeable.
+
+**Two things are worth separating in whatever round fixes it.**
+
+1. *The 500 is a query-shape defect.* Narrowing the read to the kinds whose `speciesID` means "I met
+   this species", or filtering to values that parse, or both. `kind IN (…)` is the smaller change
+   and it is the one that stops a new kind from breaking the read by accident; a `WHERE payload->>
+   'speciesID' ~ '^[0-9a-fA-F-]{36}$'` guard alone would leave the meaning question open.
+2. *Who belongs in "species you have met" is a product question*, and it is R79's to answer for
+   disputes now that a dispute can name a species. This entry does not decide it.
+
+**What PR #159 does instead, since neither belongs in a payload-validation round:** its wire contract
+forbids a top-level `speciesID` on a dispute payload — a suggested species travels as
+`suggestions["species_id"]`, where nothing casts it — and says so beside `dataDisputePayload` in
+`server/internal/api/sync.go`, together with the general rule that not every payload read in this
+service is kind-scoped — three of the four are, and this one is not — so a new top-level key must be
+checked against all of them before it is minted. That is a contract the client keeps, not a gate:
+the payload decode is lenient by design, so nothing in the handler could refuse the key even if it
+wanted to.
+
+---
+
+### Fixed (server, 2026-09-28, branch `server/grove-species-known-scope`)
+
+**Reproduced first, through the handler, on main at `bb4d08f`** against a throwaway Postgres 16.14:
+one `GET /me/grove/species` answered `200` with the three right species, and after a row carrying
+`{"speciesID":"not-a-uuid"}` was written beneath them, the next read answered
+`500 {"error":{"code":"server_error",…}}`.
+
+**What the read now does.** `store.GroveSpeciesKnown` never casts in SQL. It selects
+`lower(payload->>'speciesID')` where `jsonb_typeof(payload->'speciesID') = 'string'`, groups on that
+text, and parses each group in Go with `uuid.Parse`, skipping what does not parse. Nothing in that
+SQL can error on a value it reads — `->`, `->>` and `jsonb_typeof` answer NULL for an absent key or
+a non-object payload, and `lower` is total — so **rows already poisoned in production are harmless
+whatever their kind**, with no migration and no deletion. That claim does not rest on the kind
+filter below: with the filter removed, the poisoned-row test still passes (measured, arm 2 below).
+
+**Which kinds it reads, and the premise this corrected.** It is scoped to `store.MetSpeciesKinds` =
+`visit`, `observation`, `measurement`, `care_event` — the four kinds the client's own Species tab
+unions (`GroveQueries.ownContributions`). Two facts decided that, both read from the client rather
+than assumed:
+
+1. **The kinds that really carry a `speciesID` are `add_tree`, `species_claim` and
+   `species_correction`, and all three are a person *naming* a community tree's species.** The
+   client refuses exactly those by rule: `GroveQueries.knownSpecies` reads city-inventory trees
+   only, because a self-asserted species on a community-added tree would let a contributor raise
+   their own ring by adding a tree. So the "quieter" arm above was wider than disputes: every
+   species a person named on a community tree was put on their Species tab at refresh, after the
+   phone's own paint had left it off.
+2. **No sighting kind carries a `speciesID` in any client payload** — `Visit`, `TreeObservation`,
+   `TreeMeasurement` and `CareEvent` have no such field. So against today's clients the scoped read
+   answers an empty list, and the phone's local half is the whole Species tab. That is the correct
+   answer to the question as the client defines it, and it was already the answer for everyone who
+   never named a community tree's species. The cross-device half of the tab — a species met on
+   another phone of the same account — is therefore still unanswered by the service; the phone
+   could derive it from `GET /me/grove`'s tree ids and its own city file. That is a client
+   question for another round, not a regression of this one.
+
+The second item answers this entry's product question for disputes as a side effect: a dispute is
+not a sighting, so no dispute can enrol a species, top-level `speciesID` or not.
+
+**This is a tester-visible change, accepted by the owner (2026-09-28), not a change "nothing a
+tester sees."** Item 1 above is a fact about the *past*: what item 2 says is true only of a tester
+who never named a community tree's species. Anyone who did — through `add_tree`, `species_claim`
+or `species_correction` — had that species added to their Species tab on the next refresh, before
+this round. After this round's deploy, the next refresh drops it, because the read now answers an
+empty list for those three kinds. A species that a tester's own refreshed tab was showing
+yesterday can be gone today, and the ring's numerator can drop by the same species. Saying the
+species "the phone's own tab already left off" are the ones affected is true only of the very
+first paint, before any refresh ever ran — the release note in `docs/whats-new/` states the effect
+a tester will actually notice, and is not `internal:` for that reason.
+
+**The write path.** `species_claim` and `species_correction` now refuse a `speciesID` that is absent
+or not a canonical UUID, `validation_failed`. That is terminal for the phone's queue, and it is safe
+here for a checkable reason: `SpeciesStatement.speciesID` is a non-optional Swift `UUID` that
+`JSONEncoder` can only write in the canonical form, and `RemoteAPI.sync` decodes every row through
+`OutboxPayload.decode` before sending — a malformed one never leaves the phone. `add_tree` already
+refused the same malformation through its typed decode, so the three kinds that carry a
+`speciesID` now agree. The sighting kinds are not tightened: they carry no `speciesID`, and the read
+tolerates anything they could hold.
+
+**Tests** (`server/internal/api/grove_species_test.go`, all through the handler):
+`TestAPoisonedSpeciesIDDoesNotBreakTheSpeciesTab` (a poisoned row of all nineteen kinds, plus
+twelve other non-UUID shapes on a `visit`, beneath three real sightings; two reads, equal),
+`TestOnlyASightingPutsASpeciesInTheTab`, `TestASpeciesStatementMustNameASpecies`,
+`TestASpeciesStatementKeyIsMatchedExactly` (the three case-folded-key shapes, both kinds, and a
+check that the refused item was never stored).
+`TestWithheldKindsProduceTheEmptyAnswer` posted a species claim with no species and now sends one.
+
+**Red-proofs, each read for its message:**
+
+| arm | `TestAPoisoned…` | `TestOnlyASighting…` |
+|---|---|---|
+| main's unscoped cast restored by file copy | red: `GET /me/grove/species returned 500, want 200: {"error":{"code":"server_error",…}}`, on the read *after* the poison (the calibration read before it passed) | red: `a never_existed_report enrolled species …` |
+| text-and-parse kept, kind filter removed | green | red: `a species_claim (through POST /sync) enrolled species …` |
+| kind filter kept, cast put back in SQL | red: the same 500 | green |
+
+and the write-side refusal disabled: `species_claim with {…"speciesID":"not-a-uuid"}: "applied"
+(<none>), want failed validation_failed`. Each half is load-bearing on its own.
+
+**The write-side refusal matched the key case-insensitively, and that has been tightened.**
+`encoding/json` matches a struct field's tag case-insensitively when no exact match exists, so a
+struct decode of `speciesID` also accepted `speciesid` and `SPECIESID` — keys no real client sends
+and `store.GroveSpeciesKnown`'s `payload ->> 'speciesID'` never reads, because `jsonb` matching is
+exact. Each of `{"speciesid":"<uuid>"}`, `{"SPECIESID":"<uuid>"}` and
+`{"speciesID":null,"speciesid":"<uuid>"}` was answered `applied` and stored a row with
+`payload->>'speciesID' IS NULL` — the exact worthless, un-actionable record this refusal exists to
+keep out, just reached by a spelling the check didn't compare against. Fixed by decoding into
+`map[string]json.RawMessage` and looking up the exact key `"speciesID"`, in
+`speciesStatementSpeciesID` (`server/internal/api/sync.go`). Red-proofed by reverting to a
+case-insensitive struct decode: `TestASpeciesStatementKeyIsMatchedExactly` went red on
+`species_claim with {"treeID":"…","speciesid":"…"}: "applied" (<none>), want failed
+validation_failed`, restored by copying the file back and reconfirmed green.
+
+**Counts,** `go test -json ./...` against a throwaway Postgres 18, counted from the JSON events
+(subtests included): main `bb4d08f` 222 passed, 0 skipped, 0 failed; this branch, after both the
+scope fix and the key-matching fix, 226 passed, 0 skipped, 0 failed. With
+`CYPRESS_TEST_DATABASE_URL` unset, main reports 68 passed and 147 skipped; this branch reports
+68 passed and 151 skipped — both while every package prints `ok`. The two no-database figures are
+different trees' counts, not the same reading stated twice: this branch's four new tests
+(`TestAPoisonedSpeciesIDDoesNotBreakTheSpeciesTab`, `TestOnlyASightingPutsASpeciesInTheTab`,
+`TestASpeciesStatementMustNameASpecies`, `TestASpeciesStatementKeyIsMatchedExactly`) all need the
+database, so they move from "doesn't exist" to "skipped" rather than to "passed" when it is absent.
+
+---
+
+### E327 — A red-proof that changes a migration's **version number** leaves the simulator's database ahead of every later build, and the symptom is every UI test failing with no crash
+
+Measured this round while red-proving `AppSchema` v22, and it cost about an hour of a UI suite
+pointed at a defect that did not exist.
+
+`SchemaV22Tests.aV21DatabaseRunsOnlyV22` asserts that a v21 database applies exactly `[22]` and that
+`AppSchema.currentVersion` is 22. The cheapest way to red-prove it is to renumber the migration:
+
+    Migration(version: 22, name: "a city record's data can be disputed…", migrate: applyV22)
+    →
+    Migration(version: 23, …)
+
+The test goes red with the message you want — `(applied → [23]) == ([Self.version] → [22])` — and the
+revert is one character. What is not obvious is that **the unit-test run that produced that message
+also migrated the app's real, persisted database to `user_version = 23`**, because `CypressTests` is
+hosted by the app and the app boots against
+`…/Library/Application Support/Cypress/cypress.sqlite` in its simulator container. The in-memory
+stores every schema test uses are not the only database the run touches.
+
+After the revert, every build knows migrations up to 22 and that file says 23. `SchemaMigrator`
+refuses with `MigrationError.databaseIsAhead`, which is correct and is the whole point of that
+check — a build must not open a database a newer build wrote. The app therefore never finishes
+booting, and:
+
+- **the unit suite stays green**, because it uses in-memory databases built from the ladder;
+- **every UI test fails**, and none of them says why. The messages are `the Map tab never appeared in
+  the accessibility tree at all within 30s`, `screen 01 drew no tree pins in thirty seconds, which it
+  does with a fix and without one`, `the photo browser never opened`, `Failed to get matching
+  snapshots: Timed out while evaluating UI query` — the whole suite, at 30 s a piece;
+- **there is no crash report**, because nothing crashed;
+- **`run_tests.sh`'s preflight passes cleanly** — right device, right worktree, no concurrent
+  `xcodebuild`, `installed-cities=none`, a camera within the device's width with seed trees under it.
+
+So the log's own provenance header is clean and the failures read exactly like a real, broad
+regression in the branch under test. This is the same family as the memory note "user_version N but
+build knows up to M = fossil install, not a bug", arriving from a new direction: nobody installed an
+old build here, and the fossil was created by the red-proof itself, minutes earlier, in the same
+session.
+
+**The tell, and it takes ten seconds:**
+
+    C=$(xcrun simctl get_app_container <udid> app.cypress.Cypress data)
+    sqlite3 "$C/Library/Application Support/Cypress/cypress.sqlite" 'PRAGMA user_version'
+
+If that number is greater than `AppSchema.currentVersion`, the branch is not what is failing.
+
+**The fix** is `xcrun simctl uninstall <udid> app.cypress.Cypress`, which takes the container with
+it. Note that this also wipes the camera privacy grant, which the unit suite hangs forever without —
+re-grant it after the next install, and not while a test is running (`grant` kills the running app).
+
+**How to avoid it.** Red-prove the version claim by breaking something that is not the version
+number where you can — the fixture's expectations, or a different assertion in the same test. When
+the number itself is what has to move, treat the simulator as dirty afterwards and uninstall before
+running anything that launches the app for real. A red-proof is a deliberate defect, and this one
+outlives the file you reverted.
+
+---
+
+### E328 — `RemoteAPI.addTree` would key a community tree on the add's `client_uuid`
+
+Found by PR S1 (`server/community-trees-007`) while checking the round's design against the code.
+
+`RemoteAPI.addTree` (`Cypress/Data/API/RemoteAPI.swift`) sends `client_uuid: draft.clientUUID`, and
+`POST /api/v1/trees` stores that value **as the tree's id** (`addTreeRequest.ClientUUID` becomes
+`NewCommunityTree.ID` in `server/internal/api/sync.go`). On the phone, `TreeDraft.clientUUID` is the
+key of the *add act*, not the tree. The tree's id is `Tree.id`, which is what `add_tree` sends as
+`treeID` and `tree_uuid`. If this path were ever routed, the phone and the service would hold one
+tree under two ids, which is the two-identity defect behind F30.
+
+It is not live. `RoutedAPI.addTree` goes to `local`, and nothing calls `RemoteAPI.addTree`
+(verified at `bb4d08f`). The design assigns the fix to C1, which should make the method refuse
+(`RemoteSurface.noRouteOnThisService`). `POST /trees` itself stays working and is now scoped (below).
+
+### E329 — Account deletion never touched `community_trees`, so the erasing door kept the trees
+
+Before migration 007, `store.DeleteAccount` did not mention `community_trees`. The `users` foreign
+key's `ON DELETE SET NULL` therefore left a deleted account's trees standing, with both owner
+columns NULL, under **both** doors. That includes `eraseEverything`, which R3 promises deletes
+outright. The trees were never served to anybody (no read of other people's community trees
+existed), so nothing was shown that should not have been. They were still kept.
+
+007 applies the doors (decision 6). Trees orphaned before 007 are anonymized and left unpublished
+(see the rulings file). They are invisible to everybody, and deleting them now is an owner call.
+The new `community_trees_owner` CHECK makes the mistake unrepeatable. A deletion that reaches
+`DELETE FROM users` without first handling the account's trees is refused, and
+`TestDeletingAnAccountTheCodeForgotIsRefused` pins that.
+
+### E330 — The 10 m dedupe saw everybody's unpublished trees, and told strangers where they were
+
+`TreesWithin` read every live `community_trees` row. That had two consequences:
+
+- `POST /trees` returned, as conflict candidates, the exact positions of other devices' trees that
+  had never been published.
+- A sync `add_tree` could be refused with a bare, non-retryable `conflict` against a tree its sender
+  could not see.
+
+Both dedupes are now scoped to trees that are published or owned by the caller (§3F), and
+`TestTheDedupeNoLongerSeesAnotherDevicesUnpublishedTree` pins it through both doors.
+
+### E331 — The design's backfill would have published declined accounts' trees
+
+The round's design (§2) gave the backfill as `published_at = updated_at WHERE device_id IS NULL`.
+Under decision 7, which came after the design, that publishes every tree whose account declined the
+open license. It also publishes the orphans above, whose accounts' consent can no longer be known.
+007 publishes only where the owning account has accepted.
+
+The design's `published_at = updated_at` was also wrong about **when**. A tree claimed before its
+account accepted would be stamped published before the acceptance, and so would its `published`
+event. Under decision 10 that event is the record that the tree was published under an accepted
+license. S1's first draft kept `updated_at` and #187's review caught it. 007 now stamps the later of
+`updated_at` and `license_accepted_at`.
+`TestMigration007BackfillsTheTreesThatAlreadyExist` runs 007 over rows written at 006 and pins all
+five cases, including an account that accepted nineteen days after its tree.
+`TestMigration007RunsOverEveryKindOfRowProductionHolds` runs it over every contribution kind 005
+admits and checks that no publication predates its acceptance.
+
+### E332 — The contribution-kind extractor reads **any** `CHECK (kind IN (` as the contributions vocabulary
+
+`contributionKindsFromMigrations` (`server/internal/api/public_test.go`) takes the last
+`CHECK (kind IN (…))` block in the last migration that has one. Nothing ties that block to
+`contributions`. 007 creates `community_tree_events`, which has its own `kind` column. A migration
+that declared such a CHECK with `IN (…)` **after** the contributions constraint would have the
+event vocabulary read as the contribution vocabulary. Nothing would be silently wrong: the guards
+would go red (`TestTheLiveSchemaAgreesWithTheMigrationFiles` compares against the live
+`contributions` constraint). They would go red about the wrong thing, though, and the next author
+would chase a classification that does not exist.
+
+007 spells the event CHECK `= ANY (ARRAY[…])` and says why. The extractor is unchanged; anchoring it
+to `contributions` is a roadmap item, not this PR's.
+
+### E333 — The draft 007 recorded no answer to "was this tree ever public"
+
+This was found by #190's review, against S1's draft. It is recorded here because the fix is in 007
+and the draft never shipped.
+
+- **Tombstones.** Decision 12 tombstones an unpublished tree under both deletion doors, and the
+  draft's tombstone held only an id and a time. S2's removal list therefore had nothing to filter
+  on. Every stranger, in every tile, was told the id of a tree nobody but its adder had seen, and
+  roughly when its account went.
+- **Born-withdrawn trees.** A tree whose withdrawal drained before its add was published and then
+  withdrawn in the same transaction. That left a `published` event on a tree nobody ever saw.
+- **The chain and the history.** Neither recorded which positions the public had seen. So under
+  decision 13 there was no way to serve a history that starts at going live.
+
+007 now records the answer where each fact is written: `withdrawn_community_trees.was_public`,
+`community_tree_locations.was_public` and `community_tree_events.in_public_history`. A born-withdrawn
+tree is never published. `TestATombstoneSaysWhetherTheTreeWasEverPublic` and
+`TestHistoryStartsAtGoingLive` pin the fix, and so does the whole-database check in
+`assertPublicationInvariant`.
+
+### E334 — The license consent stored any string, and 007's draft backfill counted any string as an acceptance
+
+Before this round, `RecordLicenseConsent` stored whatever `license_version` string a request
+carried, including `''`. The draft 007 backfill published an account's trees on
+`license_version IS NOT NULL`. So a pre-007 account holding `''` would have had its trees published
+by the migration, under a `published` event naming `''` as the license.
+
+- S2 fixes the live path (L2: only a known version is an acceptance, and anything else is recorded
+  as a decline).
+- 007's backfill now counts only `'odbl-1.0'`.
+- `TestMigration007BackfillsTheTreesThatAlreadyExist` pins the fix with a pre-007 `''` account.
+
+---
+
+### E335 — Three reads served a community tree's photographs and counts without asking whether the tree could be seen
+
+Found by PR S2 (`server/community-trees-reads`) while checking the round's design and PR S1 against
+the code.
+
+`store.TreeCommunityHalf` (behind `GET /trees/{id}`), `store.PublicTreeCommunityHalf` (behind
+`GET /public/trees/{id}`) and `GET /photos/{id}` never consulted `community_trees`. They answered any
+id. For a community tree whose adder had withdrawn it, that an operator had taken down, that had
+never been published, or whose account had erased it, they served the photographs, the visit count,
+the public readings and the beloved state to anybody who asked by id. The photograph read went on
+serving a withdrawn tree's pictures to anyone who had read their ids earlier.
+
+PR S1 found the first two while writing migration 007. **It was not live before 007**: nothing could
+be withdrawn or taken down, and nobody's community tree was visible to anybody else. 007 made every
+one of those states reachable, so the reads had to learn them in the same round.
+
+Fixed in S2 with one predicate for all four reads (`communityTreeFor`). A hidden tree is answered as
+an id nobody sent. The ruling is **RULINGS R158**.
+`TestAHiddenCommunityTreeAnswersAsAnUnknownId`, `TestAHiddenCommunityTreesPhotographIsNotServed` and
+`TestTheHiddenCommunityTreeIsNotOnThePublicPage` compare bytes against an unknown id's answer in
+each of the five hidden cases. Each has a control that proves the hidden photograph was really there.
+
+### E336 — The design's tile delta, a keyset over `updated_at`, silently loses rows
+
+The design (§3C) specifies `next_cursor` as a keyset over `(updated_at, id)`. Every writer stamps
+`updated_at` from the store's clock at the start of its transaction and commits later. A reader can
+pass a row stamped 12:00:05 before a row stamped 12:00:03 commits. A cursor that advanced to 12:00:05
+never returns the second row, so that tree never reaches that phone and nothing says so. That is the
+silent drop `Journal`'s own comment calls the failure this app's `Series` type exists to prevent.
+
+S2 serves every committed row but never moves the cursor past `now − (requestTimeout + 5 s)`. That
+horizon is the latest point at which a transaction could still commit. The ruling has the argument,
+and `TestTheCursorNeverPassesARowThatMightStillCommit` stages the race.
+
+### E337 — The design's tile scoped a tree by its current position, so a moved pin stayed behind
+
+The design serves a tile's trees by where they stand now. A pin moved across a tile edge then
+disappears from the old tile's delta without being reported. A phone that fetched only the old
+tile keeps drawing it where it was, indefinitely. S2 serves such a tree in the tile it left, with
+its new coordinate (`TestAPinMovedOutOfATileIsReportedInTheTileItLeft`).
+
+### E338 — S2's first draft leaked stamps through its cursor, reported private trees, and scanned every tree per tile
+
+Found by the adversarial review of #190 and fixed in the same PR, before merge. None was live.
+
+- **The cursor gave away exact times (F1).** It was base64 JSON of `(updated_at, id)`, and the
+  server accepted any well-formed one. A cursor forged at `T − 1µs` served a tree and one at `T` did
+  not, so a binary search recovered each tree's exact stamp: when an adder stood at it, when they
+  signed in, when an account was erased. That undid the day-precision ruling. The cursor is now
+  sealed (the rulings file). `TestTheReviewersBinarySearchFindsNothing` runs the review's attack,
+  and `TestATamperedMovedOrForeignCursorIsRefused` covers the other forgeries.
+- **A never-public tree was reported (F2, F3).** Every erase-door tombstone went into every
+  stranger's delta, including a declining account's unpublished tree in another city. A tree born
+  withdrawn was inferred public from the event log. The tile now reads S1's `was_public` columns
+  (`TestANeverPublishedTreeIsNeverReportedWhenItsAccountGoes`, `TestATreeBornWithdrawnIsNeverReported`).
+- **A position held while private was served (decision 13).** The tile placed a tree in every tile
+  of its location chain, and the history served its first position, including positions from
+  before it went live. Both now read only public rows (`TestPositionsHeldWhilePrivateStayPrivate`).
+- **Each tile request cost O(all community trees) (F5).** One query text with `($1 IS NULL OR …)`
+  arms cannot use an index in a generic plan. Now there are two texts on S1's partial indexes.
+  Measured with `EXPLAIN ANALYZE` on Postgres 18 in local Docker, 100,000 trees (10,000 of them
+  moved once), 1,000 tombstones, a 45-tree tile:
+
+  | query | warm | cold | review's measure of the old text |
+  |---|---|---|---|
+  | snapshot, custom plan | 0.28–0.41 ms (2.6 ms on the first execution) | 2.9 ms | 320–480 ms warm, 2.1 s cold |
+  | snapshot, generic plan | 0.27–0.44 ms | 3.2–4.2 ms | (the same seq scans) |
+  | delta, custom plan (cursor 5 min / 1 h / 1 day old) | 0.20–0.43 ms (1.3 ms on one first execution) | — | 8 ms |
+  | delta, generic plan | 0.22–0.33 ms | 1.6 ms | 403 ms, seq scans |
+
+  pgx's default mode (`auto`) measured 0.25–0.37 ms for the snapshot and 0.20–0.49 ms for the delta. No
+  sequential scan in any plan. "Cold" is the first execution after a server restart: shared
+  buffers empty, the Docker VM's page cache not dropped. The review's text, run on the same
+  database as a control, measured 128–660 ms for the snapshot and 159–277 ms for the generic delta,
+  with seq scans throughout. So the instrument reproduces the finding.
+
+### E339 — After two review rounds, S2 still dated a tree to its private add and drew hidden photographs as grove heroes
+
+Found by the fresh verification of #190 (and of #187, for L1 and L2), fixed in the same PR, before
+merge. None was live.
+
+- **V1: `createdAt` was the private add.** A stranger's tile and profile dated a tree to the day it
+  was added while private, next to a history that said it was added the day it went live. That
+  told every stranger how long the adder had been signed out or declining. Now it is
+  `published_at` for everyone but the adder (`TestAStrangerIsToldATreeWasAddedTheDayItWentLive`).
+- **V2: the grove's hero had no visibility gate.** A stranger's withdrawal of a hidden id is
+  answered like an unknown id's (F6), but their grove then drew the hidden tree's photograph for it,
+  and a favorite on a withdrawn tree kept receiving its photograph's id. A photograph whose bytes
+  never arrived could also be the hero. Both are gated now
+  (`TestTheGroveHeroPassesThePhotographGate`, `TestAStrangersWithdrawalLeavesTheGroveAsAnUnknownIdWould`).
+- **L1: a public event could be dated before "added".** A move queued while the tree was private
+  and delivered after it went live was served on its private day, below "added". Now it is served
+  at the later of the two (`TestNoPublicEventIsDatedBeforeTheTreeWentLive`).
+- **L2: any string was an acceptance.** `license_version: ""` published an account's trees and
+  wrote `""` into the `published` event as their license
+  (`TestOnlyAKnownLicenseVersionIsAnAcceptance`).
+- **V5: nothing planned the production tile texts.** An edit that made an arm unindexable would
+  have passed every test. `TestTheProductionTileQueriesUseTheirIndexes` now runs
+  `EXPLAIN (GENERIC_PLAN)` on `tileSnapshotQuery` and `tileDeltaQuery` themselves.
+
+### E340 — Decision 14 (photo capture date only) cannot be served correctly by the service alone to the shipped client
+
+**Resolved by the owner's decision 14a (client-assisted), implemented in S2 round 4.** The phone
+sends `captured_on`, its local date (S1's column and begin field). Other people are served noon UTC
+of that date on both routes, and the owner keeps the exact time (`servedCapturedAt`). The table below
+the options is the served form, measured the same way. What follows is the finding that led there.
+
+**Originally: not implemented, needs a decision.** The owner's decision 14 says other people see a photograph's
+capture **date**, never its time. `captured_at` reaches another person on two routes:
+- `GET /trees/{id}`'s `photos[]`. The shipped client decodes it (`TreeCommunityHalfResponse`, `.iso8601`).
+- `GET /photos/{id}`. The shipped client does not decode this one's `captured_at`.
+
+**Every surface formats the decoded instant in the reader's own time zone, date only:**
+- the photo timeline's caption, `capturedAt.formatted(date: .abbreviated, time: .omitted)`;
+- screen 03's "Best photo · Oct 2025" and months-with-photos;
+- the memorial's hero eyebrow and "First photo" milestone;
+- the activity screen's month counts, first-photo date and week buckets;
+- the share card's months.
+
+None of them shows a time of day, so there is no fake "00:00" to worry about. **The day is the
+problem.** The service does not know where or in which zone a photograph was taken:
+- the client encodes `captured_at` in UTC, so its offset is lost;
+- it never sends `public_lat`/`public_lon` (E42);
+- for a city tree the service does not know where the tree stands.
+
+So it cannot know the capture's local date. Measured through the client's own decoder and
+formatters (`.iso8601`, then the three renderings above) for a photograph an SF owner sees as
+**Mar 14**:
+
+| Form served to others | Taken 10:00 PDT, read in LA / NY | Taken 19:30 PDT, read in LA / NY | Taken 18:00 PDT on Mar 31, read in LA |
+|---|---|---|---|
+| exact time (today) | Mar 14 / Mar 14 | Mar 14 / Mar 14 | Mar 31, Mar 2026 |
+| midnight UTC of the UTC day | **Mar 13** / **Mar 13** | Mar 14 / Mar 14 | Mar 31, Mar 2026 |
+| noon UTC of the UTC day | Mar 14 / Mar 14 | **Mar 15** / **Mar 15** | **Apr 1, Apr 2026** |
+| noon UTC of the *local* date | Mar 14 / Mar 14 | Mar 14 / Mar 14 | Mar 31, Mar 2026 |
+
+Midnight is wrong for every morning photograph read in the Americas. Noon is wrong for every evening
+one, and moves month labels at a month's end. Only noon UTC of the capture's local date is right
+(for readers within ±11 h of UTC). The service cannot compute that date for a city tree, and for a
+community tree it could only estimate the zone from longitude, which is wrong within about an hour
+of midnight.
+
+**Options:**
+1. **Client-assisted.** The client sends the capture's local date (`captured_on`, `YYYY-MM-DD`) with
+   `POST /photos/begin`. Others get `captured_at` at noon UTC of that date, and the owner keeps the
+   exact time. This needs a column (a migration) and a client release. Photographs from builds that
+   do not send it need their own rule: keep the exact time until the build floor passes it, or
+   accept the UTC-day risk for them.
+2. **Server-only, UTC day at noon.** Implementable now, but it shows the wrong day for evening
+   photographs in the Americas. That breaks the hard constraint, so it was not shipped.
+3. **Defer decision 14** until option 1's client ships, keeping the exact time for now. This is
+   what this PR does.
+
+The evidence is the scratchpad's `d14/render.swift` and `d14/render-evidence.tsv`: the client's
+decode and format calls, run per zone. It is outside the tree, like the other reproductions.
+
+**The served form (round 4)**, as the server serves it, through the same decode and formatters.
+The golden's photo is taken at 19:30 PDT on Sep 22, which is already the 23rd in UTC, and its
+phone date is the 22nd:
+
+| served to others | phone's day | LA | New York | London | Tokyo |
+|---|---|---|---|---|---|
+| `2026-03-14T12:00:00Z` (SF 10:00 or 19:30 PDT) | Mar 14 | Mar 14 | Mar 14 | Mar 14 | Mar 14 |
+| `2026-03-31T12:00:00Z` (SF 18:00 PDT, already Apr 1 in UTC) | Mar 31 | Mar 31 · Mar 2026 | Mar 31 · Mar 2026 | Mar 31 · Mar 2026 | Mar 31 · Mar 2026 |
+| `2026-09-22T12:00:00Z` (the golden's) | Sep 22 | Sep 22 | Sep 22 | Sep 22 | Sep 22 |
+
+Honolulu shows the phone's day too. **Auckland shows the next day** (Mar 15, Sep 23): noon UTC is
+already tomorrow at UTC+12 and beyond. It is the one residue on the shipped client, and the C2
+contract closes it for new builds (format others' photograph dates with a UTC calendar). The
+measurements are in `d14/render-14a.tsv`.
+
+### E341 — Round 4's photograph dates leaked through their order, and its C2 note was wrong for older photographs
+
+Found by the fresh verification of #190 at `0b631ce`, and fixed in round 5 before any client sent
+`captured_on`. Until one does, every photograph is served its exact time, so nothing was live.
+
+- **N1: the order gave away the hidden time.** The profile listed photographs by stored
+  `captured_at`, and the grove's hero was the newest by it. Anybody can begin a photograph at a
+  chosen time, so a prober could place their own photographs around another person's and read which
+  side it fell on. An anonymous device that never uploaded bytes bisected a photograph served as
+  noon to 17:41:43–17:42:25 in eleven begins. Both orders now use the served value, then the id
+  (`TestTheProfilesOrderGivesAStrangerOnlyTheServedDate`, `TestTheGroveHeroGivesAStrangerOnlyTheServedDate`,
+  and `TestPhotographsServedTheSameDateAreOrderedByIDNotByTime` for the tiebreak).
+- **N2: the C2 note turned the UTC+12 residue into a bigger error.** "Format others' photograph
+  dates with a UTC calendar" is wrong for a photograph from a build that sent no `captured_on`,
+  which is served its exact time: an evening in San Francisco would read as the next day. The
+  client could not tell the two forms apart. `captured_on` is now served as its own field
+  (`TestAPhotographCarriesThePhonesDateWhenItSentOne`), and the note renders it when present.
+
+**For the roadmap, not fixed here (N3, a hypothesis, not reproduced):** the presigned `GET` a
+photograph read hands out goes to object storage, which normally answers with `Last-Modified`, the
+upload time to the second. For a photograph uploaded while online that is close to the capture
+time, which decision 14 hides from others. The test presigner is fake, so it was not measured
+against Tigris. It predates this PR.
+
+### E342 — Proximity candidates still carry another adder's address and to-the-second creation time
+
+**Not fixed here; for the roadmap.** `candidateFrom` (`server/internal/api/sync.go`) builds the
+conflict candidates of `POST /trees` and of a sync `add_tree`. It serves `address` and full-precision
+`createdAt` / `updatedAt` for trees the caller did not add. S1 now scopes those candidates to
+published trees, so what leaks is a published tree's adder-supplied address and the exact second
+it was added. The tile and the profile withhold both (the rulings file).
+The fixture `proximity_conflict.json` carried `"address": "1 Main St"` and second-precision
+dates, and `GoldenWireFixtureTests` decoded it. The fix therefore moves that fixture and its Swift
+test together, which is why it is not folded into this read-side PR. (2026-11-15: ROADMAP chip 140
+removes the candidate list from the service and deletes the fixture and its Swift test.)
+
+---
+
+### E343 — Reporting a mistake in a tree's record enrolled that tree as "yours," and stayed enrolled after the report was withdrawn
+
+One entry, fixed in the same round that found it (`server/disputes-dont-enroll`). Found by PR #185's
+adversarial reviewer against the dispute-sheet client, finding 1 of `review-185-comment.md`, and
+confirmed on a Go harness.
+
+`store.Grove`'s `mine` CTE and `store.MapMembership`'s `yours` arm
+(`server/internal/store/reads.go`) filtered `contributions` on `kind <> 'private_reminder'` and
+nothing else. `data_dispute` and `data_dispute_withdrawal` are ordinary kinds in that table (R79,
+`005_data_dispute_kinds.sql`), so neither filter excluded them:
+
+- Raising a dispute against a city tree put that tree into `GET /me/grove` (with an all-zero
+  tally) and into `GET /me/map-membership?kind=yours` the moment the item synced.
+- Withdrawing the dispute did not remove it — the withdrawal is itself a `contributions` row of a
+  different kind, and nothing tombstones the raise (by design; see the `data_dispute` paragraph
+  beside `syncKinds` in `server/internal/api/sync.go` — there is no dispute table, so the
+  `contributions` row is the whole record).
+
+**Why this is a defect and not a judgment call.** R79's dispute sheet ships the sentence "Nothing
+on the map changes" as its own disclosure. A reader who reports a tree's species as wrong, then
+watches that tree join their map's *Yours* filter — having never visited it, added it, or done
+anything else the product calls meeting a tree — is being told something false by the client on
+the strength of a server contract nobody had checked against that sentence. Owner ruling,
+2026-09-28: a report is not meeting the tree.
+
+**Reproduced against a throwaway Postgres 18, before the fix, on the harness in
+`server/internal/api/dispute_enrollment_test.go`:** a lone `data_dispute` item, with no other
+contribution on the tree, produced a non-empty `GET /me/map-membership?kind=yours` and a
+one-entry `GET /me/grove` for that tree; a `data_dispute_withdrawal` following it changed neither
+answer.
+
+**The fix is `store.TreeMembershipKinds`**, an explicit allow-list of the kinds that count as
+having met a tree — everything `syncKinds` accepts except `private_reminder`, `data_dispute` and
+`data_dispute_withdrawal` — read by both `Grove` and `MapMembership` in place of the old
+deny-list. A kind added to `syncKinds` in the future is out of both reads by default rather than
+in, which is the shape `MetSpeciesKinds` (`GroveSpeciesKnown`, PR #184) already uses for a
+different question one read over; the two lists are deliberately independent, since "met the
+species" and "met the tree" are different-sized sets — see the comment beside
+`TreeMembershipKinds` for why sharing one list would starve or flood the other.
+
+**What this does not touch.** `GET /me/journal` is unaffected and unchanged — it is a personal
+history, has no `kind` filter, and still serves a dispute back after its own withdrawal applies.
+That is a separate, already-open question (`docs/ROADMAP.md`'s chip backlog item "Answer what a
+withdrawn-to-empty tree should look like"), which also covers `photo_withdrawal` and
+`measurement_withdrawal` residue in `Grove`/`MapMembership` — unaffected by this fix, since those
+two kinds were never excluded and still are not.
+
+**Client side, checked by reading code only, not changed here — and it is already correct.**
+`ContributionStore.contributedRowsSQL` (`Cypress/Data/Store/ContributionStore.swift`, backing the
+local "Yours" filter) and both local Grove queries (`groveOwnedTreesSQL` in the same file, and
+`GroveQueries.ownContributions`) union `visits`, `observations`, `measurements`, `care_events`,
+`favorites` and self-added `community_trees` — never `tree_data_disputes`. Every read of
+`tree_data_disputes` in `Cypress/` is in `DataDisputeStore.swift`, scoped to one tree or one
+dispute for the dispute UI and the journal, never joined into a membership or grove query.
+`DataDispute.raiseDataDispute` only inserts into `tree_data_disputes` and its two children
+(`Cypress/Data/API/DataDispute.swift`'s own header: "Nothing in this file writes `trees`,
+`tree_status_overrides` or `species_assertions`" — and, provably from the queries above, nothing
+it writes is read by "yours" or grove either). So this defect was server-only:
+`RoutedAPI.refreshedMapMembership` (`Cypress/Data/API/RoutedAPI.swift` ~834–844) unions the
+phone's clean local set with whatever the server answered, and the server was the one answering
+wrong.
+
+---
+
+### E344 — `photo_withdrawal` named an id the service never issued, matched nothing, and answered `applied`
+
+It was found while fixing report F30 on `fix/photo-identity-dedupe` (PR #194) and fixed in the same
+PR. The defect **shipped**: it is live in production from the first build whose outbox sent
+photographs until this PR's server half is deployed.
+
+**What happened.** A person deletes a photograph on screen 20. The phone tombstones its row and
+queues a `photo_withdrawal` whose `photoID` is the phone's own `photos.id`.
+`store.withdrawPhoto` looked that id up as the service's own `photos.id`. The service mints that id
+itself at `POST /photos/begin`, and the phone never keeps it, so the lookup found no row for any
+photograph a phone had actually sent. Its first answer, *no row → success, changing nothing*, then
+applied. As a result:
+
+- screen 17 settled the row `done`, reading `Photo removed`;
+- the photograph stayed `approved`, with `deleted_at` NULL;
+- `GET /trees/{id}` kept listing it to every other device;
+- `GET /photos/{id}` kept serving its bytes;
+- on the contributor's own phone, `GET /trees/{id}` returned it as their own, so the photograph they
+  had deleted came back onto their profile after the next refresh.
+
+This is ERRATA **E280**'s failure: a service reporting a removal it did not perform. It was reached
+by identity rather than by a missing `UPDATE`.
+
+**Why no test saw it.** Every withdrawal test on the server named the service's own id
+(`beginPhotoFor` returns `ticket.PhotoID`). That is the one id no client ever sends. The
+"never held" case was justified by ERRATA E264 ("no photograph reaches this service"), and that
+stopped being true when the send path shipped. The justification was not revisited, and every
+withdrawal from then on landed in that arm. This is the "guards green while the defect is present"
+family: the test's input was the thing that differed from production.
+
+**The fix, in two halves, with no migration.**
+
+1. *Server.* `withdrawPhoto` falls back to `withdrawPhotoByClientKey` when no row has the id. It
+   reads every row carrying that `client_uuid` (migration 003) and tombstones only the rows the
+   caller owns, using the same two columns as the lookup by id. If a live row carries the key and
+   the caller owns none, the answer is `ErrNotOwned`, as the lookup by id already answered. Scoping
+   the query to the caller instead would have turned that case back into a silent success. Since
+   F30's fix, the phone's `photos.id` **is** the begin's `client_uuid`, so this covers every
+   photograph sent from that build on.
+2. *Client.* A photograph sent by build 77 or earlier has a local id unrelated to its key, and the
+   key is gone from the phone (the `outbox_photos` row is deleted when the send completes). When a
+   profile refresh has paired such a photograph with its service row unambiguously
+   (`RoutedAPI.photoIdentityMatch`), the withdrawal names the service's `photo_id` instead, through
+   `RoutedAPI.deletePhoto(id:)` and `LocalAPI.deletePhoto(id:servicePhotoID:)`.
+
+**What the review of #194 changed.**
+
+- *The pairing may only name a photograph that has left the phone (finding 1).* The review proved
+  that pairing by framing and capture second, offered a photograph that had **not** been sent, could
+  name the same account's other phone's photograph. The pair looked unambiguous because the unsent
+  photograph has no copy on the service. Deleting the unsent one would then have withdrawn the other
+  phone's photograph, and the service would have honored it, because the account owns it. The
+  pairing is now offered only rows written by the outbox's apply with no send still owed
+  (`ContributionStore.sentPhotoIDs`). That excludes the add-a-tree photograph, which is never sent.
+  - *The same, for a send refused for good.* "No send still owed" was read as "no `outbox_photos`
+    row", and the drain deletes that row when the service refuses a send in a way that will not
+    change (a non-retryable code such as `not_found` or `validation_failed`). It has to: holding the
+    row would keep the item from ever settling. So a photograph the service had turned away read as
+    sent, and finding 1's path was open again for it. The drain now also writes one `app_state` key
+    per refused photograph (`photo_send_refused:<photos.id>`, holding the refusal's code), in the
+    same transaction as the delete (`OutboxStore.recordRefusedPhoto`). `sentPhotoIDs` leaves out any
+    photograph that has one. No migration: `app_state` is v1's key/value table. What the person sees
+    does not change: the photograph stays on their phone, and screen 17 draws the item as it did.
+    Account deletion's erasing door removes the key along with its photograph, and also removes
+    any key whose photograph is already gone. The key names a photograph, not a person, so
+    `AccountDeletionCoverage`'s column scan cannot see it. `AccountDeletionTests` asserts it instead.
+- *A copy is the second its stamp names (finding 2).* The wire truncates to whole seconds, so a true
+  copy is `0 ≤ local − service < 1`. The symmetric window paired the next second's photograph.
+- *A withdrawal that arrives before its begin (finding 5).* The service answered it `applied`, with
+  nothing to take down, and the later begin created a live row. A begin now looks for its owner's
+  withdrawal of its key, and if it finds one the row is born deleted and the begin is refused as a
+  replay after a withdrawal is (`photoWasWithdrawn`). The shipping client does not reach this order,
+  so this is the service not relying on that.
+- *A withdrawn photograph's copy is hidden only while its withdrawal is queued (finding 3, ruled by
+  the orchestrator).* While a `photo_withdrawal` naming it is `pending`, its copy is hidden from its
+  contributor, because the withdrawal is on its way. Once the service has answered it, a copy the
+  service still serves **is still public**, and it shows on its contributor's profile again. That is
+  deliberate. For every photograph in the open cases below, seeing it again is the only sign its
+  contributor gets that it is still public. Deleting it again now works: the profile knows the
+  service's id for a row it drew, and `RoutedAPI.deletePhoto(id:)` queues a withdrawal naming that
+  id (`LocalAPI.withdrawServicePhoto`), which the service applies by id if the caller owns it. The
+  same path lets a person delete their own photograph that another of their phones sent. The
+  profile already offered that, through `deletable_photo_ids`, and the tap used to fail.
+
+**What is still open.** These are earlier-build photographs whose withdrawal still names only the
+local id and still withdraws nothing on the service:
+
+- **Not refreshed in this process.** The pairing is kept in memory (`PhotoIdentityLedger`). Keeping
+  it across launches needs a column, which is a migration.
+- **Ambiguous.** Two photographs of one tree share a framing and a capture second: two photographs
+  from one visit share their item's `createdAt`. Their service copies could pair either way round,
+  and naming the wrong one would withdraw the photograph the person kept. Neither is named.
+- **Already withdrawn before this build.** Their withdrawals were applied as no-ops and are `done`.
+  Nothing re-sends them: RULINGS R77, and a re-send would be a backfill nobody ruled on. Those
+  photographs remain public on the service, and the service alone cannot tell which ones they are.
+  A `photo_withdrawal` contribution records only the phone's id and the tree, so an operator can
+  find an owner who withdrew *a* photograph of a tree on which they still have live ones, but not
+  *which* photograph. The capture time that would say which is on the contributor's phone, on the
+  tombstoned row. Any repair needs a ruling before anyone runs it. What this PR does give these
+  photographs is the finding-3 behavior above: once this build refreshes their tree, each one shows
+  on its contributor's profile again, and deleting it there reaches the service.
+- **A binary staged before the send path existed.** Its queue row was deleted at the apply
+  (`sendable = 0`), so it reads as sent, although RULINGS R77 kept it on the phone, and it can be
+  offered to the pairing. Telling the two apart needs a column.
+- **A send refused for good by an earlier build.** Build 77 already gave a refused binary up by
+  deleting its queue row, and wrote no refusal key, because none existed. Such a photograph reads as
+  sent too, and it can be offered to the pairing in the same way. Nothing left on the phone says
+  which photographs these are once the item that carried the refusal has been retried and pruned.
+
+---
+
+### E345 — Every drain sent photographs, because the toggle's only reader had no caller
+
+It was found in beta feedback F35 (2026-09-30), logged as ROADMAP item 98, and fixed on
+`fix/f35-wifi-only`. The defect **shipped**: every build until this one sent photographs over
+cellular with the toggle on.
+
+**What happened.** A tester on cellular, with screen 17's "Sync photos on wifi only" on, saw their
+photographs upload. `OutboxQueue.drain(photoUploadsAllowed:)` was the one place that holds a
+binary back, and its parameter defaulted to `true`. All six feature writers,
+`OutboxViewState.retry` and `retryAll`, and `VisitGates` called `drain()` and took that default.
+The one call that resolved the toggle, `OutboxViewState.syncNow(isOnWifi:)`, had no caller, because
+nothing in the app could say whether the connection was wi-fi.
+
+**The fix.** The queue decides. `OutboxQueue` takes a `NetworkPathSource`, and `drain()` reads the
+stored toggle from `app_state` and asks the source whether the path is unmetered (satisfied, not
+expensive, not constrained). `DataLayer.boot` passes the process's one `NWPathMonitor`
+(`SystemNetworkPath.shared`). `drain(photoUploadsAllowed:)` lost its default. `syncNow(isOnWifi:)`
+is gone. By the owner's decision of 2026-11-13, waiting photographs also go by themselves: the
+layer's `OutboxWifiWatcher` drains when the path turns unmetered and a photograph is waiting, and
+`RootView` drains when the app comes to the front. Turning the toggle off drains too.
+
+**The 48 h cap, which F35 made reachable.** The drain's expiry phase failed any due row whose
+window was older than 48 h. Nothing had ever held a photograph back, so no waiting row could reach
+it. Once the toggle works, a photograph held back on a two-day trip without wi-fi would have
+expired as "Tried for 48 hours without getting through", on a note saved the whole time. The
+48 h cap now counts only time spent trying. At the start of each drain, a row whose reason is
+a wi-fi hold has the held stretch (from the hold's `updated_at` to the drain) added to its
+window, and that pass judges both expiry and any failure against the moved window. So a
+photograph held for two days and failing once on wi-fi is not expired, and a row whose send keeps
+failing still expires once it has spent 48 h failing, however often a cellular drain holds it in
+between. (Two earlier drafts in this PR got this wrong: skipping expiry while the reason said
+`awaitingWifi` expired the row on its first failure after wi-fi returned, and restarting the
+window at each hold both missed a row never re-held and forgave failing time.)
+
+**More holes, found in review of the same PR.**
+
+- A photograph applied on wi-fi whose send then waited had no staged file. The hold's sentence
+  counted staged files and read "0 photos are waiting for wi-fi", and screen 17's waiting count
+  (and so the watcher) missed the row. Both now count every binary still owed: staged, or applied
+  and not yet sent (`OutboxStore.Record.unsentPhotoCount`).
+- A drain asked for while another runs returned at once and did nothing more. If wi-fi returned
+  mid-drain, the running pass had already decided "cellular", so the photograph waited. The
+  running drain now makes one more pass before it returns.
+- The hold's sentence was recognized by matching its exact photo count. A withdrawn photograph
+  lowers the count a row owes, and every check then missed the row. It is now recognized by kind
+  (`OutboxFailureReason.isAwaitingWifi`).
+- `updated_at` is the only record of when a hold began, and writes outside the drain bump it: a
+  withdrawn photograph (`discardPhoto`, `removePhoto`), a settled binary, an anonymized account.
+  A withdrawal two days into a hold made the hold look new, and the next drain expired the row
+  without its having tried. Each of those writes now banks the held time first
+  (`OutboxStore.creditHold`), with the same formula the drain uses.
+- A held row is always due, and a batch is the oldest 25 due rows. With 25 rows held on cellular,
+  every pass took the same 25 and a newer note never synced, which broke "notes and numbers sync on
+  any connection". A pass that may not send photographs now leaves held rows out of its batch:
+  their notes are already applied and sent, so there is nothing to do for them on that pass.
+
+**Why no test saw it.** Every test of the deferral called `drain(photoUploadsAllowed: false)`
+itself, so each one proved the queue could hold a photograph back and none asked whether anything
+in the app ever told it to. `OutboxWifiOnlyTests` now saves through a real feature writer, and it
+fails if any app source passes its own answer to `drain(photoUploadsAllowed:)`.
+
+**What this makes stale.**
+
+- **E81** says "There is no reachability monitor, no `NWPathMonitor`". There is one now. Its
+  conclusion about screen 17's `offline` pill still holds: the source answers "is this connection
+  unmetered", not "is the phone offline", and the pill is still not drawn. Drawing it is a separate
+  item.
+- **E271 §6a** records that `syncNow(isOnWifi:)` had zero call sites. That was true, and it is now
+  removed rather than called.
+- **RULINGS** (the 2026-08 photo-browser note, "What the owner most plausibly saw") explains a
+  browser showing only full-tree shots by binaries sitting `awaitingWifi`. Until this fix that
+  window could not open, because nothing ever deferred a binary. It can open again now.
+
+**DEBUG seam.** `CYPRESS_NETWORK_PATH=metered|unmetered` in the launch environment pins the path,
+the way `CYPRESS_LOCATION` pins location, so screen 17's waiting state can be seen on a simulator.
+
+---
+
+### E346 — `RemoteAPI.addTree` would have keyed the tree on the act's `client_uuid`, not on `Tree.id`
+
+Found by `feat/community-trees-core`.
+
+`RemoteAPI.addTree` sent `POST /trees`, which stores the tree under the request's `client_uuid` and
+answers `{id, status}`; the method then returned a `Tree` built from the draft with a **fresh**
+`Tree.id`. Had anything called it, the phone's tree and the service's would have had two ids — the
+one double the one-id rule (`CommunityLayer`'s header) exists to forbid. Nothing shipped reached it,
+because §3.4 routes `addTree` local and the add reaches the account through `/sync` as `add_tree`,
+carrying `treeID`. It was a trap, not a live defect.
+
+Neutralized in C1: `RemoteAPI.addTree` throws `RemoteSurface.noRouteOnThisService`, and the allow-list
+in `RemoteAPITests.theRemoteSurfaceIsConfinedToItsRefusals` names it. `AddTreeBody` and
+`AddTreeResponse` are deleted with it. `RemoteAPITests.addTreeHasNoRoute` asserts no request is sent.
+
+### E347 — Comments that said `community_trees` "records no author" were false after v23, and two were already narrower than the truth
+
+R45 recorded that the table had no `user_id` or `device_id`; `AppSchema` v23 adds both. Re-verified one
+by one rather than trusting the ROADMAP sentence: `TreeProfilePresentation` (two comments),
+`RecordDefect.underReview`, `LocalAPI.withdrawRecord`, `SpeciesAssertion.isSupersedable`,
+`AccountDeletion` (two comments), `AccountDeletionTests` and `SpeciesClaimTests` were rewritten. The
+"a contributor, not the contributor" copy is still right, for a different reason: the species' namer
+need not be the adder, and the service sends no actor on somebody else's tree (decision 4).
+Left alone, deliberately: v12 and v14's historical migration comments (true when written, and `applyV23`
+supersedes them in its own text), and every "nothing syncs anybody else's *photographs* down" comment —
+`main.photos` is unchanged and that sentence is still true. The sentence that **was** false is "nothing
+syncs anyone else's *trees* down", and the only place it was written is `CommunityTreeStore`'s old header.
+
+### E348 — The leaving door anonymizes every community tree on the phone; the service deletes the unpublished ones (decision 12)
+
+Decision 12: an unpublished tree is deleted and tombstoned under both doors, `leaveRecords` included.
+Publication is the service's fact (it turns on the license the account held when the tree went live,
+decisions 7 and 10), and the phone does not hold it this round. `AccountDeletion.forgetCommunityTrees`
+therefore anonymizes every tree the account added under `leaveRecords` and the service deletes the
+ones that were never public. The phone keeps a pin the service has dropped until the sync-down round
+can tell it otherwise. Visible only to the account's own phone, and only after it has left. Closing it
+is C2's (`ROADMAP` chip backlog 104).
+
+### E349 — `captured_on` is the date in the phone's zone when the begin is built, not when the shutter fired
+
+Nothing on `photos` or the outbox records the zone of the capture, so `RemoteAPI.beginPhotoBody` reads
+`TimeZone.current` at send time. A photograph queued in one zone and sent after a flight is dated in
+the second. The service's one-day bound (`validCapturedOn`) holds for every civil zone either way.
+Recording the capture zone is a schema change and was not made here.
+
+---
+
+### E350 — Which outbox rows wait for their tree's add, and why the others do not
+
+**ROADMAP 115's premise was partly wrong.** It said a species claim, a report or a photo vote on a
+tree the service has not received is answered `not_found`. On the service (`server/internal/api/sync.go`,
+`server/internal/store/community_trees.go`), only `location_correction` is refused that way. A species
+claim or correction is recorded and **never applied to the tree** (`materializeSpecies` returns nil
+for a tree it does not hold), which is a silent loss rather than a red row. Reports, dismissals, photo
+votes, hazard redirects and disputes are recorded against the tree's id, and nothing looks the tree up.
+
+`OutboxItem.Kind.waitsForItsTreeAdd` now holds:
+
+| Kind | Held | Why |
+|---|---|---|
+| `location_correction` | yes | `not_found`, terminal (#209) |
+| `species_claim`, `species_correction` | yes | applied to the tree only when the service holds it |
+| `add_tree` | no | it is the tree |
+| `visit`, `observation`, `measurement`, `care_event`, `favorite_toggle`, `private_reminder` | no | the drain is their local apply; holding one would keep a visit off its tree on this phone while the add waits for a network. The service never looks the tree up |
+| `wrong_species_report`, `never_existed_report`, `species_review_dismissal`, `record_review_dismissal`, `photo_vote`, `hazard_redirect`, `data_dispute`, `data_dispute_withdrawal` | no | recorded against the tree's id, never refused, change nothing on the tree |
+| `photo_withdrawal`, `measurement_withdrawal` | no | keyed on the photograph or reading; the service handles either arrival order |
+
+Photographs ride on their own row (an add's or a visit's), so a photograph of a not-yet-sent tree
+goes when its row goes, and the service's photo begin does not look the tree up.
+
+### E351 — The time a row waits behind its tree's add is left out of its 48 h window
+
+ROADMAP 116. A held row is never in a pass, so nothing banked its wait. Each drain pass now runs
+`OutboxStore.creditHeldBehindAdd` first: every pending row the hold predicate matches has its window
+moved forward by `now - updated_at`, and `updated_at` is restamped. `OutboxStore.window` credits a row
+held behind an add the same way it credits a wi-fi hold, so the other writes that bump `updated_at`
+(`creditHold`) bank it too. No column and no reason sentence: screen 17 draws a pending row's reason,
+and the hold has no ruled sentence.
+
+Known limits:
+
+- If an add fails terminally and is later retried, a dependent row that was not drained in between
+  is credited for the failed stretch as well. That only delays expiry.
+- A `failed` add holds nothing, so a species claim or correction behind it is released and sent. The
+  service records it as `applied` and does not apply it, because it does not hold the tree. If the
+  add is later retried and succeeds, the claim is not sent again, so the adder's species never
+  reaches the service's tree. Nothing on the phone says so.
+
+### E352 — Move pin is offered only for a tree the service may hold
+
+ROADMAP 107. `CommunityTreeStore.mayHaveReachedService`. When the tree's `add_tree` row still exists,
+its state decides: offered unless the row is `failed`. A failed add was refused for good or gave up
+at the 48 h cap, and `pruneCompleted` deletes only `done` rows, so a failed row stays. When no row
+exists, the date decides: offered for a tree added on or after `firstQueuedAddsAt`, 2026-08-21
+18:54:57 UTC. `build-43` is the first build tag containing #s34 (`6ae2f4f9`). It is a lightweight
+tag on PR #103's merge commit `ac4d8cbd` and carries no date of its own, so the date is that merge
+commit's committer date. It is used rather than the #s34 commit's own date, because only builds 42
+and older existed before the merge, and none of them queued adds.
+
+Still wrong, stated: a tree added after that date on a build that had not been updated yet, and a
+pruned add row whose adder v23 guessed. C2's `added_by_you` replaces this test.
+
+Known limit: an add refused with `conflict` (another tree within 10 m) cannot be repaired by moving
+the pin. The add's payload is frozen in its outbox row, so a retry sends the same coordinate and is
+refused again, and Move pin is hidden for that tree.
+
+---
+
+### E353 — E81's dropped `· offline` clause is drawn, from the network path and nothing else
+
+It was written on `on/110-offline-pill`. It amends **E81**, which it does not replace.
+
+**What E81 said.** SCREENS.md 17 §1 draws the amber pill as `3 waiting · offline`. E81 dropped the
+clause because nothing in the app knew whether it was offline, and a failure sentence such as
+`No connection.` records the last attempt, not the present.
+
+**What changed.** F35 (#208) added `NetworkPathSource`, one `NWPathMonitor` for the process. It
+answered only "is the path unmetered", for the wi-fi toggle. That answer cannot say offline: a phone
+on cellular is metered and connected. The source now also reports `connectedNow()` and
+`connectedChanges()`, read from the same monitor. Connected is false only when
+`NWPath.status == .unsatisfied`.
+
+**What "offline" means.** The pill reads `N waiting · offline` only when rows are waiting **and** the
+source has read the path **and** found its status `.unsatisfied`. Otherwise it reads `N waiting`:
+
+- Before the first reading arrives, there is no claim. `connectedNow()` is nil and the pill has no
+  clause.
+- `.requiresConnection` is not offline. Apple defines it as a path that is not active now but that
+  a new connection may bring up (VPN On Demand with an idle tunnel, some cellular cases), so the
+  next drain may succeed.
+- A phone on cellular with "Sync photos on wifi only" on is connected. It is not offline.
+- A row's failure sentence is never the source.
+- At zero waiting there is still no pill (ARCHITECTURE §5.6).
+
+`OutboxViewState.followConnection()` keeps the reading current. `OutboxView` runs it in its own
+`.task`, so the clause changes while screen 17 is open and the listener stops when the screen goes.
+The pill has no accessibility label of its own, so VoiceOver reads the same text.
+
+**Debug seam.** `CYPRESS_NETWORK_PATH=offline` now pins a path with no connection, beside
+`metered` and `unmetered`. No UI test uses it yet: the UI suite has no way to put a waiting row in
+the outbox, because with the network gate off a row is applied locally and finishes at once.
+
+Tests: `OutboxOfflinePillTests`.
+
+---
+
+### E354 — "Say what species you think this is" showed on somebody else's unnamed tree, and the tap failed
+
+It was found by round C3's planner and fixed on `feat/c3-profile` (package A). It has **not
+shipped**: the only way to see somebody else's tree on a phone is the community cache, which round
+C2 fills, and C2 is not yet in a released build.
+
+**What happened.** `TreeProfilePresentation.offersSpeciesClaim` was `tree.source == .community &&
+species == nil && acceptsContributions`. It had no test of who added the tree or which table holds
+it. Round C2 made trees from the community cache openable, so on somebody else's unnamed tree the
+profile offered the claim. `LocalAPI.claimSpecies` reads only this phone's own `community_trees`
+table and threw `notFound`, so the tap ended in the not-found sentence. This is the shape
+`VisitAddTreeModel.canAdd` exists to avoid: a control for an act the boundary refuses.
+
+**The fix.** `offersSpeciesClaim` also needs `profile.isAddedHere` (a new `TreeProfile` field: the
+tree is a row of this phone's own table) and `profile.addedByYou`. The second half is the owner's
+ruling of 2026-11-15 ("Hide species controls for now"), which also hides "Report the species as
+wrong" on any tree the reader did not add: `LocalAPI.speciesCorrectionOffer` answers `.unavailable`
+unless the reader is the adder.
+
+**Tests.** `OthersTreeControlsTests.unnamedCachedTree` (red when the old condition is restored) and
+`anotherPersonsTreeHere` (red when the adder guard is removed). `SpeciesCorrectionTests
+.theOfferMatchesTheBoundary` used to assert that a stranger is offered the report on a tree added
+on this phone; it now asserts the owner's rule.
+
+### E355 — The map pin test passed only on a simulator that had run it before
+
+**What happened.** `OthersTreeUITests.testSomebodyElsesTreeDrawsTheCommunityPin` launched the
+`othersTreeOnMap` deep link and waited for the dashed pin. The map reads its pins once, when it
+appears (`MapHomeView`'s `.task` calls `MapModel.fetch()`). The deep link writes the tree into the
+community cache after that read has started, through `LocalAPI.debugSeedCommunityCache`, and
+nothing asks the map to read again. A real tree from another person arrives through the tile
+refresh, which does re-read the map; the debug seam skips that path. On a simulator where the
+tree was already in the cache from an earlier launch, the first read found it and the test
+passed. On a clean install it drew no pin. The first green run (location on the tree) and the
+review's relaunch (location 67 m south) were both second launches. The location dot over the pin
+was a second, separate cause, found by the review.
+
+**The fix.** The test leaves the map for My Grove and comes back, which re-reads the map, up to
+three times. A run with the seed delayed 5 s missed the pin on the first wait and found it after
+one round trip. The pinned location is 67 m south of the tree, inside the 150 m camera.
+
+**Tests.** The test itself, red on a clean install with the seed removed from the deep link.

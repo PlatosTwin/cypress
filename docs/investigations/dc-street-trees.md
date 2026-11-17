@@ -125,7 +125,7 @@ spelling fix and does not apply. The denominator is every shipped D.C. tree, 197
 notation the cascade does not handle (`Ginkgo biloba (male)` 2,952, `Prunus species` 2,208,
 `Ulmus species` 1,720, curly-quoted cultivars) and taxa the corpus lacks (`Cladrastis lutea` 1,902,
 `Liquidambar rotundiloba` 1,350). The owner waived D20 for D.C. on 2026-11-12;
-`docs/rulings-pending/dc-species-gate.md` records it.
+RULINGS R172 records it.
 
 ## 6. Publishing one pack: `--add-pack`
 
