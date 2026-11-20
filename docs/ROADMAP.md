@@ -3127,7 +3127,7 @@ into this section in the round that finds it, and nowhere else. Each item stands
     `feat/grove-names-by-species`, 2026-11-16.
 208. **Nineteen pending files are not spliced, and the citation guards have three gaps.** (a) The
     splice of chip 160 left the web round's 18 files in `docs/rulings-pending/` and
-    `docs/errata-pending/`, and `docs/errata-pending/harness-hardening.md`, which the unmerged
+    `docs/errata-pending/`, and the harness-hardening erratum, which the unmerged
     branch `tools/fetch-seed-diagnostics` changes. They splice when that work lands. **Update,
     #246:** the harness-hardening erratum is spliced as E356; the 18 web-round files remain. (b)
     `DocumentCitationGuardTests` and `PendingCitationGuardTests` do not catch a pending file cited
