@@ -1027,13 +1027,19 @@ into this section in the round that finds it, and nowhere else. Each item stands
    regenerate from measured per-class times and re-prove `UITestShardCoverageTests` still covers
    every class. **Flagged stale again on 2026-09-29** (from #185): re-measure rather than trusting
    the table's own comments.
-3. **Fix `Tools/fetch_seed.sh`'s silent scope-check death under `pipefail`.** A failure inside the
+3. ~~**Fix `Tools/fetch_seed.sh`'s silent scope-check death under `pipefail`.** A failure inside the
    scope-check pipeline can kill the script without a diagnostic; make every exit path name itself,
-   with a calibrated failure case. **Written, and deliberately not merged with the rest of the
-   harness round.** `Tools/fetch_seed.sh` runs in every CI job (`.github/actions/prepare`, the
-   `release` job included) and places the seed the app bundles, so it is a genuine build input:
-   merging it mints a TestFlight build. The fix and its two calibrations sit on
-   `tools/fetch-seed-diagnostics`, to land in a round that is shipping a build anyway.
+   with a calibrated failure case.~~ **DONE (#246)** (`tools/fetch-seed-diagnostics`, split out
+   of `tools/harness-hardening` because this script is a build input and merging it mints a
+   TestFlight build). The mechanism was
+   `grep -v '^$'` reporting "selected nothing" as exit 1: under `pipefail` inside a command
+   substitution, `set -e` then ended the script with **no output whatever** — reproduced against
+   the pre-change file, which printed its two resolve lines, exited 1 and placed nothing. The
+   pipeline is now `awk` (which answers an empty question with an empty answer and exit 0), an
+   unreadable scope has its own refusal separate from a mismatched one, and an ERR/EXIT backstop
+   reports any exit that carried no diagnostic of its own, with the line and the command. Both the
+   defect and the backstop are calibrated in `Tools/test_harness_guards.sh`, the second by
+   splicing a silent failure into a copy of the script.
 4. ~~**Redesign `CityDownloadsFeedbackTests`' perf-margin test.** The "transfer beats a per-byte
    walk by an order of magnitude" test (`CityDownloadsFeedbackTests.swift:920`-era) compares two
    wall-clock timings with a hard margin and flaked on CI with no concurrent load (8.5x against a
@@ -2726,7 +2732,8 @@ into this section in the round that finds it, and nowhere else. Each item stands
     R77, R79, R108, R164, R187, R188 and R238). **Left out on purpose:** the 18 files of the web
     round (every file whose name starts `web-` or `w1-`, and
     the public tree read, the public photo grid, and the guard CI skips), and the harness-hardening
-    erratum, which the unmerged branch `tools/fetch-seed-diagnostics` changes. The web files
+    erratum, which the unmerged branch `tools/fetch-seed-diagnostics` changes (spliced as E356 by
+    #246). The web files
     stay for the web round's own splice; its worktree showed no unmerged work on 2026-11-16, so
     check with the owner whether that round is still live. Chip 208 keeps these 19 files open.
     One citation was corrected by the review (the unit flip's copy is R113), and the history
@@ -3120,8 +3127,9 @@ into this section in the round that finds it, and nowhere else. Each item stands
     `feat/grove-names-by-species`, 2026-11-16.
 208. **Nineteen pending files are not spliced, and the citation guards have three gaps.** (a) The
     splice of chip 160 left the web round's 18 files in `docs/rulings-pending/` and
-    `docs/errata-pending/`, and `docs/errata-pending/harness-hardening.md`, which the unmerged
-    branch `tools/fetch-seed-diagnostics` changes. They splice when that work lands. (b)
+    `docs/errata-pending/`, and the harness-hardening erratum, which the unmerged
+    branch `tools/fetch-seed-diagnostics` changes. They splice when that work lands. **Update,
+    #246:** the harness-hardening erratum is spliced as E356; the 18 web-round files remain. (b)
     `DocumentCitationGuardTests` and `PendingCitationGuardTests` do not catch a pending file cited
     by its bare filename, a number above the highest entry (`R999`), a number that names the
     wrong entry, or any citation in Go, SQL, or scripts. A check of the highest R and E numbers
@@ -3145,6 +3153,16 @@ into this section in the round that finds it, and nowhere else. Each item stands
     for 40 of its 731 species (counted 2026-11-16), and the banner's first step uses them for
     city trees. Found by the author and the reviewer of
     `feat/picker-names-and-second-phone-grove`, 2026-11-16.
+210. **`Tools/test_harness_guards.sh` fails five `run_tests.sh` checks in a worktree that holds the
+    seed.** The "prebuilt end to end" checks run `run_tests.sh` with a stand-in `xcrun`. When
+    `Cypress/Resources/cypress-seed.sqlite` exists, `run_tests.sh` turns on its camera checks
+    against the seed, the stand-in cannot answer them, and five checks fail (73 passed, 5 failed).
+    With the two seed copies removed, the same tree passed all 78. Any worktree set up by
+    `setup_worktree.sh` or `fetch_seed.sh` has the seed, so the harness gives a false red there.
+    The checks should not depend on the seed: point `run_tests.sh` at an empty seed path in the
+    stand-in runs, or skip preflight's camera step with the other preflight steps. Found while
+    verifying #246, 2026-11-20. (b) Nothing in `.github/` runs this file, so CI never runs these
+    calibrations (#246's review).
 
 
 **Retire the format-1 manifest — DONE, 2026-08-23.** The owner overrode the trigger the day after
