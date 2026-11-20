@@ -3163,6 +3163,15 @@ into this section in the round that finds it, and nowhere else. Each item stands
     stand-in runs, or skip preflight's camera step with the other preflight steps. Found while
     verifying #246, 2026-11-20. (b) Nothing in `.github/` runs this file, so CI never runs these
     calibrations (#246's review).
+211. **Build 89 shipped the sync-down work with no tester note for it.** The note
+    `docs/whats-new/feat-community-trees-sync-down.md` is an `internal:` line, withheld until
+    someone sees another account's tree arrive from the live service on a signed-in phone (the
+    check this file already lists as owed on a physical phone). Build 89 (2026-11-20, main
+    `2b0f5fde`) consumed that file, so editing it now ships nothing. When the two-phone check
+    passes, add a NEW file under `docs/whats-new/` with the line the old file proposes: "Trees
+    other people add now appear on your map as dashed pins, and you can open them." It ships with
+    the next build. If the check fails, that is a defect in a shipped build and comes first.
+    Promised to the owner on 2026-11-20.
 
 
 **Retire the format-1 manifest — DONE, 2026-08-23.** The owner overrode the trigger the day after
