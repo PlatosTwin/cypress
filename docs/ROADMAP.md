@@ -1029,7 +1029,7 @@ into this section in the round that finds it, and nowhere else. Each item stands
    the table's own comments.
 3. ~~**Fix `Tools/fetch_seed.sh`'s silent scope-check death under `pipefail`.** A failure inside the
    scope-check pipeline can kill the script without a diagnostic; make every exit path name itself,
-   with a calibrated failure case.~~ **SHIPPED** (`tools/fetch-seed-diagnostics`, split out
+   with a calibrated failure case.~~ **DONE (#246)** (`tools/fetch-seed-diagnostics`, split out
    of `tools/harness-hardening` because this script is a build input and merging it mints a
    TestFlight build). The mechanism was
    `grep -v '^$'` reporting "selected nothing" as exit 1: under `pipefail` inside a command
