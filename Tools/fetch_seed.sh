@@ -30,9 +30,10 @@
 # and CI must never set it -- a live fetch is not reproducible, and reproducibility is the
 # entire point of this file.
 # `-E` and not just `-euo pipefail`: without it the ERR trap installed below is NOT inherited by
-# shell functions, command substitutions or subshells, so a silent death inside one would leave
-# FAIL_LINE and FAIL_CMD unset and the backstop would report "at line unknown: unknown" — the
-# diagnostic promising to name the line, not naming it (#153 review, F9).
+# shell functions, so a silent death inside a function would leave FAIL_LINE and FAIL_CMD unset
+# and the backstop would report "at line unknown: unknown" (#153 review, F9). A failing command
+# substitution needs no `-E`: its assignment fires the trap in this shell. A `( … )` subshell is
+# not covered on bash 3.2 (macOS's /bin/bash) even with `-E`; this script has none.
 set -Eeuo pipefail
 
 ROOT="${1:-$(cd "$(dirname "$0")/.." && pwd)}"
@@ -64,8 +65,9 @@ say() { printf 'fetch_seed: %s\n' "$1"; }
 #      to stop and said why" from "this script fell over".
 #
 # The ERR trap records where. It does not fire for a command inside an `if`, a `&&`/`||` chain or
-# a `!` — bash exempts those from `set -e` — which is exactly right: those are decisions, and
-# every one of them here ends in a `die` that speaks for itself.
+# a `!` — bash exempts those from `set -e` — which is exactly right: each one is a decision.
+# Most end in a `die` that speaks for itself; the rest (`|| true`, the sqlite3 presence check)
+# deliberately carry on.
 DIED=0
 FAIL_LINE=""
 FAIL_CMD=""
@@ -73,16 +75,23 @@ die() { DIED=1; printf 'fetch_seed: FAIL: %s\n' "$1" >&2; exit 1; }
 trap 'FAIL_LINE=$LINENO; FAIL_CMD=$BASH_COMMAND' ERR
 
 TMPDIR_TO_CLEAN=""
+PLACED=""
 on_exit() {
   local rc=$?
   [ -n "$TMPDIR_TO_CLEAN" ] && rm -rf "$TMPDIR_TO_CLEAN"
   if [ "$rc" -ne 0 ] && [ "$DIED" != "1" ]; then
     printf 'fetch_seed: FAIL: died with status %s and no diagnostic of its own.\n' "$rc" >&2
     printf '  at line %s: %s\n' "${FAIL_LINE:-unknown}" "${FAIL_CMD:-unknown}" >&2
-    printf '  This script runs under `set -euo pipefail`, where a command that merely reports\n' >&2
-    printf '  "nothing matched" (grep) is fatal and silent. Nothing was placed; the download, if\n' >&2
-    printf '  one happened, was verified or not but has been discarded. Re-run with `bash -x` on\n' >&2
-    printf '  this file to see the step, and give the line above to whoever fixes it.\n' >&2
+    printf '  A command failed under `set -Eeuo pipefail` without a message of its own (on bash\n' >&2
+    printf '  3.2 the line can be that of the enclosing loop). The download, if one happened,\n' >&2
+    printf '  has been discarded. Re-run with `bash -x` on this file to see the step, and give\n' >&2
+    printf '  the line above to whoever fixes it.\n' >&2
+    if [ -z "$PLACED" ]; then
+      printf '  Nothing was placed.\n' >&2
+    else
+      printf '  These copies WERE written before the failure, so the two destinations may now\n' >&2
+      printf '  disagree, and the copy that failed may be truncated:%s\n' "$PLACED" >&2
+    fi
   fi
 }
 trap on_exit EXIT
@@ -278,6 +287,7 @@ fi
 for dest in "$ROOT/Cypress/Resources/cypress-seed.sqlite" "$ROOT/Fixtures/seed/cypress-seed.sqlite"; do
   mkdir -p "$(dirname "$dest")"
   cp "$tmp/seed.sqlite" "$dest"
+  PLACED="$PLACED $dest"
   say "placed $dest"
 done
 

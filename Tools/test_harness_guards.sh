@@ -1218,13 +1218,30 @@ PY
       expect_rc "$rc" 1 \
         && expect_contains "$out" "no diagnostic of its own" \
         && expect_contains "$out" "grep -q nothing-here" \
+        && expect_contains "$out" "Nothing was placed" \
         && ok
     fi
   fi
 
+  # A death AFTER the first copy must not claim that nothing was placed (#246 review, finding 1).
+  # The second destination is made unwritable, so the first copy lands and the second `cp` fails
+  # under `set -e`. The report must name what WAS written, because the two copies now disagree.
+  if check "chip 3: a death between the two copies names the copy that was written"; then
+    root="$(make_seed_and_pin halfplaced "sf,sj" "sf,sj")"
+    chmod a-w "$root/Fixtures/seed"
+    out="$(run_fetch "$root")"; rc=$?
+    chmod u+w "$root/Fixtures/seed"
+    expect_rc "$rc" 1 \
+      && expect_contains "$out" "no diagnostic of its own" \
+      && expect_contains "$out" "WERE written" \
+      && expect_contains "$out" "$root/Cypress/Resources/cypress-seed.sqlite" \
+      && expect_missing "$out" "Nothing was placed" \
+      && ok
+  fi
+
   # And the half of the backstop's promise that `set -E` is what keeps: the ERR trap is NOT
-  # inherited by functions, command substitutions or subshells without it, so a silent death
-  # inside one would report "at line unknown: unknown" — a diagnostic that promises to name the
+  # inherited by functions without it (a failing command substitution fires it in the parent
+  # anyway), so a silent death inside a function would report "at line unknown: unknown" — a diagnostic that promises to name the
   # line and then does not. The splice above lands at top level and so cannot see this; this one
   # poisons `say` itself. Red-proved by changing `set -Eeuo` back to `set -euo`: this check fails
   # on "at line unknown", and only this one.
