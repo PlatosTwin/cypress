@@ -73,6 +73,26 @@ public enum OutboxPayload: Sendable, Hashable {
     case photoWithdrawal(PhotoWithdrawal)
     case hazardRedirect(HazardRedirectReport)
 
+    /// A reading taken back (`withdrawMeasurement`). Its own case for `OutboxItem.Kind`'s reason:
+    /// this is not a `measurement` with a flag on it.
+    case measurementWithdrawal(MeasurementWithdrawal)
+
+    // ── R79's two ──────────────────────────────────────────────────────────────────────────────
+    //
+    // See `OutboxItem.Kind` for why a retraction is its own kind rather than a flag on the raise,
+    // and `CommunityMutations.swift` for why the raise carries the whole record where every other
+    // report here carries a pointer to one.
+
+    /// A dispute against a record's own data (`raiseDataDispute`, `AppSchema` v22).
+    case dataDispute(DataDisputeReport)
+    /// A dispute its author took back (`withdrawDataDispute`).
+    case dataDisputeWithdrawal(DataDisputeWithdrawal)
+
+    /// The adder moving a community tree's pin (`correctLocation`, `AppSchema` v23).
+    case locationCorrection(TreeLocationCorrection)
+    /// The adder withdrawing a community tree for everyone (`withdrawTree`).
+    case treeWithdrawal(TreeWithdrawal)
+
     public var kind: OutboxItem.Kind {
         switch self {
         case .visit: return .visit
@@ -91,6 +111,11 @@ public enum OutboxPayload: Sendable, Hashable {
         case .photoVote: return .photoVote
         case .photoWithdrawal: return .photoWithdrawal
         case .hazardRedirect: return .hazardRedirect
+        case .measurementWithdrawal: return .measurementWithdrawal
+        case .dataDispute: return .dataDispute
+        case .dataDisputeWithdrawal: return .dataDisputeWithdrawal
+        case .locationCorrection: return .locationCorrection
+        case .treeWithdrawal: return .treeWithdrawal
         }
     }
 
@@ -109,7 +134,17 @@ public enum OutboxPayload: Sendable, Hashable {
             return false
         case .addTree, .speciesClaim, .speciesCorrection, .wrongSpeciesReport, .neverExistedReport,
              .speciesReviewDismissal, .recordReviewDismissal, .photoVote, .photoWithdrawal,
-             .hazardRedirect:
+             .hazardRedirect, .measurementWithdrawal,
+             // R79's two. Both are written by `LocalAPI` inside the transaction that performed the
+             // mutation, so both are born `local_applied = 1` and re-applying one would be a second
+             // dispute against a record that already carries one, or a second retraction of a
+             // dispute already withdrawn.
+             .dataDispute, .dataDisputeWithdrawal,
+             // Written by `correctLocation` inside the transaction that appended the chain's new
+             // head; re-applying it would be a second move.
+             .locationCorrection,
+             // Written by `withdrawTree` inside the transaction that set `deleted_at`.
+             .treeWithdrawal:
             return true
         }
     }
@@ -135,6 +170,11 @@ public enum OutboxPayload: Sendable, Hashable {
         case let .photoVote(value): return value.clientUUID
         case let .photoWithdrawal(value): return value.clientUUID
         case let .hazardRedirect(value): return value.clientUUID
+        case let .measurementWithdrawal(value): return value.clientUUID
+        case let .dataDispute(value): return value.clientUUID
+        case let .dataDisputeWithdrawal(value): return value.clientUUID
+        case let .locationCorrection(value): return value.clientUUID
+        case let .treeWithdrawal(value): return value.clientUUID
         }
     }
 
@@ -161,6 +201,16 @@ public enum OutboxPayload: Sendable, Hashable {
         case let .photoVote(value): return value.treeID
         case let .photoWithdrawal(value): return value.treeID
         case let .hazardRedirect(value): return value.event.treeID
+        case let .measurementWithdrawal(value): return value.treeID
+        // The record disputed. Carried on both payloads rather than resolved from the dispute's id,
+        // because `POST /sync` names a tree on every item and a service that records without
+        // materializing has no dispute row to join against.
+        case let .dataDispute(value): return value.treeID
+        case let .dataDisputeWithdrawal(value): return value.treeID
+        // The tree moved, never the correction's own `id`: `POST /sync` requires the two to
+        // differ, and names the tree on every item.
+        case let .locationCorrection(value): return value.treeID
+        case let .treeWithdrawal(value): return value.treeID
         }
     }
 
@@ -193,6 +243,15 @@ public enum OutboxPayload: Sendable, Hashable {
         case let .photoWithdrawal(value): return value.occurredAt
         // The moment the sheet was shown, which is the fact the report is about.
         case let .hazardRedirect(value): return value.event.shownAt
+        // When the reading was taken back, never when it was taken: the withdrawal is the act
+        // this row reports, and the reading it names carries its own `captured_at` already.
+        case let .measurementWithdrawal(value): return value.occurredAt
+        // When the objection was made, and when it was taken back. Two acts, two moments; the
+        // withdrawal's is never the raise's, which is the fact a queue row has to be able to say.
+        case let .dataDispute(value): return value.occurredAt
+        case let .dataDisputeWithdrawal(value): return value.occurredAt
+        case let .locationCorrection(value): return value.occurredAt
+        case let .treeWithdrawal(value): return value.occurredAt
         }
     }
 
@@ -224,6 +283,11 @@ public enum OutboxPayload: Sendable, Hashable {
         case let .photoVote(value): return value.attribution.userID
         case let .photoWithdrawal(value): return value.attribution.userID
         case let .hazardRedirect(value): return value.attribution.userID
+        case let .measurementWithdrawal(value): return value.attribution.userID
+        case let .dataDispute(value): return value.attribution.userID
+        case let .dataDisputeWithdrawal(value): return value.attribution.userID
+        case let .locationCorrection(value): return value.attribution.userID
+        case let .treeWithdrawal(value): return value.attribution.userID
         }
     }
 
@@ -255,6 +319,11 @@ public enum OutboxPayload: Sendable, Hashable {
         case let .photoVote(value): return value.attribution.deviceID
         case let .photoWithdrawal(value): return value.attribution.deviceID
         case let .hazardRedirect(value): return value.attribution.deviceID
+        case let .measurementWithdrawal(value): return value.attribution.deviceID
+        case let .dataDispute(value): return value.attribution.deviceID
+        case let .dataDisputeWithdrawal(value): return value.attribution.deviceID
+        case let .locationCorrection(value): return value.attribution.deviceID
+        case let .treeWithdrawal(value): return value.attribution.deviceID
         }
     }
 
@@ -304,6 +373,11 @@ public enum OutboxPayload: Sendable, Hashable {
         case let .photoVote(value): return try encoder.encode(value)
         case let .photoWithdrawal(value): return try encoder.encode(value)
         case let .hazardRedirect(value): return try encoder.encode(value)
+        case let .measurementWithdrawal(value): return try encoder.encode(value)
+        case let .dataDispute(value): return try encoder.encode(value)
+        case let .dataDisputeWithdrawal(value): return try encoder.encode(value)
+        case let .locationCorrection(value): return try encoder.encode(value)
+        case let .treeWithdrawal(value): return try encoder.encode(value)
         }
     }
 
@@ -333,6 +407,16 @@ public enum OutboxPayload: Sendable, Hashable {
             return .photoWithdrawal(try decoder.decode(PhotoWithdrawal.self, from: data))
         case .hazardRedirect:
             return .hazardRedirect(try decoder.decode(HazardRedirectReport.self, from: data))
+        case .measurementWithdrawal:
+            return .measurementWithdrawal(try decoder.decode(MeasurementWithdrawal.self, from: data))
+        case .dataDispute:
+            return .dataDispute(try decoder.decode(DataDisputeReport.self, from: data))
+        case .dataDisputeWithdrawal:
+            return .dataDisputeWithdrawal(try decoder.decode(DataDisputeWithdrawal.self, from: data))
+        case .locationCorrection:
+            return .locationCorrection(try decoder.decode(TreeLocationCorrection.self, from: data))
+        case .treeWithdrawal:
+            return .treeWithdrawal(try decoder.decode(TreeWithdrawal.self, from: data))
         }
     }
 

@@ -239,6 +239,9 @@ struct BeginPhotoBody: Encodable {
     let visitClientUUID: UUID?
     let shotType: String
     let capturedAt: Date
+    /// The photograph's local calendar date, `YYYY-MM-DD` (decision 14a). `RemoteAPI.beginPhotoBody`
+    /// says whose calendar and which zone.
+    let capturedOn: String?
     let width: Int?
     let height: Int?
     let publicLat: Double?
@@ -251,6 +254,7 @@ struct BeginPhotoBody: Encodable {
         case visitClientUUID = "visit_client_uuid"
         case shotType = "shot_type"
         case capturedAt = "captured_at"
+        case capturedOn = "captured_on"
         case width, height
         case publicLat = "public_lat"
         case publicLon = "public_lon"
@@ -258,32 +262,18 @@ struct BeginPhotoBody: Encodable {
     }
 }
 
-/// `POST /trees`.
-struct AddTreeBody: Encodable {
-    let clientUUID: UUID
-    let lat: Double
-    let lon: Double
-    let address: String?
-    let placement: String?
-    let speciesID: UUID?
-    let landContext: String?
-
-    enum CodingKeys: String, CodingKey {
-        case clientUUID = "client_uuid"
-        case lat, lon, address, placement
-        case speciesID = "species_id"
-        case landContext = "land_context"
-    }
-}
-
-/// `POST /devices/claim`.
+/// `POST /devices/claim`, as the sweep: `claimRequest` in `server/internal/api/auth.go`.
+///
+/// **The device only** (ROADMAP chip 146). The account is the session's bearer, never a body
+/// field: the service decodes with unknown fields refused, so the `user_id` this used to send made
+/// every claim `validation_failed`. And **never `license_version`**: on that route a missing key
+/// writes nothing, and a `null` would withdraw the account's consent. Agreeing to the license is a
+/// separate request (`AuthClient.LicenseAcceptanceRequest`).
 struct ClaimDeviceBody: Encodable {
     let deviceUUID: UUID
-    let userID: UUID
 
     enum CodingKeys: String, CodingKey {
         case deviceUUID = "device_uuid"
-        case userID = "user_id"
     }
 }
 
@@ -342,25 +332,6 @@ struct PhotoSourceResponse: Decodable {
         case photoID = "photo_id"
         case url
     }
-}
-
-/// `POST /trees` when the dedupe did not trip.
-struct AddTreeResponse: Decodable {
-    let id: UUID
-    let status: String
-}
-
-/// The `conflict` body's sibling of `error` — `{detail: {candidates: [NearbyTree]}}`.
-///
-/// `NearbyTree` decodes directly, because the service emits it in that type's own synthesized keys.
-/// The candidates travel beside the envelope rather than inside it because `APIError.Envelope`'s
-/// nested container decodes exactly `code`, `message` and `retryable` (`sync.go`).
-struct ProximityConflictDetail: Decodable {
-    struct Detail: Decodable {
-        let candidates: [NearbyTree]
-    }
-
-    let detail: Detail
 }
 
 /// `GET /me/grove` — the account's half of a grove row.
@@ -441,19 +412,58 @@ struct TreeCommunityHalfResponse: Decodable {
         let photoID: UUID
         let shotType: ShotType
         let capturedAt: Date
+        /// The phone's local calendar date of the photograph, `YYYY-MM-DD` (decision 14a), sent to
+        /// everybody whenever the phone that took it sent one, and **absent, never null**,
+        /// otherwise. Kept as the wire's string here; `RemoteAPI.treeCommunityHalf` parses it.
+        let capturedOn: String?
         let isPubliclyVisible: Bool
+        /// The key this photograph's begin carried, sent **only to its own contributor** and absent
+        /// on everybody else's rows (`treeProfileBody` in `reads.go`). It is the phone's own
+        /// `photos.id` for anything sent since report F30's fix, which is how the contributor's
+        /// phone recognises a row the service names under an id the phone never kept.
+        let clientUUID: UUID?
 
         enum CodingKeys: String, CodingKey {
             case photoID = "photo_id"
             case shotType = "shot_type"
             case capturedAt = "captured_at"
+            case capturedOn = "captured_on"
             case isPubliclyVisible = "is_publicly_visible"
+            case clientUUID = "client_uuid"
         }
     }
 
     let treeUUID: UUID
     let photos: [PhotoRow]
     let photoCount: Int
+
+    /// Whether the caller added this community tree (S2). False for a city tree, an unknown id and
+    /// a hidden one alike. Nil from a service deployed before the key existed.
+    let addedByYou: Bool?
+
+    /// Whether the tree is published (S2). Nil from a service deployed before the key existed.
+    /// Carried as `RemoteAPI.TreeCommunityDelta.isPublished`, and only beside a `community_tree`
+    /// (round C3): the profile reads it to tell a tree's adder whether only they can see it.
+    let isPublished: Bool?
+
+    /// The community tree, as `Tree` in its own synthesized keys, or nil: **a city tree, an
+    /// unknown id, or a tree hidden from this caller**, which the service answers alike so the
+    /// answer says nothing about which (`server/testdata/README.md`). Nil never means "deleted",
+    /// and nothing evicts a cached tree on it.
+    ///
+    /// Decoded with `try?`, `DeleteAccountResponse.communityTrees`' reasoning: a `Tree` this build
+    /// cannot read (a status the service learned later) costs this one field, never the
+    /// photographs beside it.
+    ///
+    /// **Decoded, and deliberately carried no further** (`visitCount`'s pattern, round C2's
+    /// review). The profile shows the copy in the phone's cache, which can be older than this one.
+    /// Writing this copy into the cache was the other choice, and it was refused: the cache has
+    /// one writer, the tile refresher, and the tile's cursor is what orders its writes. A profile
+    /// read is not ordered against a tile page. A profile answer fetched before a tile page and
+    /// written after it would put the older tree back, and no `updatedAt` comparison can catch it,
+    /// because the service rounds dates to the day (S2). The cached copy is refreshed when the
+    /// reader's map next refreshes the tree's tile.
+    let communityTree: Tree?
 
     /// **Decoded, and deliberately carried no further** — `RemoteAPI.TreeCommunityDelta` does not
     /// have this field and `RoutedAPI.treeProfile` never sees it.
@@ -473,6 +483,17 @@ struct TreeCommunityHalfResponse: Decodable {
     let ownPhotoIDs: [UUID]
     let deletablePhotoIDs: [UUID]
 
+    /// ROADMAP 144: a report against the species in force counts. Nil from a service deployed
+    /// before the key existed (release v16 and older), which the phone reads as "the service did
+    /// not say", never as false.
+    let speciesReported: Bool?
+    /// The newest counting report's flag id, sent **to the adder only**, so "Keep the species"
+    /// can name it. Null for everybody else and when nothing counts.
+    let speciesReportFlagID: UUID?
+    /// The species in force is the caller's own naming, still theirs to correct. Nil from an older
+    /// service.
+    let speciesNamedByYou: Bool?
+
     enum CodingKeys: String, CodingKey {
         case treeUUID = "tree_uuid"
         case photos
@@ -480,6 +501,88 @@ struct TreeCommunityHalfResponse: Decodable {
         case visitCount = "visit_count"
         case ownPhotoIDs = "own_photo_ids"
         case deletablePhotoIDs = "deletable_photo_ids"
+        case addedByYou = "added_by_you"
+        case isPublished = "is_published"
+        case communityTree = "community_tree"
+        case speciesReported = "species_reported"
+        case speciesReportFlagID = "species_report_flag_id"
+        case speciesNamedByYou = "species_named_by_you"
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        treeUUID = try container.decode(UUID.self, forKey: .treeUUID)
+        photos = try container.decode([PhotoRow].self, forKey: .photos)
+        photoCount = try container.decode(Int.self, forKey: .photoCount)
+        visitCount = try container.decode(Int.self, forKey: .visitCount)
+        ownPhotoIDs = try container.decode([UUID].self, forKey: .ownPhotoIDs)
+        deletablePhotoIDs = try container.decode([UUID].self, forKey: .deletablePhotoIDs)
+        addedByYou = try container.decodeIfPresent(Bool.self, forKey: .addedByYou)
+        isPublished = try container.decodeIfPresent(Bool.self, forKey: .isPublished)
+        communityTree = (try? container.decodeIfPresent(Tree.self, forKey: .communityTree)) ?? nil
+        speciesReported = try container.decodeIfPresent(Bool.self, forKey: .speciesReported)
+        speciesReportFlagID = try container.decodeIfPresent(UUID.self, forKey: .speciesReportFlagID)
+        speciesNamedByYou = try container.decodeIfPresent(Bool.self, forKey: .speciesNamedByYou)
+    }
+}
+
+/// `GET /community-trees?tile=14/x/y&cursor=` (S2, §3C). The envelope is server-owned and
+/// snake_case; each tree inside it is `Tree` in its own synthesized keys.
+///
+/// **Strict, unlike the profile's `community_tree`.** A page this build cannot read fails whole, so
+/// its cursor is never stored: skipping one undecodable tree and storing the cursor past it would
+/// lose that tree for good with nothing to say so. A page that fails stays unread, and the next
+/// refresh asks for it again.
+struct CommunityTileResponse: Decodable {
+    let tile: String
+    let trees: [Tree]
+    let withdrawnTreeIDs: [UUID]
+    let nextCursor: String
+    let hasMore: Bool
+
+    enum CodingKeys: String, CodingKey {
+        case tile, trees
+        case withdrawnTreeIDs = "withdrawn_tree_ids"
+        case nextCursor = "next_cursor"
+        case hasMore = "has_more"
+    }
+}
+
+/// `GET /trees/{id}/history` (S2, §3E). Server-owned and snake_case; the two coordinates are
+/// `Coordinate` in its own keys. `kind` and `placement` are read as strings so a value this build
+/// does not know is kept as `unrecognized` rather than failing the whole history.
+struct TreeHistoryResponse: Decodable {
+    struct Event: Decodable {
+        let id: UUID
+        let kind: String
+        let occurredAt: Date
+        let fromCoordinate: Coordinate?
+        let toCoordinate: Coordinate?
+        let fromSpeciesID: UUID?
+        let toSpeciesID: UUID?
+        let placement: String?
+        /// ROADMAP 144: the caller made this event. Nil from an older service.
+        let byYou: Bool?
+
+        enum CodingKeys: String, CodingKey {
+            case id, kind
+            case occurredAt = "occurred_at"
+            case fromCoordinate = "from_coordinate"
+            case toCoordinate = "to_coordinate"
+            case fromSpeciesID = "from_species_id"
+            case toSpeciesID = "to_species_id"
+            case placement
+            case byYou = "by_you"
+        }
+    }
+
+    let treeUUID: UUID
+    let events: [Event]
+    let complete: Bool
+
+    enum CodingKeys: String, CodingKey {
+        case treeUUID = "tree_uuid"
+        case events, complete
     }
 }
 
@@ -494,4 +597,39 @@ struct DeleteAccountResponse: Decodable {
     let contributions: Int
     let photos: Int
     let tombstones: Int
+    /// What the service did to each community tree the account added (`ROADMAP` 104 and 105), or
+    /// nil when the answer does not carry it.
+    ///
+    /// Nil has two causes, and both mean "keep the phone's own rule": a service deployed before the
+    /// key existed, and a `community_trees` value this build cannot read. The second is decoded
+    /// with `try?` on purpose. This body is read after the service has already deleted the account,
+    /// and a throw here makes `RoutedAPI` skip the local half entirely (see
+    /// `RemoteAPI.deleteAccount`). A malformed optional field must cost the phone its better answer,
+    /// never the whole local deletion.
+    let communityTrees: AccountDeletion.ServiceTreeVerdicts?
+
+    enum CodingKeys: String, CodingKey {
+        case deleted, choice, contributions, photos, tombstones
+        case communityTrees = "community_trees"
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        deleted = try container.decode(Bool.self, forKey: .deleted)
+        choice = try container.decode(String.self, forKey: .choice)
+        contributions = try container.decode(Int.self, forKey: .contributions)
+        photos = try container.decode(Int.self, forKey: .photos)
+        tombstones = try container.decode(Int.self, forKey: .tombstones)
+        let trees = try? container.decodeIfPresent(CommunityTrees.self, forKey: .communityTrees)
+        communityTrees = trees.map {
+            AccountDeletion.ServiceTreeVerdicts(deleted: Set($0.deleted), anonymized: Set($0.anonymized))
+        }
+    }
+
+    /// The wire shape of `community_trees`. Both lists are required: the service always sends both,
+    /// `[]` when empty, so an object missing one is not an answer this build trusts.
+    private struct CommunityTrees: Decodable {
+        let deleted: [UUID]
+        let anonymized: [UUID]
+    }
 }

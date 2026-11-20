@@ -63,7 +63,17 @@ final class AppModel {
         makeLayer: (@MainActor () async throws -> DataLayer)? = nil
     ) {
         self.makeLayer = makeLayer ?? {
-            try await DataLayer.bootOverInstalledCities(library: CityLibrary.default())
+            Self.removeAbandonedCleanCopies()
+            #if DEBUG
+            // A DEBUG launch can pin the connection (`DebugNetworkPathOverride`, F35).
+            if let pinned = DebugNetworkPathOverride.requested() {
+                return try await DataLayer.bootOverInstalledCities(
+                    library: CityLibrary.default(),
+                    networkPath: pinned
+                )
+            }
+            #endif
+            return try await DataLayer.bootOverInstalledCities(library: CityLibrary.default())
         }
         let library = (try? CityLibrary.default())
             ?? CityLibrary(rootURL: URL(fileURLWithPath: NSTemporaryDirectory())
@@ -82,6 +92,22 @@ final class AppModel {
         // `installLandedDuringBoot`), and does nothing at all when the boot failed — so an install
         // in a background relaunch, where `boot()` may never be called, needs no special case here.
         progress.onInstalled = { [weak self] in self?.reboot() }
+    }
+
+    /// Removes the clean copies and scratch files that photo strips killed part-way left behind, in
+    /// the two folders where a strip runs: the capture staging folder and the photo folder beside
+    /// the database. An upload's `<UUID>.jpg.stripping` is written only in the photo folder.
+    ///
+    /// Run at every boot of the layer, a reboot included. That is safe while a strip of the old
+    /// layer is still running, because `PhotoBinary.removeAbandonedCleanCopies` keeps the files of
+    /// any strip in progress in this process.
+    nonisolated static func removeAbandonedCleanCopies() {
+        var folders: [URL] = []
+        if let captures = try? VisitPhotoStaging.directory() { folders.append(captures) }
+        if let database = try? CypressStore.defaultDatabaseURL() {
+            folders.append(LocalAPI.defaultPhotoDirectory(besideDatabaseAt: database))
+        }
+        for folder in folders { PhotoBinary.removeAbandonedCleanCopies(in: folder) }
     }
 
     /// An install that landed while this boot was in flight, so the layer it produces is already

@@ -47,10 +47,12 @@ struct ModerationReviewList: View {
                 }
             }
         }
-        .confirmationDialog(
+        // Alerts, not `confirmationDialog`s (ROADMAP 77). PR #185 saw a dialog drawn without its
+        // cancel button on CI's iOS 26, at the tree profile's take-back, so these two questions
+        // were made alerts for the same reason. `TreeProfileView` has the full account.
+        .alert(
             ModerationCopy.confirmTitle(kind: pending?.kind),
             isPresented: confirmPresented,
-            titleVisibility: .visible,
             presenting: pending
         ) { item in
             Button(ModerationCopy.confirmAction(kind: item.kind), role: .destructive) { onConfirm(item) }
@@ -58,10 +60,9 @@ struct ModerationReviewList: View {
         } message: { item in
             Text(ModerationCopy.confirmMessage(treeName: item.treeName, kind: item.kind))
         }
-        .confirmationDialog(
+        .alert(
             ModerationCopy.dismissTitle,
             isPresented: dismissPresented,
-            titleVisibility: .visible,
             presenting: pendingDismissal
         ) { item in
             Button(ModerationCopy.dismissAction, role: .destructive) { onDismiss(item) }

@@ -9,9 +9,16 @@
 //  ruling that made it true again is `RULINGS R57`. Read that before adding
 //  a mark or reaching for a symbol; `DrawnGlyphGuardTests` is what goes red if anybody does.
 //
-//  Local to this folder rather than in `DesignSystem/Components`: no screen outside Photos uses
-//  them, and C1–C30 is a closed catalog. Same arrangement as `ShareDestinationGlyph` and 14's
-//  camera glyph, both of which say so in the same words.
+//  Local to this folder rather than in `DesignSystem/Components`, and C1–C30 is a closed catalog.
+//  Same arrangement as `ShareDestinationGlyph` and 14's camera glyph, both of which say so in the
+//  same words.
+//
+//  **`PhotoTrashGlyph` is no longer only Photos'.** Screen 11's withdraw control (report F27,
+//  `GrowthHistoryView.withdrawControl`) draws this same mark, because the two controls are the same
+//  control — the app's row-level way of unmaking a contribution — and a second trash can authored
+//  in another folder would be two sets of coordinates for one mark. The *name* is stale by that
+//  much and is deliberately not changed here: renaming a shared identifier breaks every other live
+//  branch (CLAUDE.md), so the sentence is corrected and the rename is somebody's quiet round.
 //
 //  ── Geometry ────────────────────────────────────────────────────────────────────────────────────
 //  Every mark is authored in a **24×24 box** at **stroke 1.8**, which is the stroke every other

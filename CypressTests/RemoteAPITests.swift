@@ -324,7 +324,7 @@ struct RemoteAPITests {
         let api = Self.api(transport)
 
         await #expect(throws: RemoteSurface.communityHalfOnly) { _ = try await api.grove() }
-        await #expect(throws: RemoteSurface.communityHalfOnly) { _ = try await api.groveSpecies() }
+        await #expect(throws: RemoteSurface.communityHalfOnly) { _ = try await api.groveSpecies(near: nil) }
         await #expect(throws: RemoteSurface.communityHalfOnly) { _ = try await api.journal(cursor: nil, limit: 20) }
         await #expect(throws: RemoteSurface.communityHalfOnly) { _ = try await api.treeProfile(id: treeID) }
         await #expect(throws: RemoteSurface.communityHalfOnly) { _ = try await api.deletePhoto(id: UUID()) }
@@ -557,6 +557,11 @@ struct RemoteAPITests {
         // and this is the last moment the true framing exists to be recorded.
         #expect(sent["shot_type"] as? String == "trunk")
         #expect(sent["captured_at"] as? String == "2026-08-06T07:06:40Z")
+        // Decision 14a: the phone's own calendar date travels beside the instant. Asserted present
+        // and date-shaped here; its value in a zone east of UTC is `LocationCorrectionFixtureTests`'
+        // job, against the service's golden.
+        let capturedOn = try #require(sent["captured_on"] as? String, "no captured_on in the begin")
+        #expect(capturedOn.count == 10 && capturedOn.hasPrefix("2026-08-0"))
         #expect(sent["width"] as? Int == 100)
         // ERRATA E42: not storing a location is the privacy-safe direction, and nothing that ships
         // sets one.
@@ -759,16 +764,41 @@ struct RemoteAPITests {
             // inventories, which under D16 the service cannot know. Class L, no route, same as
             // the two above it that it belongs beside.
             "areaChoices",
+            // The community add and the pin move (the community-trees round C1): both reach the
+            // account through the queue, as `add_tree` and `location_correction`. `addTree` is a
+            // refusal rather than a missing route — `POST /trees` exists and names the tree by the
+            // act's key, not the tree's id (the one-id rule, `CommunityLayer`).
+            "addTree", "correctLocation",
+            // The adder's withdrawal (decision 8): queued as `tree_withdrawal`, never called.
+            "withdrawTree",
             // Spec §3.4's nine unqueued mutations, plus the export D12 has not built.
             "claimSpecies", "correctSpecies", "flagWrongSpecies", "dismissSpeciesReview",
             "flagNeverExisted", "withdrawRecord", "dismissRecordReview", "setPhotoVote",
             "logHazardRedirect", "exportLatest",
+            // F27's withdrawal, and it is a missing *route* rather than a half: there is no
+            // `DELETE /measurements/{id}` in BUILD-PLAN §6 and none deployed. It reaches an account
+            // the way the nine above it now do — through the queue, on `AppSchema` v21's widened
+            // vocabulary — so nothing here is on a send sink's path.
+            "withdrawMeasurement",
+            // R79's two, and the same kind of missing route: BUILD-PLAN §6 predates the ruling, and
+            // both reach an account through the queue on `AppSchema` v22's widened vocabulary. PR-B
+            // of that round is what teaches `sync.go` the two kinds; until it is deployed a drained
+            // dispute is answered `validation_failed`, which is non-retryable and visible on screen
+            // 17 — not a `RemoteSurface` message to somebody with four bars.
+            "raiseDataDispute", "withdrawDataDispute",
             // Halves: the service answers part and the whole client type needs the city file.
             // `grovePage` sits with `grove` and for its reason: the service sends no display
             // name and no coordinate, so there is no `GroveEntry` here to cut into pages.
             "treeProfile", "deletePhoto", "grove", "grovePage", "groveSpecies", "journal",
-            // The one refusal that is about a missing *provider* rather than a missing route.
-            "deleteAccount"
+            // The one refusal that is about a missing *provider* rather than a missing route. It is
+            // the body of `DELETE /me`, which `deleteAccount` and `RoutedAPI.deleteAccount` both
+            // call (`ROADMAP` 104 and 105), so the refusal is written there and not in
+            // `deleteAccount` itself.
+            "deleteAccountOnService",
+            // The local half of a deletion: the rows it acts on are on the phone, so there is no
+            // route. A refusal rather than the protocol's default, which would call
+            // `deleteAccount` and send `DELETE /me`.
+            "finishAccountDeletion"
         ]
 
         let naming = Self.methodsNaming("RemoteSurface", in: source)
@@ -917,65 +947,62 @@ struct RemoteAPITests {
 
     // MARK: Trees
 
-    /// `POST /trees` sends the draft the service's `addTreeRequest` declares, and the returned
-    /// `Tree` is the draft's own facts under the id the service confirmed.
-    @Test("addTree sends the draft and echoes it under the confirmed id")
-    func addTreeSendsTheDraft() async throws {
-        let clientUUID = UUID()
-        let speciesID = UUID()
-        let draft = TreeDraft(
-            clientUUID: clientUUID,
-            coordinate: Coordinate(latitude: 37.7601, longitude: -122.505),
-            placement: .contributorPlaced,
-            speciesID: speciesID,
-            photoLocalPath: "/tmp/tree.jpg",
-            attribution: .anonymous(deviceID: UUID()),
-            address: "1 Main St",
-            landContext: .street
-        )
-
+    /// **`addTree` does not reach `POST /trees`** (the community-trees round C1). That route keys the
+    /// tree on the act's `client_uuid`, while the phone names it `Tree.id` — one tree under two ids.
+    /// The add reaches the account through `/sync` as `add_tree`, carrying `treeID`; this is the
+    /// refusal that stops a future caller from taking the old road by accident.
+    ///
+    /// Red-proof: restore the old body (encode `AddTreeBody`, send `POST /trees`) and this goes red
+    /// on the thrown-error expectation, with a `POST /trees` in `transport.calls`.
+    @Test("addTree has no route here, and never reaches POST /trees")
+    func addTreeHasNoRoute() async throws {
         let transport = ScriptedTransport()
-        transport.answer("POST /trees", with: #"{"id":"\#(clientUUID.uuidString)","status":"applied"}"#)
-
-        let tree = try await Self.api(transport).addTree(draft)
-        #expect(tree.id == clientUUID, "the tree's id is the client_uuid the service treats as its id")
-        #expect(tree.source == .community)
-        #expect(tree.verificationState == .unverified)
-        #expect(tree.status == .alive)
-        #expect(tree.placement == .contributorPlaced)
-        #expect(tree.statedLandContext == .street)
-        #expect(tree.speciesCurrentID == speciesID)
-        #expect(tree.address == "1 Main St")
-
-        let body = try #require(transport.call("POST /trees")?.body)
-        let sent = try #require(try JSONSerialization.jsonObject(with: body) as? [String: Any])
-        #expect(sent["client_uuid"] as? String == clientUUID.uuidString)
-        #expect(sent["lat"] as? Double == 37.7601)
-        #expect(sent["lon"] as? Double == -122.505)
-        #expect(sent["placement"] as? String == "contributor_placed")
-        #expect(sent["land_context"] as? String == "street")
-    }
-
-    /// "Community add: requires photo" (BUILD-PLAN §6), refused before the wire rather than after.
-    @Test("a photoless draft is refused without a request")
-    func aPhotolessDraftIsRefused() async throws {
-        let transport = ScriptedTransport()
-        await #expect(throws: APIError.validationFailed) {
+        transport.answer("POST /trees", with: #"{"id":"\#(UUID().uuidString)","status":"applied"}"#)
+        await #expect(throws: RemoteSurface.noRouteOnThisService) {
             _ = try await Self.api(transport).addTree(
                 TreeDraft(
-                    coordinate: Coordinate(latitude: 37.77, longitude: -122.44),
-                    photoLocalPath: "",
+                    coordinate: Coordinate(latitude: 37.7601, longitude: -122.505),
+                    photoLocalPath: "/tmp/tree.jpg",
                     attribution: .anonymous(deviceID: UUID())
                 )
             )
+        }
+        #expect(transport.calls.isEmpty, "addTree reached the wire: \(transport.calls.map(\.path))")
+    }
+
+    /// A pin move is queued, never called: `correctLocation` has no route on the service.
+    @Test("correctLocation has no route here")
+    func correctLocationHasNoRoute() async throws {
+        let transport = ScriptedTransport()
+        await #expect(throws: RemoteSurface.noRouteOnThisService) {
+            _ = try await Self.api(transport).correctLocation(
+                treeID: UUID(),
+                to: Coordinate(latitude: 37.7601, longitude: -122.505),
+                placement: .gps,
+                locationAccuracyM: nil
+            )
+        }
+        #expect(transport.calls.isEmpty)
+    }
+
+    /// A tree withdrawal is queued, never called: `withdrawTree` has no route on the service.
+    @Test("withdrawTree has no route here")
+    func withdrawTreeHasNoRoute() async throws {
+        let transport = ScriptedTransport()
+        await #expect(throws: RemoteSurface.noRouteOnThisService) {
+            try await Self.api(transport).withdrawTree(treeID: UUID())
         }
         #expect(transport.calls.isEmpty)
     }
 
     // MARK: The account
 
-    @Test("claimDevice sends both identities")
-    func claimDeviceSendsBothIdentities() async throws {
+    /// **The body is the device and nothing else** (ROADMAP chip 146). The service's `claimRequest`
+    /// refuses an unknown field, so a `user_id` here failed every claim; and a `license_version`
+    /// here would write the account's consent (a `null` withdraws it). The account travels as the
+    /// bearer.
+    @Test("claimDevice sends only the device, the one key the service's sweep reads")
+    func claimDeviceSendsOnlyTheDevice() async throws {
         let deviceUUID = UUID()
         let userID = UUID()
         let transport = ScriptedTransport()
@@ -985,8 +1012,8 @@ struct RemoteAPITests {
 
         let body = try #require(transport.call("POST /devices/claim")?.body)
         let sent = try #require(try JSONSerialization.jsonObject(with: body) as? [String: Any])
+        #expect(sent.keys.sorted() == ["device_uuid"], "the claim body carried \(sent.keys.sorted())")
         #expect(sent["device_uuid"] as? String == deviceUUID.uuidString)
-        #expect(sent["user_id"] as? String == userID.uuidString)
     }
 
     /// **`DELETE /me` refuses rather than claiming the queue is empty.**
@@ -1004,6 +1031,25 @@ struct RemoteAPITests {
             _ = try await Self.api(transport).deleteAccount(.leaveRecords)
         }
         #expect(transport.calls.isEmpty, "a deletion was sent that could not say what was queued")
+    }
+
+    /// **The local half of a deletion has no route here.** `RoutedAPI.deleteAccount` calls
+    /// `finishAccountDeletion` on its local half after the service accepted the deletion. The
+    /// protocol's default for it calls `deleteAccount`, which on this type sends `DELETE /me`, so
+    /// this type declares a refusal.
+    ///
+    /// Red-proof: make `RemoteAPI.finishAccountDeletion` call `deleteAccount(choice)` — red on both
+    /// expectations: nothing is thrown, and one request was sent.
+    @Test("finishAccountDeletion refuses and sends nothing")
+    func finishAccountDeletionRefusesAndSendsNothing() async throws {
+        let transport = ScriptedTransport()
+        transport.answer("DELETE /me", with: #"{"deleted":true,"choice":"leaveRecords","contributions":0,"photos":0,"tombstones":0}"#)
+
+        await #expect(throws: RemoteSurface.noRouteOnThisService) {
+            _ = try await Self.api(transport, pendingOutboxKeys: { [] })
+                .finishAccountDeletion(.leaveRecords, actingOn: nil)
+        }
+        #expect(transport.calls.isEmpty, "the local half of a deletion sent \(transport.calls.count) request(s)")
     }
 
     /// The choice travels, the queued keys travel, and the counters land on the door that was used.

@@ -1,0 +1,253 @@
+import Foundation
+
+/// Writes over `main.community_tree_cache` and `main.community_tree_cache_tiles` — other people's
+/// published community trees, as `GET /community-trees` serves them (`AppSchema` v23).
+///
+/// Round C1 added the store; `CommunityTileRefresher` (round C2, the sync down) is its caller. The
+/// rules it implements are the service's contract, in `server/testdata/README.md`, and each is a
+/// statement here rather than a convention the caller has to remember:
+///
+/// - **A page is one transaction.** The trees it served, the removals it reported and the cursor it
+///   returned land together or not at all, so a cursor never claims a page whose trees are not
+///   here. The caller wraps `apply` in the queue's write.
+/// - **The cache keys on the tree id and nothing else.** A tree served by a tile can lie outside it
+///   (a pin moved out after going live), so nothing here checks a position against a tile.
+/// - **A removal drops the id from the whole cache**, whichever tile served it; erase-door
+///   tombstones carry no position, so every tile reports every one. An id the cache never held is
+///   ignored, never an error.
+/// - **A refused cursor drops the cursor and the trees fetched through it together**
+///   (`dropTile`), so the next fetch is a snapshot and a removal missed while the cursor was bad
+///   cannot leave a pin standing.
+/// - **The phone's own row wins.** An id `community_trees` holds is not stored: the schema's trigger
+///   ignores it, which is why `apply` reports how many trees it actually stored.
+/// - **`updatedAt` is stored and never used to decide anything.** Community-tree dates are served at
+///   day precision; the cursor, not a cached tree's `updatedAt`, says what changed (the S2 ruling).
+public struct CommunityTreeCacheStore {
+    public init() {}
+
+    /// What one page did, in rows, so a caller or a test can check it rather than assume it.
+    public struct PageOutcome: Sendable, Equatable {
+        /// Trees written or refreshed. Fewer than the page held when some were this phone's own.
+        public var stored: Int = 0
+        /// Cached trees the page's removal list dropped.
+        public var removed: Int = 0
+    }
+
+    // MARK: - Writing
+
+    /// Applies one page of one tile.
+    ///
+    /// A tree that is not a community tree is skipped rather than stored: the route serves only
+    /// community trees, and a city row in this table would draw a dashed pin over the city's own.
+    @discardableResult
+    public func apply(
+        tile: String,
+        trees: [Tree],
+        withdrawnTreeIDs: [UUID],
+        nextCursor: String,
+        at moment: Date,
+        connection: SQLiteConnection
+    ) throws -> PageOutcome {
+        var outcome = PageOutcome()
+        let upsert = try connection.cachedStatement(Self.upsertSQL)
+        for tree in trees where tree.source == .community {
+            _ = try upsert.bind([
+                ":id": tree.id,
+                ":lat": tree.coordinate.latitude,
+                ":lon": tree.coordinate.longitude,
+                ":placement": tree.placement.rawValue,
+                ":status": tree.status.rawValue,
+                ":species": tree.speciesCurrentID,
+                ":landContext": tree.statedLandContext?.rawValue,
+                ":verification": tree.verificationState.rawValue,
+                ":created": tree.createdAt,
+                ":updated": tree.updatedAt,
+                ":tile": tile,
+                ":fetched": moment
+            ])
+            try upsert.run()
+            outcome.stored += connection.changes
+            _ = try upsert.reset()
+        }
+
+        outcome.removed = try remove(ids: withdrawnTreeIDs, connection: connection)
+
+        let cursor = try connection.cachedStatement("""
+            INSERT INTO main.community_tree_cache_tiles (tile, next_cursor, fetched_at)
+            VALUES (:tile, :cursor, :fetched)
+            ON CONFLICT(tile) DO UPDATE SET next_cursor = excluded.next_cursor,
+                                            fetched_at = excluded.fetched_at
+            """)
+        _ = try cursor.bind([":tile": tile, ":cursor": nextCursor, ":fetched": moment])
+        try cursor.run()
+        _ = try cursor.reset()
+        return outcome
+    }
+
+    static let upsertSQL = """
+        INSERT INTO main.community_tree_cache
+            (id, lat, lon, placement, status, species_current, land_context, verification_state,
+             created_at, updated_at, tile, fetched_at)
+        VALUES (:id, :lat, :lon, :placement, :status, :species, :landContext, :verification,
+                :created, :updated, :tile, :fetched)
+        ON CONFLICT(id) DO UPDATE SET
+            lat = excluded.lat, lon = excluded.lon, placement = excluded.placement,
+            status = excluded.status, species_current = excluded.species_current,
+            land_context = excluded.land_context, verification_state = excluded.verification_state,
+            created_at = excluded.created_at, updated_at = excluded.updated_at,
+            tile = excluded.tile, fetched_at = excluded.fetched_at
+        """
+
+    /// When a page last served one cached tree (`fetched_at`), or nil when the cache does not hold it.
+    public func fetchedAt(id: UUID, connection: SQLiteConnection) throws -> Date? {
+        let statement = try connection.cachedStatement(
+            "SELECT fetched_at FROM main.community_tree_cache WHERE id = :id COLLATE NOCASE"
+        )
+        _ = try statement.bind([":id": id.uuidString])
+        defer { _ = try? statement.reset() }
+        return try statement.fetchOne { try $0.date("fetched_at") }
+    }
+
+    /// Drops cached trees by id, from the whole cache. Returns how many were there.
+    @discardableResult
+    public func remove(ids: [UUID], connection: SQLiteConnection) throws -> Int {
+        guard !ids.isEmpty else { return 0 }
+        let statement = try connection.cachedStatement("""
+            DELETE FROM main.community_tree_cache
+             WHERE id IN (SELECT value FROM json_each(:ids))
+            """)
+        _ = try statement.bind(
+            "[\(ids.map { "\"\($0.uuidString)\"" }.joined(separator: ","))]", forName: ":ids"
+        )
+        try statement.run()
+        let removed = connection.changes
+        _ = try statement.reset()
+        return removed
+    }
+
+    /// Forgets a tile: its cursor, its complete mark and every tree it last served, together.
+    @discardableResult
+    public func dropTile(_ tile: String, connection: SQLiteConnection) throws -> Int {
+        let trees = try connection.cachedStatement(
+            "DELETE FROM main.community_tree_cache WHERE tile = :tile"
+        )
+        _ = try trees.bind([":tile": tile])
+        try trees.run()
+        let dropped = connection.changes
+        _ = try trees.reset()
+
+        let cursor = try connection.cachedStatement(
+            "DELETE FROM main.community_tree_cache_tiles WHERE tile = :tile"
+        )
+        _ = try cursor.bind([":tile": tile])
+        try cursor.run()
+        _ = try cursor.reset()
+
+        // The trees the mark vouched for are gone, so the mark goes with them. The snapshot that
+        // follows writes it again only when it reaches the tile's last page.
+        let mark = try connection.cachedStatement("DELETE FROM main.app_state WHERE key = :key")
+        _ = try mark.bind(Self.completeKey(tile: tile), forName: ":key")
+        try mark.run()
+        _ = try mark.reset()
+        return dropped
+    }
+
+    // MARK: - Fetched to the end
+
+    /// The `app_state` key prefix of the complete mark: one row per tile that a pass followed to
+    /// its last page at least once (ROADMAP 156). The rest of the key is the tile's path.
+    ///
+    /// **Why `app_state` and not a column.** A column on `community_tree_cache_tiles` needs a
+    /// migration. A row here needs none, and the refresher writes it in the same transaction as the
+    /// page that ends the pass, so the mark and the page land together or not at all.
+    public static let completeKeyPrefix = "community_tile_complete:"
+
+    /// The full `completeKeyPrefix` key for one tile.
+    public static func completeKey(tile: String) -> String { completeKeyPrefix + tile }
+
+    /// Records that a pass reached `tile`'s last page (`has_more` false). Call it in the same
+    /// transaction as the `apply` of that page.
+    ///
+    /// **Nothing but `dropTile` removes the mark.** A later delta that stops part way (a failure, or
+    /// the page limit) leaves it: the phone holds every tree the tile had as of the cursor that
+    /// completed it, and each delta page applied since then only brings that copy closer to now.
+    /// The value is the moment the last page was applied, for a person reading the table; nothing
+    /// reads it.
+    public func markComplete(tile: String, at moment: Date, connection: SQLiteConnection) throws {
+        let statement = try connection.cachedStatement("""
+            INSERT INTO main.app_state (key, value) VALUES (:key, :value)
+            ON CONFLICT(key) DO UPDATE SET value = excluded.value
+            """)
+        _ = try statement.bind([
+            ":key": Self.completeKey(tile: tile),
+            ":value": ISO8601DateFormatter().string(from: moment)
+        ])
+        try statement.run()
+        _ = try statement.reset()
+    }
+
+    // MARK: - Reading
+
+    /// The cursor to send back for a tile, unchanged, or nil for a tile never fetched (a snapshot).
+    public func cursor(tile: String, connection: SQLiteConnection) throws -> String? {
+        let statement = try connection.cachedStatement(
+            "SELECT next_cursor FROM main.community_tree_cache_tiles WHERE tile = :tile"
+        )
+        _ = try statement.bind([":tile": tile])
+        return try statement.fetchOne { try $0.string("next_cursor") }
+    }
+
+    /// Whether this phone has asked the service for the community trees over `bounds` (round C3,
+    /// the owner's answer of 2026-11-15 on the map card): true when `bounds` touches at most
+    /// `maxTiles` zoom-14 tiles and a pass has followed every one of them to its last page at least
+    /// once. That is, each has a row in `community_tree_cache_tiles` **and** a complete mark
+    /// (`completeKey(tile:)`) in `app_state`.
+    ///
+    /// **Why a row alone is not enough (ROADMAP 156).** `apply` writes the row with each page, and
+    /// the service serves at most 100 trees a page. So in a tile with more than 100 added trees, a
+    /// request that failed after the first page, or a pass that stopped at
+    /// `Policy.maxPagesPerTile` pages, left a row for a tile only partly fetched. The refresher
+    /// writes the mark only with a page whose `has_more` is false, in that page's transaction.
+    ///
+    /// **What the writers leave, read from the code.** A tile the service answered with one empty
+    /// page has both. A failed request writes nothing (`CommunityTileRefresher` stops the pass
+    /// before `apply`). A refused cursor deletes the row and the mark together (`dropTile`) until a
+    /// snapshot reaches the last page again. A shut remote gate never calls the refresher, so it
+    /// leaves neither. A mark from an earlier pass counts however old it is, and a later delta that
+    /// stops part way does not remove it (`markComplete`).
+    ///
+    /// The same rule as the refresher's: more than `maxTiles` tiles is a map the refresher never
+    /// asks about, so the answer there is false. A box across the antimeridian covers no tile
+    /// (`CommunityTile.covering`), and the answer is false too.
+    public func hasAsked(
+        covering bounds: BoundingBox,
+        maxTiles: Int = CommunityTileRefresher.Policy().maxTiles,
+        connection: SQLiteConnection
+    ) throws -> Bool {
+        guard let tiles = CommunityTile.covering(bounds, limit: maxTiles), !tiles.isEmpty else {
+            return false
+        }
+        let paths = tiles.map(\.path)
+        let statement = try connection.cachedStatement("""
+            SELECT COUNT(*) AS fetched FROM main.community_tree_cache_tiles t
+             WHERE t.tile IN (SELECT value FROM json_each(:tiles))
+               AND EXISTS (SELECT 1 FROM main.app_state a WHERE a.key = :prefix || t.tile)
+            """)
+        _ = try statement.bind([
+            ":tiles": "[\(paths.map { "\"\($0)\"" }.joined(separator: ","))]",
+            ":prefix": Self.completeKeyPrefix
+        ])
+        let fetched = try statement.fetchOne { try $0.int("fetched") } ?? 0
+        return fetched == paths.count
+    }
+
+    /// `hasAsked(covering:maxTiles:connection:)` as a read a feature can hold: the map card, and
+    /// any other screen that says "neither has a tree here" over an area.
+    public static func askedReader(queue: DatabaseQueue) -> @Sendable (BoundingBox) async -> Bool {
+        return { bounds in
+            (try? await queue.read { connection in
+                try CommunityTreeCacheStore().hasAsked(covering: bounds, connection: connection)
+            }) ?? false
+        }
+    }
+}

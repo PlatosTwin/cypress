@@ -1,29 +1,63 @@
 import Foundation
 
-/// Reads and writes over `main.community_trees` — trees the user added (`POST /trees`).
+/// Reads and writes over `main.community_trees` — trees **this phone** added (`addTree`).
 ///
 /// Deliberately a separate type from `TreeQueries` rather than a `UNION` inside it. The seed
-/// queries are tuned against 195,309 rows and a covering index; this table holds tens. Unioning
-/// them would force the whole clustered viewport through a materialized subquery and lose the
-/// covering index for the 99.99 % of rows that come from the city. Merging two small result sets in
-/// Swift costs nothing and keeps both plans optimal.
+/// queries are tuned against 195,309 rows and a covering index; this table holds one row per tree
+/// this installation added. Unioning them would force the whole clustered viewport through a
+/// materialized subquery and lose the covering index for the rows that come from the city. Merging
+/// two small result sets in Swift costs nothing and keeps both plans optimal.
+///
+/// **Since `AppSchema` v23 this is one of two community tables, and the readers that answer "what
+/// community trees are there" do not read it alone.** Other people's published trees arrive in
+/// `community_tree_cache`, and `CommunityLayer` is the merge helper over the two. The reads here
+/// are the *authored* half: they answer "is this a tree this phone added", which is the question
+/// every write in `LocalAPI` that acts on the record itself — a species claim, a correction, a
+/// report, a withdrawal, a moved pin — has to ask, because a cached tree is somebody else's and
+/// none of those are this phone's to make on it.
+///
+/// **The row records its adder since v23**, `photos`' at-most-one-owner pair, and the pin is a chain
+/// (`tree_locations`) whose head `lat`/`lon`/`placement` cache.
 public struct CommunityTreeStore {
     public init() {}
+
+    private let locations = TreeLocationStore()
 
     // MARK: - Writing
 
     /// Idempotent on `clientUUID`, like every other contribution.
+    ///
+    /// **It writes the chain's root in the same call**, so no writer can produce a tree whose pin
+    /// has no chain behind it — the state `correctLocation` could not append to, and exactly the
+    /// state v14 had to backfill for species. The root's id is the tree's id and its key is the
+    /// add's (`AppSchema` v23). Written only when the tree was: a replayed add changes nothing.
+    ///
+    /// - Parameter adder: who added it. `.nobody` is the default because the callers that predate
+    ///   v23 — test fixtures, and `debugAddCommunityTree` through `addTree` passes its own — did not
+    ///   say, and nobody is the honest value for "not said" (R45 arm 3). `LocalAPI.addTree` passes
+    ///   the attribution of the act.
+    /// - Parameter setOnDevice: the installation that added it, written on the root as its
+    ///   provenance (`AppSchema` v24). Nil by default for `adder`'s reason. `LocalAPI.addTree`
+    ///   passes this phone's device id.
     @discardableResult
-    public func insert(_ tree: Tree, clientUUID: UUID, connection: SQLiteConnection) throws -> ContributionStore.WriteOutcome {
+    public func insert(
+        _ tree: Tree,
+        clientUUID: UUID,
+        adder: ContributionOwner = .nobody,
+        setOnDevice: UUID? = nil,
+        connection: SQLiteConnection
+    ) throws -> ContributionStore.WriteOutcome {
         let statement = try connection.cachedStatement("""
             INSERT INTO community_trees
                 (id, client_uuid, external_ref, source, lat, lon, address, site_type, status,
                  species_current, planted_year, dbh_city_cm_min, dbh_city_cm_max, site_lineage,
-                 verification_state, placement, land_context, created_at, updated_at, deleted_at)
+                 verification_state, placement, land_context, created_at, updated_at, deleted_at,
+                 user_id, device_id)
             VALUES
                 (:id, :client, :ref, 'community', :lat, :lon, :address, :site, :status,
                  :species, :planted, :dbhMin, :dbhMax, :lineage,
-                 :verification, :placement, :landContext, :created, :updated, :deleted)
+                 :verification, :placement, :landContext, :created, :updated, :deleted,
+                 :user, :device)
             ON CONFLICT(client_uuid) DO NOTHING
             """)
         _ = try statement.bind([
@@ -52,12 +86,65 @@ public struct CommunityTreeStore {
             ":landContext": tree.statedLandContext?.rawValue,
             ":created": tree.createdAt,
             ":updated": tree.updatedAt,
-            ":deleted": tree.deletedAt
+            ":deleted": tree.deletedAt,
+            ":user": adder.userID,
+            ":device": adder.deviceID
         ])
         try statement.run()
         let inserted = connection.changes > 0
         _ = try statement.reset()
-        return inserted ? .inserted : .duplicate
+        guard inserted else { return .duplicate }
+
+        try locations.insert(
+            TreeLocation(
+                id: tree.id,
+                treeID: tree.id,
+                clientUUID: clientUUID,
+                coordinate: tree.coordinate,
+                placement: tree.placement,
+                owner: adder,
+                setOnDevice: setOnDevice,
+                occurredAt: tree.createdAt,
+                createdAt: tree.createdAt,
+                updatedAt: tree.createdAt
+            ),
+            connection: connection
+        )
+        return .inserted
+    }
+
+    /// Moves the read cache to the chain's new head — the second half of a correction, in the
+    /// transaction that appended the head (`LocalAPI.correctLocation`).
+    ///
+    /// **Deliberately not a verb that decides anything**, `setSpecies`' shape: the chain is the
+    /// record and these three columns follow it.
+    ///
+    /// - Returns: whether there was a live row to move. `false` means no such row, or it has been
+    ///   withdrawn.
+    public func move(
+        treeID: UUID,
+        to coordinate: Coordinate,
+        placement: TreePlacement,
+        at moment: Date,
+        connection: SQLiteConnection
+    ) throws -> Bool {
+        let statement = try connection.cachedStatement("""
+            UPDATE community_trees
+               SET lat = :lat, lon = :lon, placement = :placement, updated_at = :updated
+             WHERE id = :id COLLATE NOCASE
+               AND deleted_at IS NULL
+            """)
+        _ = try statement.bind([
+            ":lat": coordinate.latitude,
+            ":lon": coordinate.longitude,
+            ":placement": placement.rawValue,
+            ":updated": moment,
+            ":id": treeID
+        ])
+        try statement.run()
+        let changed = connection.changes > 0
+        _ = try statement.reset()
+        return changed
     }
 
     /// Names the species on a row that has none. See `SpeciesClaim` for why that is the only species
@@ -131,6 +218,10 @@ public struct CommunityTreeStore {
     /// Withdraws the record: the row is soft-deleted and stops being a tree anywhere in the app
     /// (task **#125**, `RULINGS R50`).
     ///
+    /// **Two callers.** A lead's `withdrawRecord`, which queues nothing, and the adder's
+    /// `withdrawTree`, which queues a `tree_withdrawal` in the same transaction. The second can be
+    /// undone by the service's refusal (`restoreAfterRefusedWithdrawal`); the first cannot.
+    ///
     /// **A soft delete, not a `DELETE`, and the difference is the whole claim being made.** Every
     /// read in this file already filters `deleted_at IS NULL` — `inBounds`, `near`, `claimSpecies`,
     /// `setSpecies` — so one column removes the pin, the profile and the correction routes in one
@@ -156,7 +247,265 @@ public struct CommunityTreeStore {
         return changed
     }
 
+    /// Puts back a tree whose `tree_withdrawal` will not go through (`OutboxQueue.settle`).
+    ///
+    /// **Only the tombstone that withdrawal wrote.** `withdrawTree` stamps `deleted_at` with the
+    /// same instant it gives the queue row's `created_at`, in one transaction, so the two columns
+    /// hold the same text. A tree withdrawn some other way (a lead's `withdrawRecord`) carries
+    /// another instant and stays withdrawn.
+    ///
+    /// - Returns: whether a row came back.
+    public func restoreAfterRefusedWithdrawal(
+        treeID: UUID,
+        outboxID: UUID,
+        at moment: Date,
+        connection: SQLiteConnection
+    ) throws -> Bool {
+        let statement = try connection.cachedStatement("""
+            UPDATE community_trees
+               SET deleted_at = NULL, updated_at = :now
+             WHERE id = :id COLLATE NOCASE
+               AND deleted_at = (SELECT created_at FROM outbox WHERE id = :outbox)
+            """)
+        _ = try statement.bind([":now": moment, ":id": treeID, ":outbox": outboxID])
+        try statement.run()
+        let changed = connection.changes > 0
+        _ = try statement.reset()
+        return changed
+    }
+
+    /// Withdraws the tree again when the service accepts a `tree_withdrawal` the person retried
+    /// after a refusal put the tree back. Stamps the queue row's `created_at`, for
+    /// `restoreAfterRefusedWithdrawal`'s reason. A tree that is already withdrawn is left as it is.
+    ///
+    /// - Returns: whether a live row was withdrawn.
+    public func withdrawAgain(
+        treeID: UUID,
+        outboxID: UUID,
+        at moment: Date,
+        connection: SQLiteConnection
+    ) throws -> Bool {
+        let statement = try connection.cachedStatement("""
+            UPDATE community_trees
+               SET deleted_at = (SELECT created_at FROM outbox WHERE id = :outbox), updated_at = :now
+             WHERE id = :id COLLATE NOCASE
+               AND deleted_at IS NULL
+               AND EXISTS (SELECT 1 FROM outbox WHERE id = :outbox)
+            """)
+        _ = try statement.bind([":now": moment, ":id": treeID, ":outbox": outboxID])
+        try statement.run()
+        let changed = connection.changes > 0
+        _ = try statement.reset()
+        return changed
+    }
+
     // MARK: - Reading
+
+    /// Who added this tree, or nil when this phone holds no such row.
+    ///
+    /// `.nobody` is an answer, not an absence: every tree added before `AppSchema` v23, whose adder
+    /// the phone never recorded, and every tree an account deletion anonymized. Nobody may move
+    /// either pin (`LocalAPI.correctLocation`), for R45 arm 3's reason.
+    ///
+    /// Not a field on `Tree`, deliberately. `Tree` is the record every reader and the wire share,
+    /// and the service serves it with no adder at all (history carries no actor, decision 4); an
+    /// owner that rode on it would be one more place for a caller-relative fact to travel where it
+    /// should not.
+    /// Takes the service's species onto a tree this phone added (ROADMAP 144), only while the row
+    /// still holds `observed`, the species this phone read before it asked the service. A species
+    /// this phone wrote in between is newer than the answer, so the row keeps it and this returns
+    /// false. `updated_at` is left alone: the change is not this phone's act.
+    public func adoptSpecies(
+        treeID: UUID,
+        observed: UUID?,
+        served: UUID,
+        connection: SQLiteConnection
+    ) throws -> Bool {
+        let statement = try connection.cachedStatement("""
+            UPDATE community_trees
+               SET species_current = :served
+             WHERE id = :id COLLATE NOCASE
+               AND deleted_at IS NULL
+               AND ((:observed IS NULL AND species_current IS NULL)
+                    OR species_current = :observed COLLATE NOCASE)
+               AND (species_current IS NULL OR species_current <> :served COLLATE NOCASE)
+            """)
+        _ = try statement.bind([
+            ":served": served,
+            ":observed": observed,
+            ":id": treeID
+        ])
+        try statement.run()
+        let changed = connection.changes > 0
+        _ = try statement.reset()
+        return changed
+    }
+
+    public func adder(treeID: UUID, connection: SQLiteConnection) throws -> ContributionOwner? {
+        let statement = try connection.cachedStatement("""
+            SELECT user_id, device_id FROM community_trees WHERE id = :id COLLATE NOCASE
+            """)
+        _ = try statement.bind(treeID.uuidString, forName: ":id")
+        return try statement.fetchOne { row -> ContributionOwner in
+            if let user = try row.uuidIfPresent("user_id") { return .user(user) }
+            if let device = try row.uuidIfPresent("device_id") { return .device(device) }
+            return .nobody
+        }
+    }
+
+    /// The first moment a tree added on this phone was queued for the service: 2026-08-21
+    /// 18:54:57 UTC.
+    ///
+    /// Where it comes from: #s34 (commit `6ae2f4f9`) is the first commit that writes an `add_tree`
+    /// outbox row. The first build tag that contains it is `build-43`, a lightweight tag on the merge
+    /// commit of PR #103 (`ac4d8cbd`), whose committer date is this moment. `build-42` does not
+    /// contain #s34. A lightweight tag carries no date of its own, so the date used is the committer
+    /// date of the merge commit `build-43` points at, not the #s34 commit's own date (2026-08-21
+    /// 15:52:35 UTC): a tree added on build 42 or older was never queued, and between the commit
+    /// and the merge only those builds existed, so the later date is the one that leaves out every
+    /// tree no build queued.
+    public static let firstQueuedAddsAt = Date(timeIntervalSince1970: 1_787_338_497)
+
+    /// The `app_state` key prefix that records that a tree's add, with its add photo, has been queued
+    /// once by this build or a later one (`CommunityTreeBackfill`, `LocalAPI.addTree`). The full key
+    /// is this followed by the tree id's upper-case `uuidString`. No migration: `app_state` is the
+    /// existing key/value table, and `OutboxStore.refusedPhotoKeyPrefix` is the precedent.
+    public static let queuedOnceKeyPrefix = "community_tree_queued_once:"
+
+    /// The full `queuedOnceKeyPrefix` key for one tree.
+    public static func queuedOnceKey(treeID: UUID) -> String {
+        queuedOnceKeyPrefix + treeID.uuidString.uppercased()
+    }
+
+    /// Whether the service may hold this tree, so that an act on it is not answered `not_found`
+    /// (ROADMAP 107).
+    ///
+    /// **When the tree's `add_tree` row still exists, its state decides.** Yes unless it is
+    /// `failed`: a failed add was refused for good (a `conflict`, say) or
+    /// gave up at the 48 h cap, so the service does not hold the tree, and the row is never pruned
+    /// (`pruneCompleted` deletes only `done` rows). A pending or uploading add is still on its way,
+    /// and the move waits behind it (`OutboxStore.dueItems`).
+    ///
+    /// **When no row exists, the one-time send decides next**: yes when `CommunityTreeBackfill` (or
+    /// `addTree`, since this build) queued the tree's add and recorded it in `app_state`. That record
+    /// outlives the add row, which `pruneCompleted` deletes at the first launch more than a day after
+    /// it is done (`DataLayer.boot`). Without it a
+    /// tree added before syncing existed lost the Move pin offer again a day after it was sent.
+    ///
+    /// **Then the date decides**: yes for a tree added on or after `firstQueuedAddsAt`, whose add
+    /// was sent and pruned; no for a tree added before the sync path existed, which was never queued
+    /// and which the service has never received.
+    ///
+    /// This is a cheap local guess. It cannot see a tree added after that date on a build that did
+    /// not queue adds yet, and it cannot fix a pruned add row whose adder the v23 backfill guessed.
+    public static func mayHaveReachedService(
+        createdAt: Date,
+        addRowState: OutboxItem.State?,
+        queuedOnce: Bool = false
+    ) -> Bool {
+        if let addRowState { return addRowState != .failed }
+        if queuedOnce { return true }
+        return createdAt >= firstQueuedAddsAt
+    }
+
+    /// Whether this phone's own tables already say the service would refuse the reader's withdrawal
+    /// of this tree (`TreeWithdrawalOffer.othersHaveAddedToIt`). True for either of these:
+    ///
+    /// - **A visit, check-in, measurement or care event by another account**, not deleted, whose
+    ///   queue row no longer owes a send. These are `MetSpeciesKinds`, the service's list. "Another
+    ///   account" is a `user_id` that is set and is not the reader's: the service never moves one
+    ///   account's rows to another. A row with no `user_id` is this device's, and a sign-in claims
+    ///   those for the account, so it is not counted. Neither is a row an account deletion
+    ///   anonymized, because this phone cannot tell whether it reached the service. Neither is a row
+    ///   of an account this phone made itself in builds 6 to 33
+    ///   (`CommunityTreeBackfill.phoneMadeAccounts`): such an account never reached the service, so
+    ///   its rows did not either, and the backfill moves them to the signed-in account.
+    /// - **A withdrawal of this tree that the service already refused with `conflict`.**
+    ///
+    /// Photographs are not read here: the service's own profile read is the one that can say a
+    /// photograph of somebody else's counts (`RoutedAPI.withdrawalOffer`).
+    public func othersHaveAddedTo(
+        treeID: UUID,
+        readerUserID: UUID?,
+        deviceID: UUID,
+        connection: SQLiteConnection
+    ) throws -> Bool {
+        // The reader is subtracted by the SQL below; `phoneMadeAccounts` needs some id to leave out.
+        let phoneMade = try CommunityTreeBackfill.phoneMadeAccounts(
+            device: deviceID, excluding: readerUserID ?? deviceID, connection: connection
+        )
+        let phoneMadeJSON = "[" + phoneMade.map { "\"\($0.uuidString)\"" }.sorted().joined(separator: ",") + "]"
+        let statement = try connection.cachedStatement("""
+            SELECT EXISTS (
+                SELECT 1 FROM (
+                    SELECT client_uuid, user_id FROM visits
+                     WHERE tree_uuid = :tree COLLATE NOCASE AND deleted_at IS NULL
+                    UNION ALL
+                    SELECT client_uuid, user_id FROM observations
+                     WHERE tree_uuid = :tree COLLATE NOCASE AND deleted_at IS NULL
+                    UNION ALL
+                    SELECT client_uuid, user_id FROM measurements
+                     WHERE tree_uuid = :tree COLLATE NOCASE AND deleted_at IS NULL
+                    UNION ALL
+                    SELECT client_uuid, user_id FROM care_events
+                     WHERE tree_uuid = :tree COLLATE NOCASE AND deleted_at IS NULL
+                ) met
+                 WHERE met.user_id IS NOT NULL
+                   AND (:user IS NULL OR met.user_id <> :user COLLATE NOCASE)
+                   AND upper(met.user_id) NOT IN (SELECT value FROM json_each(:phoneMade))
+                   AND NOT EXISTS (SELECT 1 FROM anonymized_contributions tomb
+                                    WHERE tomb.client_uuid = met.client_uuid)
+                   AND NOT EXISTS (SELECT 1 FROM outbox owed
+                                    WHERE owed.client_uuid = met.client_uuid
+                                      AND owed.remote_sent = 0 AND owed.state <> 'done')
+            ) OR EXISTS (
+                SELECT 1 FROM outbox refused
+                 WHERE refused.kind = 'tree_withdrawal'
+                   AND refused.state = 'failed'
+                   AND refused.last_error_code = 'conflict'
+                   AND upper(json_extract(refused.payload, '$.treeID')) = upper(:tree)
+            ) AS found
+            """)
+        _ = try statement.bind([
+            ":tree": treeID.uuidString, ":user": readerUserID?.uuidString, ":phoneMade": phoneMadeJSON
+        ])
+        let found = try statement.fetchOne { try $0.bool("found") } ?? false
+        _ = try statement.reset()
+        return found
+    }
+
+    /// `mayHaveReachedService` for a tree this phone added, read from its row and the outbox. False
+    /// when this phone holds no such tree.
+    public func mayHaveReachedService(treeID: UUID, connection: SQLiteConnection) throws -> Bool {
+        let created = try connection.cachedStatement("""
+            SELECT created_at FROM community_trees WHERE id = :id COLLATE NOCASE
+            """)
+        _ = try created.bind(treeID.uuidString, forName: ":id")
+        let createdAt = try created.fetchOne { try $0.date("created_at") }
+        _ = try created.reset()
+        guard let createdAt else { return false }
+
+        let queued = try connection.cachedStatement("""
+            SELECT state FROM outbox
+             WHERE kind = 'add_tree'
+               AND upper(json_extract(payload, '$.treeID')) = upper(:id)
+             ORDER BY seq DESC
+             LIMIT 1
+            """)
+        _ = try queued.bind(treeID.uuidString, forName: ":id")
+        let addRowState = try queued.fetchOne { try $0.value("state", OutboxItem.State.self) }
+        _ = try queued.reset()
+
+        let marker = try connection.cachedStatement(
+            "SELECT 1 AS present FROM app_state WHERE key = :key"
+        )
+        _ = try marker.bind(Self.queuedOnceKey(treeID: treeID), forName: ":key")
+        let queuedOnce = try marker.fetchOne { _ in true } ?? false
+        _ = try marker.reset()
+        return Self.mayHaveReachedService(
+            createdAt: createdAt, addRowState: addRowState, queuedOnce: queuedOnce
+        )
+    }
 
     public func tree(id: UUID, connection: SQLiteConnection) throws -> Tree? {
         let statement = try connection.cachedStatement("""
@@ -166,32 +515,9 @@ public struct CommunityTreeStore {
         return try statement.fetchOne(Self.decode)
     }
 
-    /// The same read for a set of ids, keyed by id — one statement instead of one per tree.
-    ///
-    /// `LocalAPI.grove()` resolves every tree in the grove against the seed and then against this
-    /// table; doing it a tree at a time is what made the Trees tab linear in the size of the grove.
-    ///
-    /// **`COLLATE NOCASE` on the left operand, not on the `IN` list.** Written
-    /// `id IN (…) COLLATE NOCASE` the collation binds to the subquery rather than to the
-    /// comparison, and the whole search silently answers zero — `TreeQueries.speciesRowIDs` records
-    /// the day that was discovered. This table is tens of rows, so the scan the collation costs is
-    /// the scan `tree(id:)` already paid, once instead of N times.
-    ///
-    /// Like `tree(id:)`, this deliberately does **not** filter `deleted_at`: the one caller that
-    /// needs to see a withdrawal is the reason that method does not either.
-    public func trees(ids: [UUID], connection: SQLiteConnection) throws -> [UUID: Tree] {
-        guard !ids.isEmpty else { return [:] }
-        let statement = try connection.cachedStatement("""
-            SELECT * FROM community_trees
-             WHERE id COLLATE NOCASE IN (SELECT value FROM json_each(:ids))
-            """)
-        _ = try statement.bind(
-            "[\(ids.map { "\"\($0.uuidString)\"" }.joined(separator: ","))]", forName: ":ids"
-        )
-        var trees: [UUID: Tree] = [:]
-        for tree in try statement.fetchAll(Self.decode) { trees[tree.id] = tree }
-        return trees
-    }
+    // `trees(ids:)` and its `treesSQL` moved to `CommunityLayer` in `AppSchema` v23: the grove
+    // resolves a tree somebody else published as readily as one this phone added, so the set read
+    // is the merged one. The `COLLATE NOCASE`-on-the-left-operand lesson moved with it.
 
     public func exists(id: UUID, connection: SQLiteConnection) throws -> Bool {
         let statement = try connection.cachedStatement("""
@@ -225,15 +551,17 @@ public struct CommunityTreeStore {
         return try statement.fetchAll(Self.decode)
     }
 
-    /// The 10 m proximity dedupe from `POST /trees`, over the community table. The seed half runs
+    /// The trees within a radius, over the community table: the half of `treesNear` that draws the
+    /// Add this tree screen's 10 m "ALREADY ON RECORD" note (once the `POST /trees` proximity
+    /// dedupe, which the owner's ruling of 2026-11-14 turned into that note). The seed half runs
     /// through `TreeQueries.nearest`.
     ///
     /// The box is read **unbounded** and the caller's limit is applied afterwards. `inBounds` has no
     /// `ORDER BY`, so a `LIMIT` inside it drops rows in storage order rather than by distance — the
-    /// row it discards can be the one 3 m away, and a dedupe that misses its own duplicate admits a
-    /// second record of the same tree. The box is a pre-filter; the circle and the limit are the
-    /// answer, and they are applied to exact meters. This table holds tens of rows within any
-    /// dedupe radius, so reading it whole costs nothing.
+    /// row it discards can be the one 3 m away, and a note that misses the nearest tree tells the
+    /// reader nothing is on record where something is. The box is a pre-filter; the circle and the
+    /// limit are the answer, and they are applied to exact meters. This table holds tens of rows
+    /// within such a radius, so reading it whole costs nothing.
     public func near(_ coordinate: Coordinate, radiusM: Double, limit: Int, connection: SQLiteConnection) throws -> [Tree] {
         let bounds = BoundingBox(around: coordinate, radiusM: radiusM)
         return try inBounds(bounds, limit: nil, connection: connection)

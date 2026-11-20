@@ -1315,6 +1315,165 @@ finally:
 
 
 # --------------------------------------------------------------------------
+# 9. --add-pack: one new pack beside an existing catalogue (Washington, D.C.)
+# --------------------------------------------------------------------------
+# The ordinary run writes a manifest from the packs in the seed it reads, so a
+# seed holding San Francisco and D.C. would publish a catalogue with no San Jose
+# and no New York. `--add-pack` must leave every previous entry and the previous
+# `source_seed` exactly as they were, append one entry, and never upload the
+# seed. Each check below fails if one of those promises breaks.
+
+adddir = tempfile.mkdtemp(prefix="publish-add-pack-")
+try:
+    add_db = os.path.join(adddir, "seed.sqlite")
+    build_fixture(add_db)
+    full_out = os.path.join(adddir, "dist-full")
+    full = run_publisher(add_db, full_out, previous="none")
+    check(full.returncode == 0, f"fixture full publish failed: {full.stderr}")
+    with open(os.path.join(full_out, MANIFEST_V2_NAME)) as fh:
+        full_manifest = json.load(fh)
+    by_id = {e["id"]: e for e in full_manifest["cities"]}
+
+    # The previous catalogue: SF and Queens as published, plus a third entry
+    # standing in for a city this seed does not hold (it is SF's object with
+    # another id). Bronx is the pack being added. The source_seed is NOT this
+    # fixture's -- if the run rebuilt it from the seed it reads, it would differ.
+    stand_in = json.loads(json.dumps(by_id["sf"]))
+    stand_in["id"] = "us-ca-sj"
+    stand_in["display_name"] = "San Jose"
+    previous = {
+        "manifest_format": MANIFEST_FORMAT,
+        "generated_at": "2026-08-25T07:04:04+00:00",
+        "generator": "Tools/publish_cities.py",
+        "base_url_hint": "https://cypress-cities.t3.tigrisbucket.io",
+        "source_seed": {"generated_at": "2026-07-20T00:00:00+00:00", "tree_count": 1097382,
+                        "sha256": "f" * 64, "build_id": "ffffffff",
+                        "path": "seed/ffffffff/cypress-seed.sqlite", "bytes": 706535424},
+        "cities": [by_id["sf"], by_id["us-ny-nyc-queens"], stand_in],
+    }
+    previous_path = os.path.join(adddir, "previous-manifest-v2.json")
+    with open(previous_path, "w") as fh:
+        json.dump(previous, fh, indent=2)
+
+    add_out = os.path.join(adddir, "dist-add")
+    added = run_publisher(add_db, add_out, previous=previous_path,
+                          extra=["--add-pack", "us-ny-nyc-bronx"])
+    check(added.returncode == 0,
+          f"--add-pack us-ny-nyc-bronx failed: exit {added.returncode}, {added.stderr!r}")
+    with open(os.path.join(add_out, MANIFEST_V2_NAME)) as fh:
+        written = json.load(fh)
+
+    # -- 9a. Every previous entry is byte-identical, in the same order.
+    # Fails if: the writer rebuilds, re-sorts, re-measures or drops a previous
+    # entry -- any change of one byte in its serialised JSON.
+    dump = lambda value: json.dumps(value, indent=2, sort_keys=False)  # noqa: E731
+    check(len(written["cities"]) == len(previous["cities"]) + 1,
+          f"expected {len(previous['cities']) + 1} entries, got {len(written['cities'])}")
+    for index, old in enumerate(previous["cities"]):
+        new = written["cities"][index] if index < len(written["cities"]) else None
+        check(new is not None and dump(old) == dump(new),
+              f"9a: previous entry #{index} ({old['id']}) changed under --add-pack")
+    check(written["cities"][-1]["id"] == "us-ny-nyc-bronx",
+          f"9a: the appended entry is {written['cities'][-1]['id']!r}")
+
+    # -- 9b. source_seed is the previous one, unchanged. Fails if: the run writes
+    # this seed's own receipt, which CI's fetch_seed.sh would then follow.
+    check(dump(written.get("source_seed")) == dump(previous["source_seed"]),
+          f"9b: source_seed changed: {written.get('source_seed')!r}")
+
+    # -- 9c. The seed is neither copied nor uploaded, and upload.sh names only
+    # the new pack and the manifest. Fails if: write_upload_sh is handed a seed
+    # path, or an old entry's object is re-uploaded.
+    upload_path = os.path.join(add_out, "upload.sh")
+    script = open(upload_path).read() if os.path.exists(upload_path) else ""
+    check(script != "", "9c: --add-pack wrote no upload.sh")
+    copies = [line for line in script.splitlines() if line.startswith("aws s3 cp ")]
+    new_path = written["cities"][-1]["path"]
+    check(len(copies) == 2
+          and copies[0].startswith(f'aws s3 cp "{new_path}"')
+          and copies[1].startswith(f"aws s3 cp {MANIFEST_V2_NAME} "),
+          f"9c: upload.sh must copy exactly the new pack then the manifest, got {copies}")
+    check("seed/" not in script and "cypress-seed" not in script,
+          "9c: upload.sh names a seed object under --add-pack")
+    check(not os.path.exists(os.path.join(add_out, "seed")),
+          "9c: --add-pack copied the seed into --out")
+    check(packs_written(add_out) == [new_path],
+          f"9c: --add-pack wrote packs {packs_written(add_out)}, expected only {new_path}")
+
+    # -- 9d. The new pack's region id is one past every published pack, and the
+    # file is internally consistent. Fails if: the renumber is skipped (the app
+    # would refuse a pack whose dim_region.id another pack already uses), or
+    # only one of the two tables is updated.
+    con = sqlite3.connect(os.path.join(add_out, new_path))
+    try:
+        region_ids = [r[0] for r in con.execute("SELECT id FROM dim_region")]
+        tree_regions = {r[0] for r in con.execute("SELECT DISTINCT region_id FROM trees")}
+        fk = con.execute("PRAGMA foreign_key_check").fetchall()
+        (bronx_trees,) = con.execute("SELECT COUNT(*) FROM trees").fetchone()
+    finally:
+        con.close()
+    check(region_ids == [4] and tree_regions == {4},
+          f"9d: expected dim_region.id 4 (3 previous packs + 1); got {region_ids}, "
+          f"trees.region_id {sorted(tree_regions)}")
+    check(fk == [], f"9d: foreign_key_check after renumber: {fk[:3]}")
+    check(bronx_trees == 1 and written["cities"][-1]["tree_count"] == 1,
+          f"9d: the Bronx pack holds {bronx_trees} trees")
+    check(publish_cities.next_region_id(previous) == 4, "9d: next_region_id(previous) != 4")
+
+    # -- 9e. The in-tool guard catches a changed entry or source_seed by itself.
+    # Fails if: verify_add_pack_manifest stops comparing either of them.
+    def verify_exit(mutated):
+        code = 0
+        with contextlib.redirect_stderr(io.StringIO()) as err:
+            try:
+                publish_cities.verify_add_pack_manifest(previous, mutated, "us-ny-nyc-bronx")
+            except SystemExit as exit_:
+                code = exit_.code
+        return code, err.getvalue()
+
+    clean_code, _ = verify_exit(written)
+    check(clean_code == 0, "9e: verify_add_pack_manifest refused the run's own manifest")
+    one_byte = json.loads(json.dumps(written))
+    one_byte["cities"][1]["bytes"] += 1
+    code, err = verify_exit(one_byte)
+    check(code == 1 and "changed" in err,
+          f"9e: one changed byte in a previous entry was not caught: {code} {err!r}")
+    reseeded = json.loads(json.dumps(written))
+    reseeded["source_seed"]["build_id"] = "00000000"
+    code, err = verify_exit(reseeded)
+    check(code == 1 and "source_seed" in err,
+          f"9e: a changed source_seed was not caught: {code} {err!r}")
+
+    # -- 9f. The refusals. Each must exit 3 and write no pack.
+    def refused(label, previous_doc, extra, expect):
+        path = os.path.join(adddir, f"prev-{label}.json")
+        if previous_doc is not None:
+            with open(path, "w") as fh:
+                json.dump(previous_doc, fh, indent=2)
+        out = os.path.join(adddir, f"dist-{label}")
+        result = run_publisher(add_db, out,
+                               previous=path if previous_doc is not None else "none",
+                               extra=extra)
+        check(result.returncode == 3 and expect in result.stderr,
+              f"9f {label}: expected exit 3 naming {expect!r}; got {result.returncode} "
+              f"{result.stderr!r}")
+        check(packs_written(out) == [], f"9f {label}: wrote {packs_written(out)}")
+
+    refused("already-published", previous, ["--add-pack", "us-ny-nyc-queens"],
+            "already in the previous manifest")
+    refused("no-previous", None, ["--add-pack", "us-ny-nyc-bronx"], "--previous-manifest none")
+    refused("format-1", {**previous, "manifest_format": 1},
+            ["--add-pack", "us-ny-nyc-bronx"], "not 2")
+    refused("empty", {**previous, "cities": []}, ["--add-pack", "us-ny-nyc-bronx"],
+            "no entries")
+    refused("not-in-seed", previous, ["--add-pack", "us-dc-dc"], "no such region")
+    refused("with-republish", previous, ["--add-pack", "us-ny-nyc-bronx", "--republish"],
+            "cannot both apply")
+finally:
+    shutil.rmtree(adddir, ignore_errors=True)
+
+
+# --------------------------------------------------------------------------
 
 if FAILURES:
     print(f"{len(FAILURES)} failing check(s):")

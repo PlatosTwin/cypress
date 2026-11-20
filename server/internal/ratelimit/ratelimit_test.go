@@ -1,6 +1,7 @@
 package ratelimit
 
 import (
+	"strconv"
 	"sync"
 	"testing"
 	"time"
@@ -126,4 +127,66 @@ func TestConcurrentCallersDoNotRace(t *testing.T) {
 		}()
 	}
 	wg.Wait()
+}
+
+// TestTheBucketMapIsBoundedBetweenSweeps is N4 of the public-read round's adversarial review.
+//
+// `sweep` returns immediately unless thirty minutes have passed, so before `maxBuckets` the map
+// grew without limit *inside* a window — one entry per distinct key, on a 256 MB machine, on the
+// only route with no credential. The clock never advances here, so `sweep` cannot fire: whatever
+// bounds the map is the pressure path and nothing else.
+func TestTheBucketMapIsBoundedBetweenSweeps(t *testing.T) {
+	frozen := time.Now()
+	limiter := New().WithClock(func() time.Time { return frozen })
+
+	for i := 0; i < maxBuckets*2; i++ {
+		limiter.Allow(strconv.Itoa(i))
+	}
+
+	if len(limiter.buckets) > maxBuckets {
+		t.Fatalf("%d buckets after %d distinct keys with the clock frozen, want at most %d — the "+
+			"map grows without limit between sweeps", len(limiter.buckets), maxBuckets*2, maxBuckets)
+	}
+	// The control: it must not be bounded by having recorded nothing at all.
+	if len(limiter.buckets) == 0 {
+		t.Fatal("no buckets were recorded, so the bound above proves nothing about the bound")
+	}
+}
+
+// TestPressureEvictsTheIdleAndKeepsTheRecent. A bound that emptied the map indiscriminately would
+// hand every caller a fresh budget on demand — the flood succeeding by causing the defense.
+//
+// **The first version of this test was wrong and its red said so.** It tried to prove the property
+// through a caller that had spent its burst, which cannot work: the bucket refills, so nobody stays
+// exhausted while the clock moves, and the clock has to move for anything to become idle. It also
+// created the flood at the current instant, where no key is evictable, so the fallback `clear` fired
+// and took the caller with it — the test failed on its own construction rather than on the code. It
+// asserts the discrimination directly instead.
+func TestPressureEvictsTheIdleAndKeepsTheRecent(t *testing.T) {
+	now := time.Now()
+	limiter := New().WithClock(func() time.Time { return now })
+
+	for i := 0; i < maxBuckets-1; i++ {
+		limiter.Allow("idle-" + strconv.Itoa(i))
+	}
+	now = now.Add(2 * pressureEviction)
+
+	limiter.Allow("the-recent-caller")
+	if len(limiter.buckets) != maxBuckets {
+		t.Fatalf("the control: %d buckets before the pressure insert, want exactly %d — this test "+
+			"has to be *at* the cap for the next insert to trigger anything",
+			len(limiter.buckets), maxBuckets)
+	}
+
+	limiter.Allow("the-key-that-triggers-the-bound")
+
+	if _, kept := limiter.buckets["the-recent-caller"]; !kept {
+		t.Errorf("the recent caller's bucket was evicted by pressure from %d idle keys; a caller "+
+			"active within the last %v must keep its budget, or a flood buys everybody a reset",
+			maxBuckets-1, pressureEviction)
+	}
+	if len(limiter.buckets) > 2 {
+		t.Errorf("%d buckets remain, want the two recent ones — the idle keys were not evicted and "+
+			"the bound is holding by emptying the map rather than by choosing", len(limiter.buckets))
+	}
 }

@@ -247,6 +247,8 @@ struct SpeciesClaimTests {
 
     // MARK: - The claim, on the tree profile
 
+    /// A community profile here is the reader's own tree, in this phone's own table: the only
+    /// community tree `claimSpecies` accepts and the owner's rule leaves the claim on (round C3).
     private static func profile(source: TreeSource, species: Species?) -> TreeProfile {
         TreeProfile(
             tree: Tree(
@@ -255,7 +257,9 @@ struct SpeciesClaimTests {
                 speciesCurrentID: species?.id,
                 verificationState: source == .cityImport ? .cityRecord : .unverified
             ),
-            species: species
+            species: species,
+            addedByYou: source == .community,
+            isAddedHere: source == .community
         )
     }
 
@@ -428,12 +432,25 @@ struct SpeciesClaimTests {
         #expect(!Self.presentation(source: .cityImport, species: nil).offersSpeciesClaim)
         #expect(!Self.presentation(source: .community, species: try Self.londonPlane()).offersSpeciesClaim)
 
+        // ROADMAP 144: on a tree somebody else added, cached or on this phone, only a reader who
+        // shares (the owner's "Only people who share"); never on a tree the reader added on
+        // another phone, which this phone holds only in the cache.
+        let tree = Tree(source: .community, coordinate: Self.fix)
+        #expect(!TreeProfilePresentation(profile: TreeProfile(tree: tree, addedByYou: true)).offersSpeciesClaim)
+        #expect(!TreeProfilePresentation(profile: TreeProfile(tree: tree, isAddedHere: true)).offersSpeciesClaim)
+        #expect(!TreeProfilePresentation(profile: TreeProfile(tree: tree, readerSharing: .notSharing)).offersSpeciesClaim)
+        #expect(TreeProfilePresentation(profile: TreeProfile(tree: tree, readerSharing: .sharing)).offersSpeciesClaim)
+        #expect(TreeProfilePresentation(profile: TreeProfile(tree: tree, isAddedHere: true, readerSharing: .sharing)).offersSpeciesClaim)
+        #expect(!TreeProfilePresentation(profile: TreeProfile(tree: tree, addedByYou: true, readerSharing: .sharing)).offersSpeciesClaim)
+
         // A memorial and a vacant site refuse every other write on this screen (E95); naming the
         // species of a tree that is not there is the same kind of claim.
         for status in [TreeStatus.removed, .vacantSite] {
             let gone = TreeProfilePresentation(
                 profile: TreeProfile(
-                    tree: Tree(source: .community, coordinate: Self.fix, status: status)
+                    tree: Tree(source: .community, coordinate: Self.fix, status: status),
+                    addedByYou: true,
+                    isAddedHere: true
                 )
             )
             #expect(!gone.offersSpeciesClaim, "a \(status.rawValue) record offered a species claim")
@@ -489,7 +506,7 @@ struct SpeciesClaimTests {
             near: VisitPinAdjust.offset(Self.offshore, northM: 300, eastM: 0),
             speciesQuery: nil
         )
-        print("SHOT DIR \(ScreenSweepShots.outputDirectory.path)")
+        print("SHOT DIR \(ScreenSweepShots.shotDirectory?.path ?? "not set: nothing is written")")
 
         #expect(await ScreenSweepShots.sweep("e141-species-claimed") {
             NavigationStack { TreeProfileView(treeID: claimed, api: api) }.environment(AppRouter())
@@ -521,8 +538,9 @@ struct SpeciesClaimTests {
         }
         // It does name the author, which is the entire point of printing it.
         #expect(line.contains("contributor"))
-        // "a contributor", not "the contributor": `community_trees` records no author, so the line
-        // must not imply which person is meant.
+        // "a contributor", not "the contributor": the species' namer need not be the tree's adder
+        // (v23's column), and the service names neither on somebody else's tree, so the line must
+        // not imply which person is meant.
         #expect(!line.contains("the contributor"), "the line implies an author the row does not record")
     }
 }

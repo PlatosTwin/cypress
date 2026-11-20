@@ -2832,6 +2832,10 @@ extension point catching its first new narrowing, exactly as designed.
 
 ### R45 — A species claim is corrected by whoever made it; everybody else reports it (tasks #86 and #124, delegated)
 
+> **SUPERSEDED in part 2026-11-16** — see **R237**, item 2. On a community tree,
+> the two phone-only arms (the author of the claim in force, and a lead answering a report) are
+> removed, because the service applied neither.
+
 *Written under the delegated design authority for #86/#124, from the code and the migration rather than from the tickets — two of whose premises did not survive the check. Answers the governance question open since #15 and #58.*
 
 Raised by tasks **#86** ("a species claim cannot be corrected once made") and **#124** ("flag a
@@ -7292,6 +7296,9 @@ round is sized by this number.
 
 ### R77 — No backfill of pre-sync-path local data (owner ruling, 2026-08-15)
 
+> **REVERSED in part 2026-11-14 by the owner** — see **R183**. Rows on a community tree
+> that predate syncing are sent. Rows on a city tree stay under this ruling.
+
 **Date:** 2026-08-15. **Decided by:** owner, via decision round (AskUserQuestion), option chosen: "No backfill."
 
 #### Question put to the owner
@@ -7401,6 +7408,11 @@ disclaimer text.
   not a re-litigation of these three.
 
 ### R79 — City-inventory data is disputable, and the disputes are stored app-side (owner ruling, 2026-08-21)
+
+> **The city-tree issue list below is SUPERSEDED in part 2026-09-28 by the owner** — see **R125**.
+> The screen offers four plain options (*Pin is in the wrong place* · *Wrong species* · *Wrong
+> planted year* · *There's no tree here*), not three with a submenu, as screen 06's chips rather
+> than literal checkboxes. Storage is unchanged.
 
 **Date:** 2026-08-21. **Decided by:** owner, via decision round.
 
@@ -9667,6 +9679,11 @@ the mandate rather than as a proposal awaiting one.
 
 ### R108 — A tab paints from the phone and merges the service's half behind it
 
+> **SUPERSEDED in part 2026-11-16 by the owner** — see **R251** and **R253**. A
+> community tree with a species and no given name is now named by that species in the Journal,
+> the Outbox and My Grove, so the bullet below that keeps D15's "a self-asserted species is not a
+> name the app puts on a tree" no longer holds for a community tree.
+
 Two entries. They were decided together, from one report, and they are separable: either without the
 other leaves half of the reported problem standing.
 
@@ -9971,3 +9988,4280 @@ duration**, because the duration is a function of data the app does not control.
 - They do not set a page size for any other list. `JournalLimits.pageSize` is the journal's and is
   untouched.
 - They say nothing about the Species pill, which was not reported and is not changed.
+
+---
+
+### R113 — The unit flip keeps the typed digits and annotates them (owner ruling)
+
+Four entries. **One is an owner ruling already made** (F26), **one is an owner refusal already
+made** (F16), and **two are this round's proposals** (F28's affordance, F27's blocked design),
+implemented or written down so they can be looked at rather than imagined. A reviewer who disagrees
+with either proposal is disagreeing with a branch, not with a decision.
+
+**Date:** 2026-08-31. **Decided by:** the owner, via the orchestrator, answering tester report F26.
+**Status:** ruled; the copy and its placement are the branch's and await ratification.
+
+#### What was reported
+
+Screen 16 emptied the keypad whenever the reader tapped `switch to inches`. A tester reported it as
+data loss: four digits typed one-handed against a tape, gone for a tap that was meant to change how
+they were labeled.
+
+#### What was decided
+
+**Keep the digits, and annotate.** Switching cm↔in or m↔ft leaves the entry exactly as typed — 5
+stays 5, never converted — and the screen states that the meaning under it moved.
+
+#### The argument the ruling answers rather than overrules
+
+The clear was not arbitrary. Its comment made a real case: `64 cm` silently becoming `64 in` is a
+2.5× error written to an append-only record "with nothing on screen to catch it", and retyping four
+digits was called the cheap half of that trade. **The annotation is the something on screen.** With
+it, the dangerous outcome the clear was guarding against is the one outcome the reader is told
+about; without it, keeping the digits would be precisely the error that comment describes. The two
+halves are one ruling, and `MeasurePresentationTests` asserts them in one test for that reason.
+
+#### The premise that was wrong, corrected here
+
+ROADMAP's F26 entry said keeping the digits "would falsify" `Quantity.value`'s invariant — "the
+number as the human typed it, in `unitEntered`. Never silently converted for display". **It would
+not, and the distinction matters enough to write down.** That invariant governs the *stored record*.
+A `Quantity` is only ever built at save, out of whatever digits and unit the pad holds in that
+moment, so a reader who types 5, flips to feet and saves stores `value: 5, unitEntered: ft` — the
+number as typed, in the unit it was typed in, which is what the invariant asks for and all it asks
+for. What would break it is converting the digits on the flip, and nothing converts.
+
+What the flip genuinely risks is a *reader* who does not notice the meaning moved under an unchanged
+number. That is a screen problem, and it has a screen answer. `Quantity.value`'s doc comment now
+records this so the next person to read the invariant does not re-derive the wrong conclusion from
+it.
+
+#### The copy, and what it deliberately does not say — **awaiting ratification**
+
+> Typed in centimeters, now read as inches.
+
+**NOT SPECIFIED** by SCREENS.md; proposed under DECISIONS constraint 21.
+
+- **Both units are named.** Neither is left to be inferred from the label above it, because the
+  whole safeguard is that the reader can see the change rather than reconstruct it.
+- **Two facts and no instruction.** It does not say "retype if you meant something else", because
+  retyping is only one of two correct responses and the screen cannot tell which the reader meant:
+  somebody who typed the number under the wrong unit and then fixed the unit is already looking at
+  what they wanted.
+- **Placed under the readout, not above the CTA.** It describes the number on screen now, rather
+  than something to weigh before saving, and a sentence about `64` belongs beside the 64. The
+  anomaly line and the chart notice keep their place above the CTA.
+- **Drawn in the anomaly line's amber** (`CypressColor.amberChipSelectedText`), reusing that line's
+  treatment for its own stated reason: Signal Amber is the screen asking about a number (§1.1),
+  which is exactly what this is. No new token, no new component.
+
+#### When it withdraws
+
+It stands until the digits are gone, and dies with them:
+
+- **Cleared when the entry empties** — by backspace, by saving, or by changing the measurement kind.
+- **Not cleared by a partial edit.** Backspacing `64` to `6` leaves a digit that was still typed
+  under the old unit, and appending to it makes a number that is partly old, so no edit short of
+  emptying the field makes these digits honestly the current unit's. The conservative rule is the
+  one that cannot leave the annotation off a number that needs it.
+- **Withdrawn by a second flip back**, which returns the digits to the unit they were typed in.
+  There is then nothing to annotate, and a notice that stayed would be a stale sentence about a
+  number it no longer describes.
+
+Changing the *kind* still clears the entry outright, and this ruling does not reach it: a unit flip
+asks the same question in other units, where the digits are still an answer worth keeping; changing
+kind asks a different question, and a trunk's 64 is not an answer about a height.
+
+#### What holds it
+
+`MeasurePresentationTests` — four tests: the digits and the annotation together, the flip back, the
+empty pad, and the backspace boundary. Red-proved twice, because the two halves fail independently:
+reverting `switchUnit` to the old clear failed with `(draft.entry → "") == "64"` and
+`(unitFlipNotice → nil) == "Typed in centimeters, now read as inches."`; suppressing only the
+annotation while keeping the digits failed with the second of those alone, which is the safety
+property stated as a test.
+
+---
+
+### R114 — Screen 03 keeps a door into screen 16 when no stat card is one (proposed)
+
+**Date:** 2026-08-31. **Proposed by:** this round, from tester report F28. **Status:** awaiting the
+owner.
+
+#### What was reported
+
+> adding a reading on a tree holding both height and DBH is two small-text taps deep
+
+#### Why it was two taps
+
+R15 gave each measurement its own door — the empty stat card, which opens screen 16 on the kind it
+names. R15 also said plainly what that leaves behind: the slot "exists only while its own
+measurement is missing", so a tree carrying both a height and a DBH has no card door at all. The way
+through was `See every reading` into screen 11, then screen 11's own `Add a reading`. Both are 13 pt
+text links, which is the "small-text" half of the report.
+
+That tree is the one with the most growth left to record, and it is the one the app made hardest to
+measure.
+
+#### What is proposed
+
+**While a tree accepts contributions, screen 03 offers exactly one way into screen 16 — and never
+two.** Usually that way is an empty stat card. When every measurement is already on file there is no
+empty card to be one, and an `Add a reading` link is drawn instead, directly under
+`See every reading`.
+
+- **Built as `growthLink`'s twin**, down to the token: same `CypressFont.body13Bold`, same
+  `CypressColor.ctaFill`, same 44 pt hit area, same gutter, no top gap when it follows that link so
+  the two read as one block. C1–C30 has no link component and a screen-local control from tokens is
+  what this codebase does where the catalog has no entry (E46), so the way to make two neighboring
+  links read as one kind of thing is to build them the same.
+- **Same three words the rest of the app uses.** `Add a reading` is the empty slot's phrase and
+  screen 11's; a reader who met it on a half-measured tree meets the identical phrase here.
+- **Opens on DBH**, borrowed from `GrowthHistoryPresentation.addReadingKind` rather than restated,
+  so the two general entrances cannot drift apart. This entrance names no measurement, as screen
+  11's does not (R15); 16 §2's drawn selection is `Trunk · DBH` and the kind control is the first
+  thing on that screen.
+- **Keyed off the stat items, not off the measurements.** The DBH slot is also suppressed by a
+  published city bucket, and a reader looking at a city range has no card door either. Asking the
+  items is asking the question the reader can actually see.
+
+**NOT SPECIFIED** — no mock draws this link — so it goes to the owner under DECISIONS constraint 21,
+by ARCHITECTURE §5 rule 8's practice of going to the nearest specified thing, which here is the link
+one block up.
+
+#### What was considered and not done
+
+- **Making a filled stat card open screen 16 again.** It is where the sentence reads most naturally
+  and it cannot keep its promise: R15 deliberately points a card holding a reading at screen 11, so
+  a reader who wants the history would lose the only door to it. Trading one missing door for
+  another is not a fix.
+- **Drawing the link always.** Two invitations a card apart, both reading `Add a reading`, is F28
+  answered by making the screen worse. The second half of the rule exists to forbid it, and a UI
+  test asserts it on an unmeasured tree.
+
+#### What holds it
+
+`MeasureEntranceKindTests` asserts the invariant across six states — nothing on file, a height only,
+a DBH only, both, a city bucket with a height, a city bucket with nothing — rather than on the
+fully-measured branch alone. **The invariant in that test is not the one this round started with.**
+The first draft asserted "exactly one door in total" and went red on the empty tree, which has two
+empty slots, one per measurement — R15's per-kind door working correctly. The rule that survived
+measurement is "never none, and the link only where no card is one". The city-bucket row is the one
+a narrower test would have missed.
+
+`AddReadingReachabilityTests` walks it on the device, because a presentation flag proves a struct
+and not a finger: it checks the tree really is fully measured first, then that the link exists, is
+hittable, and that pressing it opens screen 16 with its keypad. Red-proved both ways — suppressing
+the link failed with "a tree carrying every measurement offered no way into screen 16 from its own
+profile"; drawing it unconditionally failed the unmeasured-tree test with "the profile now invites
+the same contribution twice".
+
+---
+
+### R115 — Withdrawing a measurement: the design, and why no code ships with it (proposed, blocked)
+
+**Date:** 2026-08-31. **Proposed by:** this round, from tester report F27. **Status:** blocked on a
+writable-schema migration this round was not authorized to write. Nothing here is implemented.
+
+> **Amended 2026-09-09 — no longer blocked, and built as written.** The migration seat was granted
+> for the round of 2026-09-09; `AppSchema` v21 widens `outbox.kind` exactly as step 1 below
+> describes, and steps 2–5 shipped with it. The entry is left standing rather than rewritten,
+> because the argument in it — particularly the two shortcuts and why both are wrong — is the
+> reasoning the implementation rests on. The decisions this entry deliberately left open (the
+> confirmation copy, whether the control is gated on `acceptsNewContributions`, and which trash mark
+> it draws) are in **R116**.
+
+#### The half of F27 that needs nothing built
+
+F27 reads "measurements can be neither edited nor deleted". **"Edited" is not a gap in the measure
+surface; it is the app's design, everywhere.** There is no edit verb for any contributed record:
+`CypressAPI`'s write surface is append-or-withdraw end to end, species corrections supersede rather
+than overwrite and keep the superseded row pointing forward, and every capture screen carries the
+whole burden in its pre-submit confirmation precisely because nothing can be amended afterwards.
+Changing a reading is adding a reading, which screen 16 already does — and F28's link, shipped in
+this round, is what makes that one tap on the tree where it was two.
+
+If the owner wants measurements to be genuinely editable, that is a change to the append-only
+premise the record is built on, and it is a much larger question than F27 as filed. This entry
+assumes it is not.
+
+#### The half that is real: withdrawal
+
+`measurements.deleted_at` exists, `TreeMeasurement.deletedAt` is honored by `isChartable` and by
+every list on screen 11 and screen 03 — and nothing anywhere sets it. The design, matching photo
+withdrawal beat for beat, would be:
+
+1. **`OutboxItem.Kind.measurementWithdrawal = "measurement_withdrawal"`**, a kind of its own.
+2. **A `MeasurementWithdrawal` payload** beside `PhotoWithdrawal` in `CommunityMutations.swift`:
+   `clientUUID`, `measurementID`, `treeID`, `attribution`, `occurredAt`. The act, not its report —
+   no counts travel, for `PhotoWithdrawal`'s stated reason.
+3. **`LocalAPI.withdrawMeasurement(id:)`**, tombstoning the row and queueing the withdrawal **in one
+   transaction**, after the ownership gate has matched and before anything else — so the queued row
+   exists only for a withdrawal that was allowed and committed. `isAppliedBeforeItIsQueued` is true
+   for it, as for every §3.4 kind, so the drain owes it the send and the apply sink refuses it.
+4. **A row-level affordance on screen 11's growth log**, which is the only place a single reading is
+   drawn. `TreePhotosView`'s idiom: a trash control on the row, one tap opening a
+   `confirmationDialog` with a destructive confirm and a `Keep it` cancel, drawn in the amber hazard
+   ramp because this palette has no red. Copy would need to say what withdrawal does to a chart,
+   which the photo copy has no equivalent of.
+5. **`OutboxPresentation.kindLabel`** gains a row title, as `photoWithdrawal`'s "Photo removed" did.
+
+#### Why the code is not here
+
+**Step 1 is a writable-schema migration.** `outbox.kind` is a closed `CHECK` vocabulary and SQLite
+cannot widen a `CHECK` in place, so a new kind is a table rebuild — `AppSchema` v4 and v17 are both
+exactly that, and v17's comment says so. The writable schema's migration counter is
+`AppSchema.currentVersion`, computed as the highest entry in `AppSchema.migrations`; reading it from
+the code rather than from any prose, the next number is the one after v18.
+
+This is not avoidable by care. `CommunityOutboxKindTests`' "every kind the app can build is one the
+outbox can store" iterates `OutboxItem.Kind.allCases` and inserts each, deliberately so that an
+eleventh case added to the enum and forgotten in the migration fails loudly — "the symptom is a
+mutation that succeeds locally and cannot be queued". Adding the enum case without the migration
+turns that test red, correctly.
+
+**CLAUDE.md: one migration author per round, named explicitly, and this round was not named.** So
+the design is written down and the code is not.
+
+#### The two shortcuts, and why both are wrong
+
+- **Ride the existing `.measurement` kind with a discriminator in the payload.** The payload column
+  is `json_valid` only, so this needs no migration — and `OutboxItem.Kind`'s own comment forbids it
+  in terms that fit this case exactly. The review-dismissal pair is kept as two cases rather than
+  one-with-a-boolean because collapsing them "would put that distinction inside a payload field
+  where `outbox.kind` cannot see it", and `outbox.kind` is what screen 17 groups by and what the
+  server dispatches on. A withdrawal arriving as a `measurement` would also be a false statement on
+  an append-only server record.
+- **Ship the UI and the tombstone, leave the sync for later.** This re-creates the Class L debt that
+  spec §3.4's nine mutations were queued to pay off, and it does so on the worst possible surface: a
+  delete the reader is shown, believes, and which never leaves the phone. A missing delete is a
+  known gap; a delete that lies is a defect.
+
+**Recommended:** schedule F27's withdrawal in the next round with a named migration author, and hand
+them this entry. The work above it is small once the vocabulary can hold the kind.
+
+---
+
+### For the record — F16 refused (owner)
+
+**Date:** 2026-08-31. **Decided by:** the owner, via the orchestrator. **Status:** refused; no code.
+
+F16 asked for trees-seen counters — 30 days, this year, lifetime. It was carried on the backlog as
+BLOCKED ON A RULING because it needed the owner to amend or refuse the rule it runs into, rather
+than because anyone was unsure what the rule said.
+
+**Refused. The rule stands as written.** ARCHITECTURE §5 rule 1, which is D1 in DECISIONS §3: "No
+streaks, points, ranks, badges, or public counts of user actions. If you find yourself writing
+`visitCount` into a user-visible string, stop." The report asked for the one thing that rule names,
+so there was no version of it to build that would not have been the rule being set aside.
+
+Recorded here rather than deleted from the backlog because a refusal is a decision, and the next
+person to have the idea should find the answer rather than the idea. ROADMAP's entry is struck with
+the citation.
+
+---
+
+### R116 — Screen 11's withdraw control, and the three questions the design did not answer
+
+**This is the implementation half of R115, titled "Withdrawing a
+measurement: the design, and why no code ships with it".** That entry was written blocked on a
+writable-schema migration its round was not authorized to write. The migration seat was granted for
+this round, `AppSchema` v21 is written, and the design it described is built. What follows is only
+the decisions the design left open, plus the two places the implementation departed from it and why.
+
+**Date:** 2026-09-09. **Proposed by:** this branch, implementing F27. **Status:** awaiting the owner.
+
+#### What was already decided and is not revisited here
+
+The blocked entry ruled the shape: a new `OutboxItem.Kind`, a `MeasurementWithdrawal` payload beside
+`PhotoWithdrawal`, `LocalAPI.withdrawMeasurement(id:)` tombstoning and queueing in one transaction,
+a row-level affordance on screen 11's growth log in `TreePhotosView`'s idiom, and a row title on
+screen 17. All of that is built as written, including both of its refusals — the payload
+discriminator and the local-only ship — which it argued at length and which nothing here weakens.
+
+#### 1. The copy — **NOT SPECIFIED**, proposed under DECISIONS constraint 21
+
+SCREENS.md 11 §5 draws a log row as value · method · role · date, and no control on it. So every
+string is this branch's, written in the shape of screen 20's deletion copy, clause for clause, with
+the consequence swapped for the one a reading has:
+
+> **Withdraw this reading?**
+> The reading comes off the growth chart and out of the record on this phone. This cannot be undone.
+> *(and, on the last reading of its kind)* It is the only Trunk diameter · DBH reading on this tree,
+> so that chart goes with it.
+> **Withdraw reading** · **Keep it**
+
+- **A question in the title**, because the tap that opened the dialog withdrew nothing. Screen 20's
+  reason, in the same words.
+- **The chart is named first**, which is what the blocked entry asked for: "copy would need to say
+  what withdrawal does to a chart, which the photo copy has no equivalent of".
+- **"on this phone"**, exactly as screen 20 says it, and for the harder of that clause's two
+  reasons. v21 *does* give the withdrawal a queue row, so unlike a photo deletion this act can leave
+  the device — but only once a drain reaches a service, and E212 records two shipped sentences that
+  promised a reader somebody was at the other end. The screen claims what it has done; screen 17 is
+  where the queue speaks for itself.
+- **The second sentence only for the last of its kind**, because a chart card really does disappear
+  then (`chart(for:)` draws none for a kind with no point) and that is a visible change to the
+  screen the reader is standing on. Read before the tap off the loaded profile, and reported after
+  it by `WithdrawnMeasurement.leftTheKindWithNoReading`; one test asserts both halves so the promise
+  and the outcome cannot drift.
+- **The verb is on the button.** E136's rule for the account sheet, applied to a smaller thing.
+
+#### 2. The control is **not** gated on `acceptsNewContributions` — a departure, argued
+
+The blocked entry did not reach this and the obvious answer is wrong. R15's `Add a reading` link one
+block down *is* gated that way (E95): adding a reading to a record the city has closed is a new
+contribution to a tree that is gone. **Taking one back is not a contribution at all** — it is the
+person unmaking their own — and the app already settles the question one table over: screen 20 draws
+its delete on a photograph of a removed tree, gated on `deletablePhotoIDs` and nothing else. A
+memorial's readings are still readings, and a mistyped one on a tree that has since been felled is
+exactly the reading somebody would want to withdraw. Gating it would make the withdrawal one-way for
+anybody whose tree was later removed, which is E89's argument about the favorite heart in another
+costume.
+
+#### 3. The trash mark is `PhotoTrashGlyph`, reused rather than redrawn — a departure, argued
+
+`PhotoGlyphs.swift` said "no screen outside Photos uses them". Screen 11 now does. The alternatives
+were both worse:
+
+- **Redrawing a trash can in `Features/GrowthHistory`** is two sets of coordinates for one mark.
+  E163 is the errata about two marks in this app that drifted; four subpaths of hand-authored
+  geometry is exactly the thing not to have twice.
+- **Renaming it, or moving it into `DesignSystem/Components`**, is a rename of a shared identifier,
+  which CLAUDE.md says breaks every other live branch even when correctly scoped. Three other
+  branches were open.
+
+So the mark is reused, the file's own locality sentence is corrected to say screen 11 draws it too,
+and **the rename is left for a quiet round** — it is on the chip backlog rather than in this diff.
+A reviewer who thinks the name should have moved now is disagreeing with the timing, not the fact.
+
+#### 4. The failure sentence is three sentences, chosen by `APIError.retryable` — **NOT SPECIFIED**
+
+Added in the review round, because the first version had one sentence for every failure: *"That
+reading could not be withdrawn. It is still here. Try again."* It asserts two facts and ends with an
+instruction, and each of the three is false for some reachable failure:
+
+- **`.forbidden`** — reachable with a stale control, because `withdrawableMeasurementIDs` is read
+  when the screen loads and the leaving door can unlink a reading between that read and the tap.
+  Retrying cannot succeed, so the screen was telling the reader to do the one thing guaranteed not
+  to work. It now reads *"That reading is not yours to withdraw. It is still here."* — the reading
+  really is still there, so that half stays.
+- **`.notFound`** — already withdrawn on another surface, or the row is gone. *"It is still here"*
+  is false in exactly this direction, so it is not said: *"That reading is no longer here to
+  withdraw."*
+- **Everything else**, including a transport throw that is not an `APIError` at all, keeps the
+  original sentence and its `Try again.`
+
+**Chosen by `APIError.retryable`, not by a list of cases.** That property is already the binding
+answer everywhere else — `OutboxRetryPolicy` schedules from it, screen 17 offers its retry button on
+it — so a sentence that invites a retry follows the same property rather than holding a second
+opinion beside it. `MeasurementWithdrawalTests.aRefusalIsNotToldToRetry` iterates
+`APIError.allCases`, so a code added to the taxonomy later has to land somewhere deliberate.
+
+The same round also stopped a failure sentence outliving the read that follows it: `withdrawError`
+was cleared only at the start of the next withdrawal, so a refusal survived `reload()` and stood
+over a screen freshly read from the record.
+
+#### 5. What is deliberately absent
+
+- **No sentence where the control is not drawn.** Screen 20 has `nobodysToRemove` because a
+  photograph is a subject somebody is looking at and asking about. A line of prose under each of a
+  dozen log rows would be a wall of text about permissions on a screen that is a record.
+- **No edit path.** F27's other half. `MeasurementWithdrawalAccess.swift`'s header carries the
+  argument; the blocked entry made it first.
+
+#### What holds it
+
+`MeasurementWithdrawalTests` — fourteen tests: the act, the six readers that stop counting a
+withdrawn reading, both refusals, the control/permission agreement, the payload round trip, screen
+17's row, the last-of-its-kind pair, the failure copy above, and the debug seam a withdrawal used to
+break for good on a device. Every one red-proved by breaking the code and reading the failure.
+`SchemaV21Tests` holds the migration.
+
+---
+
+### R117 — City-inventory disputes ship in four PRs, and part 1 is the record
+
+**R79 is the owner's spec and is not restated here.** What follows is the round's own decisions: the
+owner's three, taken in a decision round on 2026-09-10 after R79 was written, and the orchestrator's
+three, which are the round's and not the owner's. The three orchestrator rulings are the ones that
+need review.
+
+**Date:** 2026-09-10. **Decided by:** owner, via decision round. **Status:** decided.
+
+R79 describes one feature with five surfaces. The owner split it:
+
+1. **Part 1 (this round).** The writable-schema migration, the dispute record and its two verbs, and
+   city rows ceasing to answer `.unavailable` on the tree profile. Client (PR-A) and the server's
+   sync vocabulary (PR-B); the dispute sheet itself is PR-C.
+2. **Deferred to their own PRs**, each scheduled separately: the flag **badge** on the map and the
+   list, the **"trees with data issues"** filter, the **missing-tree entry point** (the defect the
+   profile screen cannot host, because there is no record to open), and the **community-flagging
+   redesign**.
+
+### R118 — Disputes queue to `cypress-sync`; they are not local-only
+
+**Date:** 2026-09-10. **Decided by:** owner, via decision round. **Status:** decided.
+
+A dispute is a contribution and reaches an account the way every other one does — a new
+`OutboxItem.Kind`, a new server sync kind, a server migration. The alternative on the table was
+storing disputes on the device alone until an adjudication surface exists; the owner refused it.
+
+### R119 — The community flagging flow is a separate later round
+
+**Date:** 2026-09-10. **Decided by:** owner, via decision round. **Status:** decided.
+
+R79's addendum records two owner reports against the shipped community flagging view: bad copy
+throughout, and a flag that its author cannot retract. Both go through a design pass with owner
+decision rounds — the copy, the retractability, and the report/withdraw/keep state machine — rather
+than being touched here. **Today's community boolean flags are untouched by this round**, and part 1
+asserts that rather than assuming it (`DataDisputeTests.theRoundDisputesCityRowsOnly`).
+
+### R120 — The entry point, the location answer, and the two metadata examples
+
+**Date:** 2026-09-10. **Decided by:** owner, via decision round, after the authors were briefed.
+**Status:** decided. **This is what fixes `tree_dispute_suggestions.field`'s vocabulary.**
+
+1. **Entry point (PR-C).** The dispute action goes exactly where the community flag actions already
+   sit on screen 03 — the text-action area that today draws "Report the species as wrong" / "Report
+   that there is no tree here". A city tree draws the dispute action there instead. Not under the
+   City record block, and not through the quad row's `Report`, which stays the 311/neighborly door.
+2. **"Pin in wrong location" is answered with the reporter's own fix, not a map picker.** You are
+   standing at the tree; the GPS fix is the correction. It refuses a fix too coarse to mean anything,
+   on the precedent of `AlmanacLimits.fixCanResolveAnArea(accuracyM:withinM:)`. No map picker in
+   part 1.
+3. **"Wrong other metadata" is the owner's two examples and nothing else**: a clearly wrong planted
+   year, and a recorded tree whose plot is actually empty. The second is **not a boolean** — it is a
+   status suggestion of `vacant_site`, which is already in the status vocabulary, so the profile's
+   existing vacant-site handling means something when a dispute is one day adjudicated.
+
+Therefore `tree_dispute_suggestions.field` is CHECKed against exactly `lat`, `lon`,
+`location_accuracy_m`, `species_id`, `planted_year`, `status`.
+
+---
+
+## The orchestrator's three, which are this round's and not the owner's
+
+### R121 — Part 1 ships raise **and** withdraw
+
+**Date:** 2026-09-10. **Decided by:** the round's orchestrator. **Status:** awaiting review.
+
+The owner's standing complaint about the community flagging flow is that a flag cannot be retracted
+by its author (R79's addendum). Shipping a new dispute surface with the same defect repeats it on
+new ground, and a dispute is the worse place for it: a community flag has a lead who can dismiss it,
+where a city dispute has nobody on this device who can do anything with it at all.
+
+The cost is a verb and a payload, not a second migration seat: `outbox.kind`'s `CHECK` is one
+statement whether it admits one value or two, and `AppSchema` v22 writes it once.
+
+**As built:** `withdrawDataDispute(disputeID:)` stamps `withdrawn_at`, deletes nothing, and queues
+`data_dispute_withdrawal`. The authorship rule is `TreeDataDispute.isAuthored(by:)` — a leading
+refusal for a row the leaving door un-named (see the deletion-door ruling below), then the account
+arm, plus a `raised_by IS NULL` arm that is this *installation's* own anonymous row and stays its own
+to take back after signing in (D9). A signed-out reader is not handed an account's dispute, which is
+`LocalAPI.withdrawMeasurement`'s asymmetry kept deliberately.
+
+### R122 — City rows only, this round
+
+**Date:** 2026-09-10. **Decided by:** the round's orchestrator. **Status:** awaiting review.
+
+R79 gives community trees location and species disputes too. They are not built here. Community rows
+keep `flagWrongSpecies` / `flagNeverExisted` exactly as they are, and the two verbs added by this
+round are the mirror image of those two: they refuse a **community** row with `.forbidden` and serve
+a city one.
+
+The reason for the split is that community disputes converge with the community flagging redesign —
+"location and species only" is a *narrowing* of a surface that already exists and is already ruled
+not-quality, not an addition to it. Building it here would mean designing the convergence twice.
+
+### R123 — An anonymized dispute is withdrawable by nobody
+
+**Date:** 2026-09-10. **Decided by:** the round's orchestrator, adjudicating PR #165's review.
+**Status:** awaiting review.
+
+`tree_data_disputes` is one more table carrying a user column, and when v22 added it neither
+account-deletion door could see it. Both now do: the leaving door nulls `raised_by`, the erasing
+door deletes the row and the two `ON DELETE CASCADE` children go with it.
+
+The half that is a decision rather than an omission repaired is **what the leaving door's NULL then
+means**. It is not a free choice, and that is the whole of this ruling: **the other half of the
+system has already answered, and it is the half that cannot move.**
+`server/internal/store/disputes.go`'s `disputeIsThisIdentitys` counts a dispute as the caller's on a
+`user_id` or a `device_id` match; `.leaveRecords` clears both; a comparison against two NULLs falls
+out of its `FILTER`, so an anonymized row counts in `matched` and not in `mine` and is refused. The
+function's own comment states the rule — "a record owned by nobody is not withdrawable by anybody" —
+and `TestAnAnonymizedDisputeIsWithdrawableByNobody` measures it. The service could not adopt the
+client's other answer even in principle: `ClaimDevice` has already folded the row's `device_id` into
+its `user_id`, so after the deletion there is no installation identity left on the row to compare a
+signed-out phone against.
+
+So an anonymized dispute is authored by nobody: not withdrawable, and **no withdraw affordance is
+offered for it**. Had the client kept the opposite answer, the sequence would have been: the phone
+offers the withdrawal, applies it locally, queues `data_dispute_withdrawal`, and the service answers
+`forbidden` — landing on the screen-17 dead end `docs/ROADMAP.md` already carries as a chip ("Decide
+what a signed-out phone can take back"), with the phone showing the dispute as withdrawn while the
+service went on holding it. That is this project's signature failure applied to a withdrawal, and
+the shape ERRATA **E280** records for `photo_withdrawal`, reached through a third verb.
+
+**How the two NULLs are told apart, and why no new table was needed.** The leaving door's NULL lands
+the row in exactly the shape D9's ordinary case occupies — a dispute raised on this phone before it
+had an account — so `raised_by` alone cannot carry the answer. That is the same problem `measurements`
+has (`device_id` is NOT NULL there, so a reading is never ownerless by columns) and it gets the same
+existing mechanism: the `client_uuid` goes into `anonymized_contributions`, `AppSchema` v13's
+tombstone, before the `UPDATE` that stops the predicate matching.
+`TreeDataDispute.isAuthored(by:)` refuses on it as its first line — R3 is not a clause in an `||`,
+which is `PhotoOwner.permitsRemoval`'s ordering — and `DataDisputeStore`'s `WHERE` clauses carry the
+same refusal so the Swift gate and the SQL gate cannot say different things.
+
+**Disputes raised while signed out are untouched, and this ruling does not reach them.** The
+deletion predicate is `raised_by = :user`, which a NULL never matches, so nothing about such a row
+changes and no tombstone is ever written for it. On the client it stays this installation's to take
+back, before and after signing in, which is what R-a above describes;
+`ContributionStore.claimDevice` does not touch `tree_data_disputes` either — there is no device
+column on it to re-home — so the row is still `raised_by IS NULL` and still un-tombstoned after a
+claim and a deletion both. `AccountDeletionTests.theLeavingDoorAnonymizesADispute` asserts the whole
+chain — the un-naming, the surviving children, the refusal of the withdrawal to the next account
+**and** to the signed-out phone, and the untouched signed-out dispute beside it — with a
+`review_flags` row raised by the same account as calibration, so a green cannot mean the harness
+looked at nothing.
+
+**Where that leaves the two halves disagreeing, said plainly rather than left to be discovered.**
+The ruling above holds only for the dispute raised *while signed in* and then anonymized, because
+that is the only row a `raised_by = :user` tombstone can ever mark. For a dispute raised before
+sign-in the client and the service part company after a `claimDevice` and a `.leaveRecords`
+deletion: the client's profile still offers the withdrawal and the next account on the phone can
+take it back, while the service — whose `ClaimDevice` folded that row's `device_id` into a `user_id`
+before the deletion cleared both — answers `forbidden`. That is the same E280-shaped dead end this
+ruling avoids for the signed-in row, reached from the other direction, and **it is parked rather
+than solved.** It belongs to `docs/ROADMAP.md`'s chip "Decide what a signed-out phone can take back"
+— the same chip `store.disputeIsThisIdentitys` defers its own copy of this divergence to. Closing it
+here would mean narrowing the `raised_by IS NULL` arm, which is D9's arm: a signed-out contributor
+would lose the ability to retract their own standing objections, which is a decision neither half of
+this round was given.
+
+**Owed to the badge round, not to this one:** no guard enumerates the tables carrying a user column.
+`forgetAccount` has gone stale three times in this repo — twice on the outbox kind list, once here on
+a whole table — and each time the omission matched nothing and failed silently. The outbox half was
+fixed by making the enum exhaustive so the compiler asks the question; the table half has no
+equivalent, and designing one is the fix worth making rather than a fourth hand-audit. It is in
+`docs/ROADMAP.md`.
+
+### R124 — The server records a dispute; it does not materialize one
+
+**Date:** 2026-09-10. **Decided by:** the round's orchestrator. **Status:** awaiting review.
+
+No dispute tables server-side. PR-B widens `contributions.kind` and `syncKinds` and validates the
+payload, and that is all — the same position `sync.go` already takes for the eight kinds it records
+without evaluating. Adjudication is a web deliverable (ARCHITECTURE §8), and a service that guessed
+at a dispute's effect would move city data on a say-so nobody weighed.
+
+The consequence worth stating: **the badge round is what needs a read endpoint.** Part 1's profile
+offer is answered entirely from this device's own rows, which is correct for "may I dispute this,
+and is mine standing" and is not enough for "does this tree carry other people's flags".
+
+---
+
+## One place this round departed from the contract it was given, and why
+
+`tree_data_disputes.tree_source` was specified as `CHECK (tree_source IN ('city','community'))`. It
+is built as `CHECK (tree_source IN ('city_import','community'))`, which is `TreeSource`'s two raw
+values — measured against the shipped seed, whose `trees.source` holds `city_import` for all 198,625
+rows, and against `community_trees.source`'s own `CHECK (source = 'community')`.
+
+`'city'` would have been a third spelling of a two-valued fact, in a column no other layer reads as
+text. Nothing outside PR-A depends on the literal: PR-B stores no dispute rows at all (the ruling
+above), and PR-C reads a `TreeSource`. `SchemaV22Tests.theDisputeTablesCarryTheirVocabularies`
+asserts the column refuses `'city'`, so the choice is pinned rather than assumed.
+
+---
+
+## Part 2 — the dispute screen (PR-C, 2026-09-28)
+
+### R125 — The dispute screen's shape: four plain choices, screen 06's chips, a pushed screen
+
+**Date:** 2026-09-28. **Decided by:** owner, via decision round. **Status:** decided.
+
+Three rulings, taken together, on the screen R79 calls "checkboxes":
+
+1. **Four plain options**, not R79's three with a submenu under "wrong other metadata":
+   *Pin is in the wrong place* · *Wrong species* · *Wrong planted year* · *There's no tree here*.
+   **Storage is unchanged** — the last two both file under `wrong_metadata`, the planted year as a
+   `planted_year` suggestion and the empty plot as a `status` suggestion of `vacant_site`.
+   `DataDisputeChoice.issue` is the one place the mapping is written.
+2. **Screen 06's multi-select chips**, not literal checkboxes — the existing `Chip` component, in the
+   neighborly pair (`structureFlagIdle` / `structureFlagOn`) that ERRATA E22 chose as those chips'
+   selected appearance.
+3. **A pushed screen modeled on screen 06** (SCREENS.md §06): C1 header, micro-labelled sections, a
+   C14 dashed disclosure, a C6 primary button pinned under the scrolling form the way screen 05 pins
+   its own. Not a bottom sheet. The route is `Route.dataDispute(UUID)`; its one entrance is the
+   record-defect text action on screen 03, per the 2026-09-10 entry-point ruling above.
+
+## The author's decisions on the screen, which are PR-C's and not the owner's
+
+### R126 — A fix over the 10 m floor is refused out loud and left off the report
+
+**Date:** 2026-09-28. **Decided by:** PR-C's author. **Status:** awaiting review.
+
+The 2026-09-10 ruling keeps `DataDisputeLimits`' floor and requires the refusal to be explained.
+There were two ways to honor that at the moment the reporter taps *Use my current location* with a
+coarse fix: hold the fix in the draft and refuse the whole report at *Send*, or refuse the fix on the
+spot and leave it off. The screen does the second. The location block replaces its hint with the
+refusal sentence — both numbers, "so it was not used", and *Turn on Precise Location for Cypress in
+Settings, then try again* — and offers *Open Settings*. The report stays sendable, because "the pin
+is wrong and my phone cannot say where the tree is" is a report the record model already admits
+(every suggestion is optional).
+
+The sentence is `DataDisputeCopy.refusal(.locationFixTooCoarse)`, computed by asking
+`DataDisputeLimits.refusal` itself about the fix, so the words under the control and the rule the
+API enforces cannot disagree. The alternative would have held a report hostage to a fix the reporter
+may not be able to improve standing where they are.
+
+### R127 — The take-back has no confirmation dialog
+
+**Date:** 2026-09-28. **Decided by:** PR-C's author. **Status:** **overruled** by the owner the same
+day — see **R131**, "The take-back asks first", below. Kept here as the record of what was proposed.
+
+*Take back your report* withdraws at once, like the record-defect block's other text actions. It is
+recoverable — the offer returns to *Report a mistake in the city's record* and a new report can be
+raised — and a confirmation in front of the one control the owner has said must exist would put a
+step between an author and their own retraction.
+
+### R128 — The number pad gets a keyboard-toolbar *Done*
+
+**Date:** 2026-09-28. **Decided by:** PR-C's author. **Status:** awaiting review.
+
+The planted-year field uses the number pad, which has no return key. Without a way to put it away it
+covers the notes, the disclosure and, on a small phone, the button. A keyboard-toolbar *Done* is the
+platform's own answer; it is one more string for the owner's copy ruling.
+
+---
+
+## PR-C's rulings after review (2026-09-28)
+
+Rulings 1–4 are the owner's, taken on the screenshots before the adversarial review. Ruling 5 is the
+owner's, after it. Rulings 6–10 are the orchestrator's, after the review, implementing the owner's
+standing instruction that the floor's refusal be explained. The numbers are this list's own, for
+cross-reference in PR #185; they are not RULINGS numbers.
+
+### R129 — "There's no tree here" stands alone (ruling 1)
+
+**Date:** 2026-09-28. **Decided by:** owner. **Status:** decided.
+
+Choosing *There's no tree here* clears the other three chips and disables them; unticking it enables
+them again, unticked. An empty plot has no position, species or planted year to correct, and a report
+claiming both was two contradicting statements (PR #185's own open question). It also closes review
+finding 4: *no tree* plus an empty *Wrong planted year* used to store exactly what *no tree* alone
+stored. **As built:** `DataDisputeDraft.toggle` and `isDisabled`; a value typed under a cleared chip
+is still held and comes back if the chip is chosen again, because `suggestions` reads a value only
+under its own chip.
+
+### R130 — Each opened section says what the city has (ruling 2)
+
+**Date:** 2026-09-28. **Decided by:** owner. **Status:** decided.
+
+Under each opened section, one quiet line: *The city has: …* — the species, the planted year, the
+position. **As built:** `DataDisputeOnFile`, drawn in `body135` / `textMuted`, the register of the
+notes under screen 03's *What the city has on file*. The species is named as the profile names it
+(common name, else scientific; a stub the ingest never read is quoted in the city's own wording, or
+not at all — R54). The position is the record's street address, else its coordinate.
+
+**A value the record lacks draws no line**, rather than "The city has no planted year". `nil` on this
+phone means the copy of the inventory here carries none, which is not the same statement as the city
+having none — a seed built before a column existed answers `nil` for a city that publishes it — and
+DECISIONS constraint 15 forbids inventing civic content.
+
+### R131 — The take-back asks first (ruling 3)
+
+**Date:** 2026-09-28. **Decided by:** owner. **Status:** decided. **Overrules** the author's "no
+confirmation dialog" above (**R127**).
+
+*Take back your report* opens *Take back your report?* before anything is withdrawn. **As built:**
+first as the app's existing take-back question, `GrowthHistoryView`'s `confirmationDialog` — a
+destructive action repeating the link's words, and *Keep it* — and then, in the same PR, as an
+**alert** with the same words. CI's iPhone 17 Pro on iOS 26.2 drew the dialog's title and left
+*Keep it* out of the accessibility tree in two runs, while the 16 Pro on iOS 18.6 drew it. iOS 26
+presents a confirmation dialog as a popover dismissed by tapping outside it, and nothing in this
+design relied on tapping outside: `GrowthHistoryCopy.withdrawCancel` says the button that does
+nothing should say what nothing means. The alert, which `ReportView` already uses, keeps both
+buttons. The other `confirmationDialog`s in the app (growth history, photos, check-in, moderation,
+account deletion) carry the same latent iOS 26 behavior and are left to the roadmap. The owner kept the author's other two calls: a
+coarse fix blocks only the pin part (refined by rulings 6–9 below), and the number pad's *Done*.
+
+### R132 — The copy stands as shown (ruling 4)
+
+**Date:** 2026-09-28. **Decided by:** owner. **Status:** decided.
+
+The strings in PR #185's copy table are approved as shown in the screenshots. Only rulings 1–10 may
+change or add strings, and every such string is listed in the PR body.
+
+### R133 — A mistake report does not enroll a tree in *Yours* (ruling 5)
+
+**Date:** 2026-09-28. **Decided by:** owner, after the review. **Status:** decided; **server change,
+separate PR.**
+
+Review finding 1 showed the server enrolling a disputed city tree in the reporter's *Yours* filter and
+Grove, and keeping it there after the take-back. The owner ruled the enrolment wrong rather than the
+copy: *Nothing on the map changes* stays, and the server stops counting dispute kinds as membership.
+Until that PR merges, the disclosure's clause is false against the live service.
+
+### R134 — The refusal sentence is true about why (ruling 6)
+
+**Date:** 2026-09-28. **Decided by:** orchestrator. **Status:** decided.
+
+The refusal names Precise Location and offers *Open Settings* **only when accuracy is reduced**
+(`CLLocationManager.accuracyAuthorization == .reducedAccuracy`). With Precise Location on, a coarse fix
+is the sky's doing, and the sentence says so: *Try again in the open, or wait a moment.* **As built:**
+`MapLocationProvider.Precision.isReduced`, read in `apply(authorization:)` — which iOS also calls when
+Precise Location changes — and carried to the screen in `DataDisputeFixReading`; the sentence is
+`DataDisputeCopy.locationRefusal`. `CoreLocation` stays in `Features`; nothing in `Data` changed
+(ARCHITECTURE §2). The rule's own `.locationFixTooCoarse` sentence, unreachable from the screen, no
+longer names Settings, because that refusal cannot know whether Precise Location is off.
+
+### R135 — A later, better fix replaces a refused one (ruling 7)
+
+**Date:** 2026-09-28. **Decided by:** orchestrator. **Status:** decided.
+
+While the screen is open the location block follows the provider in every state the reporter asked
+for and did not get — waiting, refused, and off — so the coarse first fix after `start()` no longer
+fixes the block on its refusal for good (review finding 2's repro). A **captured** fix is still not
+replaced: it is the position the reporter accepted. **As built:** `DataDisputeLocation
+.followsTheProvider`.
+
+### R136 — No silent drops: Send waits for a pending fix (ruling 8)
+
+**Date:** 2026-09-28. **Decided by:** orchestrator. **Status:** decided.
+
+While the pin chip is on and the fix is still pending, *Send report* is disabled and the block says
+*Finding your location…*. Review finding 3: sending then filed "the pin is wrong" without the position
+and popped the screen. Once the fix resolves — captured, or refused out loud — the author's call 1
+holds: a refused fix blocks only the pin part. **As built:** `DataDisputeDraft.isAwaitingFix`,
+`DataDisputeModel.canSend`, and the same guard in `raise()`.
+
+### R137 — An unstated accuracy is refused, and the substitute is never quoted (ruling 9)
+
+**Date:** 2026-09-28. **Decided by:** orchestrator. **Status:** decided.
+
+A fix CoreLocation stated no radius for (a negative `horizontalAccuracy`) reaches the app as 25 m,
+`VisitShortlist.assumedAccuracyM`, so that D6 excludes it by arithmetic. The screen treats it as
+refused and says *Your phone couldn't say how accurate your location is* — it never quotes 25 m, which
+is the app's number and not the phone's. **As built:** `MapLocationProvider.Precision.accuracyIsKnown`,
+set by the delegate beside the substitution; `DataDisputeLocationRefusal.accuracyUnknown`.
+
+### R138 — The take-back is guarded against a double tap; the UI tests scroll (ruling 10)
+
+**Date:** 2026-09-28. **Decided by:** orchestrator. **Status:** decided.
+
+A second take-back while one is in flight does nothing, rather than reaching the API and drawing
+*That report was already taken back.* beside the restored action (review finding 6). **As built:**
+`TreeProfileModel.isWithdrawingDataDispute`, held across the reload. `DataDisputeUITests` scrolls to
+every control before touching it, so it passes at the accessibility text sizes (review finding 7).
+
+### R139 — The wait for a fix is bounded (ruling 11)
+
+**Date:** 2026-09-29. **Decided by:** owner, after the verifier's pass. **Status:** decided.
+
+Ruling 8 held *Send report* while the pin chip's fix was pending, and a fix that never came held it
+forever. After **15 s** with no fix, or as soon as CoreLocation reports an error after the reporter
+asked (`didFailWithError`, which the provider used to ignore), the pin section says *Your phone
+couldn't find your location, so no position was used. Try again in the open, then use your location
+again.* and *Send* works for the other choices; *Use my current location* asks again, with a fresh
+15 s. **As built:** `DataDisputeLocation.unavailable` and `fixTimeout`; the model's timeout runs on an
+injected sleep so the unit tests assert the 15 s without spending it; `MapLocationProvider
+.failureCount` counts errors, and the screen compares it with the count it saw when the reporter
+asked, so an old error never answers a new request. A late fix still replaces `.unavailable` (ruling
+7's rule); a reading with no fix in it does not put the block back to waiting — asking again does.
+
+---
+
+### R140 — Approve the photographs an account adopts, and never upload anything to do it
+
+**Date:** 2026-09-28. **Decided by:** the owner. **Recorded by:** branch
+`server/approve-adopted-photos`.
+
+#### The gap
+
+R72 ruling 5 approves a photograph at upload only when the caller is a signed-in account
+(`store.BeginPhoto`: `moderation_state = 'approved'`, `approval_reason = 'auto_approved_launch'`).
+A photograph an anonymous device uploads is `pending`: shown to its contributor and nobody else.
+
+When that person signs in, `store.ClaimDevice` adopts the photograph onto the account. Until this
+ruling it did not approve it. The only writers of `moderation_state` were that begin-time approval
+and the operator's reject, and the reject never approves, so nothing ever approved the row: **a
+photograph taken signed out stayed private for good, even after sign-in**. Screen 15 promises the
+opposite: an account "backs them up and lets them join each tree's public timeline".
+
+#### Ruling
+
+**"Fix the sign-in approval gap now."** In full:
+
+1. **From now on, the claim approves what it adopts.** In the same statement that adopts it,
+   `ClaimDevice` approves a photograph that is `pending`, not withdrawn and not anonymized, with
+   `approval_reason = 'auto_approved_launch'`. A `rejected` photograph stays rejected: an
+   operator's takedown is not undone by a sign-in. An already-approved photograph keeps its reason.
+2. **People who already signed in are included.** The owner decided this from a count; see below.
+   Server migration 006 (`server/migrations/006_approve_adopted_photos.sql`) approves the
+   photographs that claims already adopted while `pending`: rows with an owning account,
+   `pending`, not withdrawn and not anonymized. The migration's header proves from the code that
+   this predicate selects exactly that set. "Not withdrawn" means not withdrawn *on the server*,
+   which is not the same thing; see "What 006 publishes that nobody can filter out".
+3. **The invariant is enforced by the database.** 006 adds
+   `photos_owned_live_photograph_is_not_pending`: a live photograph an account owns cannot be
+   stored `pending`. A future adoption path that forgets to approve is then refused outright,
+   where before it would have left the photograph private with no error.
+
+#### The R77 boundary — explicitly not reversed
+
+**R77 stands unchanged.** It forbids any backfill of local data that predates the sync path, and
+photographs that never left the phone stay on the phone. This ruling uploads nothing and nothing
+built under it can cause an upload. It changes only the **visibility of photographs already on the
+server**, meaning rows already in `photos` that an anonymous device sent under the device token.
+Nothing on the phone changes, and no photograph is queued, re-queued or re-sent.
+
+#### Why `auto_approved_launch` and not a new reason
+
+`approval_reason` is CHECK-constrained in `001_initial.sql`, so a new value would need a migration,
+and the existing one already describes this case: a first-party photograph, published unscreened and
+unblurred, from a signed-in account. The column exists to keep *screened* apart from *unscreened*
+for a future pipeline, and that distinction survives. No consumer in the service or the app needs
+"approved at upload" told apart from "approved at sign-in". The only response that carries
+the column is `POST /photos/begin`'s, and the client does not decode it (`RemoteAPI.beginPhotoUpload`).
+If such a consumer ever appears, adding the value is the round that owns it.
+
+#### What the constraint commits the screening round to
+
+`photos_owned_live_photograph_is_not_pending` encodes R72 ruling 5's launch rule. The round that
+ends auto-approval (the one that will write `screened_and_passed` and will want an account's upload
+to wait in `pending`) has to drop it. That is deliberate: ending the launch rule should be a
+decision somebody records, not a side effect.
+
+#### What 006 publishes that nobody can filter out, and what the owner decided
+
+Raised by the adversarial review of PR #182 (F1) and reproduced there. The sequence, on the code
+before this round:
+
+1. The phone begins a photograph while signed out: device-owned, `pending`.
+2. The contributor signs in, and the claim adopts it onto the account, still `pending`.
+3. The contributor signs out and deletes the photograph on the phone. RULINGS R82 lets the phone do
+   that for a photograph this installation took, whatever account holds it, and the phone sends a
+   `photo_withdrawal` under its device token.
+4. The server refuses it. `withdrawPhoto` knows only the row's `user_id` and `device_id`, the row
+   is the account's and the caller is the device, so the answer is `ErrNotOwned` (`forbidden`).
+   `withdrawPhoto`'s own comment calls this divergence real and reachable.
+5. The row stays live, account-owned and `pending`, and 006 approves it. A photograph its
+   contributor deleted becomes visible to everyone.
+
+**006's predicate cannot exclude these rows, and no predicate could.** The server keeps no record
+of a refused withdrawal: the refusal is an error inside `Store.Apply`'s transaction, which rolls
+back the `photo_withdrawal` contribution row that would have recorded the attempt, and `photos` is
+not written. On the server such a row looks exactly like an adopted photograph its contributor
+still wants.
+
+The forward half widens the same divergence. From this deploy on, a signed-out photograph adopted
+by a claim is approved at step 2, so a withdrawal refused at step 4 leaves it public where before it
+stayed private. That was already the case for a photograph an account began while signed in; the
+claim adds the signed-out ones to that set. Closing it for good needs the server to know which
+device took a photograph, which is the provenance column `withdrawPhoto`'s comment declines to
+invent without a ruling.
+
+**Decided: 006 ships as it stands (owner, 2026-09-28).** The owner authorized one read-only count
+on production of the rows 006's UPDATE would write, and ruled in advance: if it is zero or a
+handful, ship as is; otherwise cut back to forward-only. The count, run on 2026-09-28 inside a
+READ ONLY transaction, found **0** such rows. Production then held 3 photographs, all
+account-owned, live and already `approved`. The count is one moment's reading: a claim served by
+the previous binary between the count and the deploy can still add a row.
+
+#### Deploying 006: when the constraint breaks sign-in, and when it cannot
+
+With `photos_owned_live_photograph_is_not_pending` in place, a binary from before this round fails
+any claim for a device holding a live `pending` photograph: its adoption leaves the row `pending`,
+Postgres refuses the row, and the request answers 500. That includes `POST /auth/oidc` with a
+`device_uuid`, which is the sign-in itself, as well as `POST /devices/claim`. An old binary cannot
+*boot* against a database at 006 (`Migrate` refuses a rollback onto a newer schema), so the window
+exists only while an old binary that is already running shares the database with a new one that
+has applied 006.
+
+- **Where it is closed: `cypress-sync` as configured today.** One machine; `server/fly.toml` has no
+  `[deploy]` strategy and no `release_command`; the migration runs in `store.Open` when the new
+  binary boots. The old and new binaries never serve at the same time.
+- **Where it opens:** scaling the app to two or more machines, or deploying with a canary or
+  bluegreen strategy. An old machine keeps serving, and failing sign-ins, until it is replaced.
+  Deploy 006 only on one machine with the default strategy.
+
+#### Out of scope here, recorded for the roadmap
+
+The same review (F3) found that the claim asks for no proof that the caller holds the device:
+an account that knows a device UUID can claim it, and since this ruling the claim also publishes
+that device's `pending` photographs, under the claiming account. The #174 guard protects only a
+device that is already claimed. Proof of possession at claim is not built in this round.
+
+---
+
+### R141 — A community tree is published only at a moment its account had accepted the license
+
+The owner's decisions 1–12 and the orchestrator's rulings of 2026-09-28 are the round's; this file
+records what **PR S1** (`server/community-trees-007`, migration 007) decided in applying them, where
+the decisions and the design left a choice. Each is a ruling within delegated authority and is
+logged for review; none reverses an existing ruling. Decision 10 (the license is one-way) was the
+owner's answer to the question S1's first draft raised here, and the entries below are written to
+it.
+
+**Decided by:** PR S1, applying decisions 7 and 10. **Replaces** the design's constraint
+`community_trees_live_iff_not_device_owned`, which decision 7 makes false (an account-owned tree can
+now be unpublished).
+
+1. `published_at IS NOT NULL` implies `device_id IS NULL`. A CHECK
+   (`community_trees_published_is_not_device_owned`).
+2. A tree is published only at a moment its owning account had accepted the license. Decision 10
+   makes this a fact about the moment of publication, not about the account's current answer, and
+   `users` keeps only the current answer. So **every `published` event records the version
+   accepted at that moment** in `after.license_version`, and `published_at` equals that event's
+   `occurred_at`. It is kept in code by the only three writers of `published_at` (a signed-in
+   insert, the claim, and license acceptance). Each reads the account's answer with `FOR SHARE`, so
+   an acceptance cannot commit between an insert's read of "declined" and its commit: the
+   acceptance waits, and its publish sweep then sees the tree. The test
+   `TestEveryPublicationHappenedUnderAnAcceptedLicense` walks every path. After each step it checks
+   the record, and it checks a model of its own that knows from the outside when the account had
+   accepted.
+3. The owner rule is `contributions_owner`'s: exactly one owner, or none with `anonymized_at` set
+   (`community_trees_owner`). This makes a forgotten step in account deletion fail loudly: the
+   `users` foreign key's `ON DELETE SET NULL` on a tree nobody anonymized first is refused, and the
+   whole deletion rolls back.
+
+### R142 — A later decline leaves published trees published (decision 10, applied)
+
+**Decided by:** the owner's decision 10, which answered the question S1's first draft left here.
+The case is reachable: screen 15 sends the license answer on every sign-in, so signing out and back
+in with the box clear records a decline.
+
+**Ruling:** a decline changes no tree. Trees published under the earlier acceptance stay published
+and their history gains nothing. A tree added while the decline stands stays private, and the next
+acceptance publishes it. Nothing ever unpublishes a tree now. So the event kind `unpublished` has
+no writer, and 007 does not admit it (see "Event kinds" below).
+
+### R143 — What 007 does with trees that already exist
+
+- **An account's tree** is published if the account has accepted the license, and is left
+  unpublished otherwise. "Accepted" means `license_version = 'odbl-1.0'`, the only version the
+  client has ever sent (the orchestrator's L2 ruling). Before this round any string was stored as a
+  consent, so a pre-007 row may hold `''`, and that is not an acceptance.
+  `TestTheBackfillsAcceptedVersionIsOneTheLivePathAccepts` reads the literal out of the migration
+  and requires a live acceptance of it to publish. So once S2's `knownLicenseVersions` is merged,
+  the backfill and the live path cannot disagree. This is decision 7 applied to rows that already exist. It is published at
+  the **later** of its `updated_at` and the account's `license_accepted_at`. `updated_at` is the
+  moment the tree became the account's: before 007, the only writers of that column were insert and
+  claim. A tree claimed on 1 September by an account that accepted on 20 September went live on the
+  20th. `license_accepted_at` is the most recent acceptance, which can only make the stamp later
+  than the true first one, never earlier. Its `published` event carries the account's current
+  version, as every `published` event carries the version accepted.
+- **A device's tree** stays unpublished (decision 1).
+- **An orphan** is a tree whose account was deleted. Before 007, deletion never touched
+  `community_trees`, so the foreign key left both owners NULL under **both** doors. An orphan is
+  anonymized and left **unpublished**. Its account is gone, so whether that account accepted the
+  license cannot be known. It may also have chosen to erase everything. Publishing it now would
+  decide both questions for somebody who can no longer be asked. It is visible to nobody, so it is
+  inert. Deleting it instead would be an owner call.
+- Every published tree gets a `published` event, carrying its root's position, and every tree gets
+  an `added` event and a root location. No tree had moved before 007, so the root is the head at
+  publication: it is `was_public` exactly when the tree is published. The design wrote a `published` event only where `published_at > created_at`. This PR
+  writes one for every publication, backfilled or live, because decision 4's history should not
+  depend on how the publication happened.
+
+### R144 — The two deletion doors, for trees
+
+Decision 6, applied, plus one case it does not name:
+
+- **`leaveRecords`**: a published tree the account added is anonymized. It stays published, and
+  nobody may move or withdraw it afterwards.
+- **`eraseEverything`**: a published tree is deleted and tombstoned (`withdrawn_community_trees`),
+  unless another identity has met it (a visit or a photo, as defined below), in which case it is
+  anonymized.
+- **An unpublished tree** (its account declined the license) is **deleted and tombstoned under
+  both doors.** Nobody but its adder ever saw it. Anonymized, it would be a row that no account
+  could ever publish, move, withdraw or erase.
+- Actor columns on the location chain and the audit log are nulled for the account **and for
+  every device it claimed** before `devices.user_id` is cleared.
+
+### R145 — "Somebody else has built on it" means a visit or a photo (decisions 6 and 8)
+
+**Decided by:** the orchestrator, after #187's fix round. It **supersedes** S1's first definition,
+which counted every live contribution except the withdrawal kinds. The owner's own words for
+decisions 6 and 8 were "if anyone else has a visit or photo on the tree", and the code now holds
+to them. A tree counts as built on when another identity has either of these:
+
+- a live contribution of a **met kind**: `visit`, `observation`, `measurement` or `care_event`.
+  This is the set #184 names `MetSpeciesKinds`. Since #184 merged, the code reads that list
+  directly. "Live" means not deleted, so a measurement its taker withdrew does not count;
+- a live photograph: not deleted, not `rejected`, and **its bytes have arrived**
+  (`bytes_received_at` set). A begun upload with no bytes is a reservation nobody can see (the
+  orchestrator's ruling after #187's review).
+
+Favorites, photo votes, private reminders, species claims and corrections, reports, disputes, and
+review dismissals do **not** count, and neither does a hazard redirect. The first definition
+needed extra rules to pair a dispute with its withdrawal and to handle toggles that had been turned
+off. Those rules go with it.
+
+An anonymized row still counts. It is somebody's visit or photo with the name taken off.
+
+### R146 — The adder's withdrawal: kind `tree_withdrawal`, soft, and arrival-order safe
+
+Decision 8's new verb travels as outbox kind **`tree_withdrawal`**. Its payload is
+`{"clientUUID","treeID","attribution","occurredAt"}`, and `treeID` must equal `tree_uuid`.
+
+- **Soft, through `deleted_at`, not delete-and-tombstone.** The act must write a `withdrawn` event.
+  Events cascade from the tree, so a hard delete would remove the record of the withdrawal along
+  with the tree. Every existing read of community trees already filters `deleted_at` (the dedupe,
+  `MapMembership`). S2's tile delta reports it as withdrawn, the same way it reports a tombstone.
+- **The answers.** The adder, with nobody else's visit or photo on the tree, gets `applied`. The
+  adder, with somebody else's on it, gets `conflict`. The adder's own already withdrawn or
+  taken-down tree gets `applied` and nothing changes. Anybody else gets `forbidden` for a tree they
+  can see (published and not removed, including an anonymized one). A tree they cannot see gets the
+  answer an unknown id gets (see "No existence oracle" below).
+- **A tree born withdrawn is never published.** When the withdrawal lands first, the late
+  `add_tree` stores the tree with no `published_at`, no `published` event, and nothing public in its
+  chain or history. It was never visible, so nothing may report it as a removal (review of #190,
+  F3).
+- **A tree this service never received** gets `applied` and nothing changes, and its later
+  `add_tree` from the same owner arrives already withdrawn. The outbox drains only what is due, so
+  a withdrawal can land before an add that is in backoff. This is the ordering
+  `measurementWasWithdrawn` handles for readings.
+- The adder's own contributions and photographs on the tree are **not** withdrawn with it.
+
+### R147 — The operator takedown route for community trees
+
+`POST /api/v1/operator/community-trees/{id}/take-down`. It sits behind `Server.operator`, the same
+wrapper as `POST /operator/photos/{id}/reject`, with no new authentication scheme. It sets
+`deleted_at` and writes a `taken_down` event with no actor. It is idempotent. An unknown id gets
+`not_found`.
+
+### R148 — `location_correction`: the details §3A left open
+
+- A correction whose `id` is already a chain row **on the same tree** is the same act queued twice
+  under two item keys. It gets `applied` and nothing changes. The same `id` on a **different** tree
+  gets `validation_failed`.
+- A correction whose `id` **is its `treeID`** gets `validation_failed`. The chain's root row
+  carries the tree's id, so without this check it would read as the replay above and answer
+  `applied` for a move that never happened. This is the drift §3A warns against: the tree pointer
+  sent as `id`.
+- **After a claim, the device's own credential is a stranger to the device's trees.** A tree a
+  device added signed out becomes the account's at the claim. A move or a withdrawal of it sent
+  under the device's credential, because the phone has since signed out, is a stranger's act:
+  - if the account published the tree, it gets `forbidden`, which does not retry;
+  - if the account declined, the tree is hidden from that credential, so the move gets `not_found`
+    and the withdrawal gets `applied` and **changes nothing**.
+
+  So C1 must not queue those acts on a signed-out phone for a tree its account owns.
+- A late (older) correction is spliced into the chain between its neighbors, already superseded. Its
+  predecessor now points at it, and it points at its successor. It skips the dedupe, and it writes a
+  `location_corrected` event whose `before` is its predecessor's position.
+- For the adder, a withdrawn or taken-down tree is `not_found`. For anybody else, see "No existence
+  oracle" below.
+
+### R149 — No existence oracle in the sync answers
+
+**Decided by:** the orchestrator, after #190's review (F6). A stranger may not learn from an answer
+that a tree they cannot see exists. "Cannot see" means: somebody else's tree that is withdrawn,
+taken down, or unpublished (a declined account's, or another device's), or one a deletion door
+tombstoned. Its account is gone, so nobody is its adder.
+
+A stranger's act on such a tree gets exactly the answer the same act gets on an id this service
+never held, with the same status, code and message, and it changes nothing:
+- `location_correction` gets `not_found`;
+- `tree_withdrawal` gets **`applied`**. The brief said `not_found` here, but an unknown id's
+  withdrawal answers `applied`, and it must: that is how a withdrawal that drains before its own
+  add is honoured (the arrival-order rule above). A hidden tree answering `not_found` would itself
+  be the oracle. So the uniform answer is the unknown id's answer, and for a withdrawal that is
+  `applied`.
+
+`add_tree` and the species kinds were already uniform. A tree anybody can see still answers a
+stranger `forbidden`.
+
+### R150 — History starts at going live (decision 13), and how it is stored
+
+The owner ruled after #190's review. Others see the tree as added where it stood when it went
+public. Positions it held and moves made while it was private stay private: they are never in the
+public history, and a tile the tree left while private never reports it. Moves made after it is
+public are public (decision 4).
+
+**Representation.** Three columns, each answering a question once, when the fact happens:
+- `community_tree_locations.was_public`. The row was, at some moment, the tree's public position.
+  That means the head at the moment of publication, or a row that became the head while the tree
+  was published. Rows superseded while private are not, and neither is a late correction spliced in
+  already superseded, which never moved the pin anybody saw.
+- `community_tree_events.in_public_history`. The event is part of the public history.
+  - A `published` event always is. It carries the position at publication (`lat`, `lon`,
+    `placement`, `location_accuracy_m`) beside `license_version`, and **it is the public record's
+    "added"**.
+  - An `added` event never is.
+  - Every other event is public when it was written while the tree was published, except a
+    `location_corrected` that did not move the public pin.
+- `withdrawn_community_trees.was_public`. See the tombstone ruling below.
+
+**Why not collapse the private chain at publication.** Collapsing would delete or rewrite the
+adder's own acts. The chain is the materialization of contributions, which are append-only
+(DECISIONS constraint 7). Under this representation no position, time or actor is ever rewritten,
+and nothing is deleted. The one UPDATE is publication turning `was_public` on for the head it
+publishes, false to true, once. That is the same set-once shape as `superseded_by`. The adder's
+chain stays complete, and the adder's phone keeps its own moves.
+
+**What S2 must serve:**
+- **History.** Only events with `in_public_history`. The `published` event is presented as the
+  tree's "added", at its `after` position and dated by the day of `published_at`. `added` events
+  are never served. Every served `location_corrected` has a `before` and an `after` that were public
+  positions.
+- **Tile.** The chain arm reads only `community_tree_locations` rows with `was_public`. The position
+  arm reads `community_trees` with `published_at IS NOT NULL`: live trees for the snapshot, and
+  soft-removed ones for the delta's removals.
+
+**What the tests pin:** `assertPublicationInvariant` checks all of this over the whole database
+after every step of every publication test. `TestHistoryStartsAtGoingLive` walks the claim, the
+acceptance, the signed-in insert, a public move and a late splice.
+
+### R151 — A tombstone says whether the tree was ever public
+
+**Decided by:** the orchestrator, after #190's review (F2). Decision 12 tombstones an unpublished
+tree under both doors. `withdrawn_community_trees.was_public` is written from the tree's own
+`published_at`. Nothing unpublishes (decision 10), so a set `published_at` means "was ever public".
+
+**S2 reports a tombstone in `withdrawn_tree_ids` only where `was_public`.** An unpublished tree
+removed by either door is never reported to anybody, not even as an id. The tombstone still guards
+the id against a late `add_tree`, whatever `was_public` says. A soft-removed tree (withdrawn or
+taken down) is once-public exactly when its `published_at` is set, and a tree born withdrawn has
+none. The table is new in 007, so there are no rows to backfill. The column has no default, so no
+future writer can leave the question unanswered.
+
+### R152 — The tile's indexes (performance precedence)
+
+007 creates one partial index per arm of S2's tile, each on the predicate that arm must carry:
+
+| Arm | Index | Predicate |
+|---|---|---|
+| Position | `idx_community_trees_public_position` on `community_trees (lat, lon)` | `published_at IS NOT NULL` |
+| Chain | `idx_community_tree_locations_public_position` on `community_tree_locations (lat, lon)` | `was_public` |
+| Removal list | `idx_withdrawn_community_trees_public` on `withdrawn_community_trees (withdrawn_at, id)` | `was_public` |
+
+The removal list's index replaces the earlier unfiltered time index. The delta's keyset stays
+`idx_community_trees_updated (updated_at, id)`. 001's `idx_community_trees_position` stays for the
+10 m dedupe, which also sees the caller's own unpublished trees.
+
+`TestTheTileIndexesServeTheirQueries` checks each index against the **generic** plan
+(`EXPLAIN (GENERIC_PLAN)`) of its arm's query shape. So S2 writes one query text per arm, with the
+arm's predicate spelled literally and no `($n IS NULL OR …)` around the indexed columns.
+
+### R153 — Species arm 1: what "applies" means on the server
+
+`species_claim` names the tree only while its species is NULL. `species_correction` applies unless
+a species event newer than it (by `occurred_at`) has already been applied. In that case the
+correction is recorded and changes nothing. A statement whose payload does not decode, names
+another tree, or names no species is recorded exactly as before 007. None of these paths is ever
+refused.
+
+### R154 — Event kinds beyond the design's five
+
+`community_tree_events.kind` also admits `withdrawn` and `taken_down`. The first draft also admitted
+`unpublished`. Decision 10 left it with no writer, so it is gone from the CHECK and no row carries
+it. S2 need not handle it.
+S2's `/history` decodes `kind` tolerantly (design §3E), so an old client meets these as `unknown`.
+Which of them the history list shows is C3's question for the owner.
+
+### R155 — The session's device: bound at `/auth/oidc`, not at `/devices/claim`
+
+`sessions.device_id` is set only by `POST /auth/oidc` when the request names a `device_uuid`, and
+`POST /auth/refresh` carries it to each successor session. `POST /devices/claim` does not rebind a
+session. It claims the device named in the body, which the session has not proved, so a session
+minted without a device stays unbound and its acts record no device. Signed-in acts record the
+session's device, never the item's `device_id` claim.
+
+### R156 — `add_tree` may carry the fix's accuracy
+
+`TreeAddition` may add an optional `locationAccuracyM` (D6). The service stores it on the root
+location and the tree's cache. When it is absent, both are NULL. A negative value gets
+`validation_failed`. Nothing requires C1 to send it.
+
+### R157 — A photograph's local capture date (decision 14a, the server's half)
+
+**Decided by:** the owner, decisions 14 and 14a. Other people see a photograph's capture **date**,
+never its time. The date is client-assisted, because the server cannot know the phone's time zone,
+and the UTC date would put an evening photograph on the wrong day.
+
+- **Column.** 007 adds `photos.captured_on DATE`, nullable.
+- **Request.** `POST /photos/begin` accepts an optional **`captured_on`**: the photograph's
+  **local** date, exactly `YYYY-MM-DD`.
+  - Absent or `null` stores NULL. That is every older build, and it keeps today's behaviour.
+  - Anything else must be a real calendar date **within one day of `captured_at`'s UTC date**. UTC
+    offsets run from -12 to +14 hours, so a local date is never further off than that. Otherwise the
+    answer is `validation_failed`.
+  - On an idempotent replay the first begin's value stands, as for every other column.
+- **Database backstop.** `photos_captured_on_is_the_captured_day` restates the one-day bound, so no
+  writer can skip it.
+- **The fixture.** The wire name is pinned by `server/testdata/photos_begin.json`. The Go test posts
+  that fixture's bytes unchanged. The fixture is the east-of-UTC case: `captured_at` is
+  2026-09-28T23:30:00Z, and `captured_on` is 2026-09-29.
+
+**What C1 must match:**
+- Send `captured_on` in the begin body as the photograph's local calendar date, `YYYY-MM-DD`, with
+  the key spelled exactly that.
+- Encode through production code, and compare against `server/testdata/photos_begin.json`, value
+  included.
+- **Do not ship it before 007 is deployed.** `decodeBody` refuses unknown fields, so a server
+  without this change answers the whole begin `validation_failed`.
+
+**What S2 must match:**
+- Serve non-owners the date from `captured_on` where it is set, in the form S2 pins, and never
+  `captured_at`'s time.
+- Where it is NULL, keep today's behaviour.
+- The owner keeps `captured_at`.
+
+---
+
+### R158 — A community tree hidden from a caller is answered exactly as an id nobody sent
+
+These record what **PR S2** (`server/community-trees-reads`) decided where the round's design (§3C,
+§3D, §3E), the owner's decisions 1–14 and the orchestrator's rulings of 2026-09-28 left a choice.
+Each is a ruling within delegated authority, logged for review. None reverses an existing ruling.
+The owner should look at the first two.
+
+**Decided by:** PR S2. **Needs owner review:** no; it extends the public read's rule.
+
+"Hidden" means: somebody else's unpublished tree, a tree its adder withdrew, a tree an operator took
+down, and a tree the erase door deleted (tombstoned). The adder sees their own unpublished tree.
+Nobody, the adder included, sees a withdrawn or taken-down one.
+
+| Route | What a hidden tree gets |
+|---|---|
+| `GET /trees/{id}` | 200, and byte-for-byte the body an unknown id gets: no photographs, `visit_count` 0, `community_tree` null, `added_by_you` and `is_published` false. |
+| `GET /public/trees/{id}` | 200, and byte-for-byte the empty answer (`public_tree_empty.json`'s shape). |
+| `GET /photos/{id}` | 404 `not_found` for a photograph of a hidden tree, whoever took it. |
+| `GET /trees/{id}/history` | 404 `not_found`, the same answer as a city tree's. (The adder's own unpublished tree is not hidden from the adder; it answers 200 with no events, per the history ruling below.) |
+
+Why not a `not_found` on the profile: the profile already answers 200 for every city tree, which
+this service has never heard of. A `not_found` for a hidden community tree would be an oracle that
+says "a community tree stands here, and you may not see it". The public read's §9 argument applies
+unchanged.
+
+Why the photograph read is included, though the brief named two routes: a stranger who read a
+tree's photo ids before its adder withdrew it, or before an operator took it down, could otherwise
+go on fetching the pictures. A takedown that leaves the photographs standing is not a takedown.
+
+### R159 — Community-tree dates travel at day precision, in the tile and the profile too
+
+**Decided by:** PR S2, extending the orchestrator's ruling "history dates on the wire truncated to
+the day". **Needs owner review:** yes. It is a privacy call, and it changes what `Tree.createdAt`
+means for a community tree.
+
+`createdAt` and `updatedAt` on every community `Tree` served by the tile and the profile are
+truncated to midnight UTC. For a GPS-placed pin, `createdAt` to the second is the moment the adder
+stood at that tree. `updatedAt` is, among other things, the moment the adder signed in, because a
+claim publishes the tree and bumps it. A history that says "a day" beside a tile that says
+"18:41:46" would have withheld nothing.
+
+The phone does not need more. The cursor, not `updatedAt`, is how it learns what changed. The
+adder's own trees are authored on the phone and win the merge (§5). **C1 must not use a cached
+community tree's `updatedAt` for ordering or change detection.**
+
+**These are calendar days, and a client must render them as calendar days.** The wire form is
+midnight UTC (`2026-03-20T00:00:00Z`). Formatted in the reader's own zone, as every photo date in
+the shipped app is, midnight UTC is the **previous** day anywhere in the Americas. No shipped client
+decodes any of these fields (the tile, `community_tree` and the history are all new, and
+`TreeCommunityHalfResponse` ignores the keys it does not name), so the rendering is a C1/C2
+contract, not a TestFlight hazard: format them with a UTC calendar, as screen 03's inventory date
+(`TreeProfilePresentation`'s `yMMMMd`, fixed to UTC for exactly this reason) already does. The day
+itself is the **UTC** day of the event. For an evening in the Americas that is the next local day,
+which the history has shown since round 1; making it the local day needs the event's zone, which
+the service does not hold (see the decision-14 erratum for the same limit on photographs).
+
+### R160 — The tile delta's cursor trails the present by the request timeout
+
+**Decided by:** PR S2. **Needs owner review:** no. It is a correctness mechanism with no visible
+delay.
+
+A keyset over `(updated_at, id)` loses rows. Every writer stamps `updated_at` at the start of its
+transaction and commits later, so a row stamped 12:00:03 can commit after a row stamped 12:00:05
+that a reader already passed. That row never reaches that phone, and nothing reports it.
+
+The tile serves every committed row, so nothing is delayed. The `next_cursor` it returns, however,
+never moves past `now − (requestTimeout + 5 s)` (25 s). Every writer of `community_trees` and
+`withdrawn_community_trees` runs inside a request whose context dies at `requestTimeout`, so a row
+stamped before that horizon has committed or never will. A row newer than the horizon is served
+again on the next fetch, and the client's upsert by id absorbs it. When a page reads to the end,
+the cursor moves up to the horizon even if the tile had nothing, so a quiet tile does not re-read
+every tombstone on its next delta. `TestTheCursorNeverPassesARowThatMightStillCommit` stages the
+race.
+
+**Assumption, stated:** one machine, one clock. The service runs one machine on `cypress-sync`.
+If it ever runs two, their clock skew must be added to the margin.
+
+### R161 — What the tile serves, what it reports as removed, and what a first fetch is
+
+**Decided by:** PR S2, within §3C.
+
+- **Served as a tree:** published and not deleted. This is caller-independent: the adder's own
+  unpublished trees are not in it, and `address` is always null.
+- **Reported in `withdrawn_tree_ids`:** a tree that was public once and is not now: withdrawn by
+  its adder or taken down by an operator (`published_at` is set and `deleted_at` is set; nothing
+  unpublishes, decision 10), or erased with `withdrawn_community_trees.was_public`. **A tree that
+  was never published is never reported**, not even as an id to drop: no phone but its adder's ever
+  held it, and a removal list still says a tree stood in this tile. That includes a declining
+  account's tree tombstoned when the account goes (decision 12) and a tree born withdrawn (its
+  withdrawal drained before its add). Both read S1's columns; neither infers "was public" from the
+  event log.
+- **Tombstones are not scoped to a tile.** They carry no position (the erase door keeps nothing
+  that could say whose tree it was), so every delta reports every once-public tombstone after its
+  cursor.
+- **A first fetch (no cursor) is a snapshot:** it reports no removal older than the settle horizon
+  (`now − 25 s` when it began), because a phone holding nothing for the tile has nothing to drop.
+  So a snapshot **can** report removals from the last 25 seconds, and one that happens while the
+  snapshot is being paged is reported too. The client applies them like any other. The client must drop a tile's cursor and the trees fetched through
+  it together, or not at all.
+- **A pin moved out of a tile is served in the tile it left**, with its new coordinate, which lies
+  outside that tile. Otherwise a phone that fetched only the old tile would keep the old pin
+  forever. "In the tile" means the head is in it, or any earlier **public** position in the
+  location chain was (`community_tree_locations.was_public`). A position the tree held only while
+  private puts it in no tile: no phone ever drew it there (decision 13). The client keys its cache on the tree id and must not assume a served tree lies inside the
+  tile it came from.
+- **Tile membership is half-open:** west and north edges are inclusive, east and south are
+  exclusive. That matches `floor` in the standard tile formula, so a point on a shared edge
+  belongs to exactly one tile.
+- **Two query texts, one contract.** The snapshot and the delta are separate SQL texts rather than
+  one text with `($n IS NULL OR …)` arms, so each generic plan (the one pgx's statement cache can
+  settle on) uses S1's partial indexes: `(lat, lon) WHERE published_at IS NOT NULL`,
+  `(lat, lon) WHERE was_public`, and `(withdrawn_at, id) WHERE was_public`. Measured at 100k trees:
+  about 0.3 ms warm and 2–4 ms cold, generic or custom (the errata entry has the numbers).
+- **Pages:** `limit` defaults to 100 and is at most 100. `has_more` is true only when the page
+  overflowed **and** the cursor moved. A full page made entirely of rows newer than the horizon
+  says `has_more: false`, and the next refresh picks those rows up.
+
+### R162 — The history starts where the tree went live, and serves an allow-list
+
+**Decided by:** PR S2, implementing the owner's decision 13 ("history starts at going live") on
+S1's representation. **Needs owner review:** no; it is the decision, applied.
+
+The history serves only events with `community_tree_events.in_public_history`, and of those only
+an **allow-list** of kinds. This follows `publicKinds`: a kind added later is invisible until
+somebody writes down why it should be shown. `TestEveryHistoryEventKindIsClassified` reads the
+vocabulary out of the migrations and goes red on an unclassified kind.
+
+- **`published` is served, as `added`.** It is the tree's first public moment, and it carries the
+  position the tree held when it went live. To a stranger that is when and where the tree was added.
+  The license version it also records stays on the server.
+- **`added` is withheld.** It is the private record of the tree's first position, which may be
+  somewhere the tree never stood in public: a phone that added a tree signed out, moved it, and then
+  signed in, published it at the second position. Moves made before going live (`location_corrected`
+  events with `in_public_history` false) are withheld with it. Those positions are also in no tile.
+- **`location_corrected`, `species_named` and `species_corrected`** are served when public.
+- **`withdrawn` and `taken_down` never appear.** A withdrawn or taken-down tree's history is
+  `not_found` (§3E), so there is no response for those events to be in. They are withheld as well,
+  so this stays true if the not-found rule is ever relaxed.
+- `unpublished` is gone from the vocabulary (S1 retired it with decision 10), so nothing classifies
+  it.
+- **The adder gets the same history as everyone else.** Their own record of the tree's private life
+  is on their phone. A route whose answer depended on who asked would be two contracts under one
+  name. So the adder's own **unpublished** tree answers 200 with no events.
+- **No public event is dated before the tree went live** (the orchestrator's L1 ruling). An act the
+  adder made while the tree was private can arrive after publication: a move or a naming queued on
+  a phone that was signed out or declining. S1 records it as public, because the pin did move in
+  public. The history serves it at `GREATEST(occurred_at, published_at)`, and orders by that date,
+  then by `recorded_at`, so it sits above "added" and never below it. Its own earlier day, which
+  would be a day of the tree's private life, is never served.
+
+The client must still decode `kind` and `placement` with an unknown case, so a kind this list
+admits later does not fail the whole response.
+
+### R163 — The tile cursor is sealed, and its key is derived from the session signing secret
+
+**Decided by:** PR S2 round 2, fixing the #190 review's F1. **Needs owner review:** no new secret
+was needed; the key decision is logged here.
+
+The review showed that a readable, forgeable cursor turned the day-precision ruling into nothing: a
+cursor forged at `T − 1µs` served a tree and one at `T` did not, so a binary search recovered every
+tree's exact stamp in every tile (the moment an adder stood at a tree, signed in, or deleted an
+account). The cursor is now **AES-256-GCM** over a fixed 34-byte record (version, position,
+since), with a random nonce and the canonical tile as additional data. It is unreadable, has one
+length whatever it holds, and is refused as `validation_failed` if it was forged, altered,
+truncated, sealed under another key, or sealed for another tile.
+
+**The key** is HKDF-SHA256 of `SESSION_SIGNING_KEY` (the service's existing required secret, at
+least 32 bytes), with the info string `cypress-sync/community-tile-cursor/v1` and no salt: 32 bytes.
+The info string is used for nothing else, so the derived key is independent of the signing key. No
+new Fly secret. Rotating `SESSION_SIGNING_KEY` already signs every account out; it now also turns
+every stored tile cursor into `validation_failed`, which the client answers by dropping the cursor
+and its trees and taking a fresh snapshot. A server with no key refuses the tile (500) rather than
+hand out a readable cursor.
+
+What the cursor cannot hide is the present: a stranger polling a tile every second sees a new tree
+within a second of its arrival. That is an observation anyone could make by looking, not the
+recovery of a stored time.
+
+### R164 — A stranger is told a tree was added the day it went live
+
+> **SUPERSEDED 2026-11-15 by the owner** — see **R211**. Every viewer, a stranger
+> included, is now told the day the tree was added on its phone, not the day it went live.
+
+**Decided by:** the orchestrator's V1 ruling on decision 13, implemented in PR S2 round 3.
+
+`createdAt` on a community `Tree` is **`published_at`**, at day precision, for everyone but the
+adder: on the tile (which has no viewer and serves only published trees) and on the profile. The
+adder's own profile keeps `created_at`, the day they really added it. So a tree added signed out in
+March and claimed in September was, to a stranger, added in September. The history's "added" says
+the same day, so the two can no longer disagree on one screen. Before this, `createdAt` told every
+stranger how long the tree had sat private, which is how long its adder had been signed out or
+declining.
+
+`updatedAt` is unchanged: publication bumps it, so it is never before `published_at`.
+
+### R165 — The grove's hero passes the photograph's gate, and has bytes
+
+**Decided by:** the orchestrator's V2 ruling, implemented in PR S2 round 3.
+
+`GET /me/grove`'s `hero_photo_id` is chosen only from photographs that `GET /photos/{id}` would
+serve this caller, for a tree that caller may see. So no photograph of a community tree hidden from
+the caller is a hero, whether the tree is somebody else's unpublished tree, withdrawn, taken down or
+erased. A photograph whose bytes never arrived is never a hero either, including the caller's own
+upload still in flight: a hero is something to draw.
+
+Without the gate, a stranger's withdrawal of a hidden id answered `applied`, like any unknown id
+(F6), and their grove then drew the hidden tree's photograph for it. That told the two apart
+afterwards and served a hidden photograph's id. And anybody with a favorite on a tree that was
+later withdrawn or taken down went on receiving its photograph's id.
+
+The grove decides this for many trees in one query, so the rule is spelled a second time in SQL
+(`treeHiddenFromViewerSQL`). `TestTheGroveHeroPassesThePhotographGate` checks that spelling
+against `communityTreeFor` for every hidden state and the visible ones, for an account and for a
+device.
+
+### R166 — Only a known license version is an acceptance
+
+**Decided by:** the orchestrator's L2 ruling. It is S1's code (`store/community_trees.go`,
+`store/identity.go`), fixed in PR S2 round 3.
+
+The service publishes under one license version, `odbl-1.0`, which is the client's
+`LicenseConsent.currentVersion`. A consent naming anything else, `""` included, is recorded as a
+**decline**, and a stored value that is not a known version (written before this rule) does not
+count as acceptance either. Failing closed keeps the account's trees private. It does not unpublish
+anything (decision 10).
+
+An account that had accepted and then sends a non-version is therefore recorded as declining from
+then on. That is the literal reading of the ruling; the alternative, refusing the request, would
+fail a sign-in over a consent field.
+
+`TestTheServerKnowsTheClientsLicenseVersion` reads the client's constant out of
+`AccountLinkRecord.swift`. When legal review moves it, the service must learn the new version in
+the same change, or every new acceptance silently becomes a decline.
+
+**Not changed:** 007's backfill publishes accounts whose `license_version IS NOT NULL`. It is a
+migration, and this PR does not touch migrations. The client's constant has been `odbl-1.0`
+since it was written (`git log -S` on `AccountLinkRecord.swift` finds one value), so no other
+version is expected in production. Still, S1 may want the backfill to say `= 'odbl-1.0'` before
+007 ships.
+
+### R167 — Decision 14a's served form: noon UTC of the phone's date, to everybody but the owner
+
+**Decided by:** PR S2 round 4, pinning the form decision 14a left to S2 ("noon UTC of it, or a
+date-only field").
+
+`captured_at` on `GET /trees/{id}` and `GET /photos/{id}` is:
+- **the exact time**, for the photograph's owner;
+- **noon UTC of `captured_on`**, for everybody else, when the phone sent it;
+- **the exact time**, for everybody, when it did not. Decision 14a keeps today's behavior for
+  photographs from older builds.
+
+**Why noon UTC and not a date-only field.** The shipped client decodes `captured_at` with
+`.iso8601`, and a bare `2026-03-14` would fail that decoder and with it the whole profile. Every
+surface formats the instant date-only in the reader's zone. Noon UTC is the phone's calendar date
+for every reader from UTC−11 to UTC+11, which was measured through the client's own decoder and
+formatters (the decision-14 erratum). Midnight would be the day before across the Americas.
+
+The residue is readers at UTC+12 and beyond, who see the next day. New clients close it by
+formatting other people's photograph dates with a UTC calendar (the testdata README).
+`TestOthersSeeAPhotographsDateAndItsOwnerTheTime` covers both routes, owner and stranger, the
+morning, the evening, the month end and a photograph with no date. `tree_profile_community.json`
+pins the evening case.
+
+**Round 5 amendments (the #190 verification's N1 and N2):**
+- **Order follows the served value.** The profile lists photographs newest first by the value this
+  caller is served, then by id descending. The grove's hero is chosen by the same order, in SQL.
+  Listed by the stored time, which any caller chooses for their own photographs at begin, the order
+  was an oracle: eleven begins placed another person's photograph within a minute of its capture
+  time. With the order on the served value, the same probe finds noon.
+- **`captured_on` travels as well** (the orchestrator's ruling). `YYYY-MM-DD` goes beside
+  `captured_at` on both routes whenever the phone sent it, and is omitted, never null, otherwise.
+  It is served to **everybody, the owner included**, because it is the date the owner's own phone
+  recorded, which adds nothing they lack, and one rule for every caller leaves the client one
+  meaning for "absent". C2 renders it as a calendar date when present and falls back to
+  `captured_at` in the reader's zone when it is absent. That replaces round 4's "format with a UTC
+  calendar" note, which gave the wrong day for photographs from builds that send no date.
+
+---
+
+### R168 — R80 item 5's pinch zoom covers add-a-tree's viewfinder
+
+The comments name the report (F33) and RULINGS R80 item 5.
+
+**Date:** 2026-09-28. **Ruled by:** the owner, confirming the question `docs/ROADMAP.md` F33 put to
+them. **Source:** the owner's answer to the orchestrator in the orchestrator's session of
+2026-09-28, verbatim: *"F33 yes"*, answering a question that put F33 as the same gesture R80 item 5
+ruled in on screen 04. The parenthetical "(same R80 ruling)" that the authoring agent's brief carried
+was the orchestrator's gloss, not the owner's words. It is not recorded anywhere else in the
+repository. **Status:** ruled.
+
+**The ruling.** RULINGS R80 item 5 ruled in pinch zoom on screen 04's viewfinder. The owner rules
+that it **covers add-a-tree's viewfinder too**. Add-a-tree gets the same gesture on the same
+`VisitCameraController`, with the same lens ceiling (`VisitCameraController.preferredMaxZoom`).
+Nothing about the zoom is decided anew here.
+
+**The report.** Build 77, 2026-09-28, verbatim: *"Need ability to zoom in on photo in this view"*.
+The screenshot shows add-a-tree's live viewfinder (`Take the photo`, with `Add this tree` disabled).
+This was the third pinch-zoom report, and add-a-tree's viewfinder was a camera surface R80 had not
+reached. It was not the only one: see "What this does not cover" below.
+
+**As built.**
+- **Location.** The gesture lives in one place, `VisitCameraZoomPinch`. Screen 04 and add-a-tree
+  both apply it, so neither screen carries its own copy.
+- **When it is on.** The rule is screen 04's: a lens to move (`isZoomable`), and a live frame rather
+  than a still. Screen 04 passes `!hasSnapped`. Add-a-tree has one framing and passes
+  `isAimingCamera` (no photograph yet). The pinch is off once a photograph is in the well, and back
+  on after `Retake`.
+- **Where it sits.** On add-a-tree it is on the photo well only, so the shutter, the library button
+  and the rest of the form keep their own touches.
+
+**What this does not cover.** A third viewfinder owns a `VisitCameraController`:
+`ContributionCameraView`, which check-in (05) and care log (09) open to attach photographs. It has
+no pinch. Neither R80 item 5 nor this ruling names it, so this ruling does not extend to it. Whether
+it gets pinch zoom is an open item in `docs/ROADMAP.md`'s chip backlog. (The owner ruled it in the
+next day, 2026-09-29, as a ruling of its own: **R169**.)
+
+**Not seen on a phone.** No simulator has a camera, so the gesture never arms on one. Three things
+are still to be checked on the physical phone:
+- that two fingers on add-a-tree's well move the lens;
+- that the pinch coexists with the composer's `ScrollView`;
+- **that screen 04's pinch still arms once the session starts**, as a regression check. Before
+  this change `VisitCameraView.body` read `camera.isZoomable`. Now only the shared modifier's body
+  reads it. SwiftUI is expected to track that read, but no simulator can show it, because
+  `isZoomable` is always false there.
+
+---
+
+### R169 — 05 and 09's camera gets the same pinch as screen 04 and add-a-tree
+
+**Date:** 2026-09-29. **Ruled by:** the owner. **Source:** the owner's answer to the orchestrator's
+question *"The check-in (05) and care-log (09) camera has no pinch zoom. Screen 04 and add-a-tree
+now do (F33). Give 05/09 the same pinch?"*, verbatim: *"Yes, same pinch (Recommended)"*.
+**Status:** ruled. Resolves `docs/ROADMAP.md` chip backlog 80.
+
+**As built.** The following is the authoring agent's account, not the owner's words.
+`ContributionCameraView` applies the shared `VisitCameraZoomPinch` to its viewfinder, on its own
+`VisitCameraController`, before the ✕ and shutter overlays, as screen 04 does. It passes
+`isAiming: true`. Screen 04's rule turns the pinch off when the viewfinder shows the still it just
+took. This viewfinder never shows a still: each frame goes to the form and the preview stays live
+for the next one. The other half of the rule, a lens to move (`isZoomable`), applies unchanged.
+
+**Not seen on a phone.** No simulator has a camera, so the gesture never arms on one. Checking that
+two fingers move the lens on 05 and 09's camera is part of the F33 phone check (chip backlog 81).
+
+---
+
+### R170 — every camera opens at 1×
+
+**Date:** 2026-09-29. **Ruled by:** the owner. **Source:** the owner's answer to the orchestrator's
+question *"Camera zoom now exists on three screens (04, add-a-tree, 05/09). When you close a camera
+zoomed in and open another, should it start at 1× or keep the zoom?"*, verbatim: *"Always start at
+1× (Recommended)"*. **Status:** ruled. Raised by PR #200's review (finding 3), which found the
+carry-over undecided: `VisitCameraController` called it "decided by accident".
+
+**As built.** The following is the authoring agent's account, not the owner's words.
+`VisitCameraController.configureAndRun`, the one path that reaches a camera device, sets the lens
+to 1× as each session starts (`VisitCameraZoom.openAtOneX`). 1× means 1 held inside the device's
+current zoom range, and the controller's `zoomFactor` takes whatever the lens reads afterward. This
+covers all three screens, because all three start their camera through that controller. The reset
+is on start rather than in `stop()`, because a session that is never stopped would skip a reset in
+`stop()`. While 05 and 09's camera stays open, the zoom still carries from shot to shot.
+
+**Not seen on a phone.** No simulator has a camera device, so `configureAndRun` returns before it
+reaches the reset. `ZoomTests` covers `openAtOneX` against a stand-in lens. That every camera opens
+at 1× on the phone is part of chip backlog 81.
+
+---
+
+### R171 — The dispute screen's 15 s clock starts at the grant
+
+Follows ruling 11 (**R139**).
+
+**Date:** 2026-09-29. **Decided by:** owner. **Status:** decided.
+
+**Asked:** "the 15 s wait for a location fix also runs while iOS's location-permission prompt is on
+screen, so a slow answer briefly shows 'couldn't find your location' until a fix arrives. Change it?"
+
+**Answered:** "Start at the grant (Recommended)"
+
+**Two further answers, the same day** (after PR #198's review):
+
+**Asked, in gist:** should a permission prompt that is never answered get a ceiling, so the block
+stops waiting on its own? **Answered:** "No ceiling (Recommended)"
+
+**Asked, in gist:** after the block has given up, turning Location off and back on starts a new 15 s
+wait that holds *Send* again without a tap. Keep that? **Answered:** "Keep it (Recommended)"
+
+---
+
+### R172 — D20 is WAIVED for Washington, D.C., at the measured 86.27%
+
+**Date:** 2026-11-12. **Decided by:** the owner, relayed by the orchestrator in the D.C. round's
+brief: the owner granted a D.C. waiver for the first publish if D.C. measured below 90%.
+**Status:** ruled.
+
+#### The measured number
+
+D20 asks that 90% of a city's rows resolve to a species already in the corpus. D.C. was measured the
+way R100 measured New York: the R0 to R3 cascade of `Tools/build_nyc_species_map.py` (exact name,
+hybrid sign, rank within species) against the species catalogue already published, 1,198 species,
+over every shipped D.C. tree.
+
+**170,322 of 197,418 rows: 86.27%, 7,355 rows short of 90%.** Exact name alone (R0) is 164,538 rows,
+83.34%. Detail: `docs/investigations/dc-street-trees.md` §5.
+
+#### Ruling
+
+The gate is not met, and it is waived for Washington, D.C. The waiver records the shortfall; it does
+not remove it. Anyone quoting D.C.'s species coverage quotes 86.27% and the 7,355-row shortfall.
+
+#### Consequences
+
+- The first D.C. publish is not blocked on D20.
+- The waiver is D.C.'s, not a change to D20, the same as R100 for New York.
+- Much of the gap is notation the cascade does not handle (`Ginkgo biloba (male)`, `Prunus
+  species`, curly-quoted cultivars), not missing taxa. Closing it is a curation round with cited
+  rules, listed in `docs/ROADMAP.md`'s chip backlog.
+
+---
+
+### R173 — The Grove ring follows the reader's location (F38)
+
+**Owner decision 2026-11-12: the ring follows the reader's location (constraint-21 exception);
+strings drafted for ratification.** **Owner ruling 2026-11-13** (through AskUserQuestion) settled
+the fallbacks and the polygon wording, below. ROADMAP item 99, PR #207.
+
+## The report
+
+A tester in Washington, D.C. opened My Grove > Species (screen 08) and read "you can recognize in
+the Castro/Upper Market". `LocalAPI.groveSpecies` never read location. It drew the ring around A4's
+inferred resident neighborhood (the most-visited one) and the caption presented that as plain fact.
+F17 (PR #132) fixed the same complaint on the Journal's stats and did not reach screen 08.
+
+## The rule
+
+`GroveModel` asks the shared `MapLocationProvider` for the reader's fix at each read. It applies
+the Almanac's rule for `.here`: a fix is usable only when
+`AlmanacLimits.fixCanResolveAnArea(accuracyM:withinM: neighborhoodResolutionRadiusM)` holds
+(400 m). Then:
+
+1. **A usable fix inside a polygon, where the reader has met at least one of its species.** The
+   ring is that neighborhood. The caption keeps the mock's words (owner ruling 2026-11-13, (c)).
+2. **A usable fix where no polygon exists** (all of Washington, D.C. today; ROADMAP chip 88), when
+   R29's 1,200 m radius around the reader holds a record and the reader has met at least one of its
+   species. The ring is that radius.
+3. **Every other case falls back to the most-visited ring**, which is A4's inference unchanged (the
+   most-visited polygon, else a radius around the most-visited tree), and its caption says
+   "most-visited", so it is never read as the reader's location:
+   - no usable fix (location denied, not asked, no fix yet, or a fix coarser than 400 m);
+   - **(a)** a usable fix that no tree inventory on the phone covers (owner ruling 2026-11-13: do
+     not show a "no inventory here" note; fall back instead);
+   - **(b)** a usable fix in covered ground where the reader has met none of the area's species, so
+     the ring would read zero (owner ruling 2026-11-13: fall back rather than draw an empty ring).
+     The test is against this phone's species; the account's half, merged later, does not change
+     the area.
+
+The background merge (`RoutedAPI.refreshedGroveSpecies(near:)`) is read with the same fix, so it
+cannot repaint the ring about a different area.
+
+## Strings for ratification
+
+| State | Caption under the ring |
+| --- | --- |
+| Fix, polygon | `you can recognize in the ‹neighborhood›` (unchanged, the mock's words; ruling (c)) |
+| Fix, no polygon, record nearby | `you can recognize within a 15-minute walk of where you are` (new) |
+| Most-visited fallback, polygon | `you can recognize in the ‹neighborhood›, your most-visited neighborhood` (new; was the unlabeled first row) |
+| Most-visited fallback, no polygon | `you can recognize within a 15-minute walk of your most-visited tree` (unchanged) |
+
+The draft of 2026-11-12 also proposed a sentence in place of the ring for case (a), `No city tree
+inventory on this phone covers where you are yet.` Ruling (a) withdrew it; it was never shipped.
+
+## What stays unbuilt
+
+- A4's "overridable in settings" resident neighborhood stays unbuilt.
+- F17's area picker (`AreaPickerSheet`) is not added to screen 08.
+- The model reads the fix when the tab loads (every visit to the tab). It does not follow a fix
+  that arrives while the tab is already open; the next visit picks it up.
+
+---
+
+### ~~R174 — `tree_withdrawal` is reserved in the queue's vocabulary and has no verb yet~~
+
+Each is the authoring agent's call, for the orchestrator or owner to confirm or reverse.
+
+**Superseded by the owner's answers of 2026-11-16, in R238: the verb is
+built, the phone withdraws first, and a refusal brings the tree back.** Kept for the record. The
+original text follows for the record.
+
+The service accepts `tree_withdrawal` (decision 8) and its Go guard expects a Swift `treeWithdrawal`
+case. `outbox.kind`'s CHECK admits the value in v23 so that adding the verb later is not another
+table rebuild, but C1 adds **no `OutboxItem.Kind` case and no verb**. The open question is the one the
+verb has to answer: the service refuses a withdrawal once another identity has built on the tree
+(`othersHaveBuiltOn`) and answers `conflict` after the phone has soft-deleted it locally, so whether
+the phone withdraws first and reconciles, or waits for the answer, is a product call. Not made here.
+
+### ~~R175 — Every tree added before v23 has an adder of nobody, and a root position owned by nobody~~
+
+**Replaced by the owner's ruling of 2026-11-12, in R179: every
+pre-v23 tree belongs to this installation's own owner.** Kept for the record. The original text
+follows for the record.
+
+The phone never recorded who added a tree. The migration declines to guess (R45 arm 3): the backfilled
+root of each existing tree is owned by nobody, so nobody can move those pins, and the service agrees —
+a tree it holds with no adder answers `forbidden` to everybody.
+
+### R176 — Others' trees get no species, report, or dispute control, and the offers say so
+
+The orchestrator's ruling "Others' trees: no species/report/dispute controls this round" is implemented
+at the profile: for a tree that is only in the cache, `speciesCorrection` and `recordDefect` are
+`.unavailable`, and `claimSpecies`, `correctSpecies`, `flagWrongSpecies` and `flagNeverExisted` keep
+answering `notFound` for it (they read only trees this phone added). `correctLocation` answers
+`forbidden` for a cached or city tree, matching `claimSpecies`'s distinction between "real and not
+yours" and "no such tree".
+
+### R177 — `OutboxPresentation` labels a `location_correction` "Location correction"
+
+**NOT SPECIFIED** in SCREENS.md (constraint 21). The label is provisional and appears only on the
+sync-status screen's row for a queued move. C3 owns the wording; the move has no UI of its own in C1.
+
+### R178 — A pin move has no distance bound
+
+> **Superseded in part, 2026-11-14.** The owner's ruling of that day removed the 10 m rule
+> (**R190**), so `correctLocation` no longer applies the 10 m dedupe. The text below is the record
+> of its day and is kept as it was.
+
+`correctLocation` applies the 10 m dedupe against every other tree and nothing else. How far a pin may
+move, and from where, is C3's question to the owner; the service applies no bound either.
+
+---
+
+### R179 — Every tree added before v23 gets an adder: from its own add first, then from this installation
+
+**The owner's rulings of 2026-11-12 and 2026-11-13.** They replace the author's pending ruling "Every
+tree added before v23 has an adder of nobody" (**R175**).
+
+Migration v23 sets the adder of every community tree already on the phone, and the owner of its root
+position, in this order:
+
+1. **From the tree's own `add_tree` outbox row**, when that row still exists (ruling of 2026-11-13,
+   "Read add record first"). The row shares the tree's `client_uuid`, and its payload's `attribution`
+   is the account (`userID`) or device (`deviceID`) the add was made as. That is also what the
+   service recorded as the adder when the row was sent.
+2. **Otherwise, from this installation's current owner** (ruling of 2026-11-12): the signed-in
+   account (`app_state.current_user_id`) if there is one, else this device (`app_state.device_uuid`).
+   This is the value `LocalAPI.addTree` would write for a new tree today.
+
+The owner can then move the pin of a tree they added before the update.
+
+- **Why a backfill is safe at all.** `LocalAPI.addTree` is the only code that has ever inserted into
+  `community_trees` (through `CommunityTreeStore.insert`), and before v23 nothing synced another
+  person's tree down. So every pre-v23 row was added on this phone. v12 backfilled `photos` on the
+  same fact.
+- **Why the add row comes first.** A tree added while signed in as an account, followed by a sign-out
+  before the update, would otherwise go to the device. The phone would then offer Move pin, and the
+  service, which holds the account as the adder, refuses the move with a terminal `forbidden` or
+  `not_found` (`isAddedBy`, `server/internal/store/community_trees.go`). The queue would keep a
+  permanent red row, and the phone and the service would disagree about where the tree is. The add
+  row records the account, so the tree goes to the account and the signed-out phone is not offered
+  the move.
+- **Only once.** The backfill runs only when v23 first adds the columns. A replay of the migration
+  ladder never gives an anonymized tree an owner again.
+- **No identity, no owner.** A database with no `device_uuid` has never added a tree. Any row left
+  over stays nobody's, which the schema permits.
+
+**What is still wrong, stated rather than hidden.**
+
+- **A missing add row falls back to a guess.** This paragraph first said a pruned add row "is most
+  trees", because `OutboxStore.pruneCompleted` deletes a row 24 hours after it is `done`. That was
+  not true when v23 ran: no build had ever called `pruneCompleted` (ROADMAP 184), so every add row
+  this phone had queued was still there. A row was missing only for a tree that was never queued,
+  or one whose row the erasing door of an account deletion removed. From the fix of ROADMAP 184 on,
+  `DataLayer.boot` sweeps `done` rows older than `OutboxQueue.completedRetention` (24 hours) once
+  per launch. That changes nothing v23 wrote, because the migration runs before the first sweep.
+  For a tree whose row is gone, the phone cannot read who added it, and the fallback can name the
+  wrong owner in the sign-out case above. Then the phone offers a move the service refuses. The phone and
+  the service agree only where the add row survived, or where the current owner happens to be the
+  one the add was made as.
+- **A tree the service never received (R77).** A tree added before the sync path existed was never
+  queued, so it has no add row and falls back to the current owner. It gets an adder and shows Move
+  pin, but the service has no such tree, and the move is answered with a terminal `not_found`. See
+  ROADMAP chip 107 for a proposed rule that would hide Move pin for these trees; it is not built.
+
+**The owner accepted both cases on 2026-11-13.** Asked whether to narrow Move pin for a guessed adder
+or an R77 tree, the owner answered that every tree added so far was added by the owner, so neither
+case reaches another person. C1 ships as described. Chip 107 stays logged for when other people add
+trees.
+
+Tested in `SchemaV23Tests`: an add row made while signed in, migrated signed out, names the account; an
+add row made signed out wins over an account signed in at migration time; a pruned add row falls back
+to the device, or to the account signed in at migration time; no identity leaves nobody; and a v22
+database with a tree and a pending item of every kind migrates, keeps every item, and lets the owner
+move the pin.
+
+---
+
+### R180 — A minimal Move pin control, an exception to constraint 21
+
+Every string below is a draft for the owner to ratify.
+
+**The owner's decision of 2026-11-12.** No mock draws this control. The owner approved it as an
+exception to DECISIONS constraint 21, ahead of the full C3 round, so that a reader can fix the pin of
+a tree they added (F31(a), F37).
+
+**Where it lives.** On the tree profile (screen 03, and 14 when cold), in the identity block, directly
+under "Show me where this is", which is the other control about where the tree is. It is drawn only
+when the reader is the tree's adder (`TreeProfile.canMovePin`): a community tree this phone added, not
+withdrawn, whose adder is the signed-in account or this device. It is hidden for a city record, for a
+cached tree another person added, and for a tree whose adder is nobody.
+
+**What it opens.** A pushed screen built from the add flow's own pin screen (`VisitPinAdjustView`):
+the same basemap, the pin drawn at the center while the reader drags the map under it, and the same
+four nudge buttons (5 m each). The screen opens centered on the tree's current position. Save writes
+the move through `RoutedAPI.correctLocation`: on this phone first, then queued as a
+`location_correction`. Cancel, and the header's back control, leave without writing anything.
+
+- **Pin under the center, not a draggable annotation.** The brief asked for "a draggable pin". The
+  add flow already rejected a draggable annotation for three reasons (`VisitPinAdjustView.map`), and a
+  second, different way to move a pin in one app would be worse than either. Dragging the map moves
+  the pin, so the reader still drags.
+- **Save and Cancel are plain buttons on a pushed screen**, not a `confirmationDialog`. iOS 26 does
+  not draw a dialog's cancel action (ROADMAP chip 77). PR #185 moved its take-back to controls that
+  draw on both runtimes for that reason.
+- **The move is recorded as placed by hand** (`placement = contributor_placed`), with no accuracy,
+  because no instrument measured the new position. The profile's provenance line then reads
+  "position placed by hand".
+
+- **A move waits for its tree** (review of #209, F2). The queue holds a `location_correction` while
+  the same tree's `add_tree` has not reached the service (`OutboxStore.dueItems`), and the drain that
+  sends the add sends the move right after it. Without the hold, a tree added offline and then moved
+  could send the move first, and the service's `not_found` for it is terminal.
+- **Where the offer is still wrong** (review of #209, F1). A tree the service never received (R77),
+  or one whose adder the v23 backfill had to guess, can show Move pin for a move the service refuses.
+  ROADMAP chip 107 proposes a rule; it is not built.
+
+### R181 — No distance limit on a pin move, because the service has none
+
+> **Superseded in part, 2026-11-14.** The owner's ruling of that day removed the 10 m rule: a moved
+> pin may land within 10 m of another tree (**R190**). The phone stops
+> refusing such a move in `feat/no-proximity-refusal-phone` and the service in
+> `feat/no-proximity-refusal-server`. The text below is the record of 2026-11-12 and is kept as it
+> was; its "no other tree is within the 10 m dedupe radius" check no longer applies.
+
+The brief asked to read the limit from the server and enforce the same one. The service has none.
+Its `location_correction` handler (`server/internal/api/sync.go`) and
+`store.applyLocationCorrection` (`server/internal/store/community_trees.go`) check only that the
+position is on the map, that the placement is known, that an accuracy is a distance, and that no
+other tree is within the 10 m dedupe radius (`ProximityDedupeRadiusM`). Migration 007 adds no bound
+either. So the phone sets no bound, and refuses exactly what the service refuses, through
+`LocalAPI.correctLocation`. This matches the author's earlier pending ruling "A pin move has no
+distance bound" (**R178**). Whether to add a bound stays the owner's C3 question.
+
+### R182 — The Move pin strings (drafts)
+
+> **Superseded in part, 2026-11-14.** The owner kept these drafts, except the two that state the
+> 10 m rule, which went with the rule (**R184**, "Move pin" item 2). The rule
+> line is now only "Drag the map to put the pin on the tree.", and the refusal "Another tree is
+> recorded within 10 m of that spot. Move the pin farther from it." is gone with the code that
+> showed it. The table below is kept as it was on 2026-11-12.
+
+| Where | Draft |
+|---|---|
+| Profile action | Move pin |
+| Screen title | Move pin |
+| Placement, before any move | The pin has not moved. |
+| Placement, after a move | `<N> m <direction> of where it was.` (whole meters, eight compass directions spelled out) |
+| Rule under the placement | Drag the map to put the pin on the tree. A pin cannot be within 10 m of another tree. |
+| Nudge label and buttons | Reused from the add flow: "NUDGE THE PIN · 5 M", N/E/S/W, spoken "Move the pin north" and so on |
+| Pin's spoken label | Reused: "This tree's pin" |
+| Save | Save (disabled until the pin has moved at least 1 m) |
+| Cancel | Cancel |
+| Return control | Back to where it was |
+| Refusal: another tree within 10 m | Another tree is recorded within 10 m of that spot. Move the pin farther from it. |
+| Refusal: not the reader's, or gone | This pin can no longer be moved from this phone. |
+| Any other failure | The pin could not be moved. Try again. |
+| Release note | You can now move the pin of a tree you added: open the tree and choose Move pin. |
+
+Screen 17 still labels a queued move "Location correction", the author's earlier provisional label in
+**R177**.
+
+---
+
+### R183 — Old community trees are sent, with everything recorded on them (reverses R77 for community trees)
+
+**The owner's ruling of 2026-11-14.** It reverses a rule the owner had made twice: R77 ("No backfill",
+2026-08-15), and the sentence in the community-trees decisions of 2026-09-28 that "trees added before
+the sync path existed stay local for ever (R77 is kept, and there is no backfill)".
+
+**The owner's words**, on reading that sentence in a status report: *"reverse. trees that are community
+added should make it onto everyone's phone regardless of when they were added."*
+
+**What was asked and what the owner chose** (decision round, AskUserQuestion, 2026-11-14):
+
+1. **How far the reversal goes.** Offered: the tree and its photograph; the tree only; everything on
+   those trees. **Chosen: everything on them.** For a community tree that the service never received,
+   the phone sends the tree, its photographs, and every visit, measurement and care event recorded on
+   it before syncing existed.
+2. **How an old tree is sent.** Offered: automatically; ask once first. **Chosen: automatically.**
+   After the app update the phone queues each old tree once, with no question, as a new tree goes
+   live without a prompt.
+3. **A signed-out phone.** Offered: the same rule as new trees; publish anyway. **Chosen: the same
+   rule.** The decision of 2026-09-28 stands for old trees too: a tree on a signed-out phone waits,
+   and goes live when that person signs in.
+4. **The "added" date other people see.** Offered: the day it was added; the day it went live.
+   **Chosen: the day it was added**, the original day on the adder's phone.
+
+#### What this changes in R77
+
+- R77's ruling ("pre-sync-path local rows and pre-existing photo binaries stay on-device
+  permanently") **no longer holds for rows on a community tree.** Its first consequence, that
+  pre-existing local rows must never be retroactively enqueued, is no longer permanent policy for
+  those rows.
+- R77's third consequence told agents not to raise backfill again. The owner raised it. This entry is
+  the record that the reversal is the owner's.
+
+#### What this does not change (the orchestrator's reading; the owner was not asked)
+
+- **Rows on a city tree.** The questions were about community trees. A visit, measurement or
+  photograph on a tree from a city's inventory that was recorded before syncing existed is still
+  under R77 and stays on the phone. Ask the owner before widening it.
+- **The other decisions of 2026-09-28** (the adder alone moves the pin, withdrawal while nobody else
+  has built on the tree, history shown without saying who, a photograph's date and never its time).
+- **R77's own mechanics.** A photograph taken before syncing existed has never had a send path; the
+  round that builds this must check what the photo route accepts today and must not assume it.
+
+#### What the round that builds it has to settle (facts to verify, not rulings)
+
+- A tree added before the first build that queued adds has no `add_tree` row, and
+  `CommunityTreeStore.firstQueuedAddsAt` is the cutoff ROADMAP 107 uses for it. That rule hides Move
+  pin for such a tree; once the tree is sent, the offer should follow the add row as it does for a new
+  tree.
+- The service's proximity rule can answer an old tree's add with a conflict. The owner removed that
+  rule later the same day (**R190**), so this stops being a problem
+  once the service change is deployed. Send the old trees only after that deploy.
+- "The day it was added" needs the service to keep the phone's date for the tree and for each row.
+  Check what `POST /sync` records for an `add_tree` today before promising it.
+
+---
+
+### R184 — Move pin: no distance limit, the draft strings stay, and how a move reads on the Outbox screen
+
+Every answer below is the owner's, given in an AskUserQuestion dialog on 2026-11-14. Each string in
+quotation marks is the exact string the owner saw and chose. Where the owner typed an answer, the
+words are quoted as typed. Nothing here is built. C3 (`docs/ROADMAP.md`, "Community trees: the client
+rounds") builds it, and DECISIONS constraint 21 is now satisfied for the surfaces listed here and for
+no others.
+
+Two related entries are in their own files: the old trees
+(**R183**) and the end of the 10 m rule
+(**R190**).
+
+1. **How far a pin may move.** Offered: no limit; 75 m from you; 75 m from the pin. The owner typed:
+   *"can go anywhere, and also fine to go within 10m of another tree. sometimes they will be close
+   together and that's fine"*. **A pin move has no distance limit, and it may land within 10 m of
+   another tree.**
+2. **The Move pin draft strings.** Offered: keep the drafts; use "Move the pin". **Chosen: keep the
+   drafts.** The strings in `MovePinCopy` are ratified as they ship, except the two that state the
+   10 m rule, which go with the rule (see **R190**).
+3. **The Outbox row label for a pin move.** Offered: "Pin moved"; "Move pin"; "Location correction".
+   **Chosen: "Pin moved"**, as in "Pin moved · Grandmother Cypress". It has no second line.
+4. **A refused move on the Outbox screen.** Offered: the same sentence as every other kind; the Move
+   pin screen's own refusals. **Chosen: the same sentence**, "This couldn't be sent."
+
+### R185 — The history of a community tree on its profile
+
+1. **Where it appears.** Offered: the profile's activity list; its own list on the profile; the
+   Activity screen. **Chosen: the profile's activity list.** History rows sit in the tree profile's
+   existing activity list, mixed with visits and care by date. That list shows the four most recent
+   rows, so older rows drop off.
+2. **Which events.** Offered: all four; added and pin moves; added only. **Chosen: all four**: added,
+   pin moved, species named, and species corrected. That is everything the service sends.
+3. **How a pin move reads.** Offered: with distance; no distance; "Position corrected". **Chosen:
+   with distance**: "Pin moved · 12 m north". The distance is in whole meters with one of eight
+   compass directions, the words the Move pin screen already uses.
+4. **Whether your own rows say "you".** Offered: no, the same for all; yes, on your own phone.
+   **Chosen: yes, on your own phone.** Other readers still see no name (decision 4 of 2026-09-28
+   stands for them).
+5. **The rows, word for word.**
+
+   | Event | Other readers | The person who did it, on their own phone |
+   |---|---|---|
+   | Added | "Added" | "You added this tree" |
+   | Pin moved | "Pin moved · 12 m north" | "You moved the pin · 12 m north" |
+   | Species named | "Species named" | "You named the species" |
+   | Species corrected | "Species corrected" | "You corrected the species" |
+
+   For the two species rows as other readers see them, the offer was "Species named" and "Species
+   corrected", or "Species added" and "Species changed". **Chosen: "Species named" and "Species
+   corrected".**
+6. **The date on a row.** Offered: "Mar 20"; "Mar 2026". **Chosen: "Mar 20"**, month and day with no
+   year, as the visit and care rows on the profile already read.
+7. **When the history cannot be read, or is empty.** Offered: the Added row only; the Added row and a
+   line. **Chosen: the Added row only.** The profile shows the "Added" row from what the phone knows
+   and no message.
+
+### R186 — A pin move in the Journal
+
+Offered: "Moved the pin of X"; "Moved X"; no Journal row. **Chosen: "Moved the pin of X"**, as in
+"Moved the pin of Grandmother Cypress".
+
+### R187 — The note under the Add this tree button
+
+> **Answer 2 SUPERSEDED 2026-11-15 by the owner** — see **R223**. Its two notes
+> that say "on this phone" now say "Only you can see it".
+
+1. **Signed in and sharing.** Offered: once it is sent; shared with everyone; drop the where.
+   **Chosen:** "Recorded as community-added and unverified. Everyone using Cypress can see it once it
+   is sent."
+2. **Signed out, or not sharing.** Offered: until you sign in; for now; keep today's line.
+   **Chosen:** signed out: "Recorded as community-added and unverified, on this phone. Everyone using
+   Cypress can see it after you sign in." Signed in and not sharing: "Recorded as community-added and
+   unverified, on this phone. Everyone using Cypress can see it after you agree to share your tree
+   records."
+3. **Private property.** Offered: do not mention it; only when chosen; always. **Chosen: do not
+   mention it.** The line above the button already names private property when the reader chose it.
+4. **The largest text sizes.** Offered: move into the scroll; stay pinned; shorter at large sizes.
+   **Chosen: move into the scroll.** At the largest sizes the note moves up into the scrolling form
+   and only the button stays pinned.
+
+### R188 — Other people's community trees
+
+> **SUPERSEDED in part 2026-11-15 by the owner** — see **R209**, which replaces
+> answer 2 for the next build (the species controls are hidden on a tree someone else added),
+> and **R223**, which replaces answer 3's two "This tree is only on this phone." lines
+> with "Only you can see this tree."
+
+1. **Their pins on the map.** Offered: the same dashed pin; a mark on your own. **Chosen: the same
+   dashed pin** for every community tree, yours or anyone's.
+2. **The controls on the profile of a tree someone else added.** Offered: all but species and
+   reports; add the species controls; look only. **Chosen: add the species controls.** Such a
+   profile has visit, check-in, care, favorite, share, and measure, as on a city tree, and also "Say
+   what species you think this is" and "Report the species as wrong". Move pin never appears there
+   (owner decision of 2026-11-12).
+3. **Your own tree that is not shared yet.** Offered: only on this phone; "Not shared yet."; no line.
+   **Chosen:** a line on the tree's profile. Signed out: "This tree is only on this phone. Everyone
+   can see it after you sign in." Signed in and not sharing: "This tree is only on this phone.
+   Everyone can see it after you agree to share your tree records."
+4. **Adding a tree when another is already recorded within 10 m.** The rule that refused this is
+   gone (see **R190**). Offered: a note, then still add; add with no
+   note. **Chosen: a note, then still add.** The "ALREADY ON RECORD" notice stays as a note that does
+   not block, the list of nearby trees stays under it, and the Add this tree button stays active.
+   For the wording, offered: the note with today's sentence "If one of these is the tree in front of
+   you, open it." kept; two sentences. **Chosen: two sentences:** "Something is already on record
+   within 10 m of here. Add this tree only if it is a different one."
+
+### R189 — Places with no city inventory
+
+1. **The map's "No trees on record here" card.** Offered: keep as is; name both kinds; also a card
+   over added trees. **Chosen: name both kinds.** Same card and same trigger, new body: "Cypress
+   draws a city street-tree inventory and trees people have added. Neither has a tree here."
+2. **The empty "What tree is this?" list.** Offered: "Nothing on record is within 60 m of you…"; keep
+   as is; name both kinds. **Chosen: name both kinds:** "No city tree and no added tree is within
+   60 m of you. If there is a tree in front of you, it is not on the map yet."
+
+---
+
+#### What these answers do not settle (facts for the round that builds C3, not rulings)
+
+- **The map card at the largest text size.** `MapEmptyInventoryTests.theNoticeFitsTheSlotAtAX5`
+  budgets the card's text. The new body is shorter than today's message ("Cypress draws a city
+  street-tree inventory, and this ground is not on it. Trees may stand here without being listed."),
+  but its words break differently. Measure it, and if it does not fit, ask the owner.
+- **Species controls on other people's trees.** The service's rules for `species_claim` and
+  `species_correction` are in **R153** (a claim names the tree only while its species is
+  empty). Check what the phone and the service do today for a tree the reader did not add before
+  showing the controls.
+- **The "Added" date.** For a tree added before syncing existed, the owner chose the day it was added
+  (**R183**). Decision 13 of 2026-09-28 says others see a tree as added when
+  it went public. The two rules now differ for a tree that waited on a signed-out phone. Bring this
+  to the owner when the round reaches it; do not pick one.
+- **Where the "only on this phone" line sits on the profile.** The owner chose the words and that it
+  is one line on the profile. The round places it like the profile's other one-line notices and shows
+  the owner a screenshot.
+- **The UI suite runs with the remote gate off**, so C3 still needs the DEBUG seam that seeds the
+  community cache (ROADMAP, C3).
+
+---
+
+### R190 — A tree may stand within 10 m of another: the proximity rule stops refusing (reverses part of DECISIONS constraint 16)
+
+**The owner's ruling of 2026-11-14.** It reverses the second half of DECISIONS constraint 16
+("Add-a-tree requires a photo and runs the 10 m proximity dedupe"), and the pending ruling of
+2026-11-12 that a moved pin may not land within 10 m of another tree
+(**R181**). It answers the tester's request in F32, finding 3 ("need to be able
+to add tree even if less than 6m to known tree").
+
+**The owner's words**, asked how far a pin may be moved: *"can go anywhere, and also fine to go
+within 10m of another tree. sometimes they will be close together and that's fine"*.
+
+**The confirmation.** Because that answer reversed a standing rule, the owner was asked in a second
+dialog how far the reversal goes: pin moves only, or pin moves and new trees. **Chosen: moves and new
+trees.**
+
+#### What changes
+
+- **Adding a tree.** The phone and the service stop refusing a new tree because another tree is
+  recorded within 10 m. The Add this tree screen keeps its "ALREADY ON RECORD" notice as a note that
+  does not block: "Something is already on record within 10 m of here. Add this tree only if it is a
+  different one." The list of nearby trees stays under the note and the Add this tree button stays
+  active (the owner's answers of the same day, **R188**).
+- **Moving a pin.** The phone and the service stop refusing a move that lands within 10 m of another
+  tree. The Move pin screen shows no note about nearby trees.
+- **Strings that go with the rule.** On the Move pin screen: the second sentence of the rule line
+  ("A pin cannot be within 10 m of another tree."), which leaves "Drag the map to put the pin on the
+  tree.", and the refusal "Another tree is recorded within 10 m of that spot. Move the pin farther
+  from it." On the Add this tree screen: "Nothing was added." and "If one of these is the tree in
+  front of you, open it."
+
+#### What does not change (the orchestrator's reading; the owner was not asked)
+
+- **The photo requirement** in constraint 16, and its first sentence (community trees stay in a
+  visually distinct layer until verified).
+- **The 10 m number where it is not this rule.** `DataDispute.positionResolutionRadiusM` reuses the
+  same number to decide when a position dispute is resolved. That is a different rule and it stays.
+- **The 75 m bound on the add flow's pin** (a pin stays within 75 m of the reader's fix).
+
+#### What the round that builds it has to do (facts, not rulings)
+
+- **It is a service change and a deploy.** The service refuses in three places today:
+  `addTree` and the `add_tree` path of `POST /sync` (`server/internal/api/sync.go`), and
+  `applyLocationCorrection` (`server/internal/store/community_trees.go`), each through
+  `store.ProximityDedupeRadiusM`. A build that stops refusing on the phone must not ship before the
+  service stops refusing, or a tree the phone accepted comes back as a conflict. Deploying
+  `cypress-sync` needs the owner's go-ahead each time.
+- **Builds already installed still refuse** on the phone until they update. That is safe: the phone
+  is stricter than the service, never looser.
+- **On the phone** the refusals are `LocalAPI.addTree` and `LocalAPI.correctLocation`
+  (`ProximityConflict`), both through `TreeDraft.proximityDedupeRadiusM`. The Add this tree note
+  still needs the nearby-tree lookup, so the constant and the lookup stay; only the refusal goes.
+- **A double send is a different thing.** Two sends of one add are matched on `client_uuid`
+  (constraint 8), which this ruling does not touch. Verify that nothing else relied on the proximity
+  refusal to stop a duplicate, for example an add repeated after a failed response.
+- **A tree the service refused in the past.** The phone refuses before it queues, so most refused
+  adds were never recorded. A tree added offline that the service later refused as a conflict stays
+  on its adder's phone with a terminal Outbox row. Whether a later build sends such a tree again is
+  the owner's decision; bring it to the owner if the round finds any.
+- `docs/distilled/DECISIONS.md` constraint 16 and **R181** are edited by the
+  round that builds this, when the ruling is spliced, so the documents and the code change together.
+
+---
+
+### R191 — The Add this tree screen looks the nearby trees up itself, before the tap
+
+These are the author's build choices for the owner's ruling of 2026-11-14 (**R190**); none of them
+adds a string or a screen state.
+
+**Before.** The screen learned about a nearby tree only when `addTree` threw its proximity conflict
+after the tap, and drew the conflict's candidate list as a refusal.
+
+**Now.** `addTree` does not refuse on distance, so there is nothing to throw. The screen reads the
+list itself: `VisitAddTreeModel.refreshNearby` calls `treesNear` (limit 10) around the coordinate the
+tree would be added at, out to `TreeDraft.proximityNoteKeepRadiusM` (15 m), over the seed and the
+whole community layer, other people's cached trees included. `VisitAddTreeModel.listed(_:keeping:)`
+then keeps the rows within `TreeDraft.proximityDedupeRadiusM` (10 m, the exact-meters circle the
+refusal used) and, while the note is up, the rows it already listed out to 15 m (the owner's decision
+on flicker, below). The view runs the read when the coordinate first becomes known and again whenever
+it changes (`.task(id: model.coordinate)`): a moving GPS fix while the pin is the GPS, and a pin the
+reader placed. The answer is dropped when the position moved while it was read, and once an add is
+under way. Two unit tests in `CommunityAddTests` hold each of those two drops.
+
+**What the reader sees.** The same "ALREADY ON RECORD" card, at the top of the scrolling form, above
+the photo (the owner's decision below), with the owner's two sentences and the same list of trees.
+Each row opens its tree's profile over the add screen (the owner's decision below, "Keep the
+draft"). The Add this tree button does not read the list: it stays active, and one tap adds the tree.
+A read that fails leaves the list as it was rather than showing an error, so one failed read does not
+take a note down that is showing (second review, 2026-11-15). The note is advice, and the add does
+not depend on it. An answer is dropped when a newer read has started since it was asked.
+
+### R192 — Where the note sits: the top of the form (owner's decision, 2026-11-15)
+
+**The question**, asked with AskUserQuestion: where should the "ALREADY ON RECORD" note sit, given
+that at normal text size on an iPhone 17 Pro it is below the photo, the pin line, the land chips and
+the species line, while the Add this tree button is pinned and active.
+
+**Offered:** "Top of the form (Recommended)"; "Where it is now"; "Scroll to it".
+
+**Chosen: Top of the form.** In the owner's words: "The note moves to the top of the scrolling form,
+above the photo. The reader sees it without scrolling, before they can add a second copy of a tree.
+It shows only when a tree is within 10 m."
+
+**As built.** The card is the first thing in `VisitAddTreeView`'s scrolling form, under the header
+and the pinned GPS chip and directly above the photo. With no tree within 10 m it is not drawn, and
+the form starts at the photo exactly as before. When a tree is within 10 m, the photo and the rest of
+the form sit lower by the card's height, which is the trade the owner chose.
+
+**What did not change.** The photo requirement, the 75 m bound on the pin, and a second tap during an
+add (the button stays disabled while the add runs and after it succeeds).
+
+**Measured by the reviewer of 2026-11-15** on the 390 pt iPhone 17e simulator, default text size, no
+photo yet. With no tree nearby, "Choose a photo from this phone" is at about 517 pt. With one tree
+nearby it is at about 646 pt. That is still on screen, above the pinned Add this tree button, whose
+top is at about 696 pt. "Move the pin", the land chips and the species line are below the fold. The
+live shutter cannot be seen on a simulator, so its position with a tree nearby is owed on a real
+phone (ROADMAP chip 140's note).
+
+### R193 — A tap on a row of the note opens the tree over the add screen (owner's decision, 2026-11-15)
+
+**The question**, asked with AskUserQuestion. A row of the note was wired to `onOpenTree`, which in
+`RootView` sets `router.sheet = nil`: the cover that holds the whole visit flow closed, the profile was
+pushed onto the app's stack, and Back landed on the map with the photo, the pin and the species lost.
+
+**Offered:** "Keep the draft (Recommended)"; "Rows are not tappable"; "As built".
+
+**Chosen: Keep the draft.** In the owner's words: "The tree's profile opens on top of the add screen.
+Back returns to the add screen with the photo, pin, and species still there."
+
+**As built.** The add screen presents the profile over itself (`fullScreenCover(item:)`), so the
+screen and its model stay alive under it, and the draft (photo, pin and placement, land answer,
+species) is there after Back. A `fullScreenCover` leaves the screen under it in place, so the add
+screen's `onDisappear` does not fire when the profile opens and its `.task`s do not run again when it
+closes; the second review of 2026-11-15 logged both, and the note kept saying "4 m" for a tree moved
+15 m from its profile. So the row's tap calls `VisitAddTreeModel.openListedTree()`, which stops the
+camera before the cover goes up, and while it is up `load()` starts nothing. The cover's dismissal
+calls `closeListedTree()`, which reads the note again and then starts again what `load()` starts.
+`AddTreeNearbyUITests.testAMovedListedTreeShowsItsNewDistanceAfterBack` holds the read on Back. A
+simulator has no camera, so that a live session stops under the profile is shown by the code and the
+unit test of the gate, not observed. Two capture sessions at once were never observed on a phone;
+this closes the path to them. The profile is built by the composition root (`ExistingTreeScreen`, built by
+`RootView.existingTreeScreen`) in an `ExistingTreeHost` with **its own `AppRouter`**, because the
+profile navigates only through the router in its environment: with the app's router, every push
+would land under the visit flow's cover and every sheet would replace that cover. The host draws the
+same pushed screens (`destination(for:in:)`) and the same sheets (`presentedSheet(in:)`) as the app's
+own stack. The profile's Back closes the host in one move (`AppRouter.closesInsteadOfPoppingLast`).
+There was no existing pattern for this: every other way into a profile from a cover closes the cover
+first. No string was added.
+
+**What the profile's controls do from there.** Every push (Show me where this is, the photos, Move
+pin, check-in, report, the record-defect screen, growth history, activity) goes onto the host's own
+stack, and Back from it returns to the profile, then to the add screen. The care log and the share
+card open in the host's own cover and close back onto the profile. The profile's Visit opens a whole
+visit flow in that cover, over the profile. From there, closing the camera returns to the profile.
+Screen 18's "Back to the map" and "Route done · see your grove" call `goToMap()` and `goToTab(_:)` on
+the host's router, which has no tabs: they empty its stack and close the host, so the reader lands on
+the add screen with the draft, not on the map or the grove. Nothing discards the draft. A flow started
+there whose own add screen lists a tree nests a further host the same way.
+
+### R194 — Screen 18's exits inside a visit started from a note-opened profile (owner's decision, 2026-11-15)
+
+**The question**, asked by the orchestrator in a dialog: "On the Add this tree screen, a tap on a tree
+in the "ALREADY ON RECORD" note opens that tree's profile over the add screen, and Back returns to
+your draft (your earlier choice). If the person starts a visit from that profile and finishes it, the
+last visit screen offers "Back to the map" and "Route done · see your grove". As built, both of those
+land on the add screen with the draft still there, not on the map or the grove. What should they do?"
+
+**Offered:** "Land on the add screen (Recommended)"; "Go to the map or the grove"; "Hide Visit on that
+profile".
+
+**Chosen: Land on the add screen.** As built; no code change.
+
+### R195 — The note shows at 10 m and hides past 15 m (owner's decision, 2026-11-15)
+
+**The question**, asked with AskUserQuestion. A GPS fix drifting across 10 m made the note appear and
+disappear, and the form jumped by the card's height (about 129 pt) each time.
+
+**Offered:** "Show at 10 m, hide past 15 m (Recommended)"; "Freeze after the photo"; "Leave it live".
+
+**Chosen: Show at 10 m, hide past 15 m.** In the owner's words: "The note appears when a tree is
+within 10 m and goes away only when every listed tree is more than 15 m away. Normal drift no longer
+flips it. A listed tree can briefly show a distance of 11 to 15 m under the words 'within 10 m'."
+
+**As built, in the model.** `TreeDraft.proximityNoteKeepRadiusM` is 15, next to the 10 m constant.
+`VisitAddTreeModel.listed(_:keeping:)` lists a tree within 10 m, keeps a tree it already listed out to
+15 m, and lists nothing else, so the note goes when no listed tree is left. A tree that newly comes
+within 10 m joins. The distances shown are the fresh read's. A pin placed by hand gets the same rule
+from its new position. The words of the note did not change.
+
+**The orchestrator's reading, 2026-11-15, with no owner question needed.** A pin the reader places by
+hand follows the same keep rule as a GPS move, as built: the owner's "Show at 10 m, hide past 15 m"
+covers both, because the rule is about where the pin is, not how it got there.
+
+**A known limit.** The read asks for 10 rows out to 15 m, nearest first. In a dense block with ten
+or more trees nearer than a listed tree at 10 to 15 m, that tree is not in the answer and drops out of
+the note, although it is within 15 m. No code change; recorded so it is not mistaken for a defect.
+
+### R196 — What stays of the proximity conflict on the phone
+
+Nothing. Its one producer was the phone's own refusal, and the service half
+(`feat/no-proximity-refusal-server`) no longer sends a candidate list at all; a `conflict` from the
+service no longer comes from adding a tree. Among the outbox kinds, only `tree_withdrawal` is answered
+with `conflict` now (`server/internal/api/sync.go`); outside the outbox, the account sign-in and the
+device claim answer `conflict` for a device already linked to another account
+(`server/internal/api/auth.go`). So this change removes `ProximityConflict`, the
+outbox's mapping of it to `conflict`, `ProximityConflictDetail` in `RemoteWire.swift`, the two
+`GoldenWireFixtureTests` cases that decoded the service's conflict body, the fixture
+`proximity_conflict.json` under `server/testdata/` and its row in that folder's README, and
+`NearbyTree`'s `Decodable` conformance, which only that body used. A `conflict` from the service is
+still handled the general way: not retryable, the item fails at once. Builds already installed
+are not affected by any of this.
+
+### R197 — Two deep links for the screen, for the UI tests
+
+`CYPRESS_SCREEN=addTreeNearby` (DEBUG only) opens the Add this tree screen with a photograph already
+chosen, on a pinned fix 4 m from a community tree, so a UI test can see the note over an active
+button and tap it. Each launch adds that one tree on the first free slot of a line of its own at sea,
+40 m apart, the way `movePin` does, so every launch finds exactly one tree under the note however many
+earlier runs added theirs. A tap on the button adds one more, 4 m from the slot.
+
+`CYPRESS_SCREEN=addTreeAlone` (DEBUG only) opens the same screen on a spot at sea with nothing on
+record within 10 m, so the note is not drawn. It writes nothing, and it reports a failure if a tree is
+within 10 m of its spot. These two are `AddTreeNearbyUITests`' entrances.
+
+---
+
+### R198 — The phone downloads community trees from the first zoom that draws cluster badges (owner's ruling, 2026-11-15)
+
+Each is the authoring agent's call under the brief for `feat/community-trees-sync-down`, for the
+orchestrator or the owner to confirm or reverse, except the three entries marked as the owner's
+ruling. Where an earlier ruling already answered a question, the entry names that file and follows
+it.
+
+**Decided by:** the owner, in a question dialog on 2026-11-15.
+
+- **The question:** from which zoom should the phone download other people's community trees?
+- **The options offered:** "Neighborhood level (Recommended)": download when about a 2 km wide area
+  is on screen, the first zoom that shows cluster badges; each settle may ask for up to 16 tiles,
+  each tile at most once every 2 minutes. "Street level, as built": the round's first build, which
+  asked for at most 9 tiles.
+- **Chosen: Neighborhood level.**
+
+**What was built.** `CommunityTileRefresher.Policy.maxTiles` is **16**. The first zoom that draws
+cluster badges is **zoom 15**: `MapViewport.highestClusteringZoom` is 15, and `shouldCluster` is
+`zoom <= 15`, so zoom 16 and closer draw single pins. The counts below use `MapZoom`'s formula, the
+map's full screen (the map is full-bleed), `BoundingBox(MKCoordinateRegion)` and the 8 % margin that
+`MapModel.cameraDidChange` adds. They cover the four agent screens (390 × 844, 402 × 874, 420 × 912
+and 440 × 956 pt, portrait), at 0.3° N, 37.77° N and 64.1° N, with the map's center swept across one
+tile so that every alignment is tried. Latitude changes nothing, because the tiles and the screen are
+both Web Mercator.
+
+| Map zoom (continuous) | Tiles touched | With 9 | With 16 |
+|---|---|---|---|
+| 15.0 (the widest zoom-15 map) | 2 to 8 | all fetch | all fetch |
+| 14.75 | 6 to 12 | some fetch | all fetch |
+| 14.25 | 8 to 15 | some fetch | all fetch |
+| 14.0 (the widest zoom-14 map) | 8 to 18 (15 at most on 390 and 402 pt) | some fetch | most fetch; on 420 and 440 pt some do not |
+| 13.0 | 32 to 50 | none | none |
+
+The widest zoom-15 map is 1.5 to 1.7 km across in San Francisco, 1.9 to 2.1 km at the equator, and
+0.8 to 0.9 km at 64° N. A zoom-14.25 map is about 1.7 times as wide.
+
+**Why 16 and not 9.** Nine already covered every zoom-15 map (8 tiles at most), so the as-built
+number met "the first zoom that shows cluster badges" on its own. The owner did not choose the
+as-built option, though, and 16 is the number the chosen option names. A number high enough for
+every zoom-14 map (18) would also take zoom-13 maps just wider than zoom 14.0, and was not offered.
+
+**How wide a map fetches with 16, in full** (San Francisco, the four screens, every placement of
+the map across a tile; the widths are the screen's, before the 8 % margin):
+- **Every placement fetches** for a map up to about **3.1 km** wide: zoom 13.92 on the 390 pt
+  screen, 13.97 on 402, 14.04 on 420 and 14.10 on 440.
+- **Some placements fetch** up to about **3.8 km** wide (zoom 13.63 to 13.81, by screen); whether
+  one does depends on where the tile edges fall.
+- **No placement fetches** below zoom 13.63 to 13.81.
+
+So "about 2 km" in the chosen option understates what was built: the download starts at zoom 15 and
+reaches maps about 3 km wide, roughly twice the width of the widest zoom-15 map. The second review
+measured the same range independently (3.06 to 3.09 km and 3.83 to 3.86 km).
+
+**What 16 means for requests, a fact the option's wording did not carry.** "Each tile at most once
+every 2 minutes" is counted from the start of each attempt that is not cancelled, successful or
+not. A pass cancelled while its request is in flight clears that start, so a reader who keeps panning before answers
+come back can send one request per settle for the same tile. A refused cursor adds one request (the
+fresh snapshot) beyond a pass's 10 pages. And a pass waits behind any pass still running (the next
+entry), so passes do not overlap.
+
+`CommunityFetchZoomTests` pins three facts against the number in `Policy`: every zoom-15.0 map and
+every zoom-14.25 map touches no more tiles than the limit, and every zoom-13.0 map touches more. It
+does not pin the ranges in the table or the zoom-14.0 row.
+
+### R199 — The refresher runs when the map settles, for the tiles the viewport touches
+
+**Decided by:** the C2 author. **Needs owner review:** no; it adds no surface.
+
+- **Trigger.** `MapModel` starts a refresh after each settled read of the map (the 200 ms camera
+  debounce already decides when a read happens). The map paints from the phone first, and the
+  refresh runs behind it. A later settle cancels the refresh in flight.
+- **The re-read.** If a refresh changed the cache, the map reads what the camera shows now, once,
+  **whether or not the refresh was cancelled, and wherever the camera is.** Cancelling a refresh
+  cannot undo a page it already wrote, and the read the camera scheduled may have run before that
+  write. There is no test of where the camera is, because the refresher writes whole zoom-14 tiles,
+  about 2.4 km across: a tree written for one screen can be on a later screen that does not overlap
+  it (the second review's finding). Comparing against the refreshed tiles' bounds would also work;
+  it was not chosen because it is a second geometry rule to keep right, and an unneeded re-read
+  costs one map read and happens only after the cache changed. The re-read starts no refresh, so the two cannot loop. A camera change
+  cancels the re-read like any other read, and the read that replaces it sees the same rows.
+- **One pass at a time.** A pass that starts while another is running waits for it to end, then
+  decides which tiles are due. A tile in flight is therefore never skipped by a second pass that only
+  saw it marked. If the first pass was cancelled before its request came back, the tile is not
+  marked, and the second pass asks for it.
+  - **Known limit:** because passes queue, a pass stuck in a wait that cancellation does not stop
+    delays every later pass. One such wait is `AppSession`'s shared credential-minting task during a
+    phone's first registration (`AppSession.mintingInFlight`). For a stalled connection the delay
+    ends at the 15-second request timeout (`AuthClient.requestTimeout`). That timeout is an idle
+    timeout, not a deadline: it restarts whenever a byte arrives, so a slow answer that keeps
+    trickling can hold the queue longer.
+- **Which tiles.** The zoom-14 tiles (`CommunityTile`, the service's only zoom) that the read's
+  viewport touches, and only when there are 16 or fewer (the owner's ruling above). A wider map
+  fetches nothing; the reader zooms in to get the trees, and the cache keeps drawing what it holds.
+- **How often.** A tile is asked at most once every **120 seconds**, counted from the start of the
+  last attempt that was not cancelled, successful or not. Panning back and forth over the same tiles
+  does not repeat those requests. A cancelled attempt clears its stamp, so a reader who keeps
+  panning before answers arrive can send one request per settle for the same tile.
+- **Pages.** `has_more` is followed up to 10 pages (1,000 trees) per tile per pass; the next pass
+  continues from the stored cursor. A refused cursor costs one more request, the fresh snapshot.
+- **No timer, no launch fetch, no foreground fetch.** The map is the only surface that draws other
+  people's trees in bulk, so it is the only trigger. A profile opened from somewhere else reads what
+  the cache already holds.
+
+Why: the service's tile is built for "the tiles the viewport covers at 14" (§3C,
+`community_reads.go`). The 120-second floor keeps the request rate low while still showing a new tree
+"at the other phone's next refresh" (decision 1) within two minutes of a person looking.
+
+### R200 — Offline or on an error, the refresher changes nothing and stops the pass
+
+**Decided by:** the C2 author, implementing the service's contract (`server/testdata/README.md`).
+
+- Each page is applied **in one transaction with its cursor** (`CommunityTreeCacheStore.apply`). The
+  cursor moves only when its page was applied, so a failure leaves the cache and the cursor exactly
+  as they were.
+- **Any failure stops the pass** at that tile: offline, a timeout, a server error, a session that
+  could not be refreshed, or a page this build cannot decode. The failed tile counts as attempted.
+- **What an offline phone sends:** one request per settled map. Each pass skips the tiles tried in
+  the last 120 seconds and asks for the next one, which fails and stops the pass. Once every tile in
+  view has been tried, the phone sends nothing until the 120 seconds pass. A map that settles on
+  16 tiles can therefore cost 16 failed requests over 16 settles, and no more within two minutes.
+- **A page this build cannot decode fails whole.** Skipping one undecodable tree and storing the
+  cursor past it would lose that tree for good. The page stays unread and is asked again at the
+  tile's next attempt.
+- **`validation_failed` on a cursor** drops that tile's cursor and the trees fetched through it
+  together (`dropTile`), then asks for a fresh snapshot, once. A refused snapshot is not retried.
+- **Nothing is drawn about any of this.** No screen, notice or string reports a failed refresh (that
+  would be a state no mock draws, DECISIONS constraint 21). The map keeps drawing what the cache holds.
+
+### R201 — Every phone downloads community trees, signed in or not, and registers its device to do so (owner's ruling, 2026-11-15)
+
+**Decided by:** the owner, in a question dialog on 2026-11-15, for the last point. The rest follows
+how `DataLayer` gates every other remote read.
+
+- **The gate.** `DataLayer.refreshCommunityTrees` is nil when `RemoteAccess.allowsNetwork` is false,
+  exactly as `refreshTreeProfile`, `refreshGrove` and the others are. So every DEBUG build without
+  `CYPRESS_REMOTE=live`, and the whole UI suite, fetches nothing.
+- **Sign-in.** The tile route takes the device credential and is caller-independent (§3C: "a phone
+  that has never signed in still draws everybody's published trees"). So the refresher runs signed
+  in and signed out alike, and a sign-in or sign-out changes nothing in the cache. The cache holds
+  no fact about the viewer (`AppSchema` v23's note on the table).
+- **Registration.** On a phone that has never needed a credential, its first map at zoom 15 or wider
+  (out to the limit in the first entry) registers the device with the service
+  (`POST /devices/register`), because the tile request needs a credential. Before C2, a phone that
+  only looked at the map never talked to the service. The request runs behind a painted map and
+  nothing waits for it.
+  - **The question:** a never-registered phone registers its device when it first downloads
+    community trees. Is that acceptable?
+  - **The options offered:** "Yes, register (Recommended)" and "Only known phones".
+  - **Chosen: Yes, register.** The owner's words: "Every phone sees community trees, signed in or
+    not." The phone sends its random device ID and no account or personal data.
+
+### R202 — No limit on the community cache for now (owner's ruling, 2026-11-15)
+
+**Decided by:** round C1, in `AppSchema` v23's comment on `community_tree_cache` ("No eviction
+except through the service's removal list, so a visit to a cached tree always finds its tree"), and
+confirmed by the owner on 2026-11-15.
+
+- **The question:** should the cache of other people's trees have a limit?
+- **The options offered:** "No limit for now (Recommended)" and "Add a limit now".
+- **Chosen: No limit for now.** C1's rule stands. It is to be revisited when the community layer
+  grows; the ROADMAP's C2 entry carries that.
+
+What the rule means:
+
+- A withdrawn, taken-down or erased tree arrives in some tile's `withdrawn_tree_ids` and is dropped
+  from the whole cache, whichever tile served it (`CommunityTreeCacheStore.remove`).
+- A refused cursor drops its tile's trees (the error entry above).
+- A tree is **never** evicted because the profile's `community_tree` came back null: null means "not
+  one this caller may see", not "deleted" (`server/testdata/README.md`).
+- **How the cache is bounded:** only by the tiles a reader has looked at closely, because those are
+  the only tiles fetched. There is no count cap and no age limit. A tile is about 3.7 km² in San
+  Francisco. A future limit must say what happens to a cached tree the reader has visited or
+  favorited when its tile is evicted, because its profile would then answer "not found".
+- **What it costs on the map**, stated for the revisit. Every map read narrows and counts the
+  community trees in view in SQL (the next entry); a pin read decodes at most `pinLimit` (400) of
+  them, and a cluster read decodes none. Measured by the C2 author with a probe test that was not
+  committed: a Debug build on the iPhone 17 Pro Max simulator, `LocalAPI.mapContent` over one box
+  holding N cached trees, the median of 7 reads after one warm-up.
+
+  | Read | N = 5,000, before | N = 5,000, after | N = 50,000, before | N = 50,000, after |
+  |---|---|---|---|---|
+  | Pins, zoom 17 | 472 ms | 43 ms | 4,208 ms | 80 ms |
+  | Clusters, zoom 14 | 525 ms | 1.9 ms | 4,244 ms | 23 ms |
+  | Pins narrowed to a species with no match | 692 ms | 0.8 ms | 4,365 ms | 6.9 ms |
+  | Clusters narrowed to a species that is a tenth of the trees | 751 ms | 0.8 ms | 4,151 ms | 7.8 ms |
+
+  "Before" is the first review's fix (`f9a45689`), which decoded every tree in the box and narrowed
+  in Swift. "After" is the narrowing in SQL. Each read holds the one database queue for its whole
+  length, so the "before" column also blocked the refresher's writes and every other read. The pin
+  read still sorts every match in the box to cut it by id, which is what is left of its cost.
+
+### R203 — The community layer takes at most half the map's pin budget when the city layer can use the rest
+
+**Decided by:** the C2 author, taking the ROADMAP's proposal ("half was proposed").
+
+`LocalAPI.communityPinShare`: the community layer keeps
+`min(communityPins, max(pinLimit / 2, pinLimit − cityPins))`.
+
+- **Half, rounded down.** When both layers could fill the budget, the community layer gets half and
+  the odd pin goes to the city layer. At the map's budget of 400 that is 200 community pins.
+- **Unused budget is not withheld.** A park with 30 city trees and 300 added ones draws all 330
+  under a budget of 400. The cap binds only where the city layer would otherwise be starved.
+- **The narrowing runs before the cut, in SQL.** `LocalAPI.mapContent` resolves the map's
+  narrowing (species, `In bloom`, `Needs care`, year, site, membership) into sets, and
+  `CommunityLayer.pinsSQL` applies them in the `WHERE` of both arms, counts every match with
+  `COUNT(*) OVER ()`, then sorts and cuts to `pinLimit`; the share is taken from those rows. Before
+  the first review's fix the statement cut to `pinLimit` with no narrowing, so a species search over
+  a box with more community trees than the budget could miss the only match. Every narrowing went
+  into SQL; none had to stay in Swift.
+- **The phone's own trees come first inside the share**, then other people's, each by id
+  (`CommunityLayer.pinsSQL`'s `ORDER BY cached, id`). So ERRATA E36's rule holds (a contributor's
+  own pin appears on the screen they added it from). Reading the same box twice cuts the same trees.
+  A pan does not keep that promise: a pan that brings in a tree with a lower id can push out a tree
+  still on screen.
+- **Clustered zooms count every tree.** `CommunityLayer.cellsSQL` counts the narrowed community
+  trees per cell in SQL, on the grid `LocalAPI.mapContent` keys its cells with, and each cell's
+  count and mean position are added to its badge. Before the first review's fix, a box holding more
+  than `pinLimit` (400) community trees counted only the first 400.
+
+`MapContentBudgetTests.communityTreesCannotOverrunTheBudget` asserted the old rule (every pin a
+community tree at a full seed block) and now asserts this one.
+
+### R204 — Calendar days: a type in the data layer, and the photograph's date chosen at the merge
+
+**Decided by:** the C2 author, implementing the S2 rulings **R159** and **R167** ("dates
+travel at day precision" and "decision 14a's served form", round 5).
+
+- **Community-tree dates** (`createdAt`, `updatedAt`, a history event's `occurred_at`) are midnight
+  UTC of a day on the wire. The history carries each event's date as a `CalendarDay`, read as the
+  UTC day, so no surface can shift it into the reader's zone. The cache keeps `createdAt` and
+  `updatedAt` as stored instants, and nothing in C2 draws them; C3 must format them with
+  `CalendarDay(utcDayOf:)`, never in the reader's zone.
+- **A photograph's `captured_on`**, when the service sends it, is shown as that calendar date in
+  every zone. `RoutedAPI.refreshedTreeProfile(id:)` carries it to the screen through the service
+  photograph's `capturedAt`: the photograph keeps its `captured_at` when the reader's zone already
+  prints it as that day, and otherwise takes the nearest second of that day in the reader's zone
+  (`CalendarDay.instant(nearest:in:)`). The copy test against the phone's own photographs (report
+  F30) runs on the wire's instants first, so a display date never takes part in it. When
+  `captured_on` is absent, the photograph keeps `captured_at`, formatted in the reader's zone as the
+  shipped client always has.
+- **Why the nearest second and not noon** (the review's finding): the profile sorts its photographs
+  by `capturedAt`, newest first, and the hero's "since" year reads the earliest. The service serves a
+  contributor their own rows at the exact time and other people's at noon UTC. A fixed noon in the
+  reader's zone moved even the exact rows, so a photograph the reader took at 10:00 on another phone
+  sorted after one they took at 11:00 on this phone. Now a photograph moves only when the reader's
+  zone and `captured_on` disagree about the day, and then only to the edge of that day. Other
+  people's photographs still sort by the noon-UTC time the service gives them, which says nothing
+  about the hour; that was true before C2.
+- Why the merge and not each surface: six surfaces read a refreshed profile's photographs
+  (`refreshedTreeProfile`'s list), several of them format the date their own way, and changing each
+  would put C2 into that many feature files to change one fact. The cost, stated: a service
+  photograph's `capturedAt` in a refreshed profile can be moved by up to a day's edge from the time
+  the service sent. The phone's own photographs keep theirs.
+
+### R205 — `added_by_you` is adopted when the service says yes, and the history rides on the profile
+
+**Decided by:** the C2 author, implementing the ROADMAP's "adopting the adder from the service".
+
+- `TreeProfile.addedByYou` is the phone's answer (a tree this phone added whose adder is the reader)
+  **or** the service's `added_by_you`. The service's yes covers a tree the reader's account added on
+  another phone, which reaches this one only through the cache. Its no never overrides the phone's
+  yes: the service says no for a tree it has not received yet, and one phone can get both answers for
+  one tree (`server/testdata/README.md`).
+- `canMovePin` is unchanged. A move is a write to this phone's own row, and a tree held only in the
+  cache has none (`LocalAPI.correctLocation` refuses it, and that path is another author's this
+  round). So C2 does not make the comment's suggestion that `added_by_you` replace the move gate.
+- `TreeProfile.communityHistory` carries `GET /trees/{id}/history` for a community tree, asked beside
+  the community half. A city tree asks nothing. The service's `not_found` and a failed read both give
+  nil, and a failed history never costs the photographs.
+- Nothing in C2 draws either field. C3 draws them, under the owner's answers in
+  **R184-R189**.
+
+### R206 — The profile's `community_tree` and `is_published` are decoded and not used
+
+**Decided by:** the C2 author, after the review found both decoded and never read.
+
+- **What happens:** `TreeCommunityHalfResponse` decodes both keys, so the wire type stays a complete
+  statement of what `GET /trees/{id}` sends (the pattern `visit_count` already follows), and
+  `RemoteAPI.TreeCommunityDelta` carries neither. The profile shows the tree as the phone's cache
+  holds it.
+- **Why not refresh the cache row from it:** the cache has one writer, the tile refresher, and the
+  tile's cursor orders its writes. A profile read is not ordered against a tile page. A profile answer
+  fetched before a tile page and written after it would put the older tree back, and no `updatedAt`
+  comparison can catch that, because the service sends dates at day precision.
+- **The limit, stated:** the profile can show a cached tree that is older than the service's copy,
+  until the reader's map next refreshes that tree's tile.
+- **A second limit, from the same design:** a community tree that is in neither of the phone's
+  tables (for example, a shared link to a tree whose tile the phone never fetched) makes
+  `LocalAPI.treeProfile` throw `notFound` before the service is asked. The ROADMAP's C2 entry lists
+  it as left to do.
+
+---
+
+### R207 — The service has no proximity refusal, and `conflict` no longer means "a tree is near"
+
+It records the service half of **R190** (the owner's ruling of 2026-11-14); it is the author's
+design reading of that ruling, not a new owner ruling.
+
+**What the service does now.** `POST /trees`, the `add_tree` kind of `POST /sync`, and the
+`location_correction` kind of `POST /sync` do not look at other trees' positions. A tree or a moved
+pin within 10 m of another tree is recorded like any other.
+
+**What `conflict` (409) can still mean.**
+
+- On `POST /trees`: nothing. The route answers `200` with `applied` or `duplicate`. Otherwise it
+  answers an error envelope: `rate_limited` (the `authenticated` wrapper's limiter),
+  `unauthorized` (no live session or device token), `validation_failed` (a body that cannot be
+  read, or a missing id, an off-map coordinate, or a placement or land context outside the
+  vocabulary), or `server_error`.
+- On `add_tree` and on `location_correction`: nothing. Each item still gets one of the per-item
+  results every kind can get: `forbidden` when the item names another account or device, or a
+  signed-out caller sends an item with a user id; `validation_failed`; and `server_error`.
+  `location_correction` can also be refused with `forbidden` (the caller is not the adder) or
+  `not_found` (a tree the caller cannot see, or one this service does not hold). A replay of
+  either kind is `duplicate`.
+- On `tree_withdrawal`: "Other people have added to this tree, so it stays on the map." (decision 8).
+  This is now the only `conflict` that a community-tree kind returns. The only other `conflict` in
+  the service is the device claim's "This device is already linked to another account."
+
+**The error envelope has no `detail` any more.** `detail.candidates` existed only to carry the
+proximity candidates. No route sends it, so `apierr.Error.Detail` was removed. The envelope is
+`{"error": {"code", "message", "retryable"}}` on every route.
+The fixture `proximity_conflict.json` under `server/testdata/` is no longer produced or checked by
+any Go test. The service round left it in place because the Swift suite read it; the phone-side
+branch (`feat/no-proximity-refusal-phone`) deletes it with the Swift test that read it.
+
+**What stops a duplicate now.** Only identity, never distance:
+
+- A second send of the same `add_tree` item (the same `client_uuid`, for example after a lost
+  response) hits the contribution dedupe and answers `duplicate`.
+- An `add_tree` for the same tree id under a new `client_uuid` answers `applied`, because its
+  contribution is new, and makes no second tree: `insertCommunityTree` keys on the tree id
+  (`ON CONFLICT (id) DO NOTHING`) and checks the erase tombstone.
+- A second `POST /trees` with the same tree id makes no second tree, for the same reason, and
+  answers `duplicate`.
+- A tree sent again under a **new** tree id is a second tree. Before 2026-11-14 the 10 m rule
+  refused it; now nothing does. The phone mints the tree id once per add, so this happens only if a
+  person adds the same tree twice, which the owner's ruling accepts.
+
+**Old phones.** An installed build still refuses on the phone (`LocalAPI.addTree`,
+`LocalAPI.correctLocation`) before it queues anything, but it checks only the trees in its own
+local data: the city file and the community trees it has fetched. It can therefore send an add, or
+a move, within 10 m of a community tree it has never fetched. The old service refused that with
+`conflict`; the new service applies it. That is the outcome the owner's ruling intends. Such a
+build still decodes a `ProximityConflict`; it will no longer receive one.
+
+---
+
+### R208 — Old community trees: the add photo, the refused adds, and the Outbox rows (ROADMAP 139)
+
+Every answer below is the owner's, given in an AskUserQuestion dialog on 2026-11-15. Each string in
+quotation marks is the exact string the owner saw and chose. Nothing here is built by this file. It
+adds to **R183** and **R184-R189** (both 2026-11-14), and it
+changes one answer in the second of them, as stated below.
+
+Answers of the same day that a code branch records are not repeated here: where the "ALREADY ON
+RECORD" note sits, what a tap on its rows does, and when it shows and hides (the phone half of
+ROADMAP 140); a phone that never registered, the cache limit, and the zoom at which community trees
+download (C2); the day a community tree shows as added (the service piece of ROADMAP 139).
+
+1. **The photo taken on the Add this tree screen.** The round that planned 139 found that this photo
+   has never been sent to the service, for any tree, new or old. Offered: "Every tree, new and old
+   (Recommended)"; "Old trees only for now"; "Do not send it". **Chosen: "Every tree, new and old".**
+   Each community tree sends its add photo, in this round. Location and time data are stripped from
+   the file first. Other people see the tree with its photo.
+2. **Adds the service refused under the old 10 m rule.** Those trees are on their adders' phones
+   with a failed row on the Outbox screen, and the rule is gone
+   (**R190**). Offered: "Yes, retry once (Recommended)"; "Leave them".
+   **Chosen: "Yes, retry once".** After the update, the app sends each such tree again once, with no
+   question, with everything recorded on it.
+3. **How the backlog shows on the Outbox screen.** Offered: "Ordinary rows (Recommended)"; "One
+   summary row"; "Hidden unless one fails". **Chosen: "Ordinary rows".** Each item is its own row
+   with today's labels, like anything else waiting to be sent. No new wording.
+
+### R209 — Species answers on a community tree someone else added (changes an answer of 2026-11-14)
+
+**What changed.** On 2026-11-14 the owner chose "add the species controls" for the profile of a tree
+someone else added (**R188**, "Other people's community trees", answer 2).
+The option text said that other people could fix a wrong name. That was the orchestrator's error:
+the service keeps a non-adder's species statement and applies it to nobody, and the phone refuses
+the two species verbs on a tree the reader did not add. The owner was told and asked again.
+
+1. **What should happen when a person names the species of a tree someone else added.** Offered:
+   "Show it on your phone (Recommended)"; "Make it count for everyone"; "Only report a wrong
+   species". **Chosen: "Make it count for everyone".** It needs a service change, so it is not in
+   the next build.
+2. **The next build.** Offered: "Hide species controls for now (Recommended)"; "Phone-only for now".
+   **Chosen: "Hide species controls for now".** The profile of a tree someone else added shows
+   neither "Say what species you think this is" nor "Report the species as wrong". Both come back
+   when the service change is built. This replaces answer 2 of 2026-11-14 for the next build; the
+   rest of that answer stands (visit, check-in, care, favorite, share, and measure show, and Move
+   pin never does).
+3. **The later rule for a tree with no species.** Offered: "It names the tree for everyone
+   (Recommended)"; "It waits for the adder". **Chosen: "It names the tree for everyone".** The first
+   answer becomes the tree's species for everyone, marked "species named by a contributor". The
+   adder can still correct it.
+4. **The later rule for a tree that has a species.** Offered: "Keep the name, mark it questioned
+   (Recommended)"; "The newest answer wins". **Chosen: "Keep the name, mark it questioned".** The
+   species stays. The profile shows the line it already has for a reported species, "Somebody has
+   reported this species as wrong." The adder can correct the species, and so can the operator.
+
+Rules 3 and 4 are a service change and a phone change that no round has planned. Its ROADMAP chip is
+added by the C3 round, which builds answer 2.
+
+### R210 — The square on a history row, and the note when the phone does not know the sharing answer
+
+1. **The square at the left of a history row.** The profile's activity rows and the Journal's rows
+   each start with a square; a history row ("Added", "Pin moved · 12 m north", and the Journal's
+   "Moved the pin of X") had none decided. Offered: "The community tree mark (Recommended)"; "A plain
+   empty square"; "The Care leaf tile". **Chosen: "The community tree mark"**: the map's dashed green
+   ring on its pale fill, drawn small.
+2. **When the phone does not know whether the person agreed to share tree records.** This happens
+   after a reinstall, and for an account from before the answer was saved. Offered: "Keep today's
+   note (Recommended)"; "Treat it as sharing"; "Treat it as not sharing". **Chosen: "Keep today's
+   note".** The Add this tree note reads "Recorded as community-added and unverified, on this
+   phone." as it does today. The profile shows no "only on this phone" line unless the service says
+   the tree is not shared.
+
+---
+
+#### What these answers do not settle (facts for the rounds that build them, not rulings)
+
+- **A signed-in reader who declined to share.** The approved strings say "…after you agree to share
+  your tree records." The C3 planner could not find a control that lets such a reader agree later.
+  Verify it, and if there is none, ask the owner.
+- **Photos sent since syncing began.** The retry in answer 2 of the first entry, and the send of old
+  records, must not send a second copy of a photograph the service already has. The service matches
+  rows on `client_uuid`; check what it does for a photograph before sending one again.
+- **When the next build ships.** The owner's words: "plan is that once you finish this whole round
+  and it's all set, we'll release the next build". The round is ROADMAP 140, C2, C3, and ROADMAP
+  139. That sentence names when; the release itself still needs the owner's go-ahead.
+
+---
+
+### R211 — One "added" day for every community tree: the day it was added on the phone
+
+The first entry is the owner's ruling. The second records the service design that applies it
+(`feat/community-tree-added-day-server`, server migration 008); it is the author's reading within
+delegated authority, logged for review.
+
+**The owner's decisions.**
+
+1. **2026-11-14**, in the decision round for trees added before syncing existed
+   (**R183**, choice 4): other people see "the day it was added", the original
+   day on the adder's phone, not the day it went live.
+2. **2026-11-15**, AskUserQuestion. The question:
+
+   > Other people see an 'Added' day on a community tree. You chose the original day for trees that
+   > predate syncing. Your earlier rule (2026-09-28) says a tree added on a signed-out phone shows the
+   > day it went public, which is the sign-in day. That leaves two rules. Which day should a tree show
+   > when it was added recently on a signed-out phone and went public later?
+
+   Offered:
+   - **"The day it was added (Recommended)"**: "One rule for every community tree: the day the
+     person added it on their phone. This changes the date part of the 2026-09-28 rule. Positions
+     from while the tree was private still stay private."
+   - **"The day it went public"**.
+
+   **Chosen: the day it was added.**
+
+**The rule.** For every community tree, old or new, and for every viewer, the adder included, the
+"added" day is the day the person added the tree on their phone. It is served at day precision on
+the tile (`GET /community-trees`, `createdAt`), the profile (`GET /trees/{id}`,
+`community_tree.createdAt`) and the history (`GET /trees/{id}/history`, the `added` row's
+`occurred_at`). No "predates sync" flag is needed or sent.
+
+**What this changes in decision 13 and its rulings.**
+
+- **The date half of decision 13 and the V1 ruling** ("A stranger is told a tree was added the day it
+  went live", **R164**) are replaced. Strangers were told `published_at`; the adder
+  was told the service's receipt time (`created_at`). Both are now told the phone's day.
+- **The history's "added" row** is dated by that day. Before, it was dated by
+  `GREATEST(occurred_at, published_at)` of the `published` event, which is the publication day.
+
+**What it leaves alone.**
+
+- **Positions stay private.** The "added" row still stands at the position the tree held when it went
+  public, not the position it was first added at. Positions held and pin moves made while the tree was
+  private are never served (decision 13, the position half; the L1 ruling).
+- **Every other private act stays undated.** A move or a naming the adder made while the tree was
+  private, which reaches the service after publication, is still served at no earlier than the day
+  the tree went live (L1). The owner made the add day public, not the days of the private acts.
+- **A private tree is still served to nobody but its adder.** Publication, the license rules
+  (decisions 7 and 10), withdrawal, takedown, the deletion doors, and who may see what are unchanged.
+- **`updatedAt`** is unchanged: the UTC day of the last change, publication included.
+
+### R212 — How the service knows the phone's day (server migration 008)
+
+**Decided by:** the author of `feat/community-tree-added-day-server`, applying the ruling above.
+
+**The column.** `community_trees.added_on DATE NOT NULL`, written once at insert and never changed.
+There is no default, so a writer that forgets it fails.
+
+**The wire key.** The `add_tree` payload (`TreeAddition`) may carry **`addedOn`**: the phone's
+**local** calendar date of the add, exactly `YYYY-MM-DD`. It is decision 14a's `captured_on` idea,
+spelled the way this payload spells its keys (after the Swift property, camelCase; the README's key
+convention). Optional; `null` is the same as absent.
+
+- A value that is not a date in exactly `YYYY-MM-DD` (`"2026-10-1"`, `"2026-02-30"`, `""`, a number)
+  is a malformed item: `validation_failed`, like every other malformed field of `add_tree`.
+- A real date is never refused. The tree is good even when the phone's calendar is not, so an
+  implausible day is replaced, as below.
+
+**Which day is stored** (`store.addedDay`):
+
+1. **The instant** is the item's `occurred_at`. If it is after the moment the service received the
+   item, the phone's clock ran fast, and the receipt stands in for it: an add cannot happen after the
+   service received it.
+2. **Without `addedOn`**, the day is the instant's **UTC** date. The service holds no time zone, so a
+   tree added at 23:30 Pacific time (06:30 or 07:30 UTC the next day) shows **the next day**. This is
+   what every installed build gets, and what the backfill gives every existing tree. It is the same
+   limit the history has had for every event since round 1.
+3. **With `addedOn`**, the stated day is used when it is within one day of the instant's UTC date. A
+   local date never differs from the UTC date of the same instant by more than one day (UTC−12 to
+   UTC+14), so a day further off is not this add's day, and the instant's UTC date is used instead.
+4. **A day before 2026-07-21** (the project's first commit; no build of the app existed earlier) is a
+   phone clock that was wrong. There is no true day to recover, so the receipt's UTC date is used: it
+   is the latest the add can have happened, and the day the service showed before this change.
+
+So the stored day is never later than one day past the receipt's UTC date, which is the receipt day
+in the phone's own zone. A CHECK (`community_trees_added_on_not_after_receipt`) holds that bound in
+the database too. Refusing an implausible day was rejected: an `add_tree` that fails is terminal on
+the phone, and it would lose a good tree over its date.
+
+**The history.** The `published` event, served as `added`, is dated by `added_on`. Every other public
+event is served at `GREATEST(occurred_at, published_at, added_on)`: the L1 floor, plus a floor at the
+add day so that no row is dated before the "added" row below it. That second floor matters only east
+of UTC, where `added_on` can be one day after the publication's UTC date. The list is still ordered
+by `GREATEST(occurred_at, published_at)`, then `recorded_at`, then the id, so "added" stays the oldest
+row.
+
+**Existing rows.** Migration 008 backfills `added_on` from data the service already holds: the
+`added` event's `occurred_at` (the phone's instant), else the root location's, else `created_at`;
+held to the receipt, with the 2026-07-21 floor. No existing row carries a phone-stated day.
+
+**Old installed phones.** They send no `addedOn`. The service before 008 decoded the payload with
+`json.Unmarshal`, which ignores unknown keys, so a new phone talking to the old service is not refused
+either. In either deploy order nothing breaks. An old phone's tree shows the UTC date of its add's
+instant, which is the phone's own day except for adds late in the evening west of UTC (or early in
+the morning east of it).
+
+**Wire shape.** Unchanged: the same keys, and the same calendar-day form (midnight UTC). One thing a
+client may meet that it did not before: a community tree's `createdAt` can be one day after its
+`updatedAt`'s day, for a tree added east of UTC on a day that was still the previous day in UTC.
+
+**The index.** 008 also drops `idx_community_trees_position` (001), which only the retired 10 m dedupe
+read (ROADMAP 141 (a)). The tile's position arm is served by 007's partial
+`idx_community_trees_public_position`, and `TestTheTileIndexesServeTheirQueries` still checks that.
+
+### R213 — Without the phone's day, the service keeps the UTC date (owner's ruling, 2026-11-15)
+
+**Decided by:** the owner, AskUserQuestion, 2026-11-15. This settles the question the entry above
+left for the fallback. The question:
+
+> The service now stores the day each community tree was added. For trees already on the service,
+> and for adds from builds older than the next one, it does not know the phone's time zone, so it
+> uses the UTC date. A tree added after about 4 or 5 pm in San Francisco, or 7 or 8 pm in D.C., then
+> shows the next day. Trees added with the next build show the exact day. What should the service do
+> for the others?
+
+Offered: **"Keep the UTC date (Recommended)"**; **"Estimate from where the tree is"**.
+**Chosen: "Keep the UTC date".** The fallback in `store.addedDay` and 008's backfill stay as built.
+This is decided, not open.
+
+### R214 — Known limit: 008 changes a served tile field without moving `updated_at`
+
+**Found by:** the independent review of `feat/community-tree-added-day-server`. **Ruled by:** the
+orchestrator, 2026-11-15: no change to 008.
+
+The tile delta returns only trees with `(updated_at, id)` after the cursor (`tileDeltaQuery`). 008
+changes the `createdAt` the tile serves (from `published_at` to `added_on`) and does not touch
+`updated_at`. A phone that already held a tile cache would therefore keep the old day for a tree
+that went public after the day it was added.
+
+No shipped build caches tiles: the first build that downloads them is the next one, not yet
+released. So no phone holds a stale day, **on one condition: 008 must be deployed before the first
+build that caches tiles ships.** Bumping `updated_at` in 008 was rejected, because it would make
+`updatedAt` the deploy day for those trees for no benefit.
+
+**For later migrations:** one that changes a field the tile serves must also move `updated_at` for
+the rows it changes, or phones with a cached tile will never see the change.
+
+---
+
+### R215 — "Share my tree records": a way to agree later, on the You tab
+
+Every answer below is the owner's, given in an AskUserQuestion dialog on 2026-11-15. Each string in
+quotation marks is the exact string the owner saw and chose. The branch
+`feat/share-my-tree-records` builds all four.
+
+It answers the first item under "What these answers do not settle" in
+**R210**: there was no control that let a signed-in reader who
+declined to share agree later. There is one now.
+
+1. **Whether a person who declined at sign-in can agree later, and where.** Offered: "Add a row on
+   the You tab (Recommended)"; "Tell them to sign in again"; "Leave it for a later build".
+   **Chosen: "Add a row on the You tab".** The row is in the You tab's Account section, signed-in
+   state, directly under the line "You did not agree to share your tree records under the open
+   database license." It shows only when that line shows: signed in, and the stored answer is
+   "declined". It does not show for a person who agreed, for a signed-out person, or when the phone
+   does not know the answer.
+2. **The row's words.** Offered: "Share my tree records (Recommended)"; "Agree to share tree
+   records"; "Change my answer". **Chosen: "Share my tree records".** Second line: "Under the open
+   database license. Anyone may use the data". The app ships no license text, so the row offers no
+   link to one.
+3. **What a tap does.** Offered: "Ask to confirm first (Recommended)"; "Agree when tapped".
+   **Chosen: "Ask to confirm first".** A tap opens a confirmation. Title: "Share my tree records?"
+   Body: "Everyone using Cypress will see the trees you have added. This cannot be undone." Buttons:
+   "Share" and "Cancel". "Cancel" changes nothing. "Share" asks the service first, and only when the
+   service records the answer does the phone record it. The line then reads "You agreed to share your
+   tree records under the open database license." and the row is gone. The service makes every
+   community tree the account owns public in the same step.
+4. **What the You tab says when agreeing fails** (no connection, or the service refused). Offered:
+   "That did not go through. (Recommended)"; "With a hint" ("That did not go through. Check your
+   connection and try again."); "No message". **Chosen: "That did not go through."** One line under
+   the row. The row stays so the person can tap again. Nothing is written on the phone. The line
+   clears when a later try succeeds. While a request is in flight the row takes no taps; there are
+   no new words for that state.
+
+---
+
+#### What this row does not cover (facts, not rulings)
+
+- **A person who declined and then reinstalled the app** (ROADMAP chip 148, branch
+  `feat/account-license-readback`). Both session answers of the service (`POST /auth/oidc` and
+  `POST /auth/refresh`) now carry the account's stored answer as `license_version`: the version
+  accepted, or `null`. The phone keeps it in the stored session and writes it back at launch, with
+  no request, and after each refresh. So after a reinstall the "did not agree" line and the row show
+  again. This needs `cypress-sync` deployed with that branch; until then the service sends no key,
+  and the phone behaves as before (no line, no row). A session stored by an older build carries no
+  answer either, so on such a phone the line and the row come back only after the first refresh.
+  - **The key can be absent from a refresh.** If the service cannot read the account's answer
+    after a refresh has rotated the session, it still sends the new tokens and leaves
+    `license_version` out, rather than failing (a failure would leave the phone with a spent
+    refresh token and sign the person out). The phone reads a missing key as "not stated" and
+    writes nothing. It never sends `null` in that case, because the phone would read `null` as "did
+    not agree" and could overwrite an agreement.
+  - **A narrow race, inferred in review and not staged in a test.** A refresh that read the
+    service's answer before an agreement committed can arrive after the person agreed. The phone
+    then stores and adopts "declined", and the You tab shows "did not agree" and the row again. The
+    next refresh carries the agreement and corrects it. A second tap on "Share" sends the same
+    agreement again, which publishes nothing new.
+  - **A failed save after agreeing.** After the service agrees, the phone re-saves its stored
+    session as "accepted". If that save fails, a relaunch before the next refresh shows "did not
+    agree" again, until the next refresh corrects it.
+- **Two behaviors the orchestrator chose for that change (2026-11-16), to be confirmed by the
+  owner.** Each is one named constant in `LocalAPI`, easy to flip.
+  1. **When the service's answer differs from the phone's stored answer, the phone shows the
+     service's** (`serviceLicenseAnswerWins`). For example, an account that agreed on one phone and
+     then declined at a sign-in on a second phone reads "did not agree" on the first phone after its
+     next refresh.
+  2. **A restored phone whose account has no acceptance on the service shows the "did not agree"
+     line and the "Share my tree records" row** (`serviceNoAcceptanceReadsAsDeclined`). The service
+     cannot tell "declined" from "never asked" (both are a `NULL` `license_version`). Every in-app
+     sign-in since 2026-08-14 sent an answer, so "never asked" is an account from before then.
+- **Re-consent when the license version changes.** `docs/RULINGS.md` names it as open ("re-consent
+  when the license version moves"). This row does not settle it: an account that agreed to an older
+  version reads as having agreed, so the row does not show for it.
+
+#### Known limits and review findings (facts, not rulings)
+
+- **A conflict after the service has agreed.** On the service, `POST /devices/claim` records the
+  answer and publishes the account's trees (`RecordLicenseConsent`, its own transaction) before it
+  runs `ClaimDevice`. If `ClaimDevice` answered `conflict` (409), the service would have agreed while
+  the phone shows "That did not go through." Checked in `server/internal/api/auth.go` and
+  `server/internal/store`: a sign-in whose device belongs to another account is refused with
+  `conflict` before any session is minted, only `ClaimDevice` sets a device's account, and only an
+  account deletion clears it, which ends that account's session too. So a phone that holds this
+  account's live session holds a device this account owns, and the conflict is judged unreachable.
+  Not handled.
+- **Nobody has seen the confirmation alert on a screen.** The screenshot suite cannot draw an iOS 26
+  alert faithfully off-screen (its background, dimming, and message are missing from the capture). A
+  unit test reads the alert's labels and proves its title, message, "Share", and "Cancel" are there
+  at the default text size and at the largest accessibility size.
+- **Found in review, and fixed: a sign-out while the request was in flight.** The account can end
+  while the request is in flight (`DataLayer.boot`'s `onSessionEnded` signs the phone out when
+  another request's refresh is refused). The first build then wrote the phone after the service's
+  yes, and that write signed the phone back in to an account with no stored session. Now the phone
+  is written only when both its database and its stored session still name the account. Otherwise
+  the You tab shows the signed-out Account section and no failure line. The service has still
+  recorded the agreement.
+- **Two smaller additions from review.** The failure line is announced to VoiceOver with its own
+  words, once per failed try. The confirmation closes if the account is signed out while it is up,
+  as the deletion sheet does.
+
+---
+
+### R216 — The one-time send: which trees, which rows, which photographs
+
+This entry is the author's reading of the owner's rulings, within delegated authority, logged for
+review. It applies **R183** (2026-11-14), **R208**,
+and **R211-R214**. It records every place
+where the phone could not know a fact and a narrow rule was chosen. The code is
+`Cypress/Data/Outbox/CommunityTreeBackfill.swift`; its header carries the same reading.
+
+**When it runs.** In `DataLayer.boot`, after the identity is reconciled and before the first
+drain, and again after every claim of the device by an account (`LocalAPI.claimDevice`). Only when
+the send sink is wired: with no sink a queued row settles `done` without being sent, and the record
+below would claim a send that never happened. The UI suite runs with the sink off, so the backfill
+never runs there.
+
+**The record that it ran.** One `app_state` key per tree, `community_tree_queued_once:<tree id>`
+(`CommunityTreeStore.queuedOnceKey`), written last, in the same transaction as the tree's rows. No
+phone migration: `app_state` is the existing key/value table, and the refused-photo keys are the
+precedent. The outbox cannot be the record, because `pruneCompleted` deletes a `done` row a day
+later. `LocalAPI.addTree` writes the key for every new tree too, so a new tree is never swept again.
+
+**Which trees.** Live rows of `community_trees` (trees this phone added) with an adder and no key.
+The latest `add_tree` outbox row for the tree decides:
+
+| The add row | What the tree gets |
+|---|---|
+| none, tree added before `CommunityTreeStore.firstQueuedAddsAt` (an old tree) | a new add, its add photo, every live row on it, and its old photographs |
+| none, tree added later (its add went and was pruned) | a new add with the same `client_uuid`, which the service answers `duplicate`, so the add photo has an item to ride on; nothing else |
+| `failed` with `conflict` | the row retried once, with `addedOn` added; the tree then treated as an old tree |
+| `pending` or `uploading` (queued by an earlier build) | its add photo staged on that row, and `addedOn` set on it when it has none (owner's decision of 2026-11-15) |
+| `done`, or `failed` with any other code | left alone and not recorded; a `done` row is looked at again once it is pruned |
+
+**Narrow rule: a refused add is recognized by `conflict` alone.** Under every version of the
+service an `add_tree` was answered `conflict` only by the 10 m rule (checked in the history of
+`server/internal/api/sync.go`: commits `fe1ff4ab`, `7f9d40ec`, `f68214cd` and `bd8a35af~1`). The
+phone stores the code on the row (`last_error_code`). So a failed add with `conflict` is a
+proximity refusal, and a failed add with any other code is left for the person, because sending it
+again would be refused again. The retry happens once: if the service still refuses it, the row
+stays failed and nothing retries it automatically again.
+
+**What rows go.** For an old or refused tree: every live visit, check-in, measurement and care event
+on it, each queued already applied under its own `client_uuid`. A row the service holds is answered
+`duplicate`. A withdrawn row (`deleted_at` set) does not go. Species statements, favorites, reminders,
+reports and votes do not go: the owner's list names visits, measurements, care and photographs, and
+the species travels in the add. Rows on a city tree do not go (R77 stands for them).
+
+**The add.** Built from the tree's row: the head position, the current species, the stated land
+context, and the adder. `occurredAt` is the tree's `created_at`, the instant of the add, and
+`addedOn` is that instant's date in the phone's current calendar and time zone. The service keeps
+`addedOn` only within a day of `occurredAt`'s UTC date, so `occurredAt` is never the time of the
+resend.
+
+**Known limit: the time zone is the one at the time of the run.** The phone did not record the zone
+an add was made in. A phone that has changed zones since can state a day one off from the day the
+person saw. The service's one-day window accepts it, so the tree shows that day.
+
+**Anonymized rows never go.** The leaving door of an account deletion keeps a row's `device_id` on
+the four contribution tables and records its `client_uuid` in `anonymized_contributions` (E157).
+Such a row reads as this device's own work, so the backfill reads every row through
+`ContributionStore.notAnonymized`. Without it, the row would go out under whoever is signed in now,
+and the service would store it as theirs. An anonymized tree or photograph has no owner at all, and
+is refused twice: the candidate query skips a tree with no owner, and `Identity.maySend` refuses an
+owner of nobody.
+
+**One tree's failure stops nothing else.** Each tree's transaction is caught in the run. A tree
+that throws rolls back, keeps no key, and is tried again at the next launch; the trees after it
+still go. There is no limit on the tries: each is one rolled-back transaction at launch, and a
+limit would need a second record and would leave the tree behind for good.
+
+### R217 — Which photographs are sent, and how the phone knows
+
+A photograph may be sent only if the service cannot already hold it. The service matches a begin on
+its key, and the phone's key for a photograph is `photos.id`. Builds from the first photo send path
+until report F30's fix keyed a begin by the queue row's id, and that row is deleted once the send
+completes, so the phone cannot tell whether such a photograph reached the service, and sending it
+again under `photos.id` would make a second copy. So exactly two kinds go:
+
+- **The add photo** of every tree (`visit_id` NULL, `storage_key` NULL, `local_path` set). No build
+  ever staged it for a send (`LocalAPI.addTree` ingested it and queued no binary), so the service
+  has none. From this build on, `addTree` stages it on the add row itself.
+- **A photograph created before 2026-08-23 05:57:21 UTC** on an old or refused tree. That is the
+  date of commit `79f983b1`, the first commit with a photo send path; no build could send anything
+  earlier. `build-55`, the first build tag that contains it, is later, so the earlier date is the
+  safe one.
+
+**Not sent:** any other photograph on these trees (one a build may have sent, keyed by a row id the
+phone no longer holds); any photograph a queue row or a refusal record names; a missing file; a
+file that is not a JPEG (the service stores every photograph as `photos/<id>.jpg`); and a
+photograph whose owner this phone cannot send for now (below). A file that is an image but not a
+JPEG (a HEIC or PNG picked from the library, which the ingest keeps in its own container) is sent as
+a JPEG copy, encoded fresh with only the orientation tag; the person's own file is not changed.
+**Known limit:** a photograph taken
+after that date on a build that could not send yet, and never sent, stays on the phone. The phone
+holds nothing that tells it apart from one that was sent.
+
+**Where a photograph rides.** The add photo, and an old photograph with no visit, ride on the add
+row; an old visit photograph rides on its visit's row, and only on a row this run wrote, so a
+photograph is never staged twice. Each is staged already applied, with its row id equal to
+`photos.id`, so the begin's key is `photos.id`.
+
+**What leaves the phone.** The send sink strips location and time data from every file it sends,
+new or old, right before the bytes go (`APIOutboxSendSink.uploadPhoto`), and keeps the orientation
+tag. A file that still carries them after the repair, or an image that cannot be made a JPEG, is
+refused for good and recorded as refused: the person sees a failed Outbox row with the reason, and
+tapping retry settles it. The repair replaces the file in one `rename`, so a process killed during
+it leaves either the old file or the clean one, never neither.
+The begin is dated by the photograph's own `captured_at`; it used to be dated by the queue row's
+creation time, which is months off for an old photograph. Others are served the date and never the
+time (decision 14a).
+
+### R218 — Who may be sent for (the signed-out phone)
+
+A new tree is attributed to whoever is signed in when it is added, and is sent under whoever is
+signed in when the queue drains. Signed out, that is this device: the service keeps the tree
+unpublished and publishes it when the device is claimed at sign-in (if the account accepted the
+license). An old tree whose adder is this device follows exactly that.
+
+**Narrow rule: an account's tree waits for that account.** A tree, row or photograph whose owner is
+an account cannot be sent while that account is not signed in: the service refuses an item naming an
+account under the device credential with `forbidden`, for good, and sending it as the device instead
+would let the next account to sign in on this phone claim it. A new tree never reaches this state
+(it is queued with the identity of the moment). So such a tree is skipped with nothing queued and no
+key written, and the run after that account signs in on this phone sends it. A row on a sent tree
+whose owner is another account, or another device, is left behind. A tree with no adder (anonymized
+by an account deletion) is never sent.
+
+### R219 — The accounts the phone made itself (owner's ruling, 2026-11-15)
+
+**The case.** Builds 6 to 33 (2026-08-03 to 2026-08-14) signed people in on the phone alone and
+minted the account id there (`85467c18`; removed by `ff7e19d1`, #158 step 5). E277 records that
+such an account can never be signed into again and that `claimDevice` does not adopt its rows. On
+such a phone today, visits, check-ins, measurements, care events and photographs carry that id. A
+tree carries it only when the phone went from build 35 or earlier straight to a build with
+migration v23 while signed in.
+
+**The question, as put to the owner (AskUserQuestion, 2026-11-15).** "Chip 139 sends old community
+trees with everything recorded on them. One case cannot be sent safely: builds 6 to 33 (August 3 to
+14) created accounts on the phone itself, and such an account can never sign in again. On a phone
+from that time, visits, check-ins, measurements, care, and photos recorded under that old account
+stay behind; the tree itself is still sent. Your own phone is the likeliest to hold such records.
+The phone cannot tell that old account from another real person's account, so sending those
+records under the account signed in now could put one person's work under another's name on a
+shared phone. What should the next build do?"
+
+- "Leave those records" (recommended).
+- **"Send them under the current account"** (chosen): "Records under any account that is not the
+  one signed in now, and that the phone made itself, go out under the account signed in now. On a
+  phone two people used, this can mislabel records."
+- "Send them with no name".
+
+The owner chose "Send them under the current account", accepting that on a shared phone this can
+mislabel records.
+
+**The rule built.** A phone-made account is an id that appears as `user_id` on a row this phone
+made **and last wrote** before 2026-08-14 07:27:48 UTC (`CommunityTreeBackfill.serviceSignInExisted`),
+other than the account signed in now. That instant is the commit time of `64a8d1e3` (#158 step 3),
+the first commit with any code that reaches the service's sign-in (`/auth/oidc`). The Apple button
+reached it later that day (`ff7e19d1`, first in `build-34`, tagged 2026-08-15 03:26 UTC). So no build
+before that instant could **write** a service account's id onto a row.
+
+An old row can still carry a real account's id, written later, and the first version of this rule
+missed that. Two writers do it:
+- **`claimDevice`.** When a real account signs in, it adopts the device's unclaimed rows, trees and
+  photographs, keeps their `created_at`, and stamps `updated_at` with the time of the claim. The
+  review showed the result: a device's signed-out work from before 2026-08-14, claimed later by real
+  account A, was queued under account B when B signed in after A.
+- **Migration v23.** It wrote `current_user_id` onto every old tree that had no add row, and left the
+  tree's timestamps as they were. An old tree can therefore name a real account with old dates.
+
+So the rule reads `updated_at` as well as `created_at`, and it no longer reads `community_trees` at
+all. A real account's id on an old row always comes with an `updated_at` after the cutoff, because
+the claim that wrote it ran after real sign-in existed. A phone-made account's sign-in ran its own
+claim before the cutoff, so its rows keep an old `updated_at`. The other writers of `user_id` on the
+tables read cannot put a real id on an old row: migration v12 ran in `build-6`, before real sign-in,
+and every insert dates its row at capture. The rows read to learn the ids are visits, check-ins,
+measurements and care events whose `device_id` is this device, and photographs whose
+`taken_on_device` is this device, city trees included. A phone-made account's own tree is found
+through its rows and photographs. A row of any later date counts once its owner is in the set.
+
+**The cost.** A phone-made account whose every row and photograph was edited after the cutoff is not
+found. Its work waits, as it did before this rule.
+
+While an account is signed in, the tree of such an account, and such an account's live rows and
+photographs on an old community tree, become the signed-in account's on the phone in the same
+transaction that queues them, and go under it. On a signed-out phone they wait. On a tree that went
+before they could (a signed-out run, or a build of this branch before this ruling), a second pass
+in the same run sends exactly those rows and photographs: a visit's photograph on its visit's row,
+and a photograph with no visit on the tree's add (the one still queued, or a new one under the
+tree's own key, which the service answers `duplicate`). Moving a row to the signed-in account is
+what marks it done, so nothing goes twice. City-tree rows stay on the phone (R77), with their owner
+unchanged. An anonymized row has no owner and is never one of these. The account's withdrawn
+photographs on the tree also change owner, and are never sent: one left with the old owner on a
+visit that moved would block "Delete my records", which cannot delete that visit while a photograph
+that is not the account's still points at it.
+
+**Why the rows change owner on the phone, rather than only being sent.** The service stores a
+synced row as the sender's. A row sent as B but still owned by the old id here would be B's on the
+service and nobody's to edit or withdraw on the phone (E277), and the two deletion doors would
+disagree: erasing B would delete it on the service and keep it here. Changed here, it is B's on both
+sides.
+- **"Delete my records"** (`eraseEverything`) deletes these rows and photographs on the phone with
+  B's other rows, and the service's `DELETE /me` deletes them there, because the service holds them
+  as B's.
+- **"Leave my records"** (`leaveRecords`) un-names them on both sides: the phone sets `user_id` to
+  NULL and tombstones each row (E157), and the photographs become nobody's.
+
+**Limits.**
+- On a phone two people used in the local-account era, one person's work goes out under whoever
+  signs in. The owner accepted this.
+- A phone whose clock was set before 2026-08-14 while a real account was signed in, or when one
+  claimed the device, would count that account as phone-made. Its rows would then go under whoever
+  signs in next on that phone.
+- A phone-made account with no row last written before that instant is not found. That happens
+  when every one of its rows was edited later (the cost above), or when the account was made on
+  2026-08-14 between 07:27 and the phone's update to build 34. Its later rows, from builds 34 and
+  35, count when the account has any earlier row, because the set is of ids.
+  Build 36 signs a stored local account out at launch (`SessionRestore.reconcile`), so no later
+  build made rows under one.
+- Only old community trees (added before adds were queued) are covered. A phone-made account's row
+  on a tree that is not old is not sent. No build could make one, because the local-account era
+  ended before adds were queued.
+
+**A limit, not a ruling: a tree whose adder deleted their account.** Such a tree has no owner on
+the phone, so it is never sent. The rows that a different account, the one signed in now, made on
+that tree are not sent either, because they go only with their tree. The review measured it: one
+run over such a tree reported `Report(trees: 0, rows: 0)`.
+
+### R220 — Move pin, and the deletion doors
+
+- **Move pin** (`CommunityTreeStore.mayHaveReachedService`): an existing add row still decides
+  (a failed one says no); with no row, the key says yes; with neither, the date decides as before.
+  Without the key, an old tree lost the offer again a day after it was sent.
+- **Deletion.** The queued rows are ordinary kinds, so `OutboxStore.forgetAccount` treats them as
+  contributions under both doors. Both doors delete the keys of trees that are gone
+  (`AccountDeletion.forgetCommunityTrees`).
+
+### R221 — The Outbox screen, and the volume
+
+Each queued item is an ordinary row with today's labels (the owner's answer of 2026-11-15). No
+string was added. The rows are timed by when they were queued, which is the update day. On the
+owner's phone the volume is dozens to a few hundred rows; the drain sends 25 per batch, and
+photographs obey the Wi-Fi-only toggle.
+
+### Ordering with the service
+
+The build that carries this should ship only after `cypress-sync` runs the 10 m change
+(`bd8a35af`) and migration 008. Before the 10 m change, an old tree near another tree comes back
+`conflict` and a refused add's one retry is spent. Before 008, the service ignores `addedOn`, and the
+tree's day is the UTC date of `occurredAt` once 008's backfill runs.
+
+---
+
+### R222 — The Outbox row and the Journal row for a pin move
+
+The owner's answers are in **R184** and **R186** (the Move pin and Journal entries) and
+**R210** (the square on a history row). This entry records the
+decisions the building round made where those answers left a detail open. Each is a reading of the
+nearest specified thing, not a new design.
+
+1. **The Outbox row.** `OutboxCopy.kindLabel(.locationCorrection)` is "Pin moved", so the row is
+   "Pin moved · Grandmother Cypress". It has no sub-line; the time follows the title alone, as for
+   every other kind with no sub-line. A refused move reads "This couldn't be sent.", which
+   `OutboxFailureReason.describe` already gave every terminal non-moderation refusal regardless of
+   kind. Nothing changed there; `PinMovedOutboxTests` pins it for `forbidden` and `not_found`.
+2. **Which moves are Journal rows.** A row of `tree_locations` that is not the tree's root row (the
+   root records the add), that this phone's person wrote (the owner predicate the four other arms
+   use), whose tree is not withdrawn (every Journal row opens a profile), and whose key is not
+   tombstoned by an account deletion. The row's date is the move's `occurred_at`, the moment the
+   person saved it.
+3. **No second line in the Journal.** The owner's words are the title, "Moved the pin of X". The
+   row's subtitle is empty, so `IconTextRow` draws one line. A distance ("12 m north") was the
+   owner's choice for the profile's history rows, not for the Journal, and the Journal has no
+   other place that names one.
+4. **The square.** The community tree mark (`CommunityTreeTile`) at the Journal row's 34 pt tile
+   size and corner. It replaces the tree's photograph too, not only the accent: the row is about
+   where the pin is, and the owner chose the mark for this row by name.
+5. **The export carries pin moves.** The Journal export is "a copy of everything you have recorded
+   on this phone" and is built from the whole journal, so each move is a row of kind `pinMoved`
+   with an empty summary. The GeoJSON point is the tree's current position, as for every other
+   kind. The add's root row is not exported, because it is not a move.
+6. **No migration.** The Journal's fifth arm walks `tree_locations` (it has no index on
+   `occurred_at` alone) and hands its rows to the outer sort without sorting them itself. The plan
+   gate allows the walk by name, because the table holds only the chains of trees this phone added:
+   one root per add and one row per move. That exemption rests on the premise that only this
+   phone's own adds and moves write `tree_locations`. It is true today: the cache of other people's
+   trees writes only `community_tree_cache` and `community_tree_cache_tiles`.
+
+#### A limit the round found (a fact, not a ruling)
+
+- **After sign-out, pin moves leave the Journal and the export, and visits stay.** Sign-in moves a
+  `tree_locations` row to the account (`user_id` set, `device_id` NULL), and visits keep their
+  `device_id`. A signed-out phone reads by `device_id`, so it no longer finds the moves. They come
+  back at the next sign-in. The review's probe: add a tree signed out, move it, visit it, sign in,
+  move and visit again, sign out; the Journal then reads 0 moves and 2 visits.
+- The arm has no column that could keep these moves after sign-out without a schema change. The
+  owner has not ruled on it. The arm's behavior was not changed.
+- **Resolved on 2026-11-16** by `feat/journal-keeps-pin-moves`. The owner chose "Everything, pin
+  moves too". Migration v24 adds `tree_locations.set_on_device`, and the fifth arm also matches a
+  move this phone set, so the probe above now reads 2 moves and 2 visits. The ruling is
+  **R232**.
+
+---
+
+### R223 — A tree only its adder can see says "Only you can see it", not "on this phone"
+
+**Decided by:** the owner, in a question dialog on 2026-11-15.
+
+**The question, as put:**
+
+> I found that the approved lines say something untrue. A tree added by a signed-out person, or by a
+> person who did not agree to share, is not only on the phone: the phone sends it to the Cypress
+> service, which keeps it private until they sign in or agree. The approved lines say "on this
+> phone" and "This tree is only on this phone." Should the wording change?
+
+**Offered:**
+- "Say "Only you can see it" (Recommended)"
+- "Keep the approved lines"
+
+**Chosen:** "Say "Only you can see it"".
+
+**The fact behind the question, checked in the code (round C3, package A).**
+- The phone queues every add for the service, signed in or not: `LocalAPI.addTree` writes the
+  `add_tree` item in the same transaction as the tree (`queueAppliedMutation`).
+- The service stores the tree and keeps it private unless its owner is an account that agreed to
+  the license. `insertCommunityTree` sets `published_at` only from `publicationStamp`, which answers
+  nil for a device owner (`owner.UserID == nil`) and for an account with no accepted license
+  (`server/internal/store/community_trees.go`).
+- A sign-in publishes the device's trees only if the account agreed: `claimCommunityTrees` sets
+  `published_at` only when `accepted` (same file).
+- Agreeing later publishes the account's held trees: `RecordLicenseConsent` calls
+  `publishAccountTrees` when a known license version is recorded
+  (`server/internal/store/identity.go`), and `publishAccountTrees` sets `published_at` on every
+  tree of that account that has none.
+
+**The four replacement strings, exactly:**
+
+| Where | State | String |
+|---|---|---|
+| The tree's profile | Signed out | "Only you can see this tree. Everyone can see it after you sign in." |
+| The tree's profile | Signed in, not sharing | "Only you can see this tree. Everyone can see it after you agree to share your tree records." |
+| The note under Add this tree | Signed out | "Recorded as community-added and unverified. Only you can see it. Everyone using Cypress can see it after you sign in." |
+| The note under Add this tree | Signed in, not sharing | "Recorded as community-added and unverified. Only you can see it. Everyone using Cypress can see it after you agree to share your tree records." |
+
+**What it replaces in R187 and R188 (2026-11-14):**
+- "The note under the Add this tree button", answer 2: "Recorded as community-added and unverified,
+  on this phone. Everyone using Cypress can see it after you sign in." and "Recorded as
+  community-added and unverified, on this phone. Everyone using Cypress can see it after you agree
+  to share your tree records."
+- "Other people's community trees", answer 3: "This tree is only on this phone. Everyone can see it
+  after you sign in." and "This tree is only on this phone. Everyone can see it after you agree to
+  share your tree records."
+
+**What it leaves alone.** The signed-in-and-sharing note ("Recorded as community-added and
+unverified. Everyone using Cypress can see it once it is sent."), and the note for a phone that does
+not know the sharing answer, which the owner chose to keep as today's line ("Keep today's note",
+**R210**).
+
+**Built:** the two profile lines, by round C3's package A (`TreeProfileCopy.onlyYouSignedOut`,
+`TreeProfileCopy.onlyYouNotSharing`). The two Add this tree notes are another package's.
+
+---
+
+### R224 — How history rows sit among visits and care
+
+Each entry is the package author's call under the round's brief, for the orchestrator or the owner
+to confirm or reverse. The owner's own answers are in **R184-R189**, **R208-R210**, **R211-R214**
+and **R223**.
+
+**Decided by:** the package A author.
+
+- Newest day first. On one day, visits and care sort above history rows. A history row carries a
+  day and no time, so this is the only order that invents no hour.
+- History rows keep the service's order (newest first). The phone's own "Added" row, when there is
+  one, is last.
+- A move whose start or end is missing reads `Pin moved` (or `You moved the pin`) with no distance.
+  A move that rounds to 0 m reads `· 0 m` with no direction; the service refuses neither. This
+  follows `VisitShortlist.label`, which prints a distance that rounds to 0 m with no direction.
+  The owner has not ruled on this case.
+- An event of a kind this build does not know makes no row.
+- `See the whole year` shows only when there is a visit or care row (`offersActivityLink`), because
+  screen 13 charts visits, check-ins and care, and a history row is none of them.
+
+### R225 — The "Added" row when the phone has no history
+
+**Decided by:** the package A author, applying the owner's answer ("the Added row only") and the
+added-day ruling.
+
+- Drawn when the history was not read, is empty, or was capped before its `added` event.
+- Its day: for a tree in this phone's own table, the add's instant in the reader's zone (it is the
+  adder's own phone). For a tree from the community cache, the cache's `createdAt` read as the UTC
+  day, because the service sends the added day as midnight UTC.
+- "You added this tree" when `addedByYou`, else "Added".
+
+### R226 — What "the service says the tree is not shared" means
+
+**Decided by:** the package A author, applying the owner's "Keep today's note" for the unknown state.
+
+The only fact the wire carries is `is_published` on `GET /trees/{id}`. The service also answers
+`false` for a city tree, an unknown id and a hidden one, so the phone reads it only when the same
+response carries a non-null `community_tree`. With the phone's sharing state unknown (a reinstall
+restore, or an account from before the answer was stored), the line shows only when the reader
+added the tree and the service says `is_published: false`, and it is the not-sharing line: the
+reader is signed in and the tree is held back, which happens only to an account that has not
+agreed. Offline, or with the gate shut, nothing is said in the unknown state.
+
+**Limit: an account that agreed on another phone.** The phone's state `.notSharing` comes from
+this phone's own record of the account link. If the same account agreed to share on another
+phone, this phone still holds `.notSharing`, and with `isPublished == nil` (offline, or the gate
+shut) it shows the not-sharing line, which is then wrong. Online, `GET /trees/{id}` answers
+`is_published: true` for the published tree, and that removes the line.
+
+**Limit: the pin under the location dot.** MapKit hides a community pin that sits exactly under
+the reader's location dot. A reader standing on the tree they just added sees the dot and not the
+pin until they move. `OthersTreeUITests` pins the location 67 m from the tree for this reason.
+
+### R227 — "A tree the reader did not add" includes one on this phone
+
+**Decided by:** the package A author, applying the owner's "Hide species controls for now".
+
+The owner's rule hides both species controls on a tree somebody else added. Two kinds of tree meet
+it: one in the community cache, and one in this phone's own table that another account (or this
+device before a different account signed in) added. Both now offer neither control. Before, the
+second kind offered "Report the species as wrong" to the reader, and `SpeciesCorrectionTests`
+pinned that; the test now pins the new rule. The verbs (`claimSpecies`, `correctSpecies`,
+`flagWrongSpecies`) are unchanged.
+
+A tree the reader's account added on another phone reaches this one only through the cache. The
+service says it is theirs (`added_by_you`), so its rows say "You…", but the species verbs act only
+on this phone's own rows, so it offers no species control, as before C3.
+
+---
+
+### R228 — The note follows the account, read each time the add screen appears
+
+These are the author's build choices for the owner's rulings in **R187** and **R189** ("The note
+under the Add this tree button" and "Places with no city inventory"), **R210** ("Keep today's
+note"), and **R223** ("Only you can see it"), which another author of this round writes. None of
+these choices adds a string beyond the owner's.
+
+1. **Where the state comes from.** The composition root builds a reader from `LocalAPI.userID` and
+   `LocalAPI.accountLink()` (`ContributionSharing.reader(local:)` in `RootView.swift`) and passes it
+   through `VisitFlowView` to `VisitAddTreeView` and its model. No `CypressAPI` requirement is
+   added. The DEBUG `addTree` standalone gets the same reader.
+2. **When it is read.** `VisitAddTreeModel.load()` reads it first, so it runs each time the screen
+   appears (the flow builds a new add screen each time it reaches that step), and again when a listed
+   tree's profile closes, because `closeListedTree` calls `load()`. A sign-in, or an agreement, made
+   since the last appearance is seen.
+3. **Before the read answers, no note is drawn.** The model holds `nil` until the first read. The
+   alternative, drawing the `.unknown` note first, would show one account's sentence and then swap
+   it for another's. The read is one hop to the local database.
+4. **A read that fails counts as no answer.** A throwing `accountLink()` becomes a nil link, which
+   `ContributionSharing(userID:link:)` makes `.unknown` for a signed-in account (the note as it was)
+   and `.signedOut` with nobody signed in.
+5. **Where it sits.** Below the accessibility sizes the note stays pinned under the button, centered,
+   as before. At the accessibility sizes it is the last row of the scrolling form, after any blocking
+   reason, and leading-aligned like the rows around it; only the button stays pinned
+   (`VisitAddTreeLayout.footnotePlace(isAccessibilitySize:)`).
+
+### R229 — The two empty places name both kinds, about the trees this phone holds
+
+1. **The map card.** The new body is the owner's; where the phone has not asked for added trees the
+   card keeps the first body (the next entry). The trigger did not change and did not need to:
+   `MapInventoryNotice.isOwed` reads `MapContent.markerCount`, and `LocalAPI.mapContent` merges the
+   community layer (this phone's trees and other people's cached ones) into the same content as the
+   city's. So the card draws only where neither has a pin or cluster in view, unnarrowed. Measured at
+   AX5 on the 393 pt phone `MapEmptyInventoryTests.theNoticeFitsTheSlotAtAX5` uses: 357.0 pt, against
+   a budget of 402.7 pt (the tallest location notice in the same slot).
+2. **The empty list.** The words moved into `VisitIdentifyCopy.emptyNeitherKind`, with the number
+   taken from `VisitShortlist.searchRadiusM` (60 m). Where the phone has not asked for added trees
+   the list keeps the old text (the last entry). The list is `LocalAPI.treesNear`, which reads the seed
+   and the whole community layer, so it is empty only when neither kind is within 60 m.
+3. **Both texts are about the trees this phone holds**: its own, and other people's in its cache.
+   Other people's trees reach the cache only when `CommunityTileRefresher` fetches them, and the
+   service may hold added trees that the phone never fetched. The phone asks for nothing in these
+   cases, each checked in the code:
+   - The map's viewport touches more than `Policy.maxTiles` (16) zoom-14 tiles, a zoomed-out map:
+     `refresh(covering:)` returns `.tooManyTiles`.
+   - The phone is offline, or a fetch fails: the pass stops, and a tile that was tried is not asked
+     again until `Policy.minimumInterval` (120 s) has passed.
+   - The remote gate is shut: `DataLayer.refreshCommunityTrees` is nil unless
+     `RemoteAccess.allowsNetwork`. DEBUG builds are shut unless `CYPRESS_REMOTE` opens them; release
+     builds are always open.
+   - The time between a map read and the first fetch for its tiles.
+
+   **The map card handles this** (the owner's answer below): where the phone has not asked, it shows
+   the first body, which says only that the ground is not on the city inventory. "Neither has a tree
+   here" is drawn only where every tile in view was fetched.
+
+   **The "What tree is this?" list handles it the same way** (the owner's second answer, the last
+   entry). It fetches nothing itself and reads the cache that map viewports have filled, so it says
+   "No city tree and no added tree is within 60 m of you" only where every tile under those 60 m was
+   fetched, and the old text everywhere else.
+
+### R230 — The map card where the phone has not asked for added trees
+
+**The question (AskUserQuestion, 2026-11-15).** The "No trees on record here" card now ends
+"Neither has a tree here." In cases where the phone has not asked the service for added trees
+(zoomed out past about 3 km, offline, or a failed download) the card can be wrong; what should it do
+there?
+
+**Offered:** "Show the old text there (Recommended)"; "Keep the new text everywhere"; "Show no card
+there". **Chosen: "Show the old text there".**
+
+**How it is built.**
+1. **Asked, from the cache's tile table.** `CommunityTreeCacheStore.hasAsked(covering:maxTiles:connection:)`
+   is true when the box touches at most `Policy.maxTiles` (16) zoom-14 tiles and a pass has
+   followed every one of them to its last page at least once: each has a row in
+   `community_tree_cache_tiles` **and** a complete mark in `app_state` (the next paragraph). What
+   the writers leave, read from the code: `apply` writes the row with each page it applies, with
+   trees or without. The refresher writes the mark only with a page whose `has_more` is false, in
+   that page's transaction, so a tile the service answered with one empty page has both. A failed
+   request writes nothing. A refused cursor deletes the row and the mark together (`dropTile`)
+   until a snapshot reaches its last page again. A shut remote gate never runs the refresher and
+   leaves neither. A mark from an earlier pass counts as asked however old it is. No migration.
+
+   **The complete mark (ROADMAP 156, `fix/community-tile-complete`, 2026-11-16).** Before this,
+   a row alone counted, and a row does not mean the tile was fetched to its end: the service serves
+   at most 100 trees a page (`communityTileMaxLimit` in `server/internal/api/community_reads.go`),
+   so in a tile with more than 100 added trees a request that failed after the first page, or a
+   pass that stopped at `Policy.maxPagesPerTile` (10) pages, left a row for a tile only partly
+   fetched, and the map card and the empty list could say their "neither" text while added trees
+   on the missing pages stood there. The fix:
+   - **Where the mark lives.** One `app_state` row per tile, key
+     `community_tile_complete:<tile path>` (`CommunityTreeCacheStore.completeKey(tile:)`), value
+     the moment the last page was applied (nothing reads the value). `app_state` needs no
+     migration, and the key-per-thing shape is the one `photo_send_refused:` and
+     `community_tree_queued_once:` already use. A column on the tile table was the other choice
+     and needs a migration with a named author, which this round does not have.
+   - **When it is written.** `CommunityTileRefresher` calls `markComplete` inside the same
+     `queue.write` as the `apply` of a page whose `has_more` is false. The page and the mark land
+     together or not at all.
+   - **A delta after a complete pass never removes it.** Read from the code: a delta page is
+     applied in one transaction with its cursor, and it carries both new trees and the removal list
+     (`apply` drops withdrawn ids from the whole cache). So once a tile was complete as of cursor
+     C, every delta page applied after C leaves the cache at least as current as it was at C. A
+     delta that fails, or stops at the page limit, leaves the phone holding a full copy of the tile
+     as of some cursor at or after C, which is exactly what "asked" claimed when the mark was
+     written. Un-marking it there would turn the card back to the first body over ground the phone
+     has fetched in full, on every flaky connection, which is less true, not more. The same holds
+     while a delta is in flight: nothing is written until a page comes back. Only `dropTile` (a
+     refused cursor) removes the mark, because it removes the trees the mark vouched for.
+   - **What resets a tile.** Read from the code on 2026-11-16: `dropTile` is the only statement
+     in the app that deletes tile rows. Sign-out (`LocalAPI.signOut`) and both account deletion
+     doors (`AccountDeletion.delete`) do not touch the cache or its tile table (the trees are
+     other people's, and no account owns a tile), and nothing else wipes the cache. Each is
+     covered by `CommunityTileCompleteTests`. That `dropTile` clears the mark is proved by behavior
+     there (`dropTileDropsTheMark`, `aRefusedCursorResetsTheMark`). A source guard there proves
+     only one narrower fact: the one app file that spells out a `DELETE FROM` or `DROP TABLE` on the
+     tile table, in any case, is `CommunityTreeCacheStore.swift`. It does not see an interpolated
+     table name or a deleted database file, and it does not check that the mark is cleared.
+   - **Rows written before this build** have no mark, so those tiles read as not asked (the first
+     body) until the next pass for each reaches the last page, which a delta from the stored cursor
+     usually does in one page. That is the honest reading for a row whose pass may have stopped
+     part way.
+   - **The DEBUG seam** `LocalAPI.debugSeedCommunityCache` writes no mark: one seeded tree is not a
+     tile fetched to its end. No UI test reads either body.
+2. **The card picks its body.** `MapModel` reads the answer for the settled viewport with each map
+   read (before it publishes the content, so the body and the trigger change together) and again
+   when a community refresh ends without changing the cache, because a tile served with no trees
+   changes no pin but is now asked. `MapInventoryCopy.message(communityAsked:)` returns
+   `neitherHasATree` when asked and `notOnTheCityInventory` when not. The title and `isOwed` did not
+   change.
+3. **The two bodies.** Asked: "Cypress draws a city street-tree inventory and trees people have
+   added. Neither has a tree here." Not asked: "Cypress draws a city street-tree inventory, and this
+   ground is not on it. Trees may stand here without being listed." (the body as it shipped before
+   round C3, copied from main at `e5b11dba`).
+4. **A second caller.** `CommunityTreeCacheStore.askedReader(queue:)` answers the same question
+   for any box. The "What tree is this?" list uses it for the 60 m around the reader (the next
+   entry).
+5. **AX5.** On the 393 pt phone `MapEmptyInventoryTests.theNoticeFitsTheSlotAtAX5` uses, against a
+   budget of 402.7 pt: the new body measures 357.0 pt and the first body 402.7 pt, which fits with
+   no room to spare (the test allows equal). It is the same height it had when it shipped.
+
+### R231 — The empty list where the phone has not asked for added trees
+
+**The question (AskUserQuestion, 2026-11-15).** "The empty "What tree is this?" list has the same
+gap as the map card, because it reads only the added trees the phone has already downloaded; where
+the phone has not asked the service for added trees around you (offline or a failed download), what
+should the empty list say?"
+
+**Offered:** "Show the old text there (Recommended)"; "Keep the new text everywhere". **Chosen:
+"Show the old text there".**
+
+**How it is built.**
+1. **The same function as the map card.** `VisitIdentifyModel` reads
+   `CommunityTreeCacheStore.askedReader(queue:)` for the box of `VisitShortlist.searchRadiusM`
+   (60 m) around the fix the list was read at. It reads it only when the list came back empty, and
+   before it publishes the list, so the empty state and its message change together. The
+   composition root passes the reader through `VisitFlowView`; a flow built without one answers
+   "not asked".
+2. **The list picks its message.** `VisitIdentifyCopy.emptyMessage(communityAsked:)` returns
+   `emptyNeitherKind` when asked and `emptyNotOnTheCityInventory` when not. The title, "No trees on
+   record here", did not change.
+3. **The two messages.** Asked: "No city tree and no added tree is within 60 m of you. If there is a
+   tree in front of you, it is not on the map yet." Not asked: "Nothing in the city inventory is
+   within 60 m of you. If there is a tree in front of you, it is not on the map yet." (the message as
+   it shipped before round C3, copied from main at `e5b11dba`). In both, the number is
+   `VisitShortlist.searchRadiusM`.
+4. **What counts as asked** is the map card's rule: every zoom-14 tile under the 60 m was fetched
+   to its last page at least once (a row in `community_tree_cache_tiles` and the complete mark,
+   above). At the default radius the area is one or, near a tile border, up to
+   four tiles, far below the 16-tile limit.
+
+---
+
+### R232 — What the Journal and its export show of what you recorded while signed in
+
+**The owner's decision of 2026-11-16 (ROADMAP chip 152).** Asked "After you sign out, what should
+the Journal and its export show of what you recorded while signed in?", the owner chose
+**"Everything, pin moves too"**. The option's description read: matches the sign-out row's promise,
+"Keeps everything you have saved", and the export's "everything you have recorded on this phone";
+needs a phone database change (one new column).
+
+**What was wrong.** Sign-in gives this phone's earlier rows to the account. On the four contribution
+tables (visits, check-ins, measurements, care events) the row keeps its `device_id` too. On
+`tree_locations` it cannot: that table allows at most one owner, so the claim clears `device_id`.
+The Journal and the export ask for "this device, or the signed-in account". So after sign-out the
+visits stayed and the pin moves left, and they came back at the next sign-in.
+
+**The design.**
+
+1. **Migration v24 of the phone's writable database** adds `tree_locations.set_on_device`, the
+   installation that set the position. It follows v16's `photos.taken_on_device` and R82: it records
+   provenance, not ownership.
+2. **The fill.** For rows already on the phone, v24 writes this phone's device id on every row that
+   this phone owns or that an account owns. It skips a row with neither owner (an account deletion
+   anonymized it, and it is nobody's for ever, R3 and E157), a row that another installation owns,
+   and a row that already has a value. The column is added only when it is missing. A replay
+   changes nothing.
+3. **The writers.** `LocalAPI.addTree` (the root row, through `CommunityTreeStore.insert`) and
+   `LocalAPI.correctLocation` (each move) write this phone's device id.
+4. **The reader.** The Journal's pin-move part also matches a row whose `set_on_device` is this
+   phone. The export is built from the Journal, so it follows. Nothing else reads the column.
+5. **Provenance is not ownership.** Nothing that decides who may move a pin reads the column
+   (`correctLocation` asks the tree's adder). Sign-in does not change it. Nothing sent to the service
+   carries it: the queued `location_correction` payload and its wire fixture are unchanged.
+6. **Account deletion.** The keep-records door clears `set_on_device` in the statement that clears
+   `user_id`, as it clears `photos.taken_on_device`. Without that, the deleted account's moves would
+   come back in the Journal of whoever holds the phone next. The erasing door already deletes the
+   positions of the trees it deletes, and clears the rest through the same statement.
+   `AccountDeletion.OwnedTable.treeLocations` lists the column.
+
+**What this does not decide.** Whether a second account that signs in on the same phone should see
+the first account's work. Today that is reachable only when the first account was deleted from a
+different phone. It is a separate ROADMAP item. Since v24 that exposure includes the first
+account's pin moves: the second account's Journal and export show them, and it cannot move those
+pins, because who may move a pin is read from the tree's adder. This follows from the owner's
+choice ("Everything, pin moves too"): the Journal shows what was recorded on this phone.
+
+#### A known limit (a fact, not a ruling)
+
+- **A corrupted `device_uuid` fills nothing.** v24 writes `set_on_device` only when the stored
+  `app_state.device_uuid` has a UUID's shape (8-4-4-4-12 hex digits). Otherwise it writes nothing,
+  so every position stays readable and every pin stays movable. `DataLayer` then mints a new id at
+  launch. In that case a move an account made before the update is in the Journal while that
+  account is signed in, and not after sign-out. Moves made after the update carry the new id. This
+  needs an `app_state` that the app itself never writes. `SchemaV24Tests` measures it.
+
+---
+
+### R233 — Species on a tree somebody else added: the owner's answers of 2026-11-16
+
+This adds to **R209** (answers 3 and 4), which this
+round builds. The service half is on branch `feat/species-for-everyone-server`, migration 009.
+
+Each answer below is the owner's, given in a question dialog on 2026-11-16. The quoted strings are
+the exact ones the owner saw and chose.
+
+1. **Who counts.** Q: "On a community tree somebody else added, who can name its species or report
+   its species as wrong, so that the answer counts for everyone?" **Chosen: "Only people who
+   share".** "Signed in and agreed to share tree records. For everyone else the two controls do not
+   show on someone else's tree." Not chosen: "Anyone who can see the tree".
+   *The service holds it so:* a naming, a correction or a report from anybody but the adder changes
+   anything only when it comes from an account whose stored license version is accepted and known.
+   From anybody else it is recorded and answered `applied`, and it changes nothing. It is never
+   refused.
+2. **Clearing a report.** Q: "When the profile of a tree you added shows "Somebody has reported this
+   species as wrong.", can you clear that line without changing the species?" **Chosen: "Yes, with
+   "Keep the species"".** "The adder taps the existing "Keep the species" control and the line
+   clears for everyone. A later report brings it back." Not chosen: "No, only a correction clears
+   it".
+3. **The namer's own answer.** Q: "A person names the species of a tree somebody else added, and the
+   name now shows for everyone. Can that person later correct their own answer?" **Chosen: "Yes,
+   until the adder corrects it".** "The person who named it can change their answer until the adder
+   steps in." (The recommended option, "No, only the adder", was not chosen.)
+   *The service holds it so:* the namer is the account in `community_trees.species_namer_user_id`.
+   The adder's correction, the adder's "Keep the species", and the operator's correction each set it
+   to NULL, and so does the namer's account deletion. A naming with no namer can be changed only by
+   the adder and the operator. No phone's clock decides any of this.
+4. **The namer's account erase.** Q: "A person names the species of a tree somebody else added, and
+   later deletes their account with the erase option. What should happen to that species name?"
+   **Chosen: "The species stays".** "The name stays for everyone, with nothing that links it to the
+   person." Not chosen: "The tree loses its species".
+   *The service holds it so:* under both deletion doors the species stays, the naming loses its
+   namer, and the actor columns of every event the account made come off, on every tree.
+5. **The note under "Report the species as wrong".** Chosen: **"Name the adder"**: on a community
+   tree somebody else added, the note reads exactly
+   `This goes to the person who added the tree and to a reviewer. The city is not notified.`
+   City trees keep `This goes to a community reviewer. The city is not notified.` (Phone half only;
+   recorded here so the answers are in one place.)
+
+### R234 — Species on a tree somebody else added: the orchestrator's choices (not asked of the owner)
+
+These are the orchestrator's choices, not the owner's.
+
+1. **A race between two first answers.** The first naming the service commits wins. The later one
+   is recorded and changes nothing, and its sender is told nothing: the answer is `applied`.
+2. **History wording does not change.** The history keeps serving the adder's acts as
+   `species_named` and `species_corrected`, which every build maps to "Species named" and "Species
+   corrected". Anybody else's acts are served under new kinds (`species_named_by_contributor`,
+   `species_corrected_by_contributor`, `species_corrected_by_operator`), which the C3 build drops
+   rather than labels "You …" on the adder's phone, and each event carries `by_you`. A later phone
+   build maps the new kinds to the same two labels.
+3. **The operator corrects a species through an operator route**, guarded like the takedown, not a
+   screen: `POST /operator/community-trees/{id}/species` and
+   `POST /operator/community-trees/{id}/species-reports/clear`.
+4. **"The later committed act wins" holds against the operator too.** Between two people the
+   service applies acts in the order it commits them, and never compares two phones' clocks, or a
+   phone's clock with the service's. So an adder's correction that waited in the adder's outbox
+   (made before the operator's correction, sent after it) replaces the operator's species when it
+   arrives. The adder may correct at any time anyway, so this changes who can act, never only when.
+   (Adjudicated after the review of 2026-11-16.)
+5. **"Keep the species" clears only the reports the adder saw.** The adder's dismissal names a
+   report by its `flagID`, which the adder's phone takes from the profile's
+   `species_report_flag_id`. The keep clears that report and every earlier one, never a later one,
+   so a report made after the adder tapped still counts while the keep waits in the outbox (the
+   owner's "A later report brings it back."). A keep whose `flagID` names no counting report
+   changes nothing and is still answered `applied`. Builds before the phone half of ROADMAP 144
+   send the `flagID` of a flag row on their own phone, which is never a counting report on a tree
+   that phone's account added (the adder's own reports do not count), so their keeps change
+   nothing. (Adjudicated after the review of 2026-11-16.)
+6. **A keep ends the namer's right to correct only when it acts.** The owner's words are "until the
+   adder corrects it" and "until the adder steps in". An adder who kept the species against a
+   report they were shown has stepped in; a keep that matched no report decided nothing.
+7. **`species_named_by_you` follows the rule exactly.** It is true only while the namer's
+   correction would apply: the caller is the namer in force and still shares. A namer who later
+   declines the license is told false, so the phone draws no control that silently does nothing.
+
+### R235 — Pending with the owner
+
+1. **A namer's change of name and the reported line.** Today (the build on this branch): a report
+   disputes the name in force when it was made, so a namer's correction to another name makes
+   "Somebody has reported this species as wrong." go away, and a correction back to the reported
+   name brings it back. The owner is being asked whether the line should instead stay until the
+   adder or the operator acts. The current behavior is kept until the answer comes;
+   `materializeSpecies`' namer arm is the one place it would change.
+
+### R236 — Species on a tree somebody else added: the service author's design choices
+
+Recorded so a reviewer can see each one and the orchestrator can ask the owner where it should.
+
+1. **A report counts against the species it disputed.** The service fixes the disputed species when
+   it receives the report: the payload's new optional `disputedSpeciesID`, or else the species in
+   force at that moment. A report counts while that is still the tree's species and it came after
+   the last clear. So **the namer's own correction does not clear reports**, as the brief asked, but
+   a report about the old name stops counting once that name is gone, because the line "Somebody
+   has reported this species as wrong." would otherwise sit under a name nobody reported. If the
+   namer changes the name back, those reports count again. Only the adder and the operator **clear**
+   reports. The owner is being asked about this (see "Pending with the owner" above).
+2. **A report from the namer of the species in force does not count** (correct it instead), and a
+   report on a tree with no species does not count. The adder's own report does not count.
+3. **The adder's `species_claim` on a tree a contributor named is the adder's correction.** Builds 88
+   and older, and any adder's phone that has not learned the contributor's name, send a claim. It
+   writes `species_corrected` by the adder and clears the reported state.
+4. **Between two people, the act the service commits later wins; a phone's clock is compared only
+   with the same identity's earlier statements** (one outbox can drain out of order). Before 009 the
+   adder's correction was compared with every species event's `occurred_at`; it is now compared
+   only with the adder's own. For a signed-in adder "its own" includes the signed-out acts of every
+   device the account claimed, because a phone that named a tree signed out and then signed in can
+   still drain an older correction under the account (the review's F1).
+5. **Existing reports do not light the mark at deploy.** Only reports received after 009 can count.
+   No backfill.
+6. **The operator's species id is not checked**, because the service holds no species catalog.
+
+### R237 — Species on a tree somebody else added: the phone half (branch `feat/species-for-everyone-phone`)
+
+The owner's fifth answer above (the note under "Report the species as wrong") is built here, as
+`TreeProfileCopy.reportSpeciesNoticeOthersTree`. It is the only new string. The rest are the phone
+author's design choices, recorded so a reviewer can check each one.
+
+1. **Who sees a control** follows the service exactly (`SpeciesAnswerFacts` in
+   `Cypress/Data/API/SpeciesClaim.swift`). The adder: "Correct the species", and with a counting
+   report the line, "Correct the species" and "Keep the species". The namer, while sharing: "Correct
+   the species", and with a counting report the line and "Correct the species", with no keep (a new
+   offer, `reportedYoursToCorrect`). Anybody else who shares: the claim on an unnamed tree and the
+   report on a named one. Everybody else: no control. The reported line is drawn to every reader,
+   because it is a fact about the tree and not a control. A phone whose sharing answer is `unknown`
+   (a reinstall, ROADMAP 148) gets no control on somebody else's tree.
+2. **The phone-only arms are gone.** "The author of the claim in force" and "a lead, in answer to a
+   report" (R45) could correct and keep on a community tree, and the service applied neither. Both
+   are removed from `correctSpecies` and `dismissSpeciesReview`. The adder may now correct any
+   species, including one owned by nobody on this phone.
+3. **A cached tree keeps one writer.** Naming, the namer's correction and a report on a tree in the
+   community cache go into this phone's own tables (`species_assertions`, `review_flags`) and the
+   outbox; the cache itself is written only by the tile refresher. The reader's own answer is laid
+   over the cache's species while it is in force: still queued, or the cache has no species, or the
+   cache holds the reader's species, or it holds the species their correction replaced and the cache
+   row was served no later than the service accepted that correction (outbox `remote_sent` against
+   the cache's `fetched_at`). Otherwise the cache wins. So between the namer's send and the next tile
+   page the namer sees their own correction and "Correct the species"; once a page serves the
+   replaced species again (the adder set it back), the namer sees that species and the report.
+   With the service's answer in hand, the profile shows the service's species once nothing of the
+   reader's is queued.
+4. **The service's answer wins over the phone's**, except over an act of the reader's that is still
+   queued: a queued naming or correction keeps the reader's species and correction control, a queued
+   report keeps the line, and the adder's queued correction ends the line. **The adder's queued keep
+   ends the line when it names the report the service sent** (`species_report_flag_id`), so the line
+   and "Keep the species" go when the adder taps, as the owner's second answer says. A served report
+   with another flag id (made after the tap) keeps the line and the control, because the keep does
+   not clear it. A keep the service refused for good is no longer queued and no longer counts. A
+   second keep of the same report is not queued. A service without the keys (release v16) leaves
+   every answer the phone's.
+5. **The adder's phone takes the service's species** onto its own row (`adoptServedSpecies`), owned
+   by nobody in the chain, from a profile read and, for an unnamed row only, from a tile page. Never
+   while any species act on that tree is queued on this phone, never over a species this phone
+   wrote after it asked, and never a species missing from this phone's catalog.
+6. **The adder's keep of a report raised on another phone** names the service's
+   `species_report_flag_id`. The phone holds no row for that report; `RoutedAPI` remembers which
+   tree each served flag is about, from the profile read that drew the control.
+7. **Every report names the species it disputes** (`disputedSpeciesID`). On a cached tree a second
+   report is refused only while the first is still queued; once it is sent, the service decides
+   whether it still counts, and a new one may be raised after the adder's keep.
+8. **History rows**: "You" is the service's `by_you` for each row. Without it, a kind only the adder
+   makes is the reader's when the reader added the tree, and the three new kinds are never "You".
+9. **No phone migration and no new `CypressAPI` requirement.** `RoutedAPI` reaches `LocalAPI`
+   through an injected seam (`CommunitySpeciesSeam`), as it does for photographs.
+10. **A tree somebody else added on this phone follows the cached tree's rule.** On this phone's own
+    table (a tree another identity added here), `claimSpecies` and `flagWrongSpecies` refuse a
+    reader who does not share with `.forbidden`, as they do on a cached tree. The adder's own acts
+    are unchanged.
+11. **`TreeProfileCopy.reportSpeciesNotice` can no longer be drawn on any screen.** That string
+    ("This goes to a community reviewer. The city is not notified.") is drawn only under "Report the
+    species as wrong", which the view draws only for the `.reportable` offer. After this change no
+    reader gets `.reportable` on a tree they added (the adder corrects and keeps), and a city row
+    answers `.dataDispute` (R79), not `.reportable`. So `TreeProfilePresentation.reportSpeciesNote`
+    returns `reportSpeciesNotice` only for states that draw no report control. The string is kept.
+    The splice can mark R45's two arms (the author of the claim in force, and a lead answering a
+    report) as superseded by this entry; the city-tree note in the owner's fifth answer above
+    describes a screen that no longer exists.
+
+---
+
+### R238 — The owner's answers (2026-11-16)
+
+> **Answer 1 SUPERSEDED in part 2026-11-16 by the owner** — see **R247**. While the
+> withdraw link shows, the report link is hidden, so the placement "below "Report that there is no
+> tree here"" does not apply in that state.
+
+The owner's answers are quoted from the orchestrator's decisions file of 2026-11-16, section
+"Withdrawing a tree you added". One choice is the orchestrator's and is marked as such. The design
+notes are the author's, for the orchestrator to confirm or reverse.
+
+This supersedes **R174** ("`tree_withdrawal` is reserved … and
+has no verb yet"), which left open whether the phone withdraws first or waits for the service.
+
+1. Q: "…Where should it sit on the profile of a tree you added?"
+   Chosen: **"In the record controls"**. Near the bottom of the profile, below "Report that there
+   is no tree here".
+   Not chosen: "Directly under "Move pin""; "Only on the Move pin screen".
+2. Q: "What words should the withdraw-a-tree control, its confirmation alert, and its Outbox row
+   use?"
+   Chosen: **"Withdraw this tree"**. Control: `Withdraw this tree`. Alert title:
+   `Withdraw this tree?`. Buttons: `Withdraw tree` and `Keep it`. Outbox row: `Tree withdrawn`.
+3. Q: "What should the message inside the withdraw-a-tree confirmation alert say?"
+   Chosen: **"Two messages"**. For a shared tree:
+   `Everyone using Cypress stops seeing this tree once this is sent. If someone else has visited or photographed it, it stays. This cannot be undone.`
+   For a tree only you can see:
+   `Only you can see this tree. It comes off the map. This cannot be undone.`
+4. Q: "You withdraw a tree, and the service refuses because someone else has visited or
+   photographed it. What should the phone do?"
+   Chosen: **"Comes back, with the reason"**. The tree leaves your phone at once. If the service
+   refuses, the tree comes back on the map and the Outbox row says
+   `Other people have added to this tree, so it stays on the map.`
+5. Q: "After you withdraw a tree you added, what should happen to your own visits, photos, and
+   favorite on that tree?"
+   Chosen: **"Saved, but off the lists"**. They stay saved on the phone, and the tree leaves the
+   Journal, My Grove, and the Yours map. Nothing is left on screen that opens to an empty page.
+6. Q: "Your phone already knows that someone else visited or photographed a tree you added, so the
+   service would refuse a withdrawal. What should that tree's profile show where the withdraw
+   control would be?"
+   Chosen: **"The reason line"**. In place of the control, the line
+   `Other people have added to this tree, so it stays on the map.`
+
+The planner's eight questions map onto these six answers: Q1 = 1, Q2 and Q5 = 2, Q3 = 3, Q4 = 4,
+Q6 = 5, Q8 = 6. Q7 is the orchestrator's choice below.
+
+### R239 — Withdrawing a tree makes no Journal row (the orchestrator's choice, not the owner's)
+
+Recorded as the orchestrator's choice, never as the owner's: every Journal row opens a profile, and
+a withdrawn tree's profile cannot open.
+
+### R240 — The export keeps a withdrawn tree's rows (the orchestrator's choice, not the owner's)
+
+Recorded as the orchestrator's choice, never as the owner's. The owner said the adder's rows "stay
+saved" and named the Journal, My Grove and the Yours map as the places the tree leaves. The export
+promises everything this person recorded on this phone, and nothing in it opens a profile. So the
+CSV and the GeoJSON keep every visit, check-in, measurement, care event and pin move on a tree this
+phone withdrew. The export reads the Journal's statement without its withdrawn-tree clauses
+(`ContributionStore.exportJournalSQL`). A GeoJSON feature still has its position, because the
+export resolves the tree through the community layer, which returns this phone's own row withdrawn
+or not.
+
+One change reaches past the adder's own withdrawal. Before this round the pin-move part of the
+statement already left out a pin move on a tree a lead withdrew, in the Journal and in the export.
+The export now lists that pin move too, because it reads every part without a withdrawn-tree
+clause. The Journal still leaves it out. Found by the reviewer's re-check, 2026-11-16.
+
+---
+
+## Design notes (the author's)
+
+### R241 — The phone withdraws first, and the service's answer settles it
+
+`withdrawTree` sets `community_trees.deleted_at` and queues one `tree_withdrawal`, in one
+transaction, at one instant. The queue row's `created_at` and the tombstone hold the same text.
+
+- **When the row fails for good, the tree comes back** (`OutboxQueue.settle`), in the same write as
+  the failure. Every terminal failure counts, not only `conflict`: a `forbidden`, or 48 hours without
+  a connection, also leaves the tree on the service. Without this step the adder's phone would hide,
+  for good, a tree everyone else still sees, because the phone's own row wins over the community
+  cache, withdrawn or not.
+- **Only that tombstone is undone.** The restore matches `deleted_at` against the row's
+  `created_at`, so a tree a lead withdrew some other way (`withdrawRecord`) stays withdrawn.
+- **Only `conflict` reads the owner's sentence.** Any other terminal refusal reads the shared
+  `This couldn't be sent.`, because "other people have added to this tree" would be false for it.
+- **A retry the service accepts takes the tree off again** (`withdrawAgain`, at the row's send).
+- **The withdrawal waits for the tree's add** (`waitsForItsTreeAdd`), so the person's order holds:
+  add, then any move, then the withdrawal. A move held behind an add that arrived withdrawn would
+  fail `not_found`.
+- **The erasing door of an account deletion puts the tree back before it discards the withdrawal**
+  (`OutboxStore.forgetAccount`), when the service has not accepted the withdrawal yet. The service
+  may keep the tree (another identity built on it), and the phone then keeps it too. A withdrawal
+  the service already accepted leaves the tree withdrawn.
+- **It is not gated on whether the service has the tree.** The service answers a withdrawal of a
+  tree it never received with `applied`, and the add then arrives withdrawn.
+
+### R242 — Who is offered the control
+
+The adder, on this phone's own row, while the tree is live: `adder.isOwned(by: attribution)`, the
+Move pin predicate. So a signed-out phone is offered nothing on a tree its account added (the
+service treats the device's credential as a stranger to it after a claim, the S1 rule), nor on a
+tree whose adder is nobody, a cached tree or a city tree. The verb refuses the same cases:
+`forbidden` for a city, cached, somebody else's or nobody's tree, and `notFound` for an unknown or
+already withdrawn one. A refusal queues nothing.
+
+### R243 — What "the phone already knows" means (answer 6)
+
+The reason line is drawn only on a fact the phone holds. There are three, and nothing else counts:
+
+1. **A photograph the service served this reader as somebody else's** in its profile read
+   (`RoutedAPI.withdrawalOffer`: a photo not in the read's `own_photo_ids`). The service serves
+   another identity's photograph only when it is approved, not deleted and its bytes arrived, which
+   is a photograph its own rule (`othersHaveBuiltOn`) counts. "Somebody else's" is the service's
+   answer for the identity that will send the withdrawal.
+2. **A visit, check-in, measurement or care event in this phone's own tables, not deleted, by
+   another account** (a `user_id` that is set and is not the reader's), whose queue row no longer
+   owes a send. The service never moves one account's rows to another, so such a row is somebody
+   else's on the service too. An account this phone made itself in builds 6 to 33
+   (`CommunityTreeBackfill.phoneMadeAccounts`) does not count: it never reached the service, so
+   neither did its rows, and the backfill moves them to the signed-in account.
+3. **A withdrawal of this tree that the service already refused with `conflict`.**
+
+What the phone **cannot** know, and therefore never draws the line for:
+
+- **Other people's visits.** The service's profile read carries no visits, and nothing syncs
+  anybody else's contributions down. A tree somebody else only visited shows the control, and the
+  service's refusal brings the tree back with the owner's sentence.
+- **A row this device wrote signed out** (`user_id` empty). A sign-in claims those for the account,
+  so the phone cannot tell whether the service counts it as the reader's.
+- **A row an account deletion anonymized.** The phone cannot tell whether it reached the service.
+- **A visit still in the queue.** The service has not seen it yet.
+
+After a refusal for any reason other than `conflict`, the control is offered again.
+
+### R244 — The alert's two messages follow the profile's own "only you can see" rule
+
+The "only you" message is drawn exactly when the profile tells the reader that only they can see the
+tree (`onlyYouCanSeeNote`, round C3); the shared message otherwise. One rule, so the alert can never
+say "only you" about a tree the profile says everyone sees, or the reverse.
+
+### R245 — The reads after a withdrawal (answer 5)
+
+The tree leaves the map, the shortlist and the profile (they already filtered `deleted_at`), and
+now also the Journal's four contribution arms, the Yours map's four contribution arms, My Grove's
+local read, and the service's grove rows as the router resolves them. Two more lists on the You tab
+open a tree's profile, and they drop the tree too: the private reminders, and a lead's review
+queue. The adder's visits, photos, favorite and reminders stay saved, and the export keeps them
+(the orchestrator's choice above). This also resolves the planner's finding (g)1 for community trees: the Journal
+and My Grove ignored a lead's local withdrawal too, and they no longer do.
+
+### R246 — After a withdrawal the profile closes
+
+The screen leaves through the lead's `withdrewRecord` path. A `notFound` also leaves, because the tree
+is already gone. Any other refusal (a sign-out between the read and the tap) reloads the profile, and
+the reload draws the record controls as they now are. **No sentence is drawn for that refusal: the
+owner has given none, and none was invented.** If the owner wants one, it is theirs to choose.
+
+---
+
+## Added after pull request 241 opened (branch `feat/withdraw-owner-answers`)
+
+### R247 — The report link hides while the withdraw link shows (the owner's answer, 2026-11-16)
+
+Q: "On a tree you added, the profile shows "Report that there is no tree here" directly above the
+new "Withdraw this tree". Should the adder still see the report link on their own tree?"
+Chosen: **"Hide it while withdraw shows"**. "The adder sees only "Withdraw this tree". When the tree
+cannot be withdrawn because others added to it, the report link comes back as the adder's way to say
+the tree is gone." Not chosen: "Keep both links"; "Always hide the report".
+
+This replaces the placement in answer 1 of **R238** ("below "Report that there is no tree here"") for the
+state in which the withdraw link is drawn.
+
+### R248 — Where that rule lives (the author's design note)
+
+- **In the presentation, over the final profile.** `TreeProfilePresentation.recordDefect` draws
+  `.reportable` as nothing exactly while `treeWithdrawal` is `.available`. Every other offer passes
+  through unchanged. The rule is not in `LocalAPI`'s offer, because the withdrawal offer is final
+  only after `RoutedAPI.withdrawalOffer` has read the service's photographs, and that read can turn
+  `.available` into the reason line. A rule in the local offer would hide the report on a tree whose
+  profile then draws the reason line, which is the state the owner wants the report back in.
+- **The verb `flagNeverExisted` does not refuse the adder.** A report is still a valid act on a
+  community tree this phone added, and the verb cannot see the service's photographs, so a refusal
+  there could refuse a report the screen offers. The screen simply does not offer it while the
+  withdraw link shows.
+- **A report the adder already raised is not lost.** It reads `.underReview`, which is not hidden,
+  so the profile still draws `This record has been reported as never having held a tree.` beside
+  the withdraw link. A queued report is a local flag, so it reads the same way before it is sent.
+- A reader who did not add the tree, a signed-out reader on a tree their account added, and a city
+  tree never have `.available`, so they see what they saw before.
+
+### R249 — No Retry on a withdrawal refused because others added to the tree (the owner's answers, 2026-11-16)
+
+Q: "When the service refuses a withdrawal because others added to the tree, the Outbox row shows
+the reason and a Retry button. A retry is refused again unless those other records are gone. Should
+that row keep Retry?"
+Chosen: **"Remove Retry there"**. The row shows only the reason. The tree is back on the map, and
+the profile shows the reason line where the withdraw link would be. Not chosen: "Keep Retry".
+
+Q: "You chose to remove Retry on a withdrawal the service refused because others added to the
+tree. A failed Outbox row has no other control and nothing ever removes one, so without Retry that
+row stays in the Outbox for good, showing only the reason. What should happen to that row?"
+Chosen: **"Row stays, reason only"**. The row stays in the Outbox with the reason and no button. It
+is also what keeps the reason line on the tree's profile, so that line stays correct.
+Not chosen: "Keep Retry after all"; "Add a way to clear it".
+
+**The consequence, stated plainly: that row never leaves the Outbox.** Nothing sweeps a failed
+row, and the row has no control. An account deletion that erases everything removes it
+(`OutboxStore.forgetAccount`, `.eraseEverything`) **when the withdrawal's payload names that
+account** (`$.attribution.userID`). A withdrawal can name no account: `LocalAPI.withdrawTree`
+accepts the adder by device as well as by account (`ContributionOwner.isOwned(by:)`), so a person
+who added a tree signed out can withdraw it signed out, and that payload carries only the device.
+`forgetAccount` matches rows by account only, so no deletion ever matches such a row, and it stays
+for the life of the install. The `withdrawTreeRefused` debug screen makes exactly such a row: it
+signs out first (`DebugDeepLink`), so its withdrawal names only the device. While the row stays,
+the tree's profile draws `Other people have added to this tree, so it stays on the map.`, because
+`CommunityTreeStore.othersHaveAddedTo` reads that row.
+
+**A deletion that keeps records keeps the row, for good.** With a `failed`/`conflict` withdrawal
+present, a keep-records deletion sends only `DELETE /me`. `forgetAccount`'s `.leaveRecords` arm
+treats a withdrawal as a contribution: it tombstones the payload's `clientUUID` and removes the
+account from the payload (`json_remove` of `$.userID` and `$.attribution.userID`). The row keeps
+its state, its `conflict` code and its reason, and its payload no longer names any account, so a
+later deletion that erases everything never matches it either: it stays for the life of the
+install. `AccountDeletion.forgetCommunityTrees` sets the tree's `user_id` to NULL, so the tree's
+adder becomes nobody and the withdraw offer becomes `.unavailable`: the reason line goes away.
+The tree is still this phone's own row, so `recordDefectOffer` answers `.reportable`, and the
+profile offers `Report that there is no tree here`. The review of the assembled train ran this as
+a probe; the author read each step in the code. No test in this branch covers it.
+
+How the branch `feat/withdraw-owner-answers` built it (the author's notes):
+
+- **One rule, in two places.** `OutboxRetryPolicy.acceptsRetry(kind:errorCode:)` refuses exactly a
+  `tree_withdrawal` whose last failure code is `conflict`. The screen reads it
+  (`OutboxPresentation.Row.showsRetryButton`, `OutboxItemSnapshot.showsRetryAffordance`), and the
+  store applies the same rule in SQL (`OutboxStore.retryable`) in `retry` and `retryAllFailed`. A
+  test checks the store against the policy for every kind and every code.
+- **The row still looks like a failed row.** It keeps the amber card and the reason, and draws no
+  state word, because on a failed row the word `retry` is the button. No new string.
+- **Every caller of retry leaves the row as it is, and none shows an error.** `OutboxStore.retry`
+  returns false, as it does for a row that is not failed. `OutboxQueue.retry` returns false and
+  notifies nobody. `OutboxViewState.retry` stops at its guard and does not drain. `retryAll` and
+  `retryAllFailed` move every other failed row and leave this one. `CommunityTreeBackfill` retries
+  only `add_tree` rows.
+- **This also keeps the reason line through a retry attempt.** A retry used to clear
+  `last_error_code`, so the profile's reason line went away while the retried row waited.
+- **A withdrawal refused for another reason keeps Retry** (`forbidden`, the 48-hour window), and a
+  retry the service accepts still takes the tree off again (`withdrawAgain`).
+- **Nothing else on screen counts this row.** The Outbox header counts only rows that are still
+  trying (`waitingCount`), the app has no "Retry all" control (`OutboxViewState.retryAll` has no
+  caller on screen), and the You tab shows no Outbox count.
+
+---
+
+*Added after **R222**, by the branch `feat/withdraw-owner-answers`.*
+
+### R250 — A pin move on a tree with no name (the owner's answer, 2026-11-16; ROADMAP 159)
+
+Q: "A community tree with no species reads "Moved the pin of Tree" in the Journal and "Pin moved ·
+Tree" in the Outbox. Which words should those two rows use for such a tree?"
+Chosen: **""Moved a tree's pin""**. Journal: `Moved a tree's pin`. Outbox: `Pin moved`.
+Not chosen: "Leave as is"; ""an unnamed tree"".
+
+How the branch `feat/withdraw-owner-answers` built it (the author's notes):
+
+- **The apostrophe on screen is the typographic one** (`Moved a tree’s pin`, U+2019), as in the
+  app's other on-screen strings, for example `Report a mistake in the city’s record`.
+- **Only where the row would otherwise read the fallback title "Tree".** Each row knows that from a
+  fact, not from the word: the Journal row from an empty `treeDisplayName`, and the Outbox row from
+  no resolved name (`treeName` nil). Both come from `LocalAPI.displayNames`, which follows the
+  next entry's rule: the words show only for a tree with no given name and no species.
+- **Only the pin move changes.** Every other kind on an unnamed tree still reads the fallback, for
+  example "Visit · Tree" and "Visited Tree".
+- **A city tree cannot reach either row.** A pin move is made only on a community tree the reader
+  added (`LocalAPI.correctLocation`).
+
+### R251 — Rows name a community tree by its species (the owner's answer, 2026-11-16)
+
+The question in the entry above (the owner's answer 6) said "a community tree with no species":
+
+Q: "A community tree with no species reads "Moved the pin of Tree" in the Journal and "Pin moved ·
+Tree" in the Outbox. Which words should those two rows use for such a tree?"
+Chosen: **""Moved a tree's pin""**. Journal: `Moved a tree's pin`. Outbox: `Pin moved`.
+Not chosen: "Leave as is"; ""an unnamed tree"".
+
+The branch first built "no given name", because the code's name rule never used an added tree's
+species as its name in a row. The review found the difference, and the owner was asked (answer 10):
+
+Q: "A tree someone added has a species but no given name. Its profile title is the species (for
+example "Sycamore, London Plane"), but its Outbox and Journal rows never use the species. They
+read "Pin moved" and "Moved a tree’s pin" (your new words), and other rows read "Visit · Tree".
+My earlier question said "no species"; the built rule is "no given name". What should those rows
+call such a tree?"
+A: "Use the species (Recommended)". Option text: "Rows name the tree as its profile does: "Pin
+moved · Sycamore, London Plane", "Moved the pin of Sycamore, London Plane", "Visit · Sycamore,
+London Plane". Your new words then show only for a tree with no name and no species. This changes
+an older rule in the code that an added tree's species is not used as its name in rows."
+Not chosen: "Keep as built" ("Rows use only a given name. Every added tree without one reads
+"Pin moved" and "Moved a tree’s pin", and its other rows read "· Tree", even when it has a
+species.").
+
+**Answer 10 replaces the old code rule** that an added tree's species is not used as its name in
+rows (D15's "a self-asserted species is not a name the app puts on a tree", as the Journal and
+Outbox applied it).
+
+How the branch `feat/withdraw-owner-answers` built it (the author's notes):
+
+- **One rule, in `LocalAPI.displayNameIfPresent` and `LocalAPI.displayNames`:** the tree's active
+  given name; else, for a tree in the city inventory, its species' common name (as before); else,
+  for a community tree, the common name of the species its profile title shows. That species is
+  the row's `species_current`, with the reader's own naming or correction laid over a cached tree
+  while it is in force (`localSpeciesAnswers`, ROADMAP 144), the same overlay `treeProfile` uses.
+  A species with no common name reads its scientific name, as the profile does.
+- **A withdrawn tree this phone still holds keeps its species name**, so `Tree withdrawn · …` and
+  the refused row still name it.
+- **The callers:** the Journal (its rows and their VoiceOver labels), the Outbox, and the private
+  reminders list on the Account screen. The export does not carry a tree name.
+- **My Grove's Trees list was left on the old rule by this branch.** **R253** records the
+  owner's answer and how the next branch built it.
+- **The profile is one read ahead in one case.** After a service read, `RoutedAPI` can show a
+  species the service served before this phone's cache holds it. The rows use what the phone
+  holds, so for that window the row can name the older species.
+
+---
+
+### R252 — Under the keep-records door, the queue goes before the account (the author's choice, not the owner's; ROADMAP 192)
+
+The keep-records door makes the account's published trees anonymous on the service, and nobody may
+withdraw an anonymous tree (`withdrawCommunityTree` answers `ErrNotTheAdder`, `forbidden`). A
+withdrawal still queued at the deletion was therefore refused afterwards, its tree came back on the
+phone, and nobody could withdraw it again. So, under the keep-records door only, and only when the
+account has a withdrawal queued, `RoutedAPI.deleteAccount` sends the outbox before `DELETE /me`
+(`OutboxQueue.sendBeforeAccountDeletion`):
+
+- **Only when a withdrawal is queued** (the orchestrator's decision on the review, not the owner's).
+  The step first reads the account's unsent withdrawals. With none, it does nothing: no drain, no row
+  made due, and the deletion makes exactly the requests it made before. So a pin move queued by an
+  account with no queued withdrawal is not sent first; that case stays with ROADMAP 164.
+- **Every row the account queued that the service has not accepted is made due now**, then the
+  queue runs its ordinary `drain()` up to eight times (25 rows in each first pass), with the wi-fi
+  toggle honored, and stops at the first drain that finds nothing due while no other drain runs.
+- **Each drain waits for one that is already running.** `drain()` returns at once when another
+  drain runs, so calling it without the wait would not prove anything was sent, and a row the other
+  drain holds `uploading` would be counted as unsent. Once the step runs, every kind goes, not only
+  withdrawals: a pin move has the same problem (the service refuses a move on an anonymous tree), and
+  an ordinary contribution loses nothing by going a little earlier. The 48-hour window and the fail
+  count do not change.
+- **The deletion goes ahead only if no withdrawal naming the account is left unsent.** A row the
+  service settled for good does not hold it. An accepted withdrawal of a published tree keeps the
+  tree withdrawn on the phone: the service's answer lists it as anonymized, and the phone's
+  `deleted_at` stays. An unpublished tree is listed as deleted instead, and both sides remove it
+  (`deleteAccountTrees`). A `conflict` brings the tree back with the owner's sentence, as it does on
+  any other day.
+- **A withdrawal the service keeps refusing with a retryable answer holds the deletion for up to 48
+  hours, and then loses.** Each try shows `Your account was not deleted. Check your connection and
+  try again.`, which is not accurate when the connection works and the service is the one
+  refusing. When the row's 48-hour window runs out inside the send step, the row fails and its tree
+  comes back, the count falls to zero, `DELETE /me` goes out, and the tree then stays public and
+  anonymous: ROADMAP 192's outcome, 48 hours later. The Outbox row says the withdrawal failed.
+- **If a withdrawal is still unsent** (no connection, or the service did not take it yet), the
+  deletion throws before `DELETE /me`. Nothing is deleted on the service or on the phone, and the
+  sheet draws its existing line, `Your account was not deleted. Check your connection and try
+  again.` The withdrawal row stays in the Outbox with its own reason. No new sentence was needed.
+- **Only withdrawals hold the deletion.** A pin move or any other row that did not go stays queued,
+  is made anonymous by the door as before, and is sent afterwards. Holding the deletion for every
+  kind would let one stuck row keep a person from deleting their account for up to 48 hours.
+- **The erasing door is unchanged.** It discards the account's queued rows and puts back the tree
+  of an unsent withdrawal (`OutboxStore.forgetAccount`), and the service deletes or anonymizes the
+  account's trees itself, so sending first would change nothing it ends with. ROADMAP 188 (a row in
+  `uploading` at an erasure) is not settled by this change: the erasing door does not wait for a
+  running drain.
+- **How long it can take.** With no withdrawal queued, nothing is added: the deletion costs what it
+  did before, one `DELETE /me`. With one queued, the step runs up to eight drains first, and each
+  sends every identity's due rows and, on wi-fi with the toggle on, every owed photograph. Nothing
+  sets a request timeout, so on a connection that reaches nothing each failed batch or photograph
+  costs about 60 seconds, and the whole step can take several minutes. All that time the sheet only
+  dims its buttons, Cancel is disabled, and nothing shows progress.
+
+---
+
+### R253 — My Grove names a community tree by its species (the owner's answer, 2026-11-16)
+
+The branch in **R251** left My Grove's Trees list on the old rule, and the owner was asked (answer 11):
+
+Q: "You chose that Outbox and Journal rows name an added tree by its species, as its profile
+does. My Grove's Trees list still uses the older rule: an added tree with a species and no given
+name is listed there as "Tree", while its profile title reads, for example, "Sycamore, London
+Plane". Should My Grove's list use the species too?"
+A: "Yes, use the species (Recommended)". Option text: "My Grove lists the tree as "Sycamore,
+London Plane", the same as its profile, the Journal, and the Outbox. An added tree with no name
+and no species still reads "Tree". I build it as its own small change after this pull request,
+before the next release."
+Not chosen: "No, leave My Grove" ("My Grove keeps listing such a tree as "Tree". Its profile, the
+Journal, and the Outbox use the species. Nothing more to build.").
+
+How the branch `feat/grove-names-by-species` built it (the author's notes):
+
+- **One rule, one resolver.** `LocalAPI.grove()` and `LocalAPI.groveCityFileRows(for:)` name a tree
+  by its active given name; else the seed species' common name; else, for a community tree, the
+  common name of the species its profile title shows. The last step is
+  `LocalAPI.communitySpeciesNames`, the same code the Journal and the Outbox reach through
+  `displayNames`. An empty name is drawn `Tree` by `GroveTreesPresentation`.
+- **The routed arms agree.** `RoutedAPI.resolvedCityFileRows` (the per-tree loop) now names a
+  community tree by `profile.species?.commonName`, as the provider arm does. A tree with no name
+  and no species is `unnamed` in both arms, and the page is not marked unresolved for it (PR
+  #144's fix).
+- **Where this differs from the owner's sentence, and is not fixed here.** The owner's answer
+  says "An added tree with no name and no species still reads "Tree"". That holds for a tree in
+  this phone's own grove. A tree with no name and no species that this phone reaches only through
+  the account's grove (`RoutedAPI.refreshedGrove`) is dropped from the list instead: for example,
+  a tree you added, seen from a second phone, or somebody else's cached tree you visited from
+  another device. The drop is older than this branch. It is an open item in ROADMAP, to be fixed
+  in its own change.
+- **"As its profile does" has one more exception.** A city tree with no species shows its street
+  address as its profile title, and reads `Tree` in My Grove and the Journal. This is older
+  behavior, and the owner's answers do not cover it.
+- **A withdrawn tree is not named.** The owner's earlier answer took it out of My Grove, and the
+  species step skips it.
+- **A fixed number of statements per page.** The species step adds at most two statements, once
+  per page, and only when the page holds a community tree with no given name
+  (`GroveStatementCensusTests.theSpeciesArmIsAFixedCount`).
+- **A difference between the two routed arms, found and not changed.** For a tree this phone
+  withdrew, the provider arm answers `unnamed` and the loop arm answers neither (its
+  `treeProfile` read throws), which marks the read as fallen back to local. Production always
+  sets the provider, so the loop arm's answer shows only in tests.

@@ -81,14 +81,18 @@ struct AccountDeletionSheet: View {
         .background(CypressColor.surfaceSheet)
         // ══════════════════════════════════════════════════════════════════════════════════════
         // Gate 3, on the destructive door only. `eraseConfirmCancel` carries `role: .cancel`, so
-        // backing out is the outside tap, the Escape key and the VoiceOver default — and it backs
+        // backing out is its own button, the Escape key and the VoiceOver default — and it backs
         // out to the *choice*, where the account still exists, which is why it says `Go back`
         // rather than `Keep my account`.
+        //
+        // An alert, not a `confirmationDialog` (ROADMAP 77). PR #185 saw a dialog drawn without its
+        // cancel button on CI's iOS 26, at the tree profile's take-back, so this question was made
+        // an alert for the same reason. `TreeProfileView` has the full account. An alert has no
+        // tap outside, so `Go back` is the way out.
         // ══════════════════════════════════════════════════════════════════════════════════════
-        .confirmationDialog(
+        .alert(
             AccountDeletionCopy.eraseConfirmTitle,
-            isPresented: $isConfirmingErase,
-            titleVisibility: .visible
+            isPresented: $isConfirmingErase
         ) {
             Button(AccountDeletionCopy.eraseConfirmAction, role: .destructive) {
                 onDelete(.eraseEverything)

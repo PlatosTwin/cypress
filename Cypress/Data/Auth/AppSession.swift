@@ -133,6 +133,20 @@ public actor AppSession {
         sessionEnded = handler
     }
 
+    /// Called after each refresh of the account's session, with the account and the license answer
+    /// the service sent with it (ROADMAP chip 148). The composition root points it at
+    /// `LocalAPI.adoptLicenseAnswer`, so an answer recorded elsewhere (another phone, or this one
+    /// before a reinstall) reaches the You tab within one access-token lifetime of use.
+    ///
+    /// Modeled on `sessionEnded`: one handler, replaced rather than accumulated. A sign-in does not
+    /// fire it: screen 15's own answer is written by `LocalAPI.linkAccount` after the sign-in.
+    private var licenseAnswerArrived: (@Sendable (UUID, AuthClient.LicenseAnswer) async -> Void)?
+
+    /// Point the local half at the license answer each refresh carries. See `licenseAnswerArrived`.
+    public func onLicenseAnswer(_ handler: @escaping @Sendable (UUID, AuthClient.LicenseAnswer) async -> Void) {
+        licenseAnswerArrived = handler
+    }
+
     /// Remove the stored session and tell the local half, if there was one to remove.
     ///
     /// The id is read **before** the removal, because the handler's whole argument is which account
@@ -335,6 +349,7 @@ public actor AppSession {
             do {
                 let fresh = try await client.refresh(refreshToken: session.refreshToken)
                 try persist(fresh)
+                await licenseAnswerArrived?(fresh.userID, fresh.licenseVersion)
                 return .user(fresh.accessToken)
             } catch let error as APIError {
                 // **The service refused, so the session is over** — a spent, replayed or revoked
@@ -391,6 +406,39 @@ public actor AppSession {
         )
         try persist(session)
         return session.userID
+    }
+
+    /// Tells the service that the signed-in account now agrees to the license (`POST /devices/claim`
+    /// with `license_version`).
+    ///
+    /// For a person who declined at sign-in and agrees later, from the You tab. The service records
+    /// the answer and makes the account's community trees public in one transaction. It writes
+    /// nothing on this phone: the caller writes the local half only after this returns, so a phone
+    /// never says "you agreed" about an answer the service did not record.
+    ///
+    /// **Through `SessionTransport`, on this client's own wire.** That gives the account's token,
+    /// the one refresh and replay on a 401, and, when the remote gate is shut, `OfflineSession`'s
+    /// refusal before any socket opens.
+    ///
+    /// - Throws: `SessionError.noCredential` when no account is signed in. The route refuses a
+    ///   device token, so there is nothing to send. Otherwise whatever the transport throws: a
+    ///   `URLError` offline, an `APIError` when the service refuses, a `SessionError` when the
+    ///   session cannot be used.
+    public func acceptLicense(version: String = LicenseConsent.currentVersion) async throws {
+        guard let account = signedInUserID else { throw SessionError.noCredential }
+        let request = try client.licenseAcceptanceRequest(deviceUUID: deviceUUID, version: version)
+        _ = try await SessionTransport(session: self, http: client.http).send(request)
+        // The stored session still carries the answer it was minted with, and the launch adopts
+        // that answer (`DataLayer.boot`). Re-stored as accepted, so a relaunch before the next
+        // refresh does not bring back "declined". Read again after the send: a refresh during it
+        // rotated the tokens, and those are the ones to keep. Only for the same account: the
+        // session can end, or change, while the request is in flight. `try?`: the service has
+        // agreed, so this must not report a failure. If the write fails, the stored session still
+        // says "declined", so a relaunch before the next refresh adopts it and the You tab shows
+        // "did not agree" again; the next refresh carries the agreement and corrects it.
+        if let stored = storedSession, stored.userID == account {
+            try? persist(stored.with(licenseVersion: .accepted(version)))
+        }
     }
 
     /// Forgets the account's credentials and keeps the device's.

@@ -59,11 +59,18 @@ struct LandContextShots {
 
     @Test("the three hazard handoffs and the two profile arms, light and dark, default and AX5")
     func photograph() async {
-        print("SHOT DIR \(ScreenSweepShots.outputDirectory.path)")
+        print("SHOT DIR \(ScreenSweepShots.shotDirectory?.path ?? "not set: nothing is written")")
 
-        #expect(await ScreenSweepShots.sweep("e146-1-report-stated-private") { Self.report(Self.statedPrivate) })
-        #expect(await ScreenSweepShots.sweep("e146-2-report-inferred-private") { Self.report(Self.inferredPrivate) })
-        #expect(await ScreenSweepShots.sweep("e146-3-report-street") { Self.report(Self.street) })
+        // The report's land context loads with no spinner, so the three reports keep the old wait.
+        #expect(await ScreenSweepShots.sweep("e146-1-report-stated-private", settleFloor: RenderSettle.legacyBudget) {
+            Self.report(Self.statedPrivate)
+        })
+        #expect(await ScreenSweepShots.sweep("e146-2-report-inferred-private", settleFloor: RenderSettle.legacyBudget) {
+            Self.report(Self.inferredPrivate)
+        })
+        #expect(await ScreenSweepShots.sweep("e146-3-report-street", settleFloor: RenderSettle.legacyBudget) {
+            Self.report(Self.street)
+        })
         // A 1,500 pt window for the two profiles, `cityRecordStates`' own reason: the ground under the
         // tree is a sentence in §9b, the last block on screen 03, and an off-screen `ScrollView`
         // cannot be scrolled. At phone height these two photographed the stat grid and stopped above

@@ -30,7 +30,7 @@ struct ContributionCameraView: View {
     let onCapture: (Data) -> Void
     let onDone: () -> Void
 
-    @State private var camera = VisitCameraController()
+    @State private var camera: VisitCameraController
     @State private var libraryItems: [PhotosPickerItem] = []
     /// How many frames this session has handed out — the tray's receipt, and the flash's key.
     @State private var captureCount = 0
@@ -38,6 +38,28 @@ struct ContributionCameraView: View {
     @State private var fadedCount = 0
     @State private var captureFailed = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    /// - Parameter camera: the controller the viewfinder and the pinch both drive. The app passes
+    ///   nothing and gets a new one. `CameraZoomPinchTests` passes its own, so it can check that the
+    ///   pinch drives that controller and not another (ROADMAP 143).
+    ///
+    /// **Seeded through `State(initialValue:)` on purpose.** With Xcode 27.2, a `@State` property
+    /// written with an initializer (`= VisitCameraController()`) is stored as `LazyState`, which
+    /// holds a closure until the view is installed. A view built in a test is never installed, so
+    /// the controller did not exist to be found. `State(initialValue:)` stores the value itself on
+    /// every toolchain this project builds with, and it is what Xcode 26 already did for the old
+    /// spelling. SwiftUI keeps the first controller for the life of the screen either way.
+    init(
+        camera: VisitCameraController? = nil,
+        onCapture: @escaping (Data) -> Void,
+        onDone: @escaping () -> Void
+    ) {
+        // Built here rather than as a default argument: a default argument is evaluated outside the
+        // main actor, and the controller's `init` is main-actor isolated.
+        _camera = State(initialValue: camera ?? VisitCameraController())
+        self.onCapture = onCapture
+        self.onDone = onDone
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -82,6 +104,18 @@ struct ContributionCameraView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .clipped()
+        // **Pinch to zoom the lens.** The owner ruled on 2026-09-29 that 05 and 09's camera gets
+        // the same pinch as screen 04 and add-a-tree. It is the same gesture on the same controller,
+        // `VisitCameraZoomPinch`. It sits before the overlays so the ✕ and the shutter keep their own
+        // touches, which is where screen 04 puts it.
+        //
+        // **`isAiming` is always true here, and that is screen 04's rule, not an exception to it.**
+        // Screen 04 turns the pinch off once its viewfinder shows the still it just took, because
+        // there is nothing left to aim. This viewfinder never shows a still: each frame goes to
+        // `onCapture` and the preview stays live for the next one. So there is always something to
+        // aim. What still turns the pinch off is the other half of the rule, `camera.isZoomable`,
+        // which is false on every simulator and whenever the camera is refused.
+        .visitCameraZoomPinch(camera, isAiming: true)
         .overlay(alignment: .topLeading) { closeButton }
         .overlay(alignment: .bottom) { shutterBlock }
         .overlay { shutterFlash }

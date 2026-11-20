@@ -96,7 +96,7 @@ final class AnonymizedPhotoNoticeUITests: XCTestCase {
             app.swipeUp()
             swipes += 1
         }
-        XCTAssertTrue(row.isHittable, "the row for the photograph nobody owns could not be reached")
+        assertReachable(row, "the row for the photograph nobody owns")
         row.tap()
 
         guard app.buttons["Close"].waitForExistence(timeout: 10) else {

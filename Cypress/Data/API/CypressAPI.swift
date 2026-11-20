@@ -42,9 +42,53 @@ public protocol CypressAPI: Sendable {
     /// summary, photo timeline page 1, measurement series.
     func treeProfile(id: UUID) async throws -> TreeProfile
 
-    /// `POST /trees` — community add. Requires a photo, species optional; runs the 10 m proximity
-    /// dedupe against any species and returns `.conflict` with the candidate list when it trips.
+    /// `POST /trees` — community add. Requires a photo, species optional. A tree within 10 m of
+    /// another is added like any other (the owner's ruling of 2026-11-14): the screen shows the
+    /// trees nearby as a note through `treesNear`, and this method does not refuse on distance.
     func addTree(_ draft: TreeDraft) async throws -> Tree
+
+    /// Moves a community tree's pin — the owner's decisions 2 and 5 of 2026-09-28: the move
+    /// supersedes the position in force, and only the tree's adder may make it.
+    ///
+    /// **Not a BUILD-PLAN §6 endpoint.** It reaches the account through the queue, as outbox kind
+    /// `location_correction` (`AppSchema` v23), exactly as a species correction does.
+    ///
+    /// Appends a row to the tree's `tree_locations` chain, stamps the old head, moves the tree's
+    /// read cache and queues the correction, in one transaction. No distance bound is applied here:
+    /// how far a pin may move, and from where, is the UI round's question to the owner.
+    ///
+    /// - Returns: the tree as it now stands.
+    /// - Throws: `.notFound` when there is no such tree, or this phone withdrew it; `.forbidden`
+    ///   when the tree is real and not this person's to move — a city row, somebody else's tree
+    ///   from the cache, or a tree this phone added whose adder is not whoever is asking, including
+    ///   a tree whose adder is nobody (every tree an account deletion anonymized);
+    ///   `.validationFailed` for a position off the map or a negative
+    ///   accuracy. A new position within 10 m of another tree is not refused (the owner's ruling of
+    ///   2026-11-14).
+    ///
+    /// Defaulted in `LocationCorrection.swift` to `.notFound`. **Declared here and not only in an
+    /// extension**, for the reason `photoData` gives below at length (ERRATA E125).
+    func correctLocation(
+        treeID: UUID,
+        to coordinate: Coordinate,
+        placement: TreePlacement,
+        locationAccuracyM: Double?
+    ) async throws -> Tree
+
+    /// The adder withdraws a community tree for everyone (the owner's decision 8; `TreeWithdrawal`).
+    ///
+    /// Sets the tree's `deleted_at` and queues a `tree_withdrawal`, in one transaction. The tree
+    /// leaves this phone at once. The service may still refuse, and then the tree comes back
+    /// (`OutboxQueue.settle`).
+    ///
+    /// - Throws: `.notFound` when there is no such tree, or it is already withdrawn; `.forbidden`
+    ///   when the tree is real and not this person's to withdraw: a city row, somebody else's tree
+    ///   from the cache, or a tree this phone added whose adder is not whoever is asking (which
+    ///   covers a signed-out phone and a tree whose adder is nobody).
+    ///
+    /// Defaulted in `TreeWithdrawal.swift` to `.notFound`. **Declared here and not only in an
+    /// extension**, for the reason `photoData` gives below at length (ERRATA E125).
+    func withdrawTree(treeID: UUID) async throws
 
     /// Names the species on a community tree that has none — the "after" half of "add tree species
     /// after/at same time as adding a custom tree".
@@ -216,6 +260,81 @@ public protocol CypressAPI: Sendable {
     /// `LocalAPI` (ERRATA E125).
     func deletePhoto(id: UUID) async throws -> PhotoDeletion
 
+    /// Withdraws one reading this person contributed — off the charts, off the log, out of the stat
+    /// card (report F27, `AppSchema` v21).
+    ///
+    /// **Not a BUILD-PLAN §6 endpoint**, and its absence there is the same absence `deletePhoto`
+    /// answers one table over: §6 has no verb that unmakes a contribution. The nearest sentence in
+    /// the corpus is SPEC-PHASE1 §"Sync never deletes community photos or visits", which is about
+    /// what *sync* may do to somebody else's record, not about what a contributor may do to their
+    /// own. When the service lands this becomes `DELETE /measurements/{id}` and this signature does
+    /// not move.
+    ///
+    /// **`withdraw` and not `delete`, because the row survives.** See
+    /// `MeasurementWithdrawalAccess.swift` for the argument, and `ContributionStore
+    /// .withdrawMeasurement` for why this tombstone strips nothing where a photograph's strips five
+    /// columns.
+    ///
+    /// - Throws: `.notFound` when there is no such live reading, `.forbidden` when it is not this
+    ///   person's — including when it is nobody's, which is what an account deletion through the
+    ///   leaving door makes of it (`AppSchema` v13, R3).
+    ///
+    /// **Declared here and not only in an extension**, for the reason `photoData` gives above at
+    /// length: an extension member has no witness-table entry, and every screen holds
+    /// `any CypressAPI` (ERRATA E125).
+    func withdrawMeasurement(id: UUID) async throws -> WithdrawnMeasurement
+
+    // MARK: - Disputing a record's own data (RULINGS R79, `AppSchema` v22)
+
+    /// Raises a dispute against a **city** record's data — R79's checkbox set, its suggested values
+    /// and its notes.
+    ///
+    /// **Not a BUILD-PLAN §6 endpoint.** §6 predates the ruling; the dispute reaches an account
+    /// through the queue (`OutboxItem.Kind.dataDispute`) rather than through a call of its own, and
+    /// this round's ruling is that the service **records** it without materializing anything — no
+    /// dispute tables server-side, because adjudication is a web deliverable (ARCHITECTURE §8) and
+    /// guessing at the effect would move city data on a say-so nobody weighed.
+    ///
+    /// **This does not write the inventory and must never learn to.** The city's rows sit in an
+    /// ATTACHed read-only database; the dispute is a row in `main` referencing one. `claimSpecies`
+    /// and `correctSpecies` keep their `.forbidden` for city rows exactly as written — R79 changed
+    /// *disputing*, not writing.
+    ///
+    /// - Parameters:
+    ///   - issues: R79's checkboxes; more than one may apply. Empty is `.validationFailed`.
+    ///   - suggestions: what the reporter says the record should say instead. May be empty — "this
+    ///     is not a London Plane, I do not know what it is" is a real report.
+    ///   - notes: R79's free-text "notes / additional information".
+    /// - Throws: `.notFound` when there is no such record; `.forbidden` for a community row, whose
+    ///   own dispute surface is the community round's and which keeps `flagWrongSpecies` /
+    ///   `flagNeverExisted` until then; `.validationFailed` for the rules in `DataDisputeLimits`;
+    ///   `.conflict` when this raiser already has an open dispute on this record.
+    ///
+    /// **Declared here and not only in an extension**, for the reason `photoData` gives above at
+    /// length: an extension member has no witness-table entry, and every screen holds
+    /// `any CypressAPI` (ERRATA E125).
+    func raiseDataDispute(
+        treeID: UUID,
+        issues: Set<TreeDataDispute.IssueKind>,
+        suggestions: TreeDataDispute.Suggestions,
+        notes: String?
+    ) async throws -> TreeDataDispute
+
+    /// Takes back a dispute this person raised.
+    ///
+    /// **The author's and nobody else's.** It ships in the same round as the raise deliberately: the
+    /// owner's standing complaint about the community flagging flow is that a flag cannot be
+    /// retracted by the person who raised it, and a new dispute surface with the same gap would
+    /// repeat that defect on new ground.
+    ///
+    /// Stamps `withdrawn_at` and queues `data_dispute_withdrawal`. Nothing is deleted — the moment a
+    /// dispute was taken back is a fact, and a service that received the raise has to be able to
+    /// match the retraction to it.
+    ///
+    /// - Throws: `.notFound` when there is no such open dispute; `.forbidden` when it is somebody
+    ///   else's.
+    func withdrawDataDispute(disputeID: UUID) async throws
+
     // MARK: - Personal surfaces (private by default, D11)
 
     /// `GET /me/grove`.
@@ -267,7 +386,12 @@ public protocol CypressAPI: Sendable {
     /// different things — one on the contributor's trees, one on the species they have come to know
     /// — and because the ring's denominator is a fact about the city's inventory that no list of
     /// the contributor's own trees contains. See `GroveSpecies`.
-    func groveSpecies() async throws -> GroveSpecies
+    ///
+    /// `coordinate` is the reader's fix, already checked by the caller against
+    /// `AlmanacLimits.fixCanResolveAnArea`, or nil when there is no usable fix. With a fix the ring
+    /// is about where the reader is; without one it is about their most-visited area, and the
+    /// payload says which (`GroveAreaBasis`, F38).
+    func groveSpecies(near coordinate: Coordinate?) async throws -> GroveSpecies
 
     /// `GET /me/journal`, cursor-paginated (`?cursor`, `?limit` max 100).
     func journal(cursor: String?, limit: Int) async throws -> Page<JournalEntry>
@@ -296,6 +420,26 @@ public protocol CypressAPI: Sendable {
     ///   account's.
     @discardableResult
     func deleteAccount(_ choice: AccountDeletionChoice) async throws -> AccountDeletion.Outcome
+
+    /// The local half of a deletion the service has accepted, acting on the service's answer about
+    /// the community trees the account added (`ROADMAP` 104 and 105). `RoutedAPI.deleteAccount` is
+    /// the caller; nil means the answer carried none.
+    ///
+    /// **A requirement, so it dispatches to the conformance** (ERRATA **E125**): `RoutedAPI` holds
+    /// its local half as `any CypressAPI`, and an extension-only member would reach the default
+    /// below every time and never `LocalAPI`'s. The default is honest here, unlike the one the
+    /// requirement above refuses: it performs the same deletion and keeps the phone's own rule for
+    /// the trees, which is exactly what every build did before the answer existed. The default is
+    /// for preview and test doubles; the three shipping conformances each declare this method
+    /// (`APIConformanceGuardTests`).
+    ///
+    /// **Its own base name, not an overload of `deleteAccount`.** `APIConformanceGuardTests` keys
+    /// its probe of each requirement by base name, so two requirements may not share one.
+    @discardableResult
+    func finishAccountDeletion(
+        _ choice: AccountDeletionChoice,
+        actingOn serviceTrees: AccountDeletion.ServiceTreeVerdicts?
+    ) async throws -> AccountDeletion.Outcome
 
     /// What this device is holding that `claimDevice` would carry onto an account (D9).
     ///
@@ -350,6 +494,16 @@ public protocol CypressAPI: Sendable {
 }
 
 public extension CypressAPI {
+    /// The default for `finishAccountDeletion(_:actingOn:)`: the same deletion, with the phone's
+    /// own rule for the trees. `LocalAPI` overrides it and acts on the answer.
+    @discardableResult
+    func finishAccountDeletion(
+        _ choice: AccountDeletionChoice,
+        actingOn serviceTrees: AccountDeletion.ServiceTreeVerdicts?
+    ) async throws -> AccountDeletion.Outcome {
+        try await deleteAccount(choice)
+    }
+
     /// The grove-derived default for `isFavorite(treeID:)` — one membership bit out of the same
     /// read the heart used before the per-tree read existed (#167). Correct for any conformance
     /// whose `grove()` tells the truth; `LocalAPI` overrides it with the narrow query.
@@ -809,19 +963,14 @@ public enum MapContent: Hashable, Sendable {
 
 // MARK: - Shortlist
 
-/// A row of the what-tree-is-this shortlist (screen 02).
+/// A row of the what-tree-is-this shortlist (screen 02), and of the Add this tree screen's
+/// "ALREADY ON RECORD" note.
 ///
-/// **`Decodable` since #158 step 4, and the conformance is a contract rather than a convenience.**
-/// `POST /trees`' proximity `conflict` carries `detail.candidates` as an array of these, and it
-/// emits them in **this type's own synthesized keys** — `distanceM`, `speciesScientificName`, and a
-/// nested `Tree` spelling `speciesCurrentID` rather than `species_current_id`. That is deliberate on
-/// the service's side (`server/internal/api/wire.go`) and it only works if a plain `JSONDecoder`
-/// with no key strategy decodes this type, which is what the conformance says and what
-/// `CypressTests/GoldenWireFixtureTests` proves against `server/testdata/proximity_conflict.json`.
-///
-/// `id` is computed off `tree`, so it is not a stored property and not a coding key — which is why
-/// the fixture carries no `id` at the row level and is right not to.
-public struct NearbyTree: Hashable, Sendable, Identifiable, Decodable {
+/// **No longer `Decodable`.** It was from #158 step 4 to 2026-11-15, because the service's
+/// proximity `conflict` carried a list of these. The owner's ruling of 2026-11-14 removed that
+/// refusal on both sides, the service stopped sending the list, and nothing else decodes this type:
+/// the shortlist is answered on this phone.
+public struct NearbyTree: Hashable, Sendable, Identifiable {
     public var id: UUID { tree.id }
     public let tree: Tree
     /// Great-circle meters from the query point. Screen 02 renders this as `17 m S`.
@@ -929,6 +1078,23 @@ public struct TreeProfile: Hashable, Sendable {
     /// answer hides a control rather than offering one that would fail.
     public let deletablePhotoIDs: Set<UUID>
 
+    /// Which of `measurements` this viewer may **withdraw** (report F27, `AppSchema` v21).
+    ///
+    /// On the payload for `deletablePhotoIDs`' reason and answered the same way: the question needs
+    /// the viewer's `Attribution`, and a presentation that held one would be holding identity it has
+    /// no business with (ARCHITECTURE §4).
+    ///
+    /// **Narrower than "every reading on this tree", and narrower than "every reading this device
+    /// holds".** `main.measurements` is this installation's own work — nothing syncs anybody else's
+    /// down — but a reading whose contributor left through the door that keeps their work in place
+    /// is still drawn in the log and is nobody's to take back (`AppSchema` v13, R3). That is the one
+    /// row the two sets differ on today, and it is the row that matters.
+    ///
+    /// Empty on any implementation that cannot answer, which is the safe direction everywhere on
+    /// this payload: a missing answer hides a control rather than offering one that would be
+    /// refused.
+    public let withdrawableMeasurementIDs: Set<UUID>
+
     /// Which of `photos` have **no owner at all** — the rows the leaving door left behind
     /// (`AccountDeletion.anonymizeContributions`, task #131).
     ///
@@ -1002,6 +1168,67 @@ public struct TreeProfile: Hashable, Sendable {
     /// community reviewer confirmed anything. See `TreeStatusProvenance`.
     public let statusProvenance: TreeStatusProvenance
 
+    /// Whether this reader may move the tree's pin: a community tree this phone added, not
+    /// withdrawn, whose adder is the reader (the owner's decision 5 of 2026-09-28, and the Move pin
+    /// control of 2026-11-12), and which the service may hold (ROADMAP 107,
+    /// `CommunityTreeStore.mayHaveReachedService`). `LocalAPI.correctLocation` applies only the
+    /// adder test before it writes. The second test is the profile's alone: it hides the control on
+    /// a tree whose move the service would answer `not_found`.
+    ///
+    /// `false` for every stub and preview, the safe direction: it offers nothing.
+    public let canMovePin: Bool
+
+    /// What the profile offers about withdrawing this tree (the owner's answers of 2026-11-16;
+    /// `TreeWithdrawalOffer` says when each case is drawn). Not gated on whether the service has
+    /// received the tree, unlike `canMovePin`: the service answers a withdrawal of a tree it does
+    /// not hold with `applied`, and the tree's add then arrives withdrawn.
+    ///
+    /// `.unavailable` for every stub and preview, the safe direction: it offers nothing.
+    public let treeWithdrawal: TreeWithdrawalOffer
+
+    /// Whether the reader added this community tree (round C2). Carried for the round that draws
+    /// it (C3, "the reader's own rows say 'you'"); nothing in C2 draws it.
+    ///
+    /// The phone answers from its own record: a tree this phone added whose adder is the reader.
+    /// `RoutedAPI.refreshedTreeProfile(id:)` **adopts the service's `added_by_you` when it says
+    /// yes**, which covers a tree the reader's account added on another phone, held here only in
+    /// the community cache. A service "no" never overrides the phone's yes: the service answers no
+    /// for a tree it has not received, and one phone can get both answers for one tree
+    /// (`server/testdata/README.md`).
+    ///
+    /// It is not `canMovePin`. That one also needs the tree in this phone's own table, because the
+    /// move is a local write (`LocalAPI.correctLocation`).
+    public let addedByYou: Bool
+
+    /// The tree's public history from the service (`GET /trees/{id}/history`), or nil: a city
+    /// tree, a read that did not reach the service, or the service's "no history". Carried for C3,
+    /// which draws it on the profile; nothing in C2 draws it. Each event's date is a
+    /// `CalendarDay`.
+    public let communityHistory: CommunityTreeHistory?
+
+    /// Whether this tree is a row in this phone's own `community_trees` table (round C3), rather
+    /// than a row of the community cache (somebody's tree the service sent down) or a city row.
+    ///
+    /// Two things on the profile turn on it. The species verbs act only on this phone's own rows
+    /// (`LocalAPI.claimSpecies` throws `notFound` for any other), so the claim is offered only here.
+    /// And the tree's `createdAt` means different things in the two tables: this phone's own row
+    /// holds the instant of the add, while the cache holds the service's day as midnight UTC. The
+    /// "Added" row is dated from one or the other accordingly.
+    ///
+    /// `false` for every stub and preview, the safe direction: it offers no species control.
+    public let isAddedHere: Bool
+
+    /// Whether the reader's contributions go out to everyone (round C3), read in the same profile
+    /// read as the tree. Nil for a city tree and for every stub. It is a fact about the reader, not
+    /// the tree; the profile reads it only for a tree the reader added, to say who can see it.
+    public let readerSharing: ContributionSharing?
+
+    /// The service's `is_published` for this tree (round C3): `true` when everyone can see it,
+    /// `false` when only its adder can. Nil when the service did not answer, and nil whenever the
+    /// service sent no `community_tree`, because the service also answers `false` for a city tree,
+    /// an unknown id and a hidden one, and that `false` says nothing about this tree.
+    public let isPublished: Bool?
+
     public init(
         tree: Tree,
         activeName: TreeName? = nil,
@@ -1018,12 +1245,20 @@ public struct TreeProfile: Hashable, Sendable {
         siteLineageTreeID: UUID? = nil,
         ownPhotoIDs: Set<UUID> = [],
         deletablePhotoIDs: Set<UUID> = [],
+        withdrawableMeasurementIDs: Set<UUID> = [],
         anonymizedPhotoIDs: Set<UUID> = [],
         photoTallies: [UUID: PhotoTally] = [:],
         inventorySource: InventorySource? = nil,
         speciesCorrection: SpeciesCorrectionOffer = .unavailable,
         recordDefect: RecordDefectOffer = .unavailable,
-        statusProvenance: TreeStatusProvenance = .record
+        statusProvenance: TreeStatusProvenance = .record,
+        canMovePin: Bool = false,
+        treeWithdrawal: TreeWithdrawalOffer = .unavailable,
+        addedByYou: Bool = false,
+        communityHistory: CommunityTreeHistory? = nil,
+        isAddedHere: Bool = false,
+        readerSharing: ContributionSharing? = nil,
+        isPublished: Bool? = nil
     ) {
         self.tree = tree
         self.activeName = activeName
@@ -1040,12 +1275,20 @@ public struct TreeProfile: Hashable, Sendable {
         self.siteLineageTreeID = siteLineageTreeID
         self.ownPhotoIDs = ownPhotoIDs
         self.deletablePhotoIDs = deletablePhotoIDs
+        self.withdrawableMeasurementIDs = withdrawableMeasurementIDs
         self.anonymizedPhotoIDs = anonymizedPhotoIDs
         self.photoTallies = photoTallies
         self.inventorySource = inventorySource
         self.speciesCorrection = speciesCorrection
         self.recordDefect = recordDefect
         self.statusProvenance = statusProvenance
+        self.canMovePin = canMovePin
+        self.treeWithdrawal = treeWithdrawal
+        self.addedByYou = addedByYou
+        self.communityHistory = communityHistory
+        self.isAddedHere = isAddedHere
+        self.readerSharing = readerSharing
+        self.isPublished = isPublished
     }
 
     /// Whether this device contributed the photo, and may therefore show it to the person who took
@@ -1056,8 +1299,34 @@ public struct TreeProfile: Hashable, Sendable {
     /// same question as `isOwnPhoto`.
     public func isDeletablePhoto(_ photo: Photo) -> Bool { deletablePhotoIDs.contains(photo.id) }
 
+    /// Whether this person may take the reading back — see `withdrawableMeasurementIDs` for why
+    /// this is not "is it on this device".
+    public func isWithdrawableMeasurement(_ measurement: TreeMeasurement) -> Bool {
+        withdrawableMeasurementIDs.contains(measurement.id)
+    }
+
     /// Whether the photo has no owner left — see `anonymizedPhotoIDs`.
     public func isAnonymizedPhoto(_ photo: Photo) -> Bool { anonymizedPhotoIDs.contains(photo.id) }
+
+    /// R79's dispute state for this record, or nil when there is none to offer.
+    ///
+    /// **The one accessor a view should use, and the reason it exists.** Both `speciesCorrection`
+    /// and `recordDefect` answer `.dataDispute` for a city row, because R79's single sheet covers
+    /// both of those seams — its three checkboxes are the species one and the record one and the
+    /// location one. Two offers carrying one state is exactly the shape those two enums' own headers
+    /// warn about ("a view that assembled them from separate flags could draw two controls"), so the
+    /// pair is read here rather than at a call site: **one control, from one value.**
+    ///
+    /// `LocalAPI` writes the identical value into both — it calls `dataDisputeOffer` twice, from the
+    /// same `tree` and the same connection inside one read, so there is no state in which the two
+    /// can disagree — and `DataDisputeTests` pins that. This reads
+    /// `recordDefect` first and falls back to `speciesCorrection` so that a stub or a preview which
+    /// set only one of them still answers, rather than silently offering nothing.
+    public var cityDataDispute: DataDisputeOffer? {
+        if case let .dataDispute(offer) = recordDefect { return offer }
+        if case let .dataDispute(offer) = speciesCorrection { return offer }
+        return nil
+    }
 
     /// The one visibility rule for a person's own screens — ERRATA E215.
     ///
@@ -1174,15 +1443,20 @@ public struct TreeDraft: Hashable, Sendable {
         self.landContext = landContext
     }
 
-    /// "runs the proximity dedupe check (10 m, any species)" (BUILD-PLAN §6).
+    /// The radius of the Add this tree screen's "ALREADY ON RECORD" note: the trees on record
+    /// within this many meters of the pin are listed under it. It was BUILD-PLAN §6's proximity
+    /// dedupe ("10 m, any species"), which refused the add; the owner's ruling of 2026-11-14
+    /// turned the refusal into a note that does not block. `DataDispute.positionResolutionRadiusM`
+    /// reuses the number for a different rule.
     public static let proximityDedupeRadiusM: Double = 10
-}
 
-/// Thrown alongside `APIError.conflict` when the 10 m dedupe trips, so the UI can show the
-/// candidate list rather than a bare error.
-public struct ProximityConflict: Error, Sendable {
-    public let candidates: [NearbyTree]
-    public init(candidates: [NearbyTree]) { self.candidates = candidates }
+    /// How far a tree already listed under that note may be before it leaves the list. The note
+    /// appears when a tree is within `proximityDedupeRadiusM`; a tree it lists stays listed until it
+    /// is more than this many meters away, and the note goes when none is left. The owner's decision
+    /// of 2026-11-15 ("Show at 10 m, hide past 15 m"): a GPS fix that drifts across 10 m no longer
+    /// makes the note appear and disappear. A listed tree can therefore show 11 to 15 m under the
+    /// words "within 10 m", which the owner accepted.
+    public static let proximityNoteKeepRadiusM: Double = 15
 }
 
 // MARK: - Photos
@@ -1204,9 +1478,17 @@ public struct PhotoUploadRequest: Hashable, Sendable {
     /// begin replayed after a flap created a *second* photograph instead of finding the first. With
     /// it the retry is the same request and lands on the same row.
     ///
-    /// Optional because the **apply** sink has no use for one — `LocalAPI` is a move inside the app
-    /// container and dedupes on nothing — and passing a key there would imply a remote idempotency
-    /// that call does not have.
+    /// **The apply passes it too, and `LocalAPI` mints the phone's `photos.id` from it** (report
+    /// F30). That makes the phone's id and the begin's key one value, which is the only link the
+    /// phone keeps to its own photograph once it is on the service: the service answers its
+    /// contributor under its own `photo_id`, which the phone never stores, and echoes this key
+    /// beside it. Before this the two ids were unrelated, `outbox_photos` — the one row that held
+    /// both — was deleted the moment the send completed, and the contributor's profile drew the one
+    /// photograph twice. It also makes a replayed apply land on the row it already wrote
+    /// (`ContributionStore.insert` is `ON CONFLICT(id) DO NOTHING`) rather than a second one.
+    ///
+    /// Optional because a request with no binary identity of its own — a preview, a test — has
+    /// nothing to key on, and `LocalAPI` then mints a fresh id exactly as it always did.
     public let idempotencyKey: UUID?
 
     public init(
@@ -1361,6 +1643,7 @@ public extension GroveEntry {
 public struct JournalEntry: Hashable, Sendable, Identifiable {
     public enum Kind: String, Sendable, Hashable, Codable {
         case visit, observation, measurement, careEvent
+        case pinMoved // A move of a community tree's pin (`ContributionStore.journalSQL`'s fifth arm).
     }
 
     public let id: UUID

@@ -108,6 +108,18 @@ public struct DrainReport: Sendable, Equatable {
     /// Binaries whose send was refused or unreachable on this pass. Their rows stay outstanding, so
     /// their item stays out of `done`.
     public var photosFailed = 0
+
+    /// Adds a later pass's counts to this one (`OutboxQueue.drain`).
+    mutating func absorb(_ other: DrainReport) {
+        attempted += other.attempted
+        synced += other.synced
+        failedTemporarily += other.failedTemporarily
+        failedTerminally += other.failedTerminally
+        awaitingWifi += other.awaitingWifi
+        sent += other.sent
+        photosSent += other.photosSent
+        photosFailed += other.photosFailed
+    }
 }
 
 /// The local-first mutation queue.
@@ -144,8 +156,20 @@ public actor OutboxQueue {
     /// about the local half alone wires.
     private let send: (any OutboxSendSink)?
     private let now: @Sendable () -> Date
+    /// What `drain()` asks before it lets a photo binary go (F35). `nil` means nothing here can
+    /// call a connection metered, so every binary goes, which is how the queue behaved before F35.
+    /// Tests about other things and previews wire `nil`; `DataLayer.boot` never does, and
+    /// `OutboxWifiOnlyTests` fails if it stops passing one.
+    private let networkPath: (any NetworkPathSource)?
     private var observers: [UUID: @Sendable () async -> Void] = [:]
     private var isDraining = false
+    /// Set when a drain is asked for while one is running; the running drain passes again before
+    /// it returns. See `drain(photoUploadsAllowed:)`.
+    private var drainRequested = false
+    /// Callers waiting for the running drain to end (`sendBeforeAccountDeletion`). `drain` drops a
+    /// call that arrives while it runs, which is right for a trigger and wrong for a caller that
+    /// must know the queue was sent before it goes on.
+    private var idleWaiters: [CheckedContinuation<Void, Never>] = []
 
     /// One row's progress through a single drain.
     ///
@@ -175,16 +199,60 @@ public actor OutboxQueue {
     ///   - send: the sink that forwards it to a server. `DataLayer.boot` wires `APIOutboxSendSink`
     ///     over `RemoteAPI` here; `nil` leaves the drain behaving exactly as it did before the
     ///     split, which is what a test about the local half alone wants.
+    ///   - networkPath: whether the connection is unmetered, for the wi-fi toggle. See the
+    ///     property of the same name.
     public init(
         queue: DatabaseQueue,
         apply: any OutboxTransport,
         send: (any OutboxSendSink)? = nil,
+        networkPath: (any NetworkPathSource)? = nil,
         now: @escaping @Sendable () -> Date = { Date() }
     ) {
         self.queue = queue
         self.apply = apply
         self.send = send
+        self.networkPath = networkPath
         self.now = now
+    }
+
+    // MARK: - The wi-fi toggle (F35)
+
+    /// How the stored toggle reads. Absent means on: the toggle exists to respect a volunteer's
+    /// data plan (screen 17 §3), and an install that never touched it has not waived that.
+    public static func syncPhotosOnWifiOnly(fromStored stored: String?) -> Bool {
+        guard let stored else { return true }
+        return (stored as NSString).boolValue
+    }
+
+    /// Whether a drain may send photo binaries now: the connection is unmetered, or the volunteer
+    /// turned the toggle off.
+    ///
+    /// **The queue decides this, not its callers.** Before F35 the decision was a parameter on
+    /// `drain`, every caller left it at its default of `true`, and the one caller that resolved it
+    /// (`OutboxViewState.syncNow`) was never called. The toggle is read from `app_state` on every
+    /// drain, so it is right before screen 17 has ever been opened.
+    public func photoUploadsAllowedNow() async -> Bool {
+        guard let networkPath else { return true }
+        let stored = try? await queue.read { connection in
+            try CypressStore.appState(.syncPhotosOnWifiOnly, connection: connection)
+        }
+        // `try?` flattens, so a failed read is `nil` and reads as the default: on.
+        guard Self.syncPhotosOnWifiOnly(fromStored: stored) else { return true }
+        return await networkPath.isUnmetered()
+    }
+
+    /// Whether any item is saved with photographs still held back for wi-fi. The same predicate
+    /// as `OutboxSnapshot.awaitingWifiCount`, with the toggle taken as on.
+    public func hasPhotosAwaitingWifi() async throws -> Bool {
+        try await snapshot(syncPhotosOnWifiOnly: true).awaitingWifiCount > 0
+    }
+
+    /// Drains if a photograph is waiting for wi-fi. What `OutboxWifiWatcher` calls when the
+    /// connection becomes unmetered.
+    @discardableResult
+    public func drainIfPhotosAwaitWifi() async throws -> DrainReport? {
+        guard try await hasPhotosAwaitingWifi() else { return nil }
+        return try await drain()
     }
 
     // MARK: - TreeObservation
@@ -229,17 +297,206 @@ public actor OutboxQueue {
 
     // MARK: - Drain
 
-    /// Attempts every due item, oldest first.
+    /// Attempts every due item, oldest first, honoring the wi-fi toggle.
+    ///
+    /// **This is the drain every production caller makes.** It resolves the toggle against the
+    /// current connection itself (`photoUploadsAllowedNow()`), so no caller can forget to.
+    @discardableResult
+    public func drain() async throws -> DrainReport {
+        try await drain(photoUploadsAllowed: await photoUploadsAllowedNow())
+    }
+
+    /// Attempts every due item, oldest first, with the photo decision already made.
     ///
     /// - Parameter photoUploadsAllowed: the wifi-only toggle, already resolved against the current
     ///   connection type. It gates **photo binaries only**; the JSON item syncs on any connection
     ///   (BUILD-PLAN §4, screen 17's "Notes and numbers sync on any connection").
+    ///
+    /// **No default, on purpose.** It defaulted to `true`, and that default was F35: every caller
+    /// took it, and photographs went over cellular with the toggle on. Tests that pin one side of
+    /// the decision call this; shipping code calls `drain()`, and `OutboxWifiOnlyTests` fails if a
+    /// source file under `Cypress/` passes a literal here.
+    ///
+    /// **A drain asked for while one is running is not dropped (F35 review, S2).** It returns an
+    /// empty report at once, as it always has, and the running drain makes one more pass before it
+    /// returns, deciding about photographs afresh. Without that, wi-fi returning in the middle of a
+    /// drain was lost: the watcher's drain returned empty, and the running pass had already decided
+    /// to hold the photograph.
     @discardableResult
-    public func drain(photoUploadsAllowed: Bool = true) async throws -> DrainReport {
-        guard !isDraining else { return DrainReport() }
+    public func drain(photoUploadsAllowed: Bool) async throws -> DrainReport {
+        guard !isDraining else {
+            drainRequested = true
+            return DrainReport()
+        }
         isDraining = true
-        defer { isDraining = false }
+        defer { endDraining() }
 
+        let report = try await passReleasingMoves(photoUploadsAllowed: photoUploadsAllowed)
+        // A drain asked for while this one ran gets its pass now, deciding about photographs
+        // afresh (F35 review, S2). It releases pin moves the same way, because the add it sends
+        // may be the one a move was waiting for.
+        while drainRequested {
+            drainRequested = false
+            _ = try await passReleasingMoves(photoUploadsAllowed: await photoUploadsAllowedNow())
+        }
+        return report
+    }
+
+    /// Clears `isDraining` and wakes every caller waiting for it.
+    private func endDraining() {
+        isDraining = false
+        let waiters = idleWaiters
+        idleWaiters = []
+        for waiter in waiters { waiter.resume() }
+    }
+
+    /// Suspends until no drain is running. A woken caller checks again, because another caller
+    /// may have taken the queue first.
+    private func waitUntilIdle() async {
+        while isDraining {
+            await withCheckedContinuation { idleWaiters.append($0) }
+        }
+    }
+
+    // MARK: - Before a keep-records account deletion (ROADMAP 192)
+
+    /// How many drains `sendBeforeAccountDeletion` makes at most. A drain's first pass takes
+    /// `batchSize` rows, so this covers 200 due rows; a withdrawal a longer queue leaves unsent is
+    /// counted in the answer, not lost.
+    static let passesBeforeAccountDeletion = 8
+
+    /// Sends what this account queued, now, before `DELETE /me` under the keep-records door.
+    ///
+    /// **Why.** The keep-records door makes the account's published trees anonymous on the service,
+    /// and nobody may withdraw an anonymous tree (`withdrawCommunityTree` answers `ErrNotTheAdder`,
+    /// `forbidden`). A withdrawal still queued at the deletion would then be refused, its tree would
+    /// come back on this phone, and nobody could ever withdraw it (ROADMAP 192). Sent first, it
+    /// reaches the service while the account still owns the tree.
+    ///
+    /// **What it does.**
+    /// 0. Reads the account's unsent withdrawals first, and does nothing more when there are none.
+    /// 1. Makes every row naming the account that the service has not accepted due now
+    ///    (`OutboxStore.makeAccountRowsDueNow`), so a row in backoff is not skipped.
+    /// 2. Calls `drain()` up to `passesBeforeAccountDeletion` times, and stops at the first drain
+    ///    that finds nothing due. Before each, it waits for a running drain to end, so a row that
+    ///    drain holds `uploading` is settled first. **The wait matters**: `drain()` returns at once
+    ///    when another drain runs, so calling it without the wait would prove nothing was sent.
+    ///    `drain()` reads the wi-fi decision before it checks, so another drain can still start in
+    ///    between; an empty report while a drain runs is therefore not taken as "nothing due".
+    ///    It is the ordinary drain, so the wi-fi toggle is honored and a row that fails is settled
+    ///    as on any other day: a `conflict` on a withdrawal fails it and brings the tree back with
+    ///    the owner's sentence, and a failure that can be retried leaves it pending.
+    ///
+    /// - Returns: how many `tree_withdrawal` rows naming the account are still unsent and not
+    ///   failed (`OutboxStore.unsentTreeWithdrawals`). The caller does not delete the account while
+    ///   this is above zero. A row another drain holds `uploading` at the read counts as unsent,
+    ///   which errs toward not deleting.
+    public func sendBeforeAccountDeletion(userID: UUID) async throws -> Int {
+        // **Only when the account has a withdrawal to send** (the orchestrator's decision on the
+        // review of ROADMAP 192). With none, the deletion makes exactly the requests it made before
+        // this step existed: no drain, and no row made due. A drain sends every identity's due rows
+        // and, on wi-fi, every owed photograph, with no request timeout, so running it for nothing
+        // could hold the sheet for minutes on a connection that reaches nothing. A withdrawal a
+        // running drain holds `uploading` counts here, so that case still waits for it.
+        let queued = try await queue.read { connection in
+            try store.unsentTreeWithdrawals(userID: userID, connection: connection)
+        }
+        guard queued > 0 else { return 0 }
+
+        try await queue.write { connection in
+            _ = try store.makeAccountRowsDueNow(userID: userID, connection: connection)
+        }
+        for _ in 0..<Self.passesBeforeAccountDeletion {
+            await waitUntilIdle()
+            let report = try await drain()
+            // An empty report while another drain runs may mean this call was the one turned away
+            // (`drain()` reads the wi-fi decision before it checks), so wait for that drain and
+            // ask again rather than stopping.
+            if report.attempted == 0 && !isDraining { break }
+        }
+        return try await queue.read { connection in
+            try store.unsentTreeWithdrawals(userID: userID, connection: connection)
+        }
+    }
+
+    /// One pass, and up to two more if it released a pin move.
+    ///
+    /// A pin move or species claim held behind its tree's add (`OutboxStore.dueItems`) becomes due
+    /// the moment a pass settles that add. One more pass sends it now, rather than at whatever next asks for a
+    /// drain. Bounded: one add releases its moves in one pass, and a pass that settled nothing
+    /// released nothing. "Settled" is sent or synced, because with no send sink wired an add
+    /// releases its move by reaching `done`, which counts as synced.
+    private func passReleasingMoves(photoUploadsAllowed: Bool) async throws -> DrainReport {
+        var report = try await drainPass(photoUploadsAllowed: photoUploadsAllowed)
+        var settled = report.sent + report.synced
+        for _ in 0..<2 {
+            guard settled > 0,
+                  try await hasDueReleasableRow(photoUploadsAllowed: photoUploadsAllowed)
+            else { break }
+            let next = try await drainPass(photoUploadsAllowed: photoUploadsAllowed)
+            report.absorb(next)
+            settled = next.sent + next.synced
+        }
+        return report
+    }
+
+    /// Whether a row of a kind that waits for its tree's add (`OutboxItem.Kind.waitsForItsTreeAdd`)
+    /// is due right now, which after a pass that sent something means a row its tree's add was
+    /// holding has been released.
+    ///
+    /// It uses the same filters and limit as the next pass (`excludingHeldForWifi`), so on
+    /// cellular a batch full of rows held for wi-fi cannot hide a due move.
+    private func hasDueReleasableRow(photoUploadsAllowed: Bool) async throws -> Bool {
+        let at = now()
+        return try await queue.read { connection in
+            try store.dueItems(
+                now: at,
+                limit: Self.batchSize,
+                excludingHeldForWifi: !photoUploadsAllowed,
+                connection: connection
+            )
+                .contains { $0.item.kind.waitsForItsTreeAdd }
+        }
+    }
+
+    /// Leaves the time a row spent held for wi-fi out of its 48 h window, in the database and in
+    /// the record this pass works from.
+    ///
+    /// **The owner's rule (2026-11-13): a photograph held only by the wi-fi toggle does not
+    /// expire.** The 48 h cap measures time spent *trying*; a hold is the volunteer's own choice.
+    /// A row's reason says it is held (`OutboxFailureReason.isAwaitingWifi`), and its `updated_at`
+    /// is when the hold began, because the hold's `reschedule` stamped it. So the held time is
+    /// `startedAt - updated_at`, and the window moves forward by exactly that much.
+    ///
+    /// **Why here, and not by restarting the window at each hold.** A restart only happens if a
+    /// drain re-holds the row. Saved on cellular and next drained at home on wi-fi two days later,
+    /// the row was never re-held, and its first transient failure then expired it against the
+    /// window from the save. And a restart forgives too much: a row whose send keeps failing,
+    /// re-held on every cellular drain, would restart its window each time and never expire.
+    /// Crediting only the held stretch answers both (F35 review).
+    ///
+    /// `updated_at` is read from the record, which `dueItems` returns before `markUploading`
+    /// overwrites the column.
+    private static func leavingOutWifiHold(
+        _ record: OutboxStore.Record,
+        at startedAt: Date,
+        store: OutboxStore,
+        connection: SQLiteConnection
+    ) throws -> OutboxStore.Record {
+        // The same formula every other write uses (`OutboxStore.creditHold`).
+        let window = OutboxStore.window(
+            record.windowStartedAt,
+            leavingOutHoldSince: record.item.updatedAt,
+            lastError: record.item.lastError,
+            now: startedAt
+        )
+        guard window != record.windowStartedAt else { return record }
+        try store.setWindowStart(record.id, to: window, connection: connection)
+        return record.withWindowStarted(at: window)
+    }
+
+    /// One pass over the due items. Only `passReleasingMoves` calls it, under `isDraining`.
+    private func drainPass(photoUploadsAllowed: Bool) async throws -> DrainReport {
         var report = DrainReport()
         let startedAt = now()
 
@@ -247,7 +504,18 @@ public actor OutboxQueue {
         // what keeps "nothing disappears silently" true across a crash.
         let due: [OutboxStore.Record] = try await queue.write { connection in
             _ = try store.recoverInterrupted(at: startedAt, connection: connection)
-            let records = try store.dueItems(now: startedAt, limit: Self.batchSize, connection: connection)
+            // Rows still held behind their tree's add bank the time they have waited, before the
+            // add can send in this pass and release them (ROADMAP 116).
+            try store.creditHeldBehindAdd(at: startedAt, connection: connection)
+            // On a pass that may not send photographs, rows held for wi-fi have nothing to do, and
+            // taking them would let them fill the batch ahead of newer notes (`dueItems`).
+            let records = try store.dueItems(
+                now: startedAt,
+                limit: Self.batchSize,
+                excludingHeldForWifi: !photoUploadsAllowed,
+                connection: connection
+            )
+                .map { try Self.leavingOutWifiHold($0, at: startedAt, store: store, connection: connection) }
             try store.markUploading(records.map(\.id), at: startedAt, connection: connection)
             return records
         }
@@ -258,6 +526,9 @@ public actor OutboxQueue {
         // request on it.
         var live: [OutboxStore.Record] = []
         for record in due {
+            // The window here already leaves out any time the row spent held for wi-fi
+            // (`leavingOutWifiHold`), so a photograph held on a two-day trip does not expire, and
+            // one that is also failing still does once it has spent 48 h actually trying (F35).
             if OutboxRetryPolicy.hasExpired(createdAt: record.windowStartedAt, now: startedAt) {
                 try await settle(
                     record,
@@ -508,9 +779,13 @@ public actor OutboxQueue {
                         // than left with a photograph that silently evaporated: screen 17 draws
                         // `retry`, carrying the reason this binary was refused. Tapping retry
                         // settles the item, because by then there is nothing left owed.
+                        //
+                        // **And it is recorded as refused, not only deleted.** A binary with no
+                        // queue row reads as sent (`ContributionStore.sentPhotoIDs`), and the
+                        // service keeps no copy of this one. See `OutboxStore.recordRefusedPhoto`.
                         if let code, !code.retryable {
                             try await queue.write { connection in
-                                try store.completePhoto(id: photo.id, connection: connection)
+                                try store.recordRefusedPhoto(photo, code: code, connection: connection)
                             }
                             // **Recorded in phase D, not here.** `markRemotelySent` clears
                             // `last_error` and `last_error_code` — correctly, since the note did go
@@ -560,6 +835,14 @@ public actor OutboxQueue {
                 }
                 try await queue.write { connection in
                     try store.markRemotelySent(record.id, at: settledAt, connection: connection)
+                    // A withdrawal the service took. After a first send this changes nothing: the
+                    // tree left this phone when the person withdrew it. After a refusal put the tree
+                    // back and the person retried, this is what takes it off again.
+                    if let treeID = Self.withdrawnTreeID(record) {
+                        _ = try CommunityTreeStore().withdrawAgain(
+                            treeID: treeID, outboxID: record.id, at: settledAt, connection: connection
+                        )
+                    }
                 }
                 report.sent += 1
             }
@@ -568,9 +851,16 @@ public actor OutboxQueue {
             // what is waiting is the photograph.
             if entry.photosAwaitingWifi {
                 try await queue.write { connection in
+                    // The count is every binary still owed, staged or applied and unsent: a
+                    // photograph applied on wi-fi whose send then waited has no staged file, and
+                    // counting staged files alone wrote "0 photos are waiting" (F35 review, S1).
+                    //
+                    // The hold starts here: `reschedule` stamps `updated_at`, and the next pass
+                    // leaves the time from then until it starts out of the 48 h window
+                    // (`leavingOutWifiHold`).
                     try store.reschedule(
                         record.id,
-                        reason: OutboxFailureReason.awaitingWifi(photoCount: record.item.photos.count),
+                        reason: OutboxFailureReason.awaitingWifi(photoCount: record.owedPhotoCount),
                         at: settledAt,
                         connection: connection
                     )
@@ -627,7 +917,13 @@ public actor OutboxQueue {
             // `markDoneIfComplete` is a conditional `UPDATE`, so the count follows what it actually
             // matched rather than the fact that it ran.
             let settled = try await queue.write { connection in
-                try store.markDoneIfComplete(
+                // With no send sink, a binary staged already applied (the add photo,
+                // `OutboxStore.stageAppliedPhoto`) has nothing more owed, exactly as
+                // `settleAppliedPhoto` decides for a binary this drain applied.
+                if send == nil {
+                    try store.dropAppliedPhotosWithNoSink(for: record.id, connection: connection)
+                }
+                return try store.markDoneIfComplete(
                     record.id,
                     requiringRemoteSend: send != nil,
                     at: settledAt,
@@ -662,7 +958,8 @@ public actor OutboxQueue {
         return changed
     }
 
-    /// Sweeps `done` receipts older than `completedRetention`.
+    /// Sweeps `done` receipts older than `completedRetention`. `DataLayer.boot` calls it once per
+    /// launch (ROADMAP 184); nothing else in the app does.
     @discardableResult
     public func pruneCompleted() async throws -> Int {
         let removed = try await queue.write { connection in
@@ -713,9 +1010,9 @@ public actor OutboxQueue {
 
     /// Screen 17's whole model, in one read.
     ///
-    /// The queue does not own the wi-fi preference — `OutboxViewState` does, and the store behind
-    /// it — so the toggle arrives as an argument. It has no default here for the reason
-    /// `OutboxSnapshot.init` gives (ERRATA E38).
+    /// The toggle arrives as an argument because screen 17 draws the toggle as it stands on screen,
+    /// which can be a moment ahead of `app_state` while the write lands. `drain()` reads the stored
+    /// value itself. It has no default here for the reason `OutboxSnapshot.init` gives (ERRATA E38).
     public func snapshot(
         treeNames: [UUID: String] = [:],
         syncPhotosOnWifiOnly: Bool
@@ -760,11 +1057,18 @@ public actor OutboxQueue {
             ? date.addingTimeInterval(OutboxRetryPolicy.delay(afterFailures: failCount))
             : nil
 
+        // The one kind whose refusal has its own sentence (the owner's answer of 2026-11-16): the
+        // service refuses a withdrawal with `conflict` when somebody else has visited or
+        // photographed the tree, and the tree comes back (`settle`).
+        let reason = record.item.kind == .treeWithdrawal && state == .failed && apiError == .conflict
+            ? OutboxFailureReason.treeStaysOnTheMap
+            : OutboxFailureReason.describe(error: error, failCount: failCount, state: state)
+
         try await settle(
             record,
             state: state,
             failCount: failCount,
-            reason: OutboxFailureReason.describe(error: error, failCount: failCount, state: state),
+            reason: reason,
             code: apiError,
             nextAttemptAt: nextAttempt,
             at: date
@@ -793,7 +1097,28 @@ public actor OutboxQueue {
                 at: date,
                 connection: connection
             )
+            // **A withdrawal that will not go through puts the tree back**, in the same write as the
+            // failure. The service still shows the tree to everyone, and without this step this
+            // phone alone would hide it for good: the phone's own row wins over the community
+            // cache, withdrawn or not (`CommunityLayer`). Every terminal failure counts, not only
+            // `conflict`: a `forbidden`, or 48 hours without a connection, also leaves the tree
+            // on the service.
+            if state == .failed, let treeID = Self.withdrawnTreeID(record) {
+                _ = try CommunityTreeStore().restoreAfterRefusedWithdrawal(
+                    treeID: treeID, outboxID: record.id, at: date, connection: connection
+                )
+            }
         }
+    }
+
+    /// The tree a queued `tree_withdrawal` names, or nil for every other kind and for a payload
+    /// that does not decode.
+    private static func withdrawnTreeID(_ record: OutboxStore.Record) -> UUID? {
+        guard record.item.kind == .treeWithdrawal,
+              case let .treeWithdrawal(withdrawal)? =
+                try? OutboxPayload.decode(kind: record.item.kind, from: record.item.payload)
+        else { return nil }
+        return withdrawal.treeID
     }
 }
 
@@ -850,7 +1175,9 @@ public struct APIOutboxTransport: OutboxTransport {
         // `photos.width`/`height` was NULL, so `Photo.resolution` was 0 for every row and A3's
         // "ties broken by resolution" never ran — on a series where several photos share a capture
         // date, which is the only case the tie-break exists for (ERRATA E41).
-        let size = PhotoBinary.pixelSize(atPath: photo.path)
+        // Resolved, because a photo queued before an app update holds the old container's path
+        // (report F36). `uploadPhoto` resolves its own copy of the same string.
+        let size = PhotoBinary.pixelSize(atPath: api.resolvedPhotoPath(photo.path))
 
         // `publicCoordinate` is deliberately not set. See ERRATA E42: the tree's own pin is already
         // exact and public, so a photo location adds nothing a public surface needs and does add a
@@ -869,7 +1196,11 @@ public struct APIOutboxTransport: OutboxTransport {
                 localPath: photo.path,
                 capturedAt: item.createdAt,
                 width: size?.width,
-                height: size?.height
+                height: size?.height,
+                // The same key the send will carry (`APIOutboxSendSink` below), so the phone's
+                // `photos.id` is the id the service echoes back to this photograph's contributor —
+                // the link that keeps the contributor's own profile from drawing it twice (F30).
+                idempotencyKey: photo.id
             )
         )
         try await api.uploadPhoto(at: photo.path, ticket: ticket)
@@ -901,9 +1232,15 @@ public struct APIOutboxTransport: OutboxTransport {
 /// holds the invariant; `DataLayerWiringTests` is what holds this wiring.
 public struct APIOutboxSendSink: OutboxSendSink {
     private let remote: RemoteAPI
+    /// This container's Application Support folder, as it is now. `containerPath` is an absolute
+    /// path stored when the apply ran; an app update can move the container before the send runs
+    /// (report F36; see `StoredPhotoPath`). Injected so a test can stand in a container of its own.
+    private let applicationSupportDirectory: URL
 
-    public init(remote: RemoteAPI) {
+    public init(remote: RemoteAPI, applicationSupportDirectory: URL? = nil) {
         self.remote = remote
+        self.applicationSupportDirectory = applicationSupportDirectory
+            ?? FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
     }
 
     public func sync(_ items: [OutboxItem]) async throws -> [SyncResult] {
@@ -926,12 +1263,50 @@ public struct APIOutboxSendSink: OutboxSendSink {
     /// (server migration 003). Without it this method could not be retried at all, and every
     /// failure would be terminal for the picture.
     public func uploadPhoto(_ photo: OutboxStore.PhotoRow, for item: OutboxItem) async throws {
-        guard let containerPath = photo.containerPath else {
+        guard let storedPath = photo.containerPath else {
             // `sendablePhotos` already refuses a row with no container copy, so this is unreachable
             // through the drain. Written closed anyway: the alternative reading of "no bytes" is to
             // begin an upload for a photograph that does not exist, which reserves a row the 72 h
             // sweep would then have to collect.
             throw APIError.notFound
+        }
+        // Resolved before both reads below: a photo held for the send (offline, or waiting for
+        // Wi-Fi) across an app update holds the old container's path, and the file moved with the
+        // container (report F36). Without this the send fails on every attempt.
+        var containerPath = StoredPhotoPath.resolve(
+            storedPath, applicationSupport: applicationSupportDirectory
+        ).path
+        // ── A photograph that is not a JPEG goes as a JPEG copy ──────────────────────────────────
+        //
+        // A photograph picked from the library keeps its own container (HEIC, PNG), and the service
+        // names every photograph `photos/<id>.jpg`. The copy is encoded fresh, so it carries only the
+        // pixels and the orientation, and the check below still runs on it. The person's own file
+        // stays as it is. An image ImageIO reads and cannot decode is refused for good
+        // (`validationFailed`), the same end as a file that cannot be cleaned. A missing file is not
+        // an image here and goes on to fail as it did before.
+        var jpegCopy: URL?
+        defer { if let jpegCopy { try? FileManager.default.removeItem(at: jpegCopy) } }
+        if PhotoBinary.isReadableImage(atPath: containerPath), !PhotoBinary.isJPEG(atPath: containerPath) {
+            let copy = URL(fileURLWithPath: NSTemporaryDirectory())
+                .appendingPathComponent("cypress-send-\(UUID().uuidString).jpg")
+            jpegCopy = copy
+            try PhotoBinary.writeJPEGCopy(from: URL(fileURLWithPath: containerPath), to: copy)
+            containerPath = copy.path
+        }
+        // ── No file leaves with its location or its time in it ─────────────────────────────────
+        //
+        // Every ingest path strips already, and this is the last point before the bytes go. It is
+        // here because two kinds of file reach it that no ingest of this build cleaned: the
+        // photograph taken on the Add this tree screen by a build earlier than ERRATA E148's fix,
+        // and a photograph `LocalAPI.uploadPhoto` moved across unstripped because ImageIO could not
+        // rewrite it. A clean file costs one header read. A file that still says where or when after
+        // the repair is refused for good (`validationFailed` is not retryable), and the drain records
+        // it as refused (`OutboxStore.recordRefusedPhoto`) rather than publishing it.
+        if PhotoBinary.carriesIdentifyingMetadata(atPath: containerPath) {
+            try? PhotoBinary.stripMetadataInPlace(atPath: containerPath)
+            guard !PhotoBinary.carriesIdentifyingMetadata(atPath: containerPath) else {
+                throw APIError.validationFailed
+            }
         }
         let payload = try OutboxPayload.decode(kind: item.kind, from: item.payload)
         let size = PhotoBinary.pixelSize(atPath: containerPath)
@@ -945,7 +1320,10 @@ public struct APIOutboxSendSink: OutboxSendSink {
                 }(),
                 shotType: photo.shotType,
                 localPath: containerPath,
-                capturedAt: item.createdAt,
+                // The photograph's own time. The queue row's time stood in for it while the two
+                // were seconds apart; a photograph `CommunityTreeBackfill` sends was taken months
+                // before its row was written. Others are served its date only (decision 14a).
+                capturedAt: photo.capturedAt ?? item.createdAt,
                 width: size?.width,
                 height: size?.height,
                 // Deliberately no `publicCoordinate`, for the reason ERRATA E42 gives on the apply

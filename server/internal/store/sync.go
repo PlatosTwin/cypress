@@ -41,9 +41,9 @@ type Mutation struct {
 	//
 	// Nine of them are recorded and not materialized, which is the contract five of the six older
 	// kinds already have: the `contributions` row *is* the record. A tree cannot be, because a tree
-	// has to be **findable** — `TreesWithin` is the 10 m proximity dedupe, it reads
-	// `community_trees`, and a tree that existed only as a contribution is a tree the next
-	// contributor standing under it would be invited to add again.
+	// has to be **findable** — the community tile, the tree profile and the public page all read
+	// `community_trees`, and a tree that existed only as a contribution is a tree nobody else could
+	// see, and the next contributor standing under it would be invited to add it again.
 	//
 	// Eight of those nine are recorded because this service *could not* materialize them; the ninth,
 	// `photo_withdrawal`, now materializes through `WithdrawnPhotoID` below. The difference matters
@@ -69,6 +69,59 @@ type Mutation struct {
 	// It is a pointer rather than a bare id so that "this kind carries no photograph" stays
 	// unrepresentable-by-accident, the same way `CommunityTree` does it.
 	WithdrawnPhotoID *uuid.UUID
+	// WithdrawnMeasurementID is set only for kind `measurement_withdrawal`: the reading the
+	// contributor took back on their phone, which this service tombstones so it stops being counted
+	// for everybody — including that person's *other* devices, which is the reason the grove and the
+	// journal are Class R reads rather than local ones.
+	//
+	// It travels inside the mutation for the reason `WithdrawnPhotoID` does, and the window it
+	// closes is the same one: a call beside `Apply` could record the withdrawal, fail, and leave the
+	// client's retry to be deduped away against a reading that is still being counted.
+	WithdrawnMeasurementID *uuid.UUID
+	// WithdrawnDisputeID is set only for kind `data_dispute_withdrawal`: the dispute the person is
+	// taking back, carried here so the **ownership** question is asked where the rows are.
+	//
+	// **It is the one of these four that materializes nothing**, and the difference is worth stating
+	// beside the three that do. A withdrawn photograph is tombstoned, a withdrawn reading is
+	// tombstoned; a withdrawn dispute has nothing to tombstone, because no dispute table exists here
+	// and the `contributions` row is the whole record (R79's ruling, `syncKinds` in
+	// `internal/api/sync.go`). So `disputeIsThisIdentitys` only ever refuses or does nothing — the
+	// value travels inside the mutation for a second reason: the lookup and the insert then share
+	// one transaction and one snapshot, rather than deciding ownership from a read taken before it.
+	WithdrawnDisputeID *uuid.UUID
+	// RecordedMeasurementID is `TreeMeasurement.id` for kind `measurement`, read for exactly one
+	// purpose: so a reading that arrives **after** its own withdrawal is born tombstoned.
+	// `measurementWasWithdrawn` states why that order is reachable rather than theoretical.
+	//
+	// Nil when the payload carries no `id`, and that is deliberately not a refusal. `measurement`
+	// has been accepted since 001 with no requirement on the shape of its body, and turning a
+	// missing field into a non-retryable `validation_failed` would fail queues over items this
+	// service accepts today. A reading with no id cannot be matched to a withdrawal — which is the
+	// state every reading was in before this round.
+	RecordedMeasurementID *uuid.UUID
+	// Actor is who performed the act, for `community_tree_events` and the location chain: the owner,
+	// plus the session's bound device for a signed-in act. Zero means "the owner" (`actorOr`).
+	Actor Actor
+	// LocationCorrection is set only for kind `location_correction`: the adder moving the pin
+	// (decision 5). It materializes into `community_tree_locations` in this transaction, and it is
+	// the one community kind that can be refused *after* the payload has been read — the answers
+	// are `applyLocationCorrection`'s.
+	LocationCorrection *LocationCorrection
+	// SpeciesStatement is set for `species_claim` and `species_correction` when the payload names the
+	// item's own tree and a species. It materializes for the adder, and since migration 009 for a
+	// sharing account's naming of an unnamed tree and for that namer's own correction. It never
+	// refuses — see `materializeSpecies`.
+	SpeciesStatement *SpeciesStatement
+	// SpeciesReport is set for `wrong_species_report` when the payload names the item's own tree. It
+	// counts only from a sharing account that is not the adder (`recordSpeciesReport`), and never
+	// refuses.
+	SpeciesReport *SpeciesReport
+	// SpeciesKeep is set for `species_review_dismissal` when the payload names the item's own tree.
+	// It clears the reported state only for the adder (`keepSpecies`), and never refuses.
+	SpeciesKeep *SpeciesKeep
+	// WithdrawnTreeID is set only for kind `tree_withdrawal`: the adder withdrawing a tree for
+	// everyone (decision 8). See `withdrawCommunityTree`.
+	WithdrawnTreeID *uuid.UUID
 }
 
 // ApplyOutcome is what happened to one mutation.
@@ -137,8 +190,30 @@ func (s *Store) Apply(ctx context.Context, mutation Mutation, owner Owner) (Appl
 		if mutation.Kind == "favorite_toggle" {
 			return upsertFavorite(ctx, tx, mutation, owner, now)
 		}
+		act := newTreeAct{
+			Owner: owner, Actor: mutation.Actor, ClientUUID: &mutation.ClientUUID,
+			OccurredAt: mutation.OccurredAt,
+		}
 		if mutation.CommunityTree != nil {
-			return insertCommunityTree(ctx, tx, *mutation.CommunityTree, owner, now)
+			_, err := insertCommunityTree(ctx, tx, *mutation.CommunityTree, act, now)
+			return err
+		}
+		// The three community-tree acts of 007. Each refusal returns an error, which rolls the
+		// contribution back with it — a refused act leaves no record claiming it happened.
+		if mutation.LocationCorrection != nil {
+			return applyLocationCorrection(ctx, tx, *mutation.LocationCorrection, act, now)
+		}
+		if mutation.SpeciesStatement != nil {
+			return materializeSpecies(ctx, tx, mutation.Kind, *mutation.SpeciesStatement, act, now)
+		}
+		if mutation.SpeciesReport != nil {
+			return recordSpeciesReport(ctx, tx, *mutation.SpeciesReport, act, now)
+		}
+		if mutation.SpeciesKeep != nil {
+			return keepSpecies(ctx, tx, *mutation.SpeciesKeep, act, now)
+		}
+		if mutation.WithdrawnTreeID != nil {
+			return withdrawCommunityTree(ctx, tx, *mutation.WithdrawnTreeID, act, now)
 		}
 		// **After the dedupe, deliberately.** A replayed withdrawal returns `Duplicate` above and
 		// never reaches here, which is right: the first pass tombstoned the photograph, and a second
@@ -147,6 +222,37 @@ func (s *Store) Apply(ctx context.Context, mutation Mutation, owner Owner) (Appl
 		// each other.
 		if mutation.WithdrawnPhotoID != nil {
 			return withdrawPhoto(ctx, tx, *mutation.WithdrawnPhotoID, owner, now)
+		}
+		// The same argument one table over, and the same placement after the dedupe:
+		// `withdrawMeasurement` treats an already-tombstoned reading as a success, so the two guards
+		// agree rather than depend on each other.
+		if mutation.WithdrawnMeasurementID != nil {
+			return withdrawMeasurement(ctx, tx, *mutation.WithdrawnMeasurementID, owner, now)
+		}
+		// A refusal and nothing else: there is no dispute row to tombstone. Returning an error here
+		// rolls the transaction back, so a withdrawal of somebody else's dispute leaves no
+		// `contributions` row behind — which is the point, since that row *is* the record.
+		//
+		// After the dedupe for the same reason the two above are: a replay of a withdrawal this
+		// service already accepted answers `duplicate` and never reaches here, and the first pass is
+		// where the ownership question was asked.
+		if mutation.WithdrawnDisputeID != nil {
+			return disputeIsThisIdentitys(ctx, tx, *mutation.WithdrawnDisputeID, owner)
+		}
+		// ── The reading that arrives after its own withdrawal ───────────────────────────────────
+		//
+		// The row has just been inserted, live. If this identity already withdrew this reading, the
+		// insert has resurrected it, and the same transaction takes it back out — so nothing ever
+		// reads it. The withdrawal that arms this is an ordinary `contributions` row, which is why
+		// no new table is involved; see `measurementWasWithdrawn`.
+		if mutation.RecordedMeasurementID != nil {
+			withdrawn, err := measurementWasWithdrawn(ctx, tx, *mutation.RecordedMeasurementID, owner)
+			if err != nil {
+				return err
+			}
+			if withdrawn {
+				return tombstoneOnArrival(ctx, tx, mutation.ClientUUID, now)
+			}
 		}
 		return nil
 	})
@@ -182,35 +288,6 @@ func upsertFavorite(ctx context.Context, tx pgx.Tx, mutation Mutation, owner Own
 	return err
 }
 
-// insertCommunityTree materializes an `add_tree` item, in the transaction that recorded it.
-//
-// `ON CONFLICT (id) DO NOTHING` and no reported outcome: the contribution insert above has already
-// decided whether this item is new, on the key that decides it everywhere else. A tree that is
-// already here is one this device sent before under a different `client_uuid` — the same act queued
-// twice — and re-inserting it must not fail the item, but must not overwrite it either. Whoever got
-// here first is the row.
-//
-// The statement is `AddTree`'s, run on this transaction's connection rather than the pool's. It is
-// written out instead of calling that method because `AddTree` takes a `*Store` and a context and
-// would open its own connection, which is exactly the second transaction this is here to avoid.
-func insertCommunityTree(
-	ctx context.Context,
-	tx pgx.Tx,
-	tree NewCommunityTree,
-	owner Owner,
-	now time.Time,
-) error {
-	_, err := tx.Exec(ctx, `
-		INSERT INTO community_trees
-		    (id, lat, lon, address, species_id, placement, land_context,
-		     user_id, device_id, created_at, updated_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $10)
-		ON CONFLICT (id) DO NOTHING
-	`, tree.ID, tree.Lat, tree.Lon, tree.Address, tree.SpeciesID, tree.Placement, tree.LandContext,
-		owner.UserID, owner.DeviceID, now)
-	return err
-}
-
 // ── Deletion ───────────────────────────────────────────────────────────────────────────────────
 
 // DeletionChoice is `AccountDeletionChoice`, whose two raw values these are.
@@ -237,6 +314,10 @@ type DeletionReport struct {
 	Contributions int
 	Photos        int
 	Tombstones    int
+	// TreesAnonymized and TreesDeleted are the ids of the community trees the account added, by
+	// what this deletion did to each (decisions 6 and 12); see `deleteAccountTrees`. Never nil.
+	TreesAnonymized []uuid.UUID
+	TreesDeleted    []uuid.UUID
 }
 
 // UnrevokedAppleToken is a token whose revocation has not yet succeeded.
@@ -267,7 +348,7 @@ func (s *Store) DeleteAccount(
 	pendingKeys []uuid.UUID,
 	unrevoked UnrevokedAppleToken,
 ) (DeletionReport, error) {
-	var report DeletionReport
+	report := DeletionReport{TreesAnonymized: []uuid.UUID{}, TreesDeleted: []uuid.UUID{}}
 	err := s.Tx(ctx, func(tx pgx.Tx) error {
 		now := s.now()
 
@@ -362,6 +443,16 @@ func (s *Store) DeleteAccount(
 			return errors.New("unknown deletion choice")
 		}
 		report.Contributions = int(tag.RowsAffected())
+
+		// The trees the account added, and its name off the location chain and the audit log.
+		// After the contributions and photographs above, so the erase door's "anybody else built on
+		// it" sees only other people's work; before the sessions, devices and user rows below, for
+		// the two reasons `deleteAccountTrees` gives.
+		anonymizedTrees, deletedTrees, err := deleteAccountTrees(ctx, tx, userID, choice, now)
+		if err != nil {
+			return err
+		}
+		report.TreesAnonymized, report.TreesDeleted = anonymizedTrees, deletedTrees
 
 		// Sessions and the device link go with the account. `ON DELETE CASCADE` would take the
 		// sessions anyway; it is stated because the row order in a deletion should not depend on a

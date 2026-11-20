@@ -3,9 +3,10 @@
 //  Cypress — Features/You
 //
 //  The You tab's account block: whether there is one, the way out of it, and the way to delete it
-//  (ERRATA E131). Presentation only — a finished state and three callbacks, no `LocalAPI` and no
-//  `async` — so every state photographs and previews with static data, the split
-//  `ModerationReviewList` and `AccountAskScreen` use.
+//  (ERRATA E131), and, for an account that declined the license at sign-in, a way to agree later
+//  (the owner's decision of 2026-11-15). Presentation only — a finished state and four callbacks,
+//  no `LocalAPI` and no `async` — so every state photographs and previews with static data, the
+//  split `ModerationReviewList` and `AccountAskScreen` use.
 //
 //  ── The one rule this block is most likely to break, and the round it broke in ─────────────
 //  ARCHITECTURE §5.4 and DECISIONS constraint 3: the app never says it did a thing it did not do.
@@ -48,11 +49,25 @@ struct AccountSection: View {
     /// the button that will retry it — see `AccountDeletionSheet.hasFailed`.
     var deletionFailed = false
 
+    /// Whether the last attempt to agree to the license failed. Drawn as one line under the
+    /// "Share my tree records" row, which stays so the person can tap it again.
+    var licenseAcceptanceFailed = false
+
+    /// How many attempts to agree have failed. When it rises, the failure line is announced to
+    /// VoiceOver. See `AccountModel.licenseAcceptanceFailures` for why it is a count and not the flag.
+    var licenseAcceptanceFailures = 0
+
     var onSignIn: () -> Void = {}
     var onSignOut: () -> Void = {}
     /// Reached **only** from inside `AccountDeletionSheet`, and always carrying the door the person
     /// chose there. See `AccountModel.deleteAccount(_:)`.
     var onDelete: (AccountDeletionChoice) -> Void = { _ in }
+    /// Reached **only** from the confirmation's "Share" button. See `AccountModel.acceptLicense()`.
+    var onAcceptLicense: () -> Void = {}
+
+    /// Whether the "Share my tree records?" confirmation is up. Local to the view, for
+    /// `isConfirmingDeletion`'s reason.
+    @State private var isConfirmingShare = false
 
     /// Whether the deletion sheet is up. Local to the view, because a confirmation that survived the
     /// screen it was raised on would be a pending destructive action nobody can see.
@@ -133,7 +148,22 @@ struct AccountSection: View {
         // `hasFailed` true beside the button that retries it.
         // ══════════════════════════════════════════════════════════════════════════════════════
         .onChange(of: isSignedIn) { _, stillSignedIn in
-            if !stillSignedIn { isConfirmingDeletion = false }
+            // The share confirmation goes too: it asks about an account that is no longer here.
+            if !stillSignedIn {
+                isConfirmingDeletion = false
+                isConfirmingShare = false
+            }
+        }
+        // An alert, the presentation this app uses for every confirmation since ROADMAP 77 (iOS 26
+        // drew a `confirmationDialog` without its cancel button). See `ShareRecordsConfirmation`.
+        .modifier(ShareRecordsConfirmation(isPresented: $isConfirmingShare, onShare: onAcceptLicense))
+        // The failure line appears under the row while a VoiceOver reader's focus is elsewhere (the
+        // alert they answered has just gone), and nothing moves it there. An announcement reports it
+        // without stealing focus, the reason `VisitPinAdjustView` and `MapHomeView` give.
+        .onChange(of: licenseAcceptanceFailures) { previous, current in
+            if let sentence = AccountCopy.shareRecordsAnnouncement(previousFailures: previous, failures: current) {
+                AccessibilityNotification.Announcement(sentence).post()
+            }
         }
     }
 
@@ -141,6 +171,12 @@ struct AccountSection: View {
 
     private var signedIn: some View {
         VStack(alignment: .leading, spacing: CypressSpacing.gapRows) {
+            // Directly under the storage card, whose last line is "You did not agree…", so the way
+            // to agree sits under the sentence it changes. It shows exactly when that line does.
+            if AccountCopy.offersLicenseAcceptance(isSignedIn: isSignedIn, link: link) {
+                shareRecords
+            }
+
             IconTextRow(
                 accent: .water,
                 title: AccountCopy.signOutTitle,
@@ -162,6 +198,31 @@ struct AccountSection: View {
                     isConfirmingDeletion = true
                 }
             )
+        }
+    }
+
+    /// The row that lets a person who declined the license agree to it, and the line that says the
+    /// last try failed. The row does not agree: it opens the confirmation, and "Share" there does.
+    ///
+    /// While a request is in flight the row takes no taps (`isBusy`), the same rule the two rows
+    /// below follow, so a second tap cannot start a second request. No new words for that state.
+    private var shareRecords: some View {
+        VStack(alignment: .leading, spacing: CypressSpacing.gapVitality) {
+            IconTextRow(
+                accent: .record,
+                title: AccountCopy.shareRecordsTitle,
+                subtitle: AccountCopy.shareRecordsSubtitle,
+                action: isBusy ? nil : { isConfirmingShare = true }
+            )
+
+            if licenseAcceptanceFailed {
+                Text(AccountCopy.shareRecordsFailed)
+                    .font(CypressFont.body12)
+                    .foregroundStyle(CypressColor.textMuted)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, CypressSpacing.Component.iconRowPaddingH)
+            }
         }
     }
 
@@ -322,5 +383,78 @@ enum AccountCopy {
         return link.acceptsLicense
             ? "You agreed to share your tree records under the open database license."
             : "You did not agree to share your tree records under the open database license."
+    }
+
+    // MARK: Agreeing later (the owner's decision of 2026-11-15)
+
+    /// Whether to draw the "Share my tree records" row: signed in, and the stored answer is
+    /// "declined". That is exactly when `licenseLine` draws "You did not agree…".
+    ///
+    /// Not for an account that agreed, not when signed out, and not when the phone does not know the
+    /// answer (`provider == nil`: a restore from a stored session that carried no answer, until the
+    /// first refresh brings it). A function a test can read, for
+    /// `storageCardTitle`'s reason.
+    static func offersLicenseAcceptance(isSignedIn: Bool, link: AccountLinkRecord?) -> Bool {
+        guard isSignedIn, let link, link.provider != nil else { return false }
+        return !link.acceptsLicense
+    }
+
+    // The owner's exact strings. The second line has no period, as approved.
+    static let shareRecordsTitle = "Share my tree records"
+    static let shareRecordsSubtitle = "Under the open database license. Anyone may use the data"
+
+    static let shareRecordsConfirmTitle = "Share my tree records?"
+    static let shareRecordsConfirmMessage =
+        "Everyone using Cypress will see the trees you have added. This cannot be undone."
+    static let shareRecordsConfirmAction = "Share"
+    static let shareRecordsConfirmCancel = "Cancel"
+
+    /// Drawn under the row after a failed try: no connection, the remote gate shut, or the service
+    /// refused. Nothing was written on the phone.
+    static let shareRecordsFailed = "That did not go through."
+
+    /// What VoiceOver hears when the failure count changes: the failure line, once per new failure,
+    /// and nothing otherwise. No new words.
+    static func shareRecordsAnnouncement(previousFailures: Int, failures: Int) -> String? {
+        failures > previousFailures ? shareRecordsFailed : nil
+    }
+}
+
+// MARK: - The confirmation
+
+/// The "Share my tree records?" alert.
+///
+/// A modifier of its own so the screenshot suite can raise it without a tap, and so what each
+/// button does is a value (`respond(to:onShare:)`) a test can call. SwiftUI builds no tree a test
+/// can walk, so a button's closure is otherwise unreachable from a test.
+struct ShareRecordsConfirmation: ViewModifier {
+
+    enum Choice: CaseIterable {
+        case share
+        case cancel
+    }
+
+    @Binding var isPresented: Bool
+    let onShare: () -> Void
+
+    /// "Share" agrees, once. "Cancel" changes nothing.
+    static func respond(to choice: Choice, onShare: () -> Void) {
+        switch choice {
+        case .share: onShare()
+        case .cancel: break
+        }
+    }
+
+    func body(content: Content) -> some View {
+        content.alert(AccountCopy.shareRecordsConfirmTitle, isPresented: $isPresented) {
+            Button(AccountCopy.shareRecordsConfirmCancel, role: .cancel) {
+                Self.respond(to: .cancel, onShare: onShare)
+            }
+            Button(AccountCopy.shareRecordsConfirmAction) {
+                Self.respond(to: .share, onShare: onShare)
+            }
+        } message: {
+            Text(AccountCopy.shareRecordsConfirmMessage)
+        }
     }
 }

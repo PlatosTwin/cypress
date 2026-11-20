@@ -31,10 +31,11 @@
 //  and `POST /sync`'s ownership gate accepts a device credential for an item that names a device
 //  and no user (`server/internal/api/sync.go`).
 //
-//  **These carry no photo binaries and must not grow any.** `OutboxSendSink` has no photo method,
-//  and the one of the nine that involves a photograph on disk — `addTree` — ingests it in the same
-//  transaction that writes the row here, so by the time a drain runs there is nothing staged left
-//  to send. See the send sink's own header for the argument.
+//  **The payloads carry no photo binaries.** The one of the nine that involves a photograph on
+//  disk — `addTree` — ingests it in the same transaction that writes the row here. Since the
+//  owner's answer of 2026-11-15 ("Every tree, new and old") the add photo is sent too, as an
+//  already-applied binary row beside the item (`CommunityTreeBackfill.queueAddition`), never inside
+//  the JSON.
 //
 //  Foundation only.
 //
@@ -51,8 +52,9 @@ import Foundation
 /// names nothing in any other table, which is the two-identity defect `community_trees` in
 /// `server/migrations/001_initial.sql` records having already been fixed once.
 ///
-/// The photograph is deliberately absent. `addTree` requires one and ingests it locally in the same
-/// breath; sending binaries is the send sink's stated non-feature and its own ticket.
+/// The photograph is not in the payload. It travels as a binary row on this item (`outbox_photos`,
+/// staged by `CommunityTreeBackfill.queueAddition`), and the drain sends it after the service has
+/// accepted the add (`OutboxQueue`'s phase B3), so the begin names a tree the service holds.
 public struct TreeAddition: Codable, Hashable, Sendable {
     public let clientUUID: UUID
     /// The id the tree has on this device and will have on the service.
@@ -68,6 +70,14 @@ public struct TreeAddition: Codable, Hashable, Sendable {
     /// Nil means "they did not say" and never one of the four (`TreeDraft.landContext`).
     public let landContext: LandContext?
     public let occurredAt: Date
+    /// The phone's **local** calendar date of the add, exactly `YYYY-MM-DD`: the day everybody is
+    /// shown as the day the tree was added (the owner's decision of 2026-11-15). The service reads it
+    /// as `addedOn` and keeps it when it is within one day of `occurredAt`'s UTC date
+    /// (`store.addedDay`), so `occurredAt` must stay the instant of the add.
+    ///
+    /// Nil on a payload an earlier build queued, and synthesized `Codable` then omits the key, which
+    /// the service reads as "no stated day" and answers with the UTC date of `occurredAt`.
+    public let addedOn: String?
 
     public init(
         clientUUID: UUID,
@@ -78,7 +88,8 @@ public struct TreeAddition: Codable, Hashable, Sendable {
         placement: TreePlacement,
         speciesID: UUID? = nil,
         landContext: LandContext? = nil,
-        occurredAt: Date
+        occurredAt: Date,
+        addedOn: String? = nil
     ) {
         self.clientUUID = clientUUID
         self.treeID = treeID
@@ -89,6 +100,14 @@ public struct TreeAddition: Codable, Hashable, Sendable {
         self.speciesID = speciesID
         self.landContext = landContext
         self.occurredAt = occurredAt
+        self.addedOn = addedOn
+    }
+
+    /// `addedOn` for an add at `instant`, read in `timeZone`: the Gregorian calendar date, in the
+    /// form the service parses. The same reading `RemoteAPI.localDate` gives a photograph's
+    /// `captured_on`, so the two dates of one add can never be computed two ways.
+    public static func addedDay(of instant: Date, in timeZone: TimeZone) -> String {
+        RemoteAPI.localDate(of: instant, in: timeZone)
     }
 }
 
@@ -135,6 +154,12 @@ public struct ReviewReport: Codable, Hashable, Sendable {
     public let kind: ReviewFlag.Kind
     public let attribution: Attribution
     public let occurredAt: Date
+    /// The species a `wrong_species` report says is wrong (ROADMAP 144), or nil. The service counts
+    /// a report only while this is still the tree's species, so a report about a name that has
+    /// since changed stops marking the tree. Absent from a report queued by an older build and from
+    /// a `never_existed` report; the service then takes the species in force when the report
+    /// arrives. The synthesized coding omits a nil, so an older payload still decodes.
+    public let disputedSpeciesID: UUID?
 
     public init(
         clientUUID: UUID,
@@ -142,7 +167,8 @@ public struct ReviewReport: Codable, Hashable, Sendable {
         treeID: UUID,
         kind: ReviewFlag.Kind,
         attribution: Attribution,
-        occurredAt: Date
+        occurredAt: Date,
+        disputedSpeciesID: UUID? = nil
     ) {
         self.clientUUID = clientUUID
         self.flagID = flagID
@@ -150,17 +176,18 @@ public struct ReviewReport: Codable, Hashable, Sendable {
         self.kind = kind
         self.attribution = attribution
         self.occurredAt = occurredAt
+        self.disputedSpeciesID = disputedSpeciesID
     }
 }
 
 /// Closing a report without changing what it was about — the species seam's dismissal and the
 /// record seam's, which are two kinds for the reason `SpeciesStatement` gives.
 ///
-/// **Who was allowed to do it is decided on the device and stated here, not re-decided.** The
-/// species dismissal has an author's arm (`LocalAPI.dismissSpeciesReview`) that depends on the
-/// assertion chain, and the record dismissal is lead-only; neither rule is one this service can
-/// evaluate, because it holds no assertion chain and no role. The item records who dismissed what;
-/// a moderation surface that can adjudicate it is ARCHITECTURE §8's web deliverable.
+/// **Who may send it.** The species dismissal is the tree adder's "Keep the species"
+/// (`LocalAPI.dismissSpeciesReview`, ROADMAP 144). The service checks that itself, acts on the
+/// adder's keep only, and clears the reports up to the one `flagID` names, so a keep for a report
+/// raised on another phone carries the service's `species_report_flag_id`. The record dismissal is
+/// lead-only on the device, a rule the service cannot evaluate because it holds no role.
 public struct ReviewDismissal: Codable, Hashable, Sendable {
     public let clientUUID: UUID
     public let flagID: UUID
@@ -250,6 +277,10 @@ public struct PhotoVoteCast: Codable, Hashable, Sendable {
 /// that both gates already allowed and that committed.
 public struct PhotoWithdrawal: Codable, Hashable, Sendable {
     public let clientUUID: UUID
+    /// The photograph, **as the service can find it**. The phone's own `photos.id`, which is the
+    /// begin's `client_uuid` for anything sent since report F30's fix and is withdrawn by that key;
+    /// or, for a photograph sent by an earlier build, the service's own `photo_id` when a refresh
+    /// matched it (`RoutedAPI.deletePhoto(id:)`) — its local id is one the service never heard of.
     public let photoID: UUID
     public let treeID: UUID
     public let attribution: Attribution
@@ -270,6 +301,57 @@ public struct PhotoWithdrawal: Codable, Hashable, Sendable {
     }
 }
 
+/// Withdrawing a reading — `PhotoWithdrawal`'s twin, one contribution table over.
+///
+/// **The act, and not its report.** `WithdrawnMeasurement` — the value `withdrawMeasurement`
+/// returns — says what the withdrawal did to *this device's* record, including whether the tree now
+/// holds no live reading of that kind at all. None of that describes what a server holds, so none of
+/// it is sent: what travels is which reading was withdrawn, off which tree, by whom, and when.
+///
+/// **`kind` travels and the value does not.** A withdrawal is not a correction and carries no
+/// number — the reading it names is already on the service, and restating its value here would
+/// invite a reader of the queue to treat the two as a before-and-after pair. The kind is here for
+/// one reason: it is the only fact about the withdrawn reading that screen 17's row can say out
+/// loud. `OutboxCopy.kindLabel` titles the row `Reading withdrawn` and `detail(for:)` prints this
+/// kind as the sub-line under it — on the device, over a magnolia:
+///
+///     Reading withdrawn · Southern Magnolia
+///     DBH · 1:56 am
+///
+/// Drop it and that sub-line is empty: the row can no longer say which of D7's two series was taken
+/// back, and a queue row a person can read is what screen 17 is for.
+///
+/// The ordering `PhotoWithdrawal` established is upstream of this type and is not weakened by it:
+/// the row is enqueued **inside** the transaction that tombstones the reading, after the ownership
+/// gate has matched. A queued withdrawal therefore exists only for a withdrawal that was allowed
+/// and committed.
+public struct MeasurementWithdrawal: Codable, Hashable, Sendable {
+    public let clientUUID: UUID
+    public let measurementID: UUID
+    public let treeID: UUID
+    /// Which of D7's two series the withdrawn reading was in. See the header for why it travels and
+    /// the number does not.
+    public let kind: MeasurementKind
+    public let attribution: Attribution
+    public let occurredAt: Date
+
+    public init(
+        clientUUID: UUID,
+        measurementID: UUID,
+        treeID: UUID,
+        kind: MeasurementKind,
+        attribution: Attribution,
+        occurredAt: Date
+    ) {
+        self.clientUUID = clientUUID
+        self.measurementID = measurementID
+        self.treeID = treeID
+        self.kind = kind
+        self.attribution = attribution
+        self.occurredAt = occurredAt
+    }
+}
+
 /// The hazard-redirect log line (BUILD-PLAN §6's `POST /reports/hazard-redirect`).
 ///
 /// It wraps `HazardRedirectEvent` rather than restating it: the event is a `Core` model with a tree,
@@ -285,5 +367,199 @@ public struct HazardRedirectReport: Codable, Hashable, Sendable {
         self.clientUUID = clientUUID
         self.event = event
         self.attribution = attribution
+    }
+}
+
+// MARK: - R79's disputes, which are not §3.4's and travel the same way
+//
+// The two payloads below are not part of spec §3.4's nine. They arrived with `RULINGS R79` and
+// `AppSchema` v22, and they are in this file because everything above it is true of them too: each
+// carries the act rather than a domain object, each says which act it is by being its own type, each
+// carries an `Attribution` for D9's reason, and neither carries a photo binary.
+
+/// A dispute against a record's own data, as it travels through the outbox (`RULINGS R79`).
+///
+/// **The whole dispute, not a pointer to it.** Every other report in this file names a row the
+/// service can look up — a flag id, a photograph, a reading — because the thing being reported
+/// already exists on both sides. A dispute does not: it is created by this act, it has no analogue
+/// in any table the service holds, and R-c of this round's contract is that the service **records**
+/// it without materializing anything. So the queue carries the record, and a server that one day
+/// adjudicates has the checked issues, the suggested values and the notes in front of it rather than
+/// an id pointing at a row nobody sent.
+///
+/// **`treeSource` travels even though this round only raises against city rows.** It is a fact about
+/// the record disputed, not about the round that wrote it, and the community round is already ruled
+/// to widen this surface. A payload that omitted it would be one whose meaning changes when the next
+/// round lands — the shape of stored data that quietly stops being true.
+///
+/// The photograph is deliberately absent, and there is none to be absent: a dispute is text and
+/// numbers. See `OutboxSendSink` for why the queue's photo phase is not something these types may
+/// grow into.
+///
+/// **The property names are the wire keys.** There are no `CodingKeys` here and there is no
+/// translation layer under this type: `RemoteAPI.sync` puts the stored payload on the wire verbatim
+/// (`payload: try JSONValue.parse(item.payload)`), so what this struct encodes is what
+/// `cypress-sync` decodes. `DataDisputeTests.theRaiseCarriesTheKeysTheServiceReads` pins the key set
+/// itself rather than the properties, because a model-level assertion cannot see a key-name
+/// mismatch — which is how the one below reached review.
+public struct DataDisputeReport: Codable, Hashable, Sendable {
+    public let clientUUID: UUID
+    /// The dispute's own id on this device, which is what a withdrawal will name.
+    ///
+    /// **`id`, not `disputeID`, and the distinction is the convention this codebase already
+    /// follows.** A record's *own* id travels as `id` (`measurementPayload`); a pointer to
+    /// **another** record is named for what it points at — `MeasurementWithdrawal.measurementID`,
+    /// and `DataDisputeWithdrawal.disputeID` below. This payload *is* the dispute, so a `disputeID`
+    /// here would be the only record in the system naming its own id after itself.
+    ///
+    /// It is also what the service reads: `dataDisputePayload.ID` is `json:"id"` and
+    /// `payload.ID.IsNil()` is its first refusal, answered `validation_failed` — which
+    /// `OutboxRetryPolicy.nextState` never retries. Under the old name every dispute anyone filed
+    /// would have gone `.failed` on its first attempt and sat permanently red on screen 17.
+    public let id: UUID
+    public let treeID: UUID
+    public let treeSource: TreeSource
+    public let issues: Set<TreeDataDispute.IssueKind>
+    public let suggestions: TreeDataDispute.Suggestions
+    public let notes: String?
+    public let attribution: Attribution
+    public let occurredAt: Date
+
+    public init(
+        clientUUID: UUID,
+        id: UUID,
+        treeID: UUID,
+        treeSource: TreeSource,
+        issues: Set<TreeDataDispute.IssueKind>,
+        suggestions: TreeDataDispute.Suggestions,
+        notes: String?,
+        attribution: Attribution,
+        occurredAt: Date
+    ) {
+        self.clientUUID = clientUUID
+        self.id = id
+        self.treeID = treeID
+        self.treeSource = treeSource
+        self.issues = issues
+        self.suggestions = suggestions
+        self.notes = notes
+        self.attribution = attribution
+        self.occurredAt = occurredAt
+    }
+}
+
+/// A dispute its author took back — `MeasurementWithdrawal`'s shape, one seam over.
+///
+/// **The act, and not the record it acted on.** The dispute is already on the service under
+/// `disputeID`, sent by the `data_dispute` row that preceded this one; restating its issues and
+/// suggestions here would invite a reader of the queue to treat the two as a before-and-after pair,
+/// which they are not. What travels is which dispute was withdrawn, off which tree, by whom, and
+/// when.
+///
+/// **Its own kind rather than a flag on `data_dispute`**, for the reason `measurement_withdrawal` is
+/// its own kind: `outbox.kind` is what screen 17 groups by and what a server dispatches on, and a
+/// retraction arriving as a `data_dispute` would read as a second objection to the same record.
+///
+/// The ordering the rest of this file establishes holds here: the row is enqueued **inside** the
+/// transaction that stamps `withdrawn_at`, after the authorship gate has matched. A queued
+/// withdrawal therefore exists only for a withdrawal that was allowed and committed.
+public struct DataDisputeWithdrawal: Codable, Hashable, Sendable {
+    public let clientUUID: UUID
+    public let disputeID: UUID
+    public let treeID: UUID
+    public let attribution: Attribution
+    public let occurredAt: Date
+
+    public init(
+        clientUUID: UUID,
+        disputeID: UUID,
+        treeID: UUID,
+        attribution: Attribution,
+        occurredAt: Date
+    ) {
+        self.clientUUID = clientUUID
+        self.disputeID = disputeID
+        self.treeID = treeID
+        self.attribution = attribution
+        self.occurredAt = occurredAt
+    }
+}
+
+/// The adder moving a community tree's pin — the owner's decisions 2 and 5 of 2026-09-28: a move
+/// supersedes the position in force, and only the adder may make one.
+///
+/// **`id` is the correction's own id, and `treeID` is the pointer.** `DataDisputeReport.id`'s
+/// convention: a record's own id travels as `id`, and a pointer is named for what it points at. The
+/// correction *is* a record — the new row of `tree_locations` on this phone, of
+/// `community_tree_locations` and of the audit log on the service — so all three carry this value.
+/// The service refuses an `id` equal to `treeID` (`validation_failed`), because the chain's root row
+/// already carries the tree's id and a tree pointer sent as `id` would read as a replay of the root.
+///
+/// **No top-level `speciesID`, and none may be added.** `store.GroveSpeciesKnown` on the service
+/// casts `payload->>'speciesID'` across every kind, so a field of that name here would be read as a
+/// species this contributor has met.
+///
+/// The shape is pinned by `server/testdata/sync_location_correction.json`, which the service's own
+/// test posts byte for byte and `LocationCorrectionFixtureTests` encodes this type against through
+/// `RemoteAPI.syncItemBody(for:)`.
+public struct TreeLocationCorrection: Codable, Hashable, Sendable {
+    /// The new chain row's id.
+    public let id: UUID
+    public let clientUUID: UUID
+    public let treeID: UUID
+    public let coordinate: Coordinate
+    /// How the new position was arrived at. Required on the wire: a moved pin is placed by hand or
+    /// taken from a fix, and the service will not guess which.
+    public let placement: TreePlacement
+    /// The fix's horizontal accuracy (D6), or nil when the act did not say. Omitted from the JSON
+    /// when nil, which the service reads as nil.
+    public let locationAccuracyM: Double?
+    public let attribution: Attribution
+    public let occurredAt: Date
+
+    public init(
+        id: UUID,
+        clientUUID: UUID,
+        treeID: UUID,
+        coordinate: Coordinate,
+        placement: TreePlacement,
+        locationAccuracyM: Double?,
+        attribution: Attribution,
+        occurredAt: Date
+    ) {
+        self.id = id
+        self.clientUUID = clientUUID
+        self.treeID = treeID
+        self.coordinate = coordinate
+        self.placement = placement
+        self.locationAccuracyM = locationAccuracyM
+        self.attribution = attribution
+        self.occurredAt = occurredAt
+    }
+}
+
+/// The adder withdrawing a community tree for everyone (the owner's decision 8; `withdrawTree`).
+///
+/// **A pointer, and nothing else.** The act names the tree, who acted and when. The service reads
+/// only `treeID` and requires it to equal the item's `tree_uuid` (`treeWithdrawalPayload` in
+/// `server/internal/api/sync.go`).
+///
+/// **No top-level `speciesID`, and none may be added**, for `TreeLocationCorrection`'s reason: the
+/// service reads `payload->>'speciesID'` across every kind as a species this contributor has met.
+///
+/// The shape is pinned by `server/testdata/sync_tree_withdrawal.json`, which the service's own test
+/// posts and `TreeWithdrawalFixtureTests` encodes this type against through
+/// `RemoteAPI.syncItemBody(for:)`.
+public struct TreeWithdrawal: Codable, Hashable, Sendable {
+    public let clientUUID: UUID
+    public let treeID: UUID
+    public let attribution: Attribution
+    public let occurredAt: Date
+
+    public init(clientUUID: UUID, treeID: UUID, attribution: Attribution, occurredAt: Date) {
+        self.clientUUID = clientUUID
+        self.treeID = treeID
+        self.attribution = attribution
+        self.occurredAt = occurredAt
     }
 }

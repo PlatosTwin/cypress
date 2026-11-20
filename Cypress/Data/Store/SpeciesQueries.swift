@@ -45,6 +45,55 @@ public struct SpeciesQueries {
         return try statement.fetchOne { try Self.decodeIfPresent($0) }.flatMap { $0 }
     }
 
+    /// The common name `species(id:)` would give each id, in **one statement** for a set of ids
+    /// (`LocalAPI.displayNames(for:)`). The same fallback as `decodeIfPresent`: a species with no
+    /// common name answers its scientific name. An id the inventories do not carry is absent.
+    public func commonNames(ids: [UUID], connection: SQLiteConnection) throws -> [UUID: String] {
+        guard !ids.isEmpty else { return [:] }
+        let statement = try connection.cachedStatement(commonNamesSQL())
+        _ = try statement.bind(
+            "[\(ids.map { "\"\($0.uuidString)\"" }.joined(separator: ","))]", forName: ":ids"
+        )
+        var names: [UUID: String] = [:]
+        for (id, name) in try statement.fetchAll({ row -> (UUID, String) in
+            let scientific = try row.string("scientific_name")
+            return (try row.uuid("species_uuid"), try row.stringIfPresent("common_name") ?? scientific)
+        }) {
+            names[id] = name
+        }
+        return names
+    }
+
+    /// Both names of each species, as the seed stores them: the scientific name, and the common
+    /// name or nil. **The same statement as `commonNames(ids:)`**, without its fallback, because the
+    /// caller is `LocalAPI.treesNear`, whose city rows carry these two columns raw
+    /// (`TreeQueries.nearest`) and whose readers apply the fallback themselves. An id the
+    /// inventories do not carry is absent.
+    public func names(ids: [UUID], connection: SQLiteConnection) throws -> [UUID: (scientific: String, common: String?)] {
+        guard !ids.isEmpty else { return [:] }
+        let statement = try connection.cachedStatement(commonNamesSQL())
+        _ = try statement.bind(
+            "[\(ids.map { "\"\($0.uuidString)\"" }.joined(separator: ","))]", forName: ":ids"
+        )
+        var names: [UUID: (scientific: String, common: String?)] = [:]
+        for (id, scientific, common) in try statement.fetchAll({ row -> (UUID, String, String?) in
+            (try row.uuid("species_uuid"), try row.string("scientific_name"), try row.stringIfPresent("common_name"))
+        }) {
+            names[id] = (scientific, common)
+        }
+        return names
+    }
+
+    /// The text `commonNames(ids:)` runs. `lower(value)` for `species(id:)`'s reason: the app
+    /// binds upper-case uuids, and every inventory stores them lower case.
+    func commonNamesSQL() -> String {
+        """
+        SELECT s.\(schema.speciesIdentityColumn) AS species_uuid, s.scientific_name, s.common_name
+          FROM \(seed).species s
+         WHERE s.\(schema.speciesIdentityColumn) IN (SELECT lower(value) FROM json_each(:ids))
+        """
+    }
+
     /// `GET /species?query=` — autocomplete over both names, matching the word **anywhere** in
     /// either of them.
     ///

@@ -7,6 +7,7 @@ import (
 	"errors"
 	"io"
 	"log/slog"
+	"net"
 	"net/http"
 	"strings"
 	"time"
@@ -42,14 +43,34 @@ type Server struct {
 	// OperatorToken authorizes the takedown route. Operator surfaces are a web deliverable by
 	// ARCHITECTURE §8, so this service exposes the action and not a console.
 	OperatorToken string
+	// CursorKey seals the community tile's `next_cursor` (AES-256-GCM, tile_cursor.go). main.go
+	// derives it from `SESSION_SIGNING_KEY` with `DeriveCursorKey`; a server without one refuses to
+	// hand out a tile cursor at all rather than hand out a readable one.
+	CursorKey []byte
+	// cursorNonces is where a cursor's GCM nonce comes from: nil is `crypto/rand`, always, in
+	// production. Only the golden-fixture tests set it, so the fixture's sealed cursor is the same
+	// bytes on every run. Unexported, so nothing outside this package can weaken it.
+	cursorNonces io.Reader
 
 	limiter *ratelimit.Limiter
+	// readLimiter is the public read's own bucket, at its own budget.
+	//
+	// **Separate from `limiter`, because the two callers are not alike.** `limiter` is sized for a
+	// phone draining an outbox — burst 60, one token a second — and the public web is server-side
+	// rendered, so every reader in the world arrives from one address: the rendering machine's.
+	// Putting that on the phone budget would throttle the whole site to one page per second, which
+	// is `clientKey`'s own warning arriving from the other direction. Two instances rather than one
+	// so neither can spend the other's tokens.
+	readLimiter *ratelimit.Limiter
 }
 
 // Handler builds the router.
 func (s *Server) Handler() http.Handler {
 	if s.limiter == nil {
 		s.limiter = ratelimit.New()
+	}
+	if s.readLimiter == nil {
+		s.readLimiter = ratelimit.NewPublicRead()
 	}
 	mux := http.NewServeMux()
 
@@ -77,12 +98,29 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("GET "+Prefix+"/me/journal", s.authenticated(s.journal))
 	mux.Handle("GET "+Prefix+"/me/map-membership", s.authenticated(s.mapMembership))
 	mux.Handle("GET "+Prefix+"/trees/{id}", s.authenticated(s.treeProfile))
+	// The community layer (S2, §3C and §3E). A device credential is enough for both: a phone that
+	// has never signed in still draws, and opens, everybody's published trees.
+	mux.Handle("GET "+Prefix+"/community-trees", s.authenticated(s.communityTrees))
+	mux.Handle("GET "+Prefix+"/trees/{id}/history", s.authenticated(s.treeHistory))
 	mux.Handle("GET "+Prefix+"/photos/{id}", s.authenticated(s.photoData))
+
+	// ── The public read ────────────────────────────────────────────────────────────────────────
+	// No credential, and the only route here that answers one contributor's record to another
+	// person. What it may say is `docs/rulings-pending/public-tree-read.md`; the mechanism is
+	// `public.go`'s allow-list over `contributions.kind`.
+	mux.Handle("GET "+Prefix+"/public/trees/{id}", s.publicRead(s.publicTree))
 
 	// ── Operator ───────────────────────────────────────────────────────────────────────────────
 	// R72 ruling 5's non-negotiable half: "Auto-approve without a takedown is the version of this
 	// rule that must not ship."
 	mux.Handle("POST "+Prefix+"/operator/photos/{id}/reject", s.operator(s.rejectPhoto))
+	// The same rule for the community layer this round publishes: a tree somebody else has built on
+	// can no longer be withdrawn by its adder (decision 8), so this is the only way it comes down.
+	mux.Handle("POST "+Prefix+"/operator/community-trees/{id}/take-down", s.operator(s.takeDownCommunityTree))
+	// ROADMAP 144: "The adder can correct the species, and so can the operator" (the owner's rule of
+	// 2026-11-15). A route like the takedown, not a screen (the orchestrator's choice).
+	mux.Handle("POST "+Prefix+"/operator/community-trees/{id}/species", s.operator(s.operatorSetSpecies))
+	mux.Handle("POST "+Prefix+"/operator/community-trees/{id}/species-reports/clear", s.operator(s.operatorClearSpeciesReports))
 
 	return withTimeout(s.recoverPanics(mux))
 }
@@ -114,6 +152,22 @@ type caller struct {
 	// `ClaimDevice` do this translation with `WHERE device_uuid = $1`; this field is the same
 	// translation, done once per request on the credential rather than once per item.
 	DeviceUUID *uuid.UUID
+	// SessionDeviceID is, for a signed-in caller, the device its session was bound to at
+	// `POST /auth/oidc` (`sessions.device_id`, `devices.id` vocabulary), nil when the sign-in named
+	// none. It is **not** an owner and authorizes nothing: `owner()` ignores it. It exists for the
+	// audit log of community trees, which records the device a signed-in act came from — the
+	// device the session proved, not the one an item claims (the orchestrator's ruling of
+	// 2026-09-28).
+	SessionDeviceID *uuid.UUID
+}
+
+// actor is who performed an act, for `community_tree_events`: the owner, plus the session's bound
+// device for an account.
+func (c caller) actor() store.Actor {
+	if c.UserID != nil {
+		return store.Actor{UserID: c.UserID, DeviceID: c.SessionDeviceID}
+	}
+	return store.Actor{DeviceID: c.DeviceID}
 }
 
 func (c caller) owner() store.Owner {
@@ -131,6 +185,23 @@ type publicFunc func(http.ResponseWriter, *http.Request) error
 func (s *Server) public(next publicFunc) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if !s.limiter.Allow(clientKey(r)) {
+			apierr.Write(w, s.Log, apierr.New(apierr.RateLimited, "Too many requests. Try again shortly."))
+			return
+		}
+		if err := next(w, r); err != nil {
+			apierr.Write(w, s.Log, err)
+		}
+	})
+}
+
+// publicRead is `public` on the read budget.
+//
+// A separate wrapper rather than a parameter on `public`, so which bucket a route spends is visible
+// at the route table instead of at the call site. Everything else is identical: no credential is
+// resolved, and a refusal is `rate_limited`, which is retryable.
+func (s *Server) publicRead(next publicFunc) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !s.readLimiter.Allow(clientKey(r)) {
 			apierr.Write(w, s.Log, apierr.New(apierr.RateLimited, "Too many requests. Try again shortly."))
 			return
 		}
@@ -218,14 +289,14 @@ func (s *Server) resolveCaller(r *http.Request) (caller, error) {
 			if sessionErr != nil {
 				return caller{}, errNoSession
 			}
-			live, lookupErr := s.Store.SessionIsLive(r.Context(), sessionID)
+			live, sessionDevice, lookupErr := s.Store.SessionIsLive(r.Context(), sessionID)
 			if lookupErr != nil {
 				return caller{}, apierr.Wrap(apierr.ServerError, "Something went wrong on our end.", lookupErr)
 			}
 			if !live {
 				return caller{}, errNoSession
 			}
-			return caller{UserID: &id}, nil
+			return caller{UserID: &id, SessionDeviceID: sessionDevice}, nil
 		case tokens.SubjectDevice:
 			// **No `DeviceUUID`, and that is deliberate rather than an omission.** Nothing mints a
 			// signed device token — `registerDevice` issues an opaque one and this branch is
@@ -272,8 +343,35 @@ func bearer(r *http.Request) string {
 // Fly puts the caller's address in `Fly-Client-IP`; `RemoteAddr` behind the proxy is the proxy.
 // Getting this wrong would put every request in one bucket and rate-limit the whole app as if it
 // were one phone, which is a denial of service written by hand.
+//
+// ── What actually protects this, stated because the public read makes it load-bearing ─────────
+//
+// **This header is supplied by the request, and the only thing that makes it trustworthy is that
+// Fly's proxy overwrites it before the app ever sees it.** The adversarial review of the public
+// read round measured the consequence: after exhausting a bucket, 25 of 25 requests carrying a
+// self-chosen `Fly-Client-IP` were served, each allocating its own bucket. That is not a live
+// exploit — nothing reaches this process except through the proxy — but until this round every
+// route behind it also required a credential, and the public tree read requires none. The
+// protection is now entirely "the proxy rewrote it", and that is worth writing down rather than
+// being true by luck.
+//
+// Two things narrow it here rather than one comment pretending to:
+//
+//   - **A value that is not an IP address is not used.** A forged header could otherwise be any
+//     string, so an attacker had an unbounded key space to allocate buckets in. `net.ParseIP`
+//     costs nothing and takes that from 2^128 arbitrary strings to addresses.
+//   - **The bucket map is bounded** — `ratelimit.maxBuckets`. Even with valid forged addresses the
+//     memory this can be made to hold is capped, which is what matters on a 256 MB machine.
+//
+// Neither makes the header trustworthy, and neither is claimed to. **The fix is to stop trusting
+// it unless the connection came from the proxy**, which is a trust-boundary change to a deployed
+// service that nothing here can verify against a real Fly request — the review could not confirm
+// the proxy's rewrite from a request it watched arrive either, only from documentation. It also
+// bears directly on the owner's open question about whether this endpoint should be reachable
+// from the open internet at all or only from the SSR machine, and answering it the other way
+// makes this moot. `docs/ROADMAP.md` carries it, tied to that question.
 func clientKey(r *http.Request) string {
-	if ip := r.Header.Get("Fly-Client-IP"); ip != "" {
+	if ip := r.Header.Get("Fly-Client-IP"); net.ParseIP(ip) != nil {
 		return ip
 	}
 	host, _, found := strings.Cut(r.RemoteAddr, ":")

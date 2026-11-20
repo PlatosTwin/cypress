@@ -178,6 +178,155 @@ and the owner has accepted it for the beta.
 
 ---
 
+## W — the web version (opened 2026-09-10)
+
+The owner opened this on 2026-09-10 and ruled its four forking questions the same day. The authority
+is `docs/design-proposals/2026-09-10-web-version.md`; this section is the queue underneath it. **W1
+below is the screen number from `SCREENS.md` §W1, not a milestone number** — the milestones here are
+`W-A` through `W-E`, deliberately lettered so they cannot be read as M-numbers.
+
+**The four rulings.** v1 is the **public read surface** (no login, no writes); it lives in **this
+repository** at `web/`; the unspecified web pages are built under a **scoped constraint-21 exception**
+in the shape of the one M5 was granted, with every invention written to `docs/rulings-pending/` for
+ratification; and the runtime is **TypeScript + SSR self-hosted on Fly**. Vercel stays ruled out —
+R36 / `RULINGS.md:2275`, the Hobby tier's non-commercial term against D14's paid org tier.
+
+**Why this is ahead of the open tester items.** `SharePresentation.swift:245` ships
+`https://cypress.app/sf/tree/` as the share-card prefix, and no such page exists. Every link screen 10
+has ever produced is dead, which makes the growth loop `PRODUCT.md` names — "the share card *is* the
+growth loop" — terminate at the moment of sharing. W1 is the page those links have always meant.
+
+| | Milestone | Done when |
+|---|---|---|
+| ~~**W-A**~~ | ~~Foundation~~ | ~~`web/` exists and builds; `testflight.yml` classifies it correctly so a web commit neither runs the iOS suite nor mints a TestFlight build; `web.yml` runs the web suite on ubuntu; `Tools/run_web_tests.sh` and `Tools/verify_web_test_log.sh` judge a log rather than an exit code.~~ **SHIPPED** by `web/foundation`. `web/` reaches the classifier through a `WEB_ONLY` variable of its own rather than through `DOC_ONLY` — the web is not prose, it is tested on ubuntu, and the notice `plan` prints now says which of the two a skipped run was. `web/**` is deliberately **not** added to the push trigger's `paths-ignore`; see the chip backlog. |
+| **W-G** | The public community read | ~~`GET /api/v1/public/trees/{id}` answers the publicly visible community half of one tree with no credential, under a ruling that decides field by field what is publicly true about a tree.~~ **DONE** — the ruling is `docs/rulings-pending/public-tree-read.md` (unnumbered, awaiting the owner: it carries five questions), the endpoint and its golden fixtures are in `server/`. Ordered ahead of W-C by the owner on 2026-09-10, because §8a found that half of W1's fact column has no public read behind it. |
+| **W-B** | The three portable assets | ~~Design tokens exported from the Swift declarations to CSS custom properties, with a test that the export still matches its source; the domain rules (vitality rubric, `Quantity`, the 25 m grid, growth-charting eligibility, ID spaces) re-derived in TypeScript against ported Swift test cases; a read layer that opens a published city pack through the same schema the phone uses.~~ **ALL THREE SHIPPED.** Tokens by `web/tokens-css` (`web/src/styles/tokens.css`, generated and byte-checked against its source). Read layer by `web/pack-read` (`web/src/lib/pack/`, on `node:sqlite`, no new dependency — it introspects a pack's shape rather than trusting a version integer, refuses a generation newer than it reads, and never writes). Domain rules by `web/domain-rules` (`web/src/lib/`, each checked against its original parsed at run time rather than against a transcription; the ID-space registry has no Swift declaration and lives only in `Tools/inventory_contract.py`). Two findings came out of the rules third: the 25 m grid is not idempotent and the read path applies it twice, and `Quantity` had no dedicated suite until now. |
+| ~~**W-C**~~ | ~~W1 · Public tree page~~ | ~~The page renders from a real pack at `/‹id-space›/tree/‹uuid›`, matching the `SCREENS.md` §W1 transcription, with the OpenGraph image its caption specifies rendered from the same ingredients.~~ **SHIPPED** by `web/w1-tree-page`, and completed by the two rounds merged into it. Server-rendered from a mounted pack; verified against the pinned seed (sha256 and `count(*)` both checked) on a San Francisco tree, a San Jose vacant site, and on a synthetic `us-ny-nyc` pack. **Seven of §W1's eleven elements were omitted rather than stubbed** — height, the taped DBH reading, the foliage strip, its photo caption, the recent-visits panel, `Sign in` (owner decision 7) and `Open in the app` (no host resolves) — and four labels say less than the mock does; the element-by-element account and the four deviations are in `docs/errata-pending/web-w1-tree-page.md`. ~~**The OpenGraph image is an SVG**, which the major social platforms do not render: making it a PNG needs a rasterizer, which is a dependency decision with an owner — chip backlog 24.~~ **The owner ruled and `web/og-raster` shipped it**: `og:image` is a PNG, rasterized from the same SVG by `@resvg/resvg-js`, and the page now declares the card's type, width and height. New York's disclaimer now follows its data onto the page (R36 consequence (b), R78 rulings 2 and 3). **The community half landed too**, by `web/w1-live-facts`: the owner ruled on 2026-09-11 that this row stays open until W1 draws what W-G publishes, and it now does — §W1's `Height`, the live trunk DBH in place of the city bucket, and a `Beloved` row (chip backlog **26**, struck). **The endpoint is not deployed** — measured, `cypress-sync` answers `404 page not found` for the route while `/health` is 200 — so the page's ordinary state is still the city record alone, and it says so rather than implying nothing has been measured. **The two rounds were merged and the merged tree was run**, which is where the one coupling neither branch could see was checked: the card is built by `resolveTreePage`, which requests no community half, so the `immutable` year-long cache on `og.png` and the page's 60-second `max-age` are consistent rather than in conflict — the card holds no contributed value to take back (chip backlog **27** is where that would change). Open for the owner in `docs/rulings-pending/w1-authored-copy.md`: **four** authored strings now, and three conservative calls named there (a vacant site draws no reading; `unavailable` and `unconfigured` read alike to a reader; the page sends `max-age=60`). |
+| **W-D** | The rest of the nav | `Explore`, `Species`, `Neighborhoods`, `Data & export` — ~~designed under the W-3 exception~~ **designed**, in `docs/rulings-pending/web-nav-destinations.md` (unnumbered; §7a carries the orchestrator's answers to its open questions), then ruled, then built. |
+| ~~**W-E**~~ | ~~It is on the internet~~ | ~~Deployed to Fly against a volume holding the published packs; the share link resolves.~~ **SHIPPED 2026-09-13.** `cypress-web` runs one machine in `sjc` with `cypress_packs` (3 GB, `/dev/vdc`, ext4) mounted at `/data/packs`, holding all seven published packs — 713,605,120 bytes, **every sha256 verified on the machine**, `df` 681 MiB. Verified over the public internet, not from a branch: `/health` reports `serving` across `sf`, `us-ca-sj`, `us-ny-nyc` with 0 problems; a San Francisco tree and **two different NYC boroughs through the single `us-ny-nyc` id space** all answer 200 (the multi-pack walk exercised against a real mounted volume); `og.png` answers 200 at 1200×630 read from its IHDR; an unknown uuid answers 404 rather than 500. **The empty-volume state was observed in production, in order** — the first deploy reported `state: empty, ready: false` at 200, which is exactly what #177's review argued a health check must not fail on, and the deploy succeeded because it does not. **Chip 47 was confirmed in practice, not in theory**: the filled volume served nothing until the machine restarted, because `packLibrary` holds packs for the life of the process. **No certificate and no DNS** — the site is `cypress-web.fly.dev`; `cypressatlas.org` is the ruled name and the owner's to register when they choose. |
+
+### Decided in the proposal, not open
+
+- **The read path is the published base layer**, mounted read-only. Not Postgres, not browser-side
+  SQLite over range requests. This adds a second *consumer* of R36's base layer, not a second source
+  of truth, and it is not R36's Shape B — nothing about the phone's read path changes.
+- **No raster basemap in v1.** Explore draws pins over the neighborhood polygons already in the seed
+  (`Fixtures/seed/schema.sql:129`). `DECISIONS.md:153` puts per-seat map licensing permanently out of
+  scope; MapLibre over PMTiles on Tigris is the named path if a basemap is ever wanted.
+- **No photos on the public surface in v1.** W1's specified hero is a gradient. `cypress-photos` is
+  private by design and opening it is a D11 privacy decision with its own round.
+
+### Corrected 2026-09-10, before any web code was written
+
+Two decisions in the proposal were refuted by opening a real published pack (`us-ca-sj`, hash-verified
+against the manifest, `count(*)` matching the manifest's tree count as the control). The amendment is
+§8a of the proposal.
+
+- **W1's fact column is about half contributed data.** Name, vitality, height, the taped DBH reading,
+  the photo count and the recent-visits panel all live in the *writable* database and reach the
+  server as contributions; the packs carry the city record. The API's public read surface is Class R
+  — the contributor's own data — so v1 has no public read for any of it. W-C's scope is therefore an
+  owner decision, not an implementation detail. The pack *does* answer the page's spine: address,
+  city, species (though `common_name` is null on real rows), `planted_year`, `external_ref`,
+  `inventory_source`, status, and the city's published DBH bucket.
+  **Answered by W-G, in part, and the part moved twice — after its adversarial review and again
+  after the delta review of the fixes.** The owner ordered the public community read built first, and
+  it exists: **height and trunk DBH** each reach W1 as a value, its method and the month it was
+  taken, and a **beloved** boolean reaches it too — a state and not a rank, per the owner's ruling of
+  2026-09-10, true only above R27.1 §2's ≥3 floor. §W1 does not draw that one; it is the fact column
+  being *longer* than its transcription in one place while being shorter in three.
+  **Two further owner rulings of 2026-09-10 changed what that boolean means.** It counts only
+  **account-backed** favorites — the delta review showed the old count was farmable at three
+  unauthenticated `POST /devices/register` calls, which is D1's own stated reason for refusing public
+  counts — and the **number rides along above the floor** (`beloved_by`), per R27.1 §1. W1 must
+  therefore be prepared to draw "beloved by 7" as well as the bare state, and to draw nothing at all
+  below the floor: the floor may well be unreachable in the beta, which the ruling says plainly
+  rather than dressing up.
+  **Vitality does not reach it**, though an earlier version of this bullet said it did: a published
+  rating has no takedown route in this system, so it is deferred rather than refused (item 2 above).
+  The recent-visits panel and the `214 PHOTOS SINCE 2019` count are refusals on the merits — things
+  a public page may not carry (see `docs/errata-pending/w1-contributed-half.md`, whose photo-count
+  argument was rebuilt after the review found its cited authority did not carry it). The H1 has no
+  source anywhere in the system and is Q3 of the ruling's questions for the owner.
+- **W-6 is withdrawn as a general answer.** "Explore draws pins over the neighborhood polygons already
+  in the seed" holds for San Francisco and nowhere else: `Tools/build_seed.py:2105` loads exactly one
+  polygon file, DataSF's SF-only `j2bu-swwd`, and `neighborhoods` is **0 rows** in the San Jose pack.
+  Six of seven packs have no neighborhoods, which hits the `Neighborhoods` nav destination hardest.
+  The measurement, the two replacement sources and each source's own terms are in
+  `docs/investigations/neighborhood-polygons.md`.
+
+### Open, and named as open
+
+1. ~~**Is `cypress.app` registered?**~~ **ANSWERED by the owner, 2026-09-13, and it is not an
+   open question — it is a settled fact that had been re-raised too many times.** `cypress.app` is
+   **not the owner's.** The RDAP measurement of 2026-09-10 (registered through 2026-11-03,
+   registrar Spaceship, no A record, registrant redacted) described a third party's domain, and the
+   redaction is why it could not be settled from outside. It is settled from inside.
+
+   **The site's domain is `cypressatlas.org`** — the owner's ruling of the same day, superseding the
+   `cypressgrove.app` of 2026-09-10 (decision 2 of the web round's owner decisions, amended in place
+   under `docs/rulings-pending/` with both dates). RDAP on 2026-09-13 returns **404 for
+   `cypressatlas.org`** against a 200 control on `cypressatlas.com`, which a third party holds: the
+   `.org` is unregistered and is the owner's to take. **No agent registers a domain.**
+
+   **Nothing lands there live this round**, and that is the owner's framing rather than a
+   limitation — "we won't land there live for a bit". No certificate, no DNS; the site answers on
+   its `.fly.dev` hostname. `ShareCopy.publicURLPrefix` does not move, for the reason chip 39 gives.
+2. **What a withdrawn or moderated record does to an indexed public page. STILL OPEN — answered for
+   what ships, not as a general rule.**
+
+   ~~Not v1 — v1 renders city-record facts only — but it lands the moment anything contributed
+   reaches W1.~~ **That scoping is dead**: W-G's endpoint ships contributed readings and a
+   contributed state, so anything contributed *has* reached W1 and this is a live question rather
+   than a future one.
+
+   ~~**CLOSED by W-G**, in `docs/rulings-pending/public-tree-read.md` §8. The answer in one line: **a
+   withdrawal removes a fact from a page, it does not remove a page.**~~ **Struck: W-G closed this
+   and its adversarial review reopened it.** The claim was true of two of the three values that
+   endpoint then published and false of the third. There is **no observation withdrawal anywhere in
+   this system** — `contributions.kind` carries `measurement_withdrawal` and `photo_withdrawal` and
+   no counterpart for the `observation` that holds a vitality rating — `contributions` has no
+   `moderation_state` and no operator takedown, and a withdrawal aimed at a rating answers `applied`
+   and changes nothing. The §8 bullet had listed an operator takedown among its three levers; that
+   column is on `photos`, not on `contributions`.
+
+   **What is settled, and it is most of it.** For the two readings and the beloved state: every
+   answer is computed from live rows at request time, so a contributor's withdrawal, an
+   un-favoriting and an anonymization each take effect on the next request with nothing to purge;
+   `Cache-Control: public, max-age=60` is the ceiling on downstream staleness, and the round that
+   renders the page may not cache beyond it. There is no dead URL to file a removal request for,
+   because the page's spine is the *city record* — public data under ODbL that no contributor can
+   withdraw — so nothing contributed is load-bearing for the URL's existence, and tree UUIDs stay
+   "stable and citable from day one".
+
+   **What is not settled, and closes this question when it is:** (a) an observation-withdrawal kind,
+   which is a **migration** and therefore a round with a migration author — W-G had none and
+   correctly did not take a seat, narrowing the endpoint instead so that the rating is not published
+   at all; (b) an **operator** route on `contributions`, which does not exist in any form, so a
+   reading that is wrong or malicious has no removal path but its own author's; and (c) the standing
+   rule this produced, which should be written down when it is true: **this endpoint publishes
+   nothing it cannot also un-publish.** Today it is true by subtraction.
+
+   Restoring the `Status` row on W1 depends on (a). Bring back with it the three guards W-G removed
+   with the field — `TestVitalityRatingsMatchTheSwiftRubric`,
+   `TestSwiftIntEnumExtractorIsCalibrated` and their `swiftIntEnumRawValues` reader — **before** the
+   projection, not after.
+3. **Server CORS and Sign in with Apple JS**, both prerequisites for any web surface that *writes*.
+   **W-G confirmed the read half needs neither** and deliberately built no CORS: the web renders
+   server-side and calls `GET /api/v1/public/trees/{id}` server-to-server. A later surface that calls
+   this service from browser JavaScript needs CORS *and* a fresh look at the public read's rate-limit
+   budget, which is sized for one rendering machine's address rather than for many browsers'.
+   v1 needs neither. `authOIDC` requires a nonce and fails closed, and the web flow's nonce is not the
+   native flow's; that is an integration change, not a client rewrite.
+4. **The Coordinator dashboard** (`PROTOTYPE-FLOW` PART 2, the paid org tier under D14). Fully drawn,
+   but workdays, routes, claim/progress and the live feed exist in neither the server nor the app.
+   A product round, not a port.
+5. **The moderation console.** `ARCHITECTURE.md` §8 and `CypressAPI.swift:22` already assign
+   `/admin/*` to web and declare it out of scope for iOS. No mock exists anywhere in the handoff.
+
+
+---
+
 ## Resolutions on the three open questions
 
 These were escalated and handed back. Each is a decision I am taking, with the reasoning, so it can
@@ -287,9 +436,14 @@ that had not yet reached a build). What remains OPEN:
   number as the human typed it, in the unit it was typed in". Converting on the flip is what would
   break it, and nothing converts. The field's own doc comment now records this.
   The copy and its placement are **NOT SPECIFIED** by SCREENS.md and go to the owner under
-  DECISIONS constraint 21; see `docs/rulings-pending/measurements-round.md`.
-- **F27 — measurements can be neither edited nor deleted. BLOCKED ON A SCHEMA MIGRATION**, and the
-  premise needs splitting in two.
+  DECISIONS constraint 21; see **RULINGS R113**.
+- ~~**F27 — measurements can be neither edited nor deleted. BLOCKED ON A SCHEMA MIGRATION**, and the
+  premise needs splitting in two.~~ **SHIPPED.** The withdrawal half is `AppSchema` v21 (PR #154) and
+  the service's `measurement_withdrawal` kind (migration 004, PR #156); the edit half needed
+  nothing. **Only paperwork remains**: the third entry of
+  the measurements round's rulings (**RULINGS R115**) was held for this round to land, and can now splice
+  as an outcome (chip 56). What follows is the entry as written while it was blocked, kept because
+  it records the two rejected shortcuts.
   **"Edited" is already answered and needs nothing built.** This app has no edit verb for any
   contributed record, by design: `CypressAPI`'s whole write surface is append-or-withdraw, species
   corrections supersede rather than overwrite (`superseded_by`), and every capture screen carries
@@ -303,7 +457,7 @@ that had not yet reached a build). What remains OPEN:
   `CommunityOutboxKindTests`' "every kind the app can build is one the outbox can store" is the
   guard that makes this unavoidable rather than optional. **One migration author per round and this
   round had none**, so the design is written down and the code is not: see
-  `docs/rulings-pending/measurements-round.md`. The two rejected shortcuts are recorded there too —
+  **RULINGS R115**. The two rejected shortcuts are recorded there too —
   riding the existing `measurement` kind with a payload discriminator (which `OutboxItem.Kind`'s own
   comment forbids: it would put the distinction "inside a payload field where `outbox.kind` cannot
   see it"), and shipping the UI local-only, which would re-create the Class L debt spec §3.4's nine
@@ -357,6 +511,302 @@ one owner sentence away from being schedulable. The evidence, so that round star
   **The owner's sentence:** is F25 a mock round (draw the screen) or a consistency pass against the
   screens it borrows from?
 
+### Tester feedback, reconciled against main 2026-09-28
+
+Pulled by the recorded route (`.github/workflows/asc-feedback.yml`, ERRATA **E254**): workflow run
+**36494988293**, dispatched 2026-09-28T22:53:21Z on `a6557a1`, artifact `asc-feedback` generated
+22:53:35Z. **33 screenshot submissions, 0 crash submissions, 0 customer reviews, `notes: []`** —
+nothing truncated or forbidden. All 33 are from one device (iPhone17_5, 390 × 844 pt). The first 28
+are the same submissions PR #118 numbered, in the same order, so the numbering below continues
+PR #118's chronological one: **F29–F33 are the five submitted after PR #118's pull**, and nobody
+had logged any of them. The screenshots are in the artifact (named `<submission id>-1.png`); the
+JSON's links expire 2026-10-04.
+
+Every build-77 report below is against current code: nothing under `Cypress/` has changed on
+`main` since build 77 was uploaded (2026-09-11).
+
+**One earlier item had fallen out of the queue and is re-logged here (D6).** Of PR #118's eight
+Cities-screen reports, D3 (resumable download) shipped in `eba00fc` (a background `URLSession`,
+`CityDownloadService.backgroundSessionIdentifier`) and D7d (cumulative `Use`) became RULINGS
+**R84**; D6 was written into RULINGS R43's amendment as "a proposed ticket" and never reached this
+file.
+
+- ~~**F29 — the header squeezes a long title into a column of single words.**~~ Build 60, 2026-08-27,
+  verbatim: *"Really terrible spacing up top"*. The screenshot is the pin-set map ("Show me where
+  this is", ERRATA E144) for `Indian Laurel Fig Tree 'Green Gem'` with the pill
+  `Financial District/South Beach`: the title renders six lines deep, one word per line, between
+  the back circle and the pill. **A defect, still present on `main`.** `ScreenHeader`'s own comment
+  states the rule — *one row at the drawn sizes, two once the title cannot share one* — but the
+  code switches to two rows only when `dynamicTypeSize.isAccessibilitySize`
+  (`Cypress/DesignSystem/Components/ScreenHeader.swift`), and `HeaderPill` is `.fixedSize` at
+  every non-accessibility size, so at the default type size a long pill always wins and the title
+  takes whatever is left. The pin-set map is the screen where the **title** is a record's name
+  and therefore unbounded; the Measure, Growth history, Activity and Outbox headers carry a
+  variable **pill** instead and can reach the same state. Direction: implement the rule the
+  comment already states (two rows whenever the title and pill do not fit on one, e.g. with
+  `ViewThatFits`), and prove it on a 390 pt screen with this tree and this pill. Small. No owner
+  decision needed to fix the defect; the header's one-row layout at the lengths the mocks draw
+  must not change. **FIXED** by `fix/f29-header-two-rows`. Below the accessibility sizes C1 now
+  offers the one-row layout to a `ViewThatFits` first and falls back to two rows (title beside the
+  back circle, pill on the line below) only when the title cannot fit on one line beside the pill;
+  at the accessibility sizes it stays two rows, as before. `CypressTests/ScreenHeaderRowsTests`
+  proves both halves at 375–440 pt: the reported pair takes two rows at every width (it measured
+  165 pt tall at 390 pt before the fix, the six-line column), and every C1 pair the mocks draw
+  (05, 11, 12, 13, 16, 17) stays on one row. Measure, Growth and Activity can reach the same state
+  with a long tree name as the pill (`Measure` beside `Helene Strybing New Zealand Tea Tree` did at
+  375 and 390 pt) and now take two rows too; `Indian Laurel Fig Tree 'Green Gem'` beside `Measure`
+  still fits one row at 390 pt.
+
+- ~~**F30 — "2 photos" on the hero, one photo on the other side of the tap.** Build 77, 2026-09-25,
+  verbatim: *"Pill says two photos but when I click in I see only one. Bug?"* The screenshot is
+  screen 03 for a `Ginkgo, Autumn Gold` in SF with `2 photos · since 2026` on the hero pill and one
+  `Visit · leaf out` row. **Not reproduced; which tap the tester made is unknown, and the two
+  readings are different.** Since ERRATA E125 the hero has two controls
+  (`TreeProfileView.hero`): the **photograph** opens that one photograph whole in
+  `PhotoViewerView`, which by design never pages, and only the **pill** opens the browser
+  (screen 20). If the tester tapped the picture, the screen behaved as built, and the finding is
+  that nothing tells a reader the pill is the way to the rest, which is a design question under
+  constraint 21. If they tapped the pill, it is a defect: the pill and the browser read the same
+  series (`TreeProfile.visiblePhotos`, E215; `RoutedAPI.refreshedTreeProfile` merges the
+  community half by photo id), so the count and the list should not disagree, and the first step
+  is to reproduce it on a tree with two photographs from one visit. Small once the reading is
+  known.~~
+  **FIXED** by `fix/photo-identity-dedupe`, and the doubling is shown to be its cause. A photograph
+  this phone sent came back from `GET /trees/{id}` under the service's own `photo_id`, which the
+  phone never keeps, and `RoutedAPI.refreshedTreeProfile` deduped by id alone — so the phone's copy
+  and the service's were both counted. Reproduced through the real composition root (one visit,
+  one photograph, sent and read back) as exactly this screenshot: one `Visit` row under
+  `2 photos · since 2026`. The fix makes the phone's `photos.id` the begin's `client_uuid`, has the
+  service echo that key on the caller's own rows only, and folds by id, by key, or — for
+  photographs sent by build 77 and earlier — by framing and capture second on keyed own rows. **It
+  needs a server deploy to take effect.** Which tap the tester made is still unknown; the photo
+  browser also listed the second copy once the refresh landed (in the reproduction it drew as a
+  placeholder tile; whether production's bytes would have filled it was not observed), so "only
+  one" fits either a tap on the photograph (by design, E125) or a browser read before its refresh. The design question of whether anything should point
+  a reader at the pill is not raised by this defect and is not opened here.
+
+- **F31 — move a tree you added, and let other people see it.** Build 77, 2026-09-26, verbatim:
+  *"Need to be able to edit location on self-added trees and need self added ones to go to
+  everyone not just stay on my phone"*. The screenshot is screen 03 for a community-added tree
+  (`Tree`, *community-added, unverified · position from GPS*, private property). **New, and two
+  separate requests.** (a) *Relocation*: the only place a community tree's position can be set is
+  `Move the pin` during add-a-tree, before it is saved. After that there is no verb for it:
+  `CypressAPI` has no relocate method, and the write surface is append-or-withdraw by design (see
+  F27), so a relocation is a new mutation and outbox kind (probably a migration seat) plus an
+  unmocked control. (b) *Propagation*: an added tree does reach the service, as an outbox
+  `add_tree` on `POST /sync` (`RoutedAPI.addTree` writes locally and queues it; `RemoteAPI.addTree`,
+  which posts to `POST /api/v1/trees` and would key the tree on `client_uuid`, is not routed), but
+  nothing reads it back down. `treesNear` and
+  `mapContent` are Class L in `RoutedAPI` and the service has no read of community trees near a
+  place, so another phone never sees them. That is a read route, a client merge into the map
+  and a privacy decision: the screenshot's own tree was recorded on private property, and
+  DECISIONS constraint 16 keeps community trees out of the city layer until verified. Large.
+  **Owner decision** on both halves before either is built. **Decided 2026-09-28, and scheduled**:
+  see "Community trees: the client rounds" below. **ANSWERED, 2026-11-15:** rounds C1, C2 and C3
+  and chips 139 and 140 are built; that section says what is still owed on a physical phone.
+
+- **F32 — adding a tree where the app will not let you.** Build 77, 2026-09-26, verbatim:
+  *"Need a more complete species list. Tried to add cook pine and it wasn't an option. Also some
+  species show lowercase which is bad formatting. Also need to be able to add tree even if less
+  than 6m to known tree. This is using cypress to log areas where there are no databases"*. The
+  screenshot is add-a-tree refusing: `ALREADY ON RECORD — Something is already on record within
+  10 m of here. Nothing was added`, next to an `Unidentified tree` at 6 m, with `Pine Spp`
+  chosen. **Three findings, none of them a code defect:**
+  1. *Cook pine is in the seed under another name.* The pinned bundle
+     (`c9a440b2…`, hash checked) has *Araucaria columnaris* with the common name
+     `Coral reef araucaria`, so a search for "cook pine" cannot find it. The gap is vernacular
+     synonyms: species search matches only the one common name and the scientific name. Any
+     alias list must come from a cited source (DECISIONS constraint 15), which makes this a
+     sourcing round, not a string edit. Medium.
+  2. *Casing is inconsistent in the data.* Of the bundle's 513 species with a common name, 84
+     have a lowercase word after the first (`Swamp mahogany`, `Pittosporum spp`), and 380
+     multi-word names are in title case (`Norfolk Island Pine`, `Pine Spp`). The app renders
+     names exactly as the record holds them (ERRATA E51), so the fix belongs in the seed build.
+     **Owner ruled 2026-09-28: sentence case.** Small, but it changes published data and so ships
+     with the next seed publish, which needs the owner's go-ahead to create the Fly worker machine
+     (CLAUDE.md, "Publishing the seed").
+  3. *The 10 m refusal is a DECISIONS rule, not a bug.* Constraint 16 fixes add-a-tree's 10 m
+     any-species proximity dedupe (`TreeDraft.proximityDedupeRadiusM`, `LocalAPI.addTree`). The
+     tester is asking for it to be relaxed, for the use of logging trees where no city inventory
+     exists. **Owner decision** (constraint 16). Small to build if relaxed; the size depends on
+     the rule chosen, for example a smaller radius, or an override that states the reader has
+     checked the nearby record. **Decided by the owner on 2026-11-14: the rule stops refusing, for
+     new trees and for pin moves.** See chip 140 and
+     **RULINGS R190**. **Built on the phone in
+     `feat/no-proximity-refusal-phone`**: the add screen shows "ALREADY ON RECORD" as a note before
+     the tap, at the top of the form above the photo, and adds the tree anyway. The service half is
+     `feat/no-proximity-refusal-server` (PR 236), **deployed 2026-11-15** as `cypress-sync` release
+     v15.
+
+- ~~**F33 — zoom while taking the photo on add-a-tree.**~~ Build 77, 2026-09-28, verbatim: *"Need
+  ability to zoom in on photo in this view"*. The screenshot is add-a-tree's live viewfinder
+  (`Take the photo`, `Add this tree` disabled). **New: a third pinch-zoom report, on a camera
+  surface the first two did not reach.** (Not the only one: check-in 05 and care log 09's
+  `ContributionCameraView` had no pinch either when this was filed; chip backlog 80 ruled it in.) RULINGS R80 items 4 and 5 put pinch zoom on the full-screen
+  viewer (`PhotoViewerView`, `PhotoZoom`) and on screen 04's viewfinder (`VisitCameraView`'s
+  `zoomPinch`, which drives `VisitCameraController.setZoom`). Add-a-tree owns its own
+  `VisitCameraController` (`VisitAddTreeModel.camera`), but `VisitAddTreeView` has no zoom
+  gesture. Small: the controller already implements the gesture, the lens ceiling
+  (`preferredMaxZoom`) and the "not zoomable" gate. **Owner confirmation** that R80 item 5 covers
+  this viewfinder as well as screen 04's; it is the same gesture on the same controller.
+  **SHIPPED** by `feat/f33-add-tree-zoom`. The owner confirmed on 2026-09-28
+  (**RULINGS R168**). The gesture moved out of
+  `VisitCameraView` into `VisitCameraZoomPinch`, which screen 04 and add-a-tree's photo well now
+  both apply, armed by screen 04's rule (a lens to move, and no photograph yet).
+  `CypressTests/CameraZoomPinchTests` proves that add-a-tree carries it, and that each of the two
+  screens hands it `isAiming: false` over a still and `true` again after a retake. That the fingers
+  move the lens can only be seen on the physical phone, because no simulator has a camera; the phone
+  check also covers screen 04's pinch as a regression. The third camera that owns a controller,
+  `ContributionCameraView` (05 and 09), was outside this round and this ruling. The owner ruled it in
+  separately on 2026-09-29 and `feat/contribution-camera-zoom` shipped it; see chip backlog 80.
+
+- **D6 — search and filter by state on the Cities screen** (re-logged; build 49, 2026-08-23),
+  verbatim: *"Eventually we will have 20+ entries here. We need a way to allow search/filtering.
+  Filtering should be by state. Search just normal search"*. Not built:
+  `Cypress/Features/Cities/` has no search field or filter. PR #118 deferred it on purpose while the
+  catalog held seven packs, and that is still true. **The trigger is the catalog growing**, which is
+  the seed-expansion item below (Oakland, Los Angeles and twelve more). Filtering by state needs a
+  publisher-side `state` field, because no pack in `manifest-v2.json` carries one. The client must
+  not derive it from an id prefix, the class of mistake D7b was. Medium. Schedule it with the first
+  expansion publish that pushes the catalog toward twenty.
+
+### Community trees: the client rounds, opened 2026-09-28 (F31)
+
+The owner decided both halves of F31 on 2026-09-28. A tree added while signed in is visible to
+everyone as soon as it reaches the service. A tree added signed out stays on the adder's phone until sign-in and
+then goes live for everyone at once. The adder alone may move its pin, and may withdraw it for
+everyone while nobody else has built on it. Its history is shown on the profile without saying who.
+~~Trees added before the sync path existed stay local for ever (R77 is kept, and there is no
+backfill).~~ **Reversed by the owner on 2026-11-14:** a community tree added before syncing existed is sent, automatically, with everything recorded on it; see chip 139 and **RULINGS R183**. Others see a photograph's capture **date** and never its time; the owner keeps the exact
+time (decision 14, made client-assisted as 14a). The decisions, and what the server rounds ruled
+inside them, are in **RULINGS R141-R157** and
+**RULINGS R158-R167**.
+
+**The server half is on `main` (2026-09-29).** S1 is PR #187 (migration 007: publication, moves,
+withdrawal, and both deletion doors) and S2 is PR #190 (the tile, the profile's additions, and the
+history), behind #182's migration 006. **The gate before any client PR merges is a deploy**:
+TestFlight builds from `main`, and a build must never be able to queue a location correction against
+a service that refuses it. That deploy happened on 2026-09-29: `cypress-sync` booted `4462dbb`
+(#190 merged) at server schema 7. Still check its release before C1 merges, because a later revert
+or redeploy would change that (chip 12: merging server work changes nothing in production).
+
+- ~~**C1 — the core (`feat/community-trees-core`). Built; in review once its PR opens.**~~ **DONE in
+  `feat/community-trees-c1`** (the PR titled "Community trees C1: location chain, adder backfill, and
+  Move pin"). Two owner decisions of 2026-11-12 rode with it: v23 gives every pre-v23 tree this
+  install's own owner as its adder (not nobody), and a minimal **Move pin** control on the profile of
+  a tree the reader added, with no distance bound because the service has none
+  (**RULINGS R179**, **R180-R182**). **F37
+  ("Put the pin in the wrong place") is answered for trees the reader added.** What follows is the
+  round's original scope, kept for the record. Migration v23
+  is C1's. The one client migration author
+  of the round: the writable database's next migration (the design proposal names v23; read
+  `AppSchema.migrations`, not this line). It carries the new stores and the merge helper; a
+  location-correction verb with its outbox kind and `accountDeletionTreatment`; `addTree` writing
+  the adder and the root location; `treeProfile`, `treesNear` and `mapContent` reading the cache;
+  the proximity dedupe over the cache; `claimDevice` and both deletion doors adopting and erasing
+  the new rows; and the Swift half of the request fixture. Three things ride with it that are easy
+  to miss. **It sends each photograph's local capture date as `captured_on` (`YYYY-MM-DD`) with
+  `POST /photos/begin`** (decision 14a; the field is optional on the wire, and older builds omit
+  it, so their photographs keep today's behavior). It **neutralizes `RemoteAPI.addTree`**, which
+  would key the tree on `client_uuid`. And it **rewrites the comments R45 made false** — "no
+  author" and "nothing syncs anyone else's rows down" — re-verifying them rather than trusting this
+  sentence. Chip 70 (`species_assertions` in both deletion doors) folds into it. **Left for the
+  rounds after it, and stated rather than implied:** ~~the `tree_withdrawal` verb (the queue's CHECK
+  already admits the kind)~~ (**DONE in `feat/withdraw-tree`**, see the BUILT note at the end of
+  this section), a location-correction offer on the profile (C3), and the cache's
+  fetching (C2; the store and its schema are in C1, unwired).
+- **C2 — sync down (`feat/community-trees-sync-down`). Open; no migration; merges after C1.**
+  `RemoteAPI` decoders and tile-delta accessors; `GoldenWireFixtureTests` over the new wire files;
+  the `RoutedAPI` merge (history, `added_by_you`, adopting the adder from the service); the
+  refresher wired in `DataLayer`; and a cap on the community share of the map's pin budget (half was
+  proposed), so a dense community layer cannot starve the city layer. The server rounds set its
+  rendering rules: the dates on a community tree are calendar days and are shown as calendar days,
+  never shifted into the reader's zone; **a photograph's `captured_on`, when the service sends it,
+  is shown as that calendar date, and when it is absent the reader falls back to `captured_at` in
+  their own zone**; the phone's cursor, not a cached tree's `updatedAt`, decides what changed; and
+  the adder's own trees win the merge.
+  **Built in `feat/community-trees-sync-down`, in review; no migration.** `RemoteAPI` has
+  `communityTile` and `treeHistory` (delta accessors, not `CypressAPI` requirements), and
+  `treeCommunityHalf` carries `added_by_you` and `captured_on` (`community_tree` and
+  `is_published` are decoded at the wire and carried no further). The golden tests decode every new
+  `server/testdata` file through them. `CommunityTileRefresher` fills the cache for the zoom-14
+  tiles a settled map touches (at most 16, so every map from zoom 15, the first that draws cluster
+  badges, fetches; each tile at most once per 120 s; one pass at a time), wired in `DataLayer`
+  behind the remote gate, and the map reads again when a refresh changed the cache, even a
+  cancelled one. `refreshedTreeProfile` adopts the service's `added_by_you` when it says yes,
+  carries the history (`TreeProfile.communityHistory`, dates as `CalendarDay`), and shows a service
+  photograph on its `captured_on`. The community layer takes at most half the pin budget when the
+  city layer can use the rest, the phone's own trees first, and the map's narrowing runs before
+  that cut. The owner ruled on 2026-11-15: every phone downloads, registering its device if it never
+  has; the cache has no limit for now; and the download starts at the first zoom that draws cluster
+  badges. The design decisions are in **RULINGS R198-R206**.
+  **Left:** seeing it work on a signed-in phone against the live service (no test calls
+  production, and the UI suite runs with the gate off). **Revisit the cache's limit when the
+  community layer grows** (the owner's ruling: no limit for now). The map narrows and counts the
+  community trees in view in SQL on each read: measured on the simulator with 5,000 cached trees in
+  one box, 43 ms for pins and 1.9 ms for clusters; with 50,000, 80 ms and 23 ms (the table is in the
+  rulings file's cache-limit entry). **A shared link to a community tree the phone never fetched** cannot
+  open: `LocalAPI.treeProfile` throws `notFound` for a tree in neither table before the service is
+  asked. **Investigated 2026-11-16 (`fix/community-tile-complete`), not built:** no shared link
+  reaches the app today, for any tree. The app has no URL scheme, no associated domains and no
+  `onOpenURL`; the share sheet's link (`ShareCopy.publicURLPrefix`) is a web address, so a tapped
+  link opens the browser. The service already answers the tree: `GET /trees/{id}` returns
+  `community_tree` for a published tree to any device, and `RemoteAPI` decodes it but carries it no
+  further, because C2 refused writing a profile read into the cache (it is not ordered against the
+  tile cursor, so a late answer could put back a tree a removal list had just dropped). An in-app
+  open of an id in neither table draws "No record for this tree." with no retry. Building it needs
+  the owner's choices: the link's entry into the app (a scheme, or associated domains on the web
+  host), whether a fetched tree is cached or only shown, and what the profile draws while it asks. ~~**Left for C3:** drawing the history and `addedByYou`; the DEBUG seam that seeds the cache;
+  and **the cache keeps `createdAt` as an instant, so C3 must draw "Added" dates with
+  `CalendarDay(utcDayOf:)`**, never in the reader's zone.~~ **DONE in C3, 2026-11-15**
+  (`feat/c3-profile`): the profile draws the history, the DEBUG seam is
+  `LocalAPI.debugSeedCommunityCache`, and a cached tree's "Added" day is the UTC day.
+- ~~**C3 — the UI (`feat/community-trees-ui`). The owner answered every question on 2026-11-14; not
+  built; merges last, and strikes F31.** The answers, with each chosen string word for word, are in
+  **RULINGS R184-R189**. In short. *Move the pin*: no distance limit,
+  the draft strings stay, the Outbox row is "Pin moved", and a refused move says "This couldn't be
+  sent." *History on the profile*: in the profile's activity list, all four events, "Pin moved · 12 m
+  north", dates as "Mar 20", the reader's own rows say "you" on their own phone, and with no history
+  the list shows the "Added" row only. *The Journal*: "Moved the pin of X". *The add-a-tree note*:
+  separate strings for signed in, signed out, and not sharing; no mention of private property; at
+  the largest text sizes it moves into the scrolling form. *Other people's trees*: the same dashed
+  pin, the species controls appear on their profiles, your own unshared tree says "This tree is only
+  on this phone…", and a tree within 10 m of another is added after a note that does not block.
+  *Places with no inventory*: the map card and the empty shortlist each name both kinds of tree. The
+  late-conflict question was dropped, because the owner removed the 10 m rule (chip 140). Five facts
+  the round must check first are listed at the end of the answers file. The UI suite runs with the
+  remote gate off, so this round also needs a DEBUG seam that seeds the cache; a deep link that
+  quietly no-ops is forbidden (ARCHITECTURE §7).~~ **BUILT, 2026-11-15, in three packages on one
+  shared base** (`feat/c3-base`: the community tree mark and `ContributionSharing`): the profile
+  (`feat/c3-profile`), the Add this tree note and the two empty places (`feat/c3-add-note`), and the
+  Outbox and Journal rows (`feat/c3-outbox-journal`). Where the build differs from the summary
+  above, the owner decided it on 2026-11-15, and each answer is in a pending rulings file:
+  - **Species controls are hidden on a tree someone else added**, until the service change of chip
+    144 (**RULINGS R209**).
+  - **An unshared tree says "Only you can see it"**, not "only on this phone", because the phone
+    does send such a tree and the service keeps it private (**RULINGS R223**).
+    A person who declined can agree later from the You tab's "Share my tree records" row
+    (**RULINGS R215**).
+  - **The map card and the empty "What tree is this?" list keep their old text where the phone has
+    not asked the service for added trees** (zoomed out past 16 tiles, offline, a failed download,
+    or the gate shut), and name both kinds of tree everywhere else (**RULINGS R230** and **R231**).
+  - **A history row's square draws the community tree mark** (**RULINGS R210**, **R222**).
+
+  **F31 is answered:** a person can move a tree they added (C1), and other people see it (C2, C3,
+  and chip 139 for trees older than syncing). **Owed on a physical phone,** because no simulator
+  run shows them: synced trees from a second account against the live service; the "Share my tree
+  records" confirmation; the camera stopping under a profile opened from the "ALREADY ON RECORD"
+  note and starting again after Back; and each control on a tree someone else added.
+
+- **Withdrawing a tree you added — BUILT, 2026-11-16, in `feat/withdraw-tree`; no migration, no
+  service change.** The last piece of F31. The owner's answers of 2026-11-16 are in
+  **RULINGS R238**: `Withdraw this tree` in the record controls,
+  an alert with two messages, the Outbox row `Tree withdrawn`, the tree back on the map with the
+  owner's sentence when the service refuses, and the tree off the Journal, My Grove and the Yours
+  map. No Journal row (the orchestrator's choice). The Journal and My Grove now drop a lead's
+  local withdrawal too (the planner's finding (g)1). **Owed on a physical phone with a second
+  account against the live service:** the tree leaving another phone, and a real `conflict`.
+
 ### Follow-up tickets from the 2026-08-30 rounds
 
 - **`cypressHitArea` overhangs whatever sits above it, everywhere it is used — audit the call
@@ -385,9 +835,11 @@ one owner sentence away from being schedulable. The evidence, so that round star
   Citations were rewritten with it, including two that had moved *into* `RULINGS.md` as danglers —
   the failure that made splice #134 go red — and one stale pointer in `Tools/publish_cities.py`
   that had been deferring to `docs/rulings-pending/` for a rule numbered **R83** weeks ago.
-  **One file is deliberately held**: `docs/rulings-pending/measurements-round.md`, whose third
+  **One file is deliberately held**: the measurements round's rulings (now **RULINGS R113-R115**), whose third
   entry is the withdrawal design the live F27 round is building; it splices when that round lands,
   so the numbered entry records the outcome instead of "proposed, blocked".
+  **That round has landed** (F27, #154 and #156), and the splice of 2026-11-16 numbered it (chip
+  160).
 
 
 - ~~**Map camera fits the filtered set.**~~ **SHIPPED** (`feat/see-all-camera`). The owner ruled
@@ -465,10 +917,19 @@ at 1,027 trees). Leftovers the reviews surfaced, none scheduled:
   pre-tap value. Pre-existing (remote-first `isFavorite` had the same exposure); documented in
   `ProfileFavoriteWriter.reconciledState`, not closed. Needs a server-side read-your-writes answer
   or a version/timestamp on the favorite row.
-- **Hoist the remaining grove SQL literals to named properties** (`groveTreeIDs`, `groveRecords`,
+- ~~**Hoist the remaining grove SQL literals to named properties** (`groveTreeIDs`, `groveRecords`,
   `CommunityTreeStore.trees(ids:)`) so `GroveStatementCensusTests` can pin by property the way the
   almanac census does, instead of deriving five of seven expected texts by probe. The tallies
-  literal was already collapsed onto `scopedHeroPhotoTalliesSQL` in #147.
+  literal was already collapsed onto `scopedHeroPhotoTalliesSQL` in #147.~~
+  **SHIPPED** (`tools/shot-dir-and-sql-properties`). `ContributionStore.groveRecordsSQL`,
+  `ContributionStore.ownHeroPhotoCandidatesSQL` and `CommunityTreeStore.treesSQL` are the hoists;
+  the census pins all seven statements by property, per text, and the probe is gone.
+  **Two claims in this entry were wrong, corrected here rather than left to mislead.**
+  `groveTreeIDs` already had a property — `ContributionStore.groveTreeIDsSQL`, which
+  `GrovePagedStatementCensusTests` reads — so the probe covered four of seven, not five. And the
+  tallies literal was **not** collapsed in #147: that PR's review identified the duplicate and the
+  test header it wrote says in as many words that it does not fix it. The second, byte-identical
+  copy was still inside `heroPhotoIDs(treeIDs:connection:)` at `b5a929c`; it is removed here.
 - ~~**`Tools/run_tests.sh` hardening, one sitting:** (a) a wedged `simctl bootstatus -b` is
   indistinguishable from a slow preflight and silently blocks every later run on that device;
   (b) the collision guard can self-match the *caller's own command line* when the wrapper
@@ -485,9 +946,11 @@ at 1,027 trees). Leftovers the reviews surfaced, none scheduled:
   and says which of the two things it is looking at — the tail of a wrapper that just returned, or
   a stray. (d) the **classification** option was taken, not the concurrency one:
   `verify_test_log.sh` answers `VERIFY-ENV-REFUSED` with exit **2** when every failure in a log is
-  an event-synthesis timeout, distinct from a pass (0) and a red (1), and `run_tests.sh` stamps
-  the concurrent xcodebuild count so the verdict is checkable against the condition that produced
-  it. Lowering the cap was rejected on the record: three is CLAUDE.md's number and the
+  an event-synthesis timeout **and no counter in the log reports a failure beyond them** — no
+  crash marker, no Swift Testing aggregate, no XCTest count larger than the timeouts classified —
+  distinct from a pass (0) and a red (1); `run_tests.sh` stamps the concurrent xcodebuild count,
+  counted the same way the collision guard counts, so the verdict is checkable against the
+  condition that produced it. Lowering the cap was rejected on the record: three is CLAUDE.md's number and the
   orchestrator's to set, a lock inside the script would serialize agents invisibly, and it would
   still not classify what got through. `Tools/test_harness_guards.sh` is the calibration — 39
   checks, each paired with its control, no simulator and no network.
@@ -534,8 +997,11 @@ Three items queued by the owner, recorded verbatim in intent; none is scheduled 
   nearest-tree resolution is still the default and is now one of two states rather than the only
   one. The design decisions taken under DECISIONS constraint 21 are in
   **RULINGS R85** and are **awaiting the owner's ratification**.
-- **Update the repo README.** The README predates most of what shipped; bring it current with the
-  app as it stands (cumulative inventories, the publish pipeline, the beta process).
+- **Write a repo README.** The entry used to say "update", and its premise was wrong: no root
+  `README.md` has ever existed in this repository's history (checked 2026-09-29 across all
+  branches). Only `server/README.md` and `web/README.md` do. What a first one should cover
+  (cumulative inventories, the publish pipeline, the beta process, and the web) is the owner's to
+  scope.
 
 ### Chip backlog (this file is the only queue — session chips are banned)
 
@@ -559,7 +1025,8 @@ into this section in the round that finds it, and nowhere else. Each item stands
 2. **Rebuild `Tools/ui-test-shards.txt` from live CI data.** The shard assignments have drifted
    from the suites' actual durations (shard runtimes are visibly unbalanced in recent runs);
    regenerate from measured per-class times and re-prove `UITestShardCoverageTests` still covers
-   every class.
+   every class. **Flagged stale again on 2026-09-29** (from #185): re-measure rather than trusting
+   the table's own comments.
 3. ~~**Fix `Tools/fetch_seed.sh`'s silent scope-check death under `pipefail`.** A failure inside the
    scope-check pipeline can kill the script without a diagnostic; make every exit path name itself,
    with a calibrated failure case.~~ **SHIPPED** (`tools/fetch-seed-diagnostics`, split out
@@ -599,12 +1066,24 @@ into this section in the round that finds it, and nowhere else. Each item stands
    sentence. Rework the test's gesture (or its precondition) so a delivered-but-unregistered pan
    retries or fails as an environment refusal rather than a red; keep the regression it guards
    (a deliberate pan surviving a tab switch must still fail if the camera resets).
+
+   **2026-09-11: six failures in a 90-minute window, and the probe says it is not the flake the
+   retry was built for.** The web round saw this test fail on six branches that afternoon, every
+   one reading `panBegan=3 panEnded=3 panCancelled=0 panFailed=0` at `GATE_SCREEN_WIDTH_PT: 402`
+   — all three synthesized drags recognized end to end, camera still on "Centered on you". #230's
+   retry hardened the COALESCED TOUCH STREAM, whose signature is `panBegan=0`, so whatever this
+   is, it is not that. `MapAnnotationLayer.swift:445` names this exact pattern as the
+   `layoutMargins` content-inset signature, reproduced 4/4 at 402 pt on an iPhone 16 Pro. That
+   leaves two readings — a width-marginal camera behavior, or a slow-runner variant where the
+   camera moves and snaps back — and the fields that separate them, `lastEndedTranslation` and
+   `settles`, are cut out of the job log by the truncation in item 40. **Start from a
+   `ui-xcresult` artifact rather than from a re-run.**
 6. **Sweep `library.stagingURL`'s lifecycle for leaks** (chip still pending as of this note). The
    #123 reviewer left it deliberately unfiled: can a process death, failed verification, cancelled
    transfer, or refused install leave orphans in the staging directory, and does anything clean
    them? Happy path verified empty on device; the sweep is every unhappy path, pinned with
    red-proved tests.
-7. **Make `CYPRESS_SHOT_DIR` reachable for UI tests, or correct the instructions.** The unit-side
+7. ~~**Make `CYPRESS_SHOT_DIR` reachable for UI tests, or correct the instructions.** The unit-side
    shot suites (`ScreenSweepShots`, `DynamicTypeScreenshotTests`) provably honor the variable
    when `TEST_RUNNER_CYPRESS_SHOT_DIR` is **exported** before `Tools/run_tests.sh` — several
    errata carry the receipts. The UI-test files (`AreaPickerUITests.swift:13`,
@@ -617,7 +1096,2061 @@ into this section in the round that finds it, and nowhere else. Each item stands
    the doc comments in all the files that state the convention (the two UI-test files, plus the
    cross-references in `ScreenSweepShots.swift`, `DynamicTypeScreenshotTests.swift`,
    `DebugDeepLink.swift`). A confident doc comment asserting an unverified invariant is this
-   repo's signature bug shape.
+   repo's signature bug shape.~~
+   **SHIPPED, and the answer is that the variable was always reachable** — the exported spelling
+   the unit side uses reaches a UI-test runner too, because `xcodebuild` forwards a
+   `TEST_RUNNER_`-prefixed **environment** variable to whichever process hosts the test bundle,
+   which is the app under test for `CypressTests` and the XCTRunner app for `CypressUITests`. What
+   never worked is the *argument* spelling those two files prescribed: written after the script's
+   own arguments it is a build-setting override and reaches no process at all. Three runs on
+   iPhone 16e (`3A1F212D`) on 2026-09-09, one `-only-testing` UI test each, each against a
+   directory listed empty first: exported → the PNG in the chosen directory; unset → the runner's
+   own container tmp; argument → the same container tmp and the chosen directory still empty.
+   Receipts in **ERRATA E322**. The convention is now argued
+   once, in `Tools/run_tests.sh`'s header, and the four files that stated it point there (a fifth,
+   `DebugDeepLink.swift`, named the key only as a naming example and now separates key from
+   channel); `CypressTests/ShotDirectoryConventionTests` keeps the key the writers read and the
+   name the prose tells an operator to export from drifting apart.
+
+   **Two gaps this left open, both deliberate, both unguarded — read them before touching these
+   files again.**
+   (a) *The original defect has no regression guard.* `ShotDirectoryConventionTests` pins the key
+   and the forwarded name, not the prose that says how to set the variable, because a gate matching
+   "command line" would go green on the same false instruction reworded — the worst shape a guard
+   takes here. #152's reviewer confirmed it by planting a fresh false instruction that avoids the
+   phrase entirely ("hand `TEST_RUNNER_CYPRESS_SHOT_DIR=<dir>` to xcodebuild after the script's own
+   arguments") and watching all three tests pass. The decision stands; what is filed here is that
+   the exact class of defect this round cured can recur silently, so a *reader* is the only check.
+   (b) *The gate does not sweep `docs/`.* It reads `Cypress/`, `CypressTests/`, `CypressUITests/`
+   and `Tools/run_tests.sh`. That is why `docs/ERRATA.md` carried the unprefixed spelling in its own
+   reproduction instructions until #152's review found it by hand (corrected in place there, not
+   renumbered). Widening the sweep to `docs/` is the obvious move and was not taken in that round:
+   the errata shelf discusses these names as text far more often than it instructs them, so the
+   gate would need a notion of "instructing" it does not have — which is gap (a), one directory
+   over.
+8. **Make `DebugDeepLink.fullyMeasured` pick a tree that device state cannot move.** Raised by
+   PR #154's adversarial review; it is the half of that finding the PR did **not** close. (What it
+   did close: withdrawing the seeded reading made `debugSeedMeasurement` throw `notFound` on that
+   container for good, so `AddReadingReachabilityTests` failed on that simulator ever after.) The
+   case pins `candidates[candidates.count * 5 / 8]`, and `fullyMeasuredTree`'s comment says
+   `candidates` "keeps the seed's own length and ordering whatever this device has been through".
+   That is true of the thing it was written against — status overrides, applied with a `map` — and
+   **not true in general**: `LocalAPI.treesNear` merges locally added community trees into the seed
+   rows, re-sorts by distance and truncates to `limit`, so one community add inside the 3 km radius
+   changes `count`, shifts the 5/8 index, and silently re-points the case at a different record.
+   Nothing fails loudly when it does — the harness seeds two readings onto whichever tree it lands
+   on, so the failure surfaces somewhere else, on a tree nobody chose. Pick an identity local
+   writes cannot move (the record's own id, or an index into a set no device write can enlarge),
+   correct the comment to say what it actually survives, and red-prove it by adding a community
+   tree inside the radius before the case resolves.
+
+9. **Serialise a reading against its own withdrawal across two concurrent drains** (top server
+   item). PR #156's arrival-order guard closes the withdrawal-committed-in-an-earlier-drain
+   ordering and **only** that one; two `Apply` transactions overlapping in time are still mutually
+   blind. Mechanism: `Apply` runs at READ COMMITTED (`Store.Tx` calls `pool.Begin` with no
+   `TxOptions`, so the isolation is the server's default) and there is no unique key on the reading
+   id — the two indexes `004_measurement_withdrawal_kind.sql` adds are plain — so nothing makes two
+   transactions about one reading block each other. #156's reviewer built the interleaving against
+   the branch's own store functions and it reproduced: `withdrawMeasurement` sees `matched == 0`
+   and answers `applied`, `measurementWasWithdrawn` sees no committed withdrawal and the reading is
+   born live, both commit, `live=1` — ERRATA E280's sentence ("a service reporting a removal it did
+   not perform") at millisecond scale, reachable in the multi-device case
+   `Mutation.WithdrawnMeasurementID`'s comment invokes. Not a regression: before #156 the kind was
+   refused outright. **Suggested direction, explicitly unverified** — a transaction-scoped advisory
+   lock keyed on the reading id (`pg_advisory_xact_lock(hashtextextended(upper($1), 0))`) taken at
+   the top of **both** `withdrawMeasurement` and `measurementWasWithdrawn`, which serialises only
+   same-reading pairs. Nobody has built or red-proved that shape; treat it as a direction, not a
+   recipe, and red-prove the race itself first so the fix has a witness. `server.yml` now runs the
+   suite against Postgres and refuses a skip, and since `ci/server-only-skips-ios` it is required on
+   pull requests through `gate` (TestFlight's `server / server` job); on main's push commit, read
+   the `Server` workflow's own run.
+10. **Decide what a signed-out phone can take back — the shared ownership rule costs more for
+    readings than for photographs.** Signed out on the same phone, withdrawing a reading belonging
+    to that phone's own account comes back `forbidden`, non-retryable, and screen 17 gives the user
+    no way to clear the red row. This is not a `measurement_withdrawal` defect: #156's reviewer
+    compared the ownership rules to `photo_withdrawal`'s line by line and they are **identical**
+    (`user_id` match OR `device_id` match; anonymised rows owned by nobody and therefore refused),
+    because `ClaimDevice` moves a contribution's `device_id` to a `user_id` and nothing server-side
+    remembers which installation recorded it — the client's own gate has an installation arm and
+    this one cannot. So the divergence is `withdrawMeasurement`'s documented one, hit through a
+    second kind. Readings are recorded far more often than photographs, which is why the shared
+    rule's user-visible cost lands here first. Two halves to answer: whether the service should gain
+    an installation arm at all, and — independently — what screen 17 offers for a permanent
+    non-retryable failure on a mutation the phone has already applied locally. **Raised by #182's
+    review (F1)**: photographs adopted at sign-in now go public, so the same dead end fails the
+    other way there. A photograph withdrawn on the phone while signed out is refused `ErrNotOwned`
+    and left live. That makes this item's priority higher than it was.
+11. **Answer what a withdrawn-to-empty tree should look like, before `GET /me/journal` goes
+    remote.** Withdrawing the only reading on a tree leaves that tree in `GET /me/grove` with all
+    four tallies zero and in `GET /me/map-membership?kind=yours`, and the `measurement_withdrawal`
+    contribution row itself surfaces as a journal entry. Measured by #156's reviewer
+    (`treeInGrove=true counted=0`, the tree id still in `yours`, a `measurement_withdrawal` item in
+    the journal response). The cause is that the withdrawal's own row is live and no reader filters
+    on kind, so it keeps the tree in `Grove`'s `mine` CTE and in `MapMembership`. Identical to
+    `photo_withdrawal` today and **nothing is tester-visible**, because `RoutedAPI` routes the
+    journal local — which is exactly why it needs answering on a schedule rather than on a bug
+    report. Check against PR #154 what a `measurement_withdrawal` journal row renders as when the
+    journal goes remote, and decide whether an emptied tree should leave the grove and the `yours`
+    filter or stay with zeroes. **#187 adds a second way in**: a community tree its adder withdrew
+    stays in `MapMembership`'s `yours` through the adder's own contributions, the same shape.
+12. **Prose pass over `server/README.md`'s Deploy section — it is stale in a way that reads as a
+    blocker.** It still says the `cypress-sync` machine "needs secrets and a Postgres that do not
+    exist yet". Both #156's author and its reviewer checked: `fly secrets list --app cypress-sync`
+    returns sixteen secrets, all `Deployed`, including `DATABASE_URL`, `SESSION_SIGNING_KEY`,
+    `OPERATOR_TOKEN`, the three `APPLE_*` and the five `PHOTOS_*`. While that section is open, the
+    neighbouring facts worth stating correctly: the app is at release v7 with its machine
+    auto-stopped (`min_machines_running = 0`), and nothing in `.github/workflows/` deploys to Fly, so
+    a migration only runs at the next boot of a **redeployed** image — merging server work changes
+    nothing in production. (This item used to say no workflow touches `server/` at all. That stopped
+    being true when `server.yml` landed: it tests the service, and only the deploy is still by hand.)
+    **Two more facts found since to state correctly**: production is Postgres 18 (`postgres-flex:18.1`),
+    while the README's throwaway-database recipe still pulls `postgres:16-alpine` (chip 14 already
+    says 18). Prose only; no code.
+13. **`GET /api/v1/trees/{id}` publishes two per-tree counts of user actions to any signed-in
+    caller, and nobody has ever tested that against D1.** Found by W-G while ruling on what the
+    *public* read may say, so it is filed rather than fixed — the shipped route is not this round's
+    to change. `treeProfile` returns `photo_count` and `visit_count` for **any** tree to **any**
+    authenticated caller, which is cross-user rather than private: it is not the E87 case (that
+    count was "not public — the rows exist on one phone and are attributed to nobody"), and it is
+    not obviously the F16 case either, because the noun is a tree. R27.1 is the ruling that decides
+    it — *"trees may be ranked; people may not"* — and under R27.1 §2 a per-tree count of somebody's
+    acts still wants the ≥3-distinct-people floor, because at one contributor the number is one
+    person's activity at a fixed location and at two it is inferable to the other. R27.1 §5 says
+    photograph counts specifically are not wanted. **What to do is a ruling, not a patch**: decide
+    whether these two counts stay, gain a floor, or go, and check what the client draws from them
+    before removing anything. `visit_count` is `TreeCommunityHalf`'s second query;
+    `photo_count` is `len(photos)` after the visibility filter, and screen 15's promise may rest on
+    one of them.
+14. ~~**`server/` has no CI, and this round added twenty-three tests to a suite nothing runs.**~~ The
+    proposal's §7 records the gap; W-A's `web.yml` is for `web/`, not for this. A `server.yml` on
+    `ubuntu-latest` with a `postgres:16` service container and `CYPRESS_TEST_DATABASE_URL` set would
+    run the whole suite in about a minute, and — this is the part that matters here — it must
+    **assert the skip count is zero**, because `go test ./...` prints `ok` per package and exits 0
+    with every SQL test skipped. ~~Measured 2026-09-10: 60 pass / 108 skip with no database, 191 pass
+    / 0 skip with one.~~ **Those no-database numbers were the baseline tree's, mislabelled**; at
+    W-G's head after its review fixes, it is **67 pass / 131 skip / 0 fail** with no database and
+    **198 pass / 0 skip / 0 fail** with one (66 / 125 and 191 / 0 at the PR head before them). `testflight.yml` already excludes `server/`
+    from the archive, so a server-only workflow cannot mint a build. **SHIPPED** by
+    `ci/server-zero-skips`: `.github/workflows/server.yml` runs the suite on `ubuntu-latest` against
+    a Postgres service container with `CYPRESS_TEST_DATABASE_URL` set, under `go test -json`, and
+    `server/ci/verify_test_json.sh` refuses any `skip` event (subtests included), any failure, zero
+    passes, a package that passed having run nothing, and a cut-short stream; `gofmt -l` and
+    `go vet` run too. **Postgres 18, not the 16 sketched above** — production is
+    `flyio/postgres-flex:18.1` (`fly image show --app cypress-sync-db`, 2026-09-28). Measured at
+    `bb4d08f`: **68 pass / 147 skip** with no database, **222 pass / 0 skip** against 18. The
+    trigger list also names the four Swift files Go tests parse, and
+    `server/ci/check_trigger_paths.sh` fails the run if a fifth appears unlisted. ~~**Not a required
+    check** — that is the owner's ruleset call, and if it is made one the `paths:` filters must come
+    off in the same change (E225).~~ **Required through `gate` since `ci/server-only-skips-ios`**
+    (owner ruling 2026-09-28): `testflight.yml` calls `server.yml` as its `server` job whenever a
+    diff touches `server.yml`'s `on.push.paths`, `gate` refuses unless it succeeded, and a
+    server-only diff (`this diff is server-only`) no longer runs the iOS suite. No ruleset change:
+    `gate` was already the required context.
+
+15. **One tree, one current height: should the method count?** Nothing in this corpus rules on
+    whether an estimate may supersede a measurement when a single number has to be chosen. D7,
+    DECISIONS constraint 2, ARCHITECTURE §5 rule 3 and PRODUCT's non-goal (*"Never share a chart
+    line"*) are all rules about a **chart line**, and E103 extends them to a spoken summary; none is
+    about which number is current. The client picks the most recent regardless of method in three
+    places — `TreeProfilePresentation.latestMeasurement` (`Cypress/Features/TreeProfile/
+    TreeProfilePresentation.swift:1189`), `MeasureModel.previousMeasurement` (a verbatim second copy
+    of it) and `GrowthHistoryPresentation.chart(for:)`, which re-merges both series for its newest
+    and oldest labels — so a 90 cm estimate displaces a 64 cm taped reading on screen 03 today.
+    W-G's public read matches that deliberately rather than authoring a fourth answer, and pins it
+    in `TestANewerEstimateSupersedesAnOlderTapedReading`. **Answer it once, for all four sites**, and
+    note the two duplicated copies of the selection rule are their own small cleanup. Found by the
+    adversarial review of #163, which found the code claiming the opposite in a comment.
+
+16. **`clientKey` trusts a request-supplied header, on a route that now has no credential.**
+    `internal/api/server.go` returns `Fly-Client-IP` when the request supplies one, and the only
+    thing making that trustworthy is Fly's proxy overwriting it. The review measured it: after
+    exhausting a bucket, 25 of 25 requests carrying a self-chosen `Fly-Client-IP` were served, each
+    allocating its own bucket. Pre-existing and not a live exploit — but until W-G every route behind
+    it also required a credential, and `GET /public/trees/{id}` requires none. W-G narrowed it (a
+    value that is not an IP is not used as a key; `ratelimit.maxBuckets` bounds the map) and
+    deliberately did **not** fix it: the fix is to stop honoring the header unless the connection
+    came from the proxy, which is a trust-boundary change nothing in that round could verify against
+    a request it watched arrive. **It is moot if the answer to the ruling's Q4 is "SSR-only"**, so
+    do them together: decide Q4 first, and if the endpoint stays internet-facing, make the trust
+    explicit and prove it against a real Fly request rather than from documentation.
+17. **A `/* … */` decoy after the real declaration defeats the migration-file kind extractor.**
+    Raised by the delta review of PR #163. `contributionKindsFromMigrations` strips only lines that
+    *begin* with `--`, so a migration whose real `ADD CONSTRAINT` is followed by a block-commented
+    older draft yields the **draft's** vocabulary — measured as `[visit never_a_kind]` where the
+    answer is `[visit the_real_answer]`. Not a hole today: `TestTheLiveSchemaAgreesWithTheMigrationFiles`
+    catches it loudly, because the live schema and the file reader stop agreeing. But
+    `TestContributionKindExtractorIsCalibrated`'s specimens cover only `--` prose, so the shape is
+    untested, and the round that fixes it should add a `/* … */` specimen rather than only the strip.
+    **A second shape, from #187's review**: the extractor also takes any `CHECK (kind IN (` block as
+    the contributions vocabulary, and nothing anchors it to `contributions`. 007 creates
+    `community_tree_events`, which has its own `kind` column, and spells its check `= ANY (ARRAY[…])`
+    to stay out of the way. A later migration that spelled it `IN (…)` after the contributions
+    constraint would send the guards red about the wrong thing. Anchor the block to the table.
+18. **Delete `kindsAwaitingTheirMigration` when PR #159's `005_data_dispute_kinds.sql` lands.**
+    PR #163 classifies `data_dispute` and `data_dispute_withdrawal` before their migration exists,
+    so neither PR's merge order breaks the other's guard. The map in `server/internal/api/public.go`
+    exempts them from "a classified kind must be a declared kind" until 005 arrives. It cannot hide
+    an unclassified kind — the safety-critical direction never reads it — so its expiry is a
+    **`t.Logf`, not a failure**, deliberately: failing would trade one red-on-main for another.
+    That is why this item exists rather than a test. One deletion, two entries, in the round that
+    merges 005 or the one after it.
+
+    **The trigger has fired**: `server/migrations/005_data_dispute_kinds.sql` is on `main` (PR
+    #159 merged), so both entries now excuse nothing, and
+    `TestEveryContributionKindIsClassified`'s `t.Logf` asks for their deletion on every run of the
+    Go suite, which item 14's `server.yml` now runs on every pull request that touches the service.
+    Nothing is left but the deletion.
+19. **Measure the real distribution of favorites per tree, and set the beloved floor from it.**
+    R27.1 asks for it in as many words — *"count it, do not guess it"* — and PR #163 shipped
+    R27.1's inherited ≥3 because the attempt to read the production distribution was refused before
+    a query ran. The floor may be raised by a measuring round and may not be lowered. Pair it with
+    the observation that since the 2026-09-10 ruling only **account-backed** favorites count, so the
+    distribution to measure is over `favorites.user_id`, not over all owners — and the answer may
+    well be that no tree in the beta reaches any floor at all, which is a finding rather than a
+    failure.
+
+20. **Add `web/**` to the push trigger's `paths-ignore`.** ~~Teach `DeployPathsAgreeTests` a
+    third predicate~~ — **the guard half is DONE**, in `web/foundation` after adversarial review
+    (#162, B1). This item used to describe the guard work as an optimization whose "prize is
+    small"; that framing was wrong in a way worth recording, because the exposure ran the other
+    way. `DeployPathsAgreeTests` read `DOC_ONLY` alone while the `scope` step subtracted
+    `^($WEB_ONLY|$DOC_ONLY)`, so any widening of `WEB_ONLY` — or of `GIT_METADATA`, added the same
+    round — could move a must-RUN path into the run-nothing set with the suite still green. The
+    reviewer red-proved it: one alternative added to `WEB_ONLY` made a `web.yml`-only push
+    `tests=false ships=false`, killing #212's guarantee for the file that defines the web
+    pipeline, and the test reported `Test run with 2 tests in 1 suite passed`. Nothing about that
+    was an optimization, and nothing about it was optional.
+
+    The test now derives the run-nothing predicate names from the `testable=` line itself and
+    checks every one it finds, so a fifth predicate cannot be unguarded the way the third was.
+    **What remains is the small part**: add `web/**` to `paths-ignore`, which needs the
+    trigger → predicate loop to accept a token appearing in any run-nothing predicate rather than
+    in `DOC_ONLY` specifically. The saving really is one ~10-second ubuntu job per web-only push
+    to main. Do it as its own change with its own simulator run, never folded into a web feature
+    round, and read the item below first — it changes what `paths:` on `web.yml` may say.
+
+21. **Give the web its own release-note channel, or rule that it needs none.** `plan`'s
+    release-note check treats a web-only pull request as not-required, because `docs/whats-new/`
+    compiles into TestFlight's "What to Test" — a field attached to a **build**, which a web-only
+    change does not mint. That is correct as far as it goes and it means web changes currently
+    ship with no changelog anywhere. Decided by W-A in a comment rather than by anyone with the
+    authority to decide it; it wants a ruling once the web is actually deployed (W-E), not before.
+    **The trigger has fired**: W-E shipped on 2026-09-13, so this is now due.
+
+22. **Make `web` a required status check, and drop `web.yml`'s `paths:` in the same change.**
+    Raised by #162's adversarial review, and it closes a loop nothing currently tracks. `gate` is
+    the only required context on `main` (read from GitHub, not from prose:
+    `main-pull-request-only → active`, required contexts = `gate`). For the entire class of change
+    this round carves out — a web-only diff — `gate` now goes green having run nothing, and the
+    job that DID test it, `web`, is not required. That is the right sequencing, because a context
+    has to report on `main` once before it can be required; it is not a resting place. `web.yml`'s
+    own comment says its `paths:` filters must come off in the same change that makes it required,
+    since a required check that a path filter skips never reports and blocks every pull request.
+    Do both together, after `web` has reported on `main` at least once.
+
+23. **`git diff --name-only` hides a rename's source, so a move out of the app classifies as
+    web-only.** `git mv` a Swift file from the app's source tree into `web/` and
+    `--name-only` reports only the destination; `--name-status` shows it as `R100` with both
+    paths, and `--no-renames` reports both. (Reproduced in a throwaway repository — the example is
+    written without literal paths on purpose, since a doc citing a file that does not exist is
+    what `DocumentCitationGuardTests` refuses, and it refused the first draft of this bullet.)
+    `plan` then says
+    `tests=false ships=false` and prints "Nothing here is an input to the iOS app or its tests"
+    about a commit that deleted a Swift file from the app target. **Pre-existing** — the same move
+    into `docs/` does it on `main` today — but `web/` is a far likelier rename destination from
+    `Cypress/` than `docs/` is, and the web notice makes a stronger claim than the prose one. The
+    fix is one flag, `--no-renames`, on the `changed=` line. Deliberately not folded into #162: it
+    changes the classifier's behavior for every predicate at once, which wants its own calibration
+    table and its own simulator run rather than a line in a round already correcting seven
+    findings.
+
+24. ~~**Decide whether the OpenGraph card is rasterized, and by what.**~~ **DECIDED AND SHIPPED**
+    by `web/og-raster`. The owner ruled: add the dependency. `/‹id-space›/tree/‹uuid›/og.png` is
+    now what `og:image` points at, with `og:image:type`, `og:image:width` and `og:image:height` —
+    the last two of which the page had never declared at all. The rasterizer is
+    **`@resvg/resvg-js` 2.6.2**, pinned exactly, 3.4 MB installed, one transitive package and no
+    system libraries; it rasterizes the string `treeCardSVG` already returns, so there is no second
+    drawing to diverge. It was chosen over `sharp` (resolves text through fontconfig, so the card's
+    typography would be whatever the container happened to have), `puppeteer`/`playwright` (a
+    browser in the image), `satori` (replaces the drawing rather than rasterizing it) and
+    `@napi-rs/canvas` (a second copy of the layout). Because resvg 2.6.2 takes fonts as paths on
+    disk and the image is built from a context of `web/`, the four faces the card sets are copied
+    into `web/fonts/` and hashed against `Cypress/Resources/Fonts/` by the suite. `og.svg` stays —
+    it is the drawing the PNG is made of.
+25. **Give W1 a dark mode, or give its three surfaces dark counterparts.** §W1's page background,
+    fact-column fill and hairline map to `lightOnly` tokens, while the generic page tokens the same
+    page uses are `dynamic` — so `prefers-color-scheme: dark` produces a third rendering that no
+    mock draws (constraint 21). W-C took the conservative option: the page does not opt into a dark
+    scheme, and `web/src/styles/w1.css` says so in its header. The fix is a DesignSystem decision
+    about those three surfaces, not a page edit.
+
+26. ~~**Have W1 call the public community read it was ordered after.**~~ **DONE** — `web/w1-live-facts`,
+    2026-09-11, into W-C. All three elements render: §W1's `Height` row, the live trunk DBH taking the
+    `Trunk · DBH` row from the city's bucket (which falls back with its `city record` badge when there
+    is no reading), and a `Beloved` row carrying the count above the floor. `Status` stays on the
+    pack's lifecycle value, as this item said it must. `src/lib/publicTreeRead.ts` is the client and
+    `src/lib/measuredValue.ts` the ported `MethodBadge` / `MeasuredValue` copy.
+
+    **The endpoint is not deployed and the page is built for that**, which is the half of this item
+    nobody had written down. Measured 2026-09-11: `cypress-sync` serves `/health` 200 and answers Go's
+    bare `404 page not found` for this route, where a registered route on another verb answers `405`.
+    So there are five named states and the two silences are kept apart — `empty` (the service answered,
+    this tree has nothing) renders nothing, while `unavailable` / `unconfigured` (this page could not
+    ask) renders one sentence, because otherwise the page asserts the first every time the second is
+    true. No default host, no retry, a 1500 ms budget, no new dependency, and the page carries the
+    endpoint's own `max-age=60` (the W-G ruling's §8b ceiling).
+
+27. **The OpenGraph card does not read the community half, and §W1's caption says it should.** The
+    caption is explicit: *"the OpenGraph image is rendered from the same three ingredients so the
+    group-chat preview and the page agree."* After item 26 the page draws a height, a taped diameter
+    and a beloved state that the card does not, so the preview is now narrower than the page it
+    previews. It is not wrong — the card's community state is `notRequested`, which is honest — and
+    `treePageModel` already takes the half as an argument, so the change is for `og.svg.ts` to await
+    `communityHalf` the way `[uuid].astro` does. Left undone on purpose: `og.svg.ts` was being edited
+    in parallel by the rasterizer round (chip backlog 24) and `web/w1-live-facts` stayed out of it.
+    **Decide it with 24**, because a card that fetches per request costs a crawler round trip per
+    preview and the rasterizer changes what that costs.
+
+28. **A page-level `Cache-Control` is now W1's, and W-E has to agree with it.** `[uuid].astro` sends
+    `public, max-age=60` on every 200, which is the W-G ruling's §8b ceiling on a page carrying a
+    withdrawable contributed value. Nothing about the deployment knows that yet: if W-E puts a CDN or
+    Fly cache in front of the web with its own policy, the sixty seconds has to survive it, and a
+    `stale-while-revalidate` added for latency would be exactly the thing §8b forbids. Check it with
+    the deployment in front of you. **Re-check at the domain and CDN cutover.** W-E shipped on
+    `cypress-web.fly.dev` with no certificate and no DNS, so there is nothing yet for the sixty
+    seconds to agree with; the check belongs to whichever change puts a cache or a CDN in front of
+    that host.
+
+29. **Reserve the nav slugs beside `ID_SPACES`, in the file that mints the ids.** `explore`,
+    `species`, `neighborhoods`, `data` and `site` are the web's top-level paths (§2 of
+    `docs/rulings-pending/web-nav-destinations.md`), and the tree page's route is
+    `web/src/pages/[idSpace]/tree/[uuid].astro` — a dynamic FIRST segment, so an id space named
+    `explore` would shadow a nav destination outright. Nothing stops one being minted:
+    `Tools/inventory_contract.py:227` hand-enters `ID_SPACES` and its own health check
+    (`id_space_problems`) tests ids and identity prefixes, not a reserved list. Free today
+    (`sf`, `us-ca-sj`, `us-ny-nyc`) and a published-path rewrite the day somebody enters a
+    colliding one — tree uuids are frozen per space under DECISIONS constraint 13, so the space
+    cannot simply be renamed afterwards. The reserved list belongs in the minting file, not in the
+    web app, which is downstream of the mistake.
+
+30. **Establish DataSF's terms for the Street Tree list, and record them where the other two are.**
+    `Tools/build_seed.py:3105` carries `inventory_sj_street_tree_licence` as `CC-BY` and `:3145`
+    the NYC Data Mine terms string; there is no San Francisco counterpart anywhere — not in
+    `build_seed.py`, not in `Tools/inventory_contract.py`, not in `seed_meta` — so
+    `attribution_for` (`Tools/publish_cities.py:855`) publishes that city with no `license` field
+    at all. The owner's 2026-09-10 ruling on the export page is "state each source's own terms,
+    say nothing where the receipt has none", which means San Francisco's row on `/data` says
+    least, of the city whose data the app ships most of. Establishing the terms is research, not
+    code; recording them is one key.
+
+31. **Name the round that builds the public planting-site page, before two rounds build it or none
+    does.** `/‹id_space›/site/‹uuid›` is designed element for element in §4.3 of
+    `docs/rulings-pending/web-nav-destinations.md` — it is E107's iOS answer ported, and E206 puts
+    24,200 pins, 12.2% of the map, behind it. W-C is struck as shipped and did not build it; W-D's
+    milestone row names `Explore`, `Species`, `Neighborhoods` and `Data & export` and does not
+    mention it. A page every milestone assumes another one owns is how a designed page never
+    ships, and a page two rounds both start is how two copies of one number begin.
+
+32. **Rule on whether iOS adopts the hollow, dashed-outline planting-site pin.** The web takes it
+    under the W-3 exception (`docs/rulings-pending/web-nav-destinations.md`, §2's map vocabulary),
+    on the argument that dashed-for-absence is the design's existing idiom rather than a new one —
+    the C14 callout, screen 14's empty well, C15 and 06's disclosure are all drawn that way, and
+    E107 chose the dashed callout on exactly that ground. E107 declined to invent a pin on iOS
+    because a pin is a drawn decision, so the phone still draws a vacant site with the `removed`
+    vocabulary, which says *was and is no longer* about a basin that never held a tree. If the web
+    ships it and the phone does not, one map disagrees with the other about 12.2% of its pins.
+    Owner's call; a Swift round with its own review, not a web change.
+
+33. **`attribution_for` iterates `inventories` only, so a polygon source carries no attribution
+    into the manifest.** `Tools/publish_cities.py:842` selects `FROM inventories WHERE id_space =
+    ?` and builds one entry per row; neighborhood polygons have no row in that table, so nothing
+    they came from reaches the city file — under a docstring that says "R36 binding consequence
+    (b): published data carries its sources' attribution obligations". Latent today, because the
+    only polygon file is DataSF's `j2bu-swwd` and its terms are unrecorded anyway (item 30). It
+    becomes a live license obligation the moment CC-BY San Jose polygons land, which is the same
+    round item 34 has to be fixed in.
+
+34. **`load_neighborhoods` numbers polygons by their position in a name sort, so adding a source
+    renumbers the ones already published.** `Tools/build_seed.py:1996` sorts the features by name
+    and `enumerate(..., start=1)`s them into `neighborhoods.id`, commented "Sort by name so
+    integer ids are stable across re-downloads" — stable across re-downloads of ONE file, and
+    across nothing else. A second source's names interleave into the same sort, every id after the
+    first insertion shifts, `trees.neighborhood_id` changes for San Francisco rows that did not
+    change, and every device re-downloads a city whose data is identical to the one it holds.
+    Nothing pins an id to its polygon: give them an identity from the source (the source's own
+    area key, or a uuid5 of the name) inside the ingest round, while San Francisco's 41 are still
+    the only published ones.
+
+35. **`build_seed.py` does not prune unreferenced polygons the way `publish_cities.py` does.**
+    `Tools/publish_cities.py:669` deletes every neighborhood no surviving tree references;
+    `Tools/build_seed.py:2177` inserts every polygon the file carried, referenced or not. No
+    difference anyone can measure today — San Francisco's 41 are all referenced — but W-F measured
+    230 of San Jose's 297 as unreferenced, and those would ride into the **app bundle**, which is
+    the one copy of this data a device cannot re-download. Prune on the same rule at build time,
+    and state the rule once rather than in two tools that could drift.
+
+36. **`AreaPickerSheet`'s disambiguator separates two cities, not two neighborhoods in one city.**
+    `Cypress/Features/Journal/AreaPickerSheet.swift:103` counts colliding names and qualifies each
+    with `choice.cityName`, so two areas both named `Commercial` in San Jose become two chips both
+    reading `Commercial · San Jose` — identical labels with nothing to choose between, which is
+    the failure the qualifier was added to prevent (PR #132 review, F4). The file says plainly
+    that today's bundle cannot reach it (41 distinct San Francisco names, no San Jose polygons);
+    W-F reports the San Jose candidate source repeats names inside the city, so the ingest round
+    is what makes it reachable. Fix needs a second qualifier the data actually carries, which is
+    item 34's question about what identifies a polygon.
+
+37. **The F17 refusal is calibrated on San Francisco's polygons and tested on San Francisco's
+    geometry.** `AlmanacLimits.fixCanResolveAnArea` (`Cypress/Data/API/Almanac.swift:471`) and the
+    1,200 m fallback radius below it are argued from "SF's 41 Analysis Neighborhoods span
+    0.015–0.045 degrees of latitude" (`:482`), and `AreaPickerTests` exercises the refusal on
+    San Francisco coordinates. Six more packs gaining polygons puts that number in front of areas
+    nobody has measured: a radius that is neighborhood-sized in San Francisco can be a whole
+    district or a single block elsewhere, and the thresholds the stats screens read change meaning
+    with it. Measure the new sources' polygon spans in the ingest round, and extend the tests to a
+    second city's geometry rather than assuming the first one's.
+
+38. **`Tools/setup_worktree.sh` derives the repository root from its own path, so running it from a
+    fresh worktree accuses the main checkout.** Line 24 is
+    `REPO="$(cd "$(dirname "$0")/.." && pwd)"` and line 30 exits with `seed missing at $SEED — main
+    checkout is itself broken`. Invoked from the new worktree as `Tools/setup_worktree.sh .` — the
+    obvious spelling, and the one a new agent reaches for — `$REPO` is the seedless worktree
+    itself and the message blames the one checkout that is fine. Every agent brief works around it
+    in prose instead. Take the source root explicitly (an argument, or `git rev-parse
+    --git-common-dir`), and keep a calibration that a genuinely broken source still says so.
+
+39. **`ShareCopy.publicURLPrefix` points at a domain a third party holds.**
+    `Cypress/Features/Share/SharePresentation.swift:245` is `https://cypress.app/sf/tree/`, and
+    the RDAP measurement in "Open, and named as open" item 1 says that name is registered to a
+    redacted holder through 2026-11-03 with nothing served on it. Every share the beta has
+    produced carries that prefix. Moving it — to `cypressatlas.org`, the owner's ruling of 2026-09-13, or
+    to whatever host W-E actually resolves on — is shipped iOS copy, so it is a Swift round with its own
+    review and its own build, and the builds already in testers' hands cannot be recalled: links
+    already sent stay pointed where they point whatever is decided. Sequence it with W-E rather
+    than after it, because the first deployed host is the one the copy should already name.
+
+40. **`verify_test_log.sh`'s failure-detail printer truncates the pan probe.**
+    `FAILURE_EXCERPT_COLUMNS=400` (`Tools/verify_test_log.sh:118`) clips every failure line at
+    `:166`, and #241's probe — added precisely so two `MapPanTabSwitchUITests` failure modes could
+    be told apart — runs longer than that, so `lastEndedTranslation` and `settles` never reach the
+    job log at all. The tool that exists to make a red log readable is cutting off the field the
+    test was instrumented to carry. The clip has a real reason (one XCTest message in this suite
+    is a 400-character sentence, and a wrapped wall of them is as unreadable as no message), so
+    the fix is not a bigger number: print the harness's own probe lines in full, or clip them on a
+    different rule. Item 5 is the investigation this blinds.
+
+41. **Sweep the `readdirSync` censuses that stop covering the tree the day a directory appears.** A
+    guard named for "every module under `src/lib`" censused only the top level, because
+    `readdirSync` with an `isFile()` filter skips a directory silently instead of descending; it
+    went green about six modules it could not see, for as long as that directory had no
+    subdirectory. Fixed on `web/domain-rules` (`web/test/sources.test.ts:650` is recursive now,
+    with a fixture that plants a nested file); the CLASS is not. `web/test/tokens.test.ts:376` is
+    the same shape — it lists `Cypress/DesignSystem/Tokens`, keeps the `.swift` entries and
+    compares that against its accounted list, so a token file moved one directory down vanishes
+    from the census with the assertion still green. Find every directory census in the repo and
+    red-prove each against a planted subdirectory; a guard that silently stops covering its
+    subject is this repository's signature defect, not a nit.
+
+42. **`CypressMotion.camera` and `.selection` write their durations inline, so two numbers the map
+    depends on have a token on neither platform.** `Cypress/DesignSystem/Tokens/CypressMotion.swift:146`
+    and `:152` hand `duration: 0.4` and `duration: 0.18` to `Animation.timingCurve` rather than
+    naming them in `CypressMotion.Duration`, where every other duration in the file lives — the
+    two curves were themselves a consolidation of three literals, and the durations were the half
+    that did not get names. The web's export reads declarations, so it cannot see them and a web
+    surface that moves a camera re-types them. A small iOS change, and it has to happen on the
+    source side: the export may not invent what the design system does not state.
+
+43. **Widen `WEB_ONLY` to the files the web pipeline is made of, naming them one by one.**
+    `.github/workflows/testflight.yml:322` is
+    `WEB_ONLY='web/|Tools/run_web_tests\.sh$|Tools/verify_web_test_log\.sh$'`, so
+    `.github/workflows/web.yml` — the file that DEFINES the web's CI — matches neither it nor
+    `DOC_ONLY`, and a one-line edit to it runs `unit` plus four `ui` shards on macos-26 testing
+    nothing it changed, while whatever actually needs those runners waits. Every web round edits
+    that file; the beta round measured two such pull requests in one day. The same holds for any
+    web-adjacent script under `Tools/` that is not one of the two named — the token exporter was
+    moved into `web/` to dodge exactly this. Name the paths individually: the comment at `:318`
+    says why a `Tools/web_*` prefix is not safe, and `Tools/fetch_seed.sh` is the sibling it is
+    afraid of. Budget one simulator run, because `DeployPathsAgreeTests` reads this file. **One
+    problem with items 20 and 44** — do the three in one round.
+
+44. **A web pull request stacked on a non-`main` base runs no CI at all, and still reports
+    `CLEAN`.** `.github/workflows/web.yml:111` and `.github/workflows/testflight.yml:124` both
+    filter `pull_request: branches: [main, 'release/**']`, so the three W-B pull requests opened
+    against `web/foundation` had `gh pr checks` answer "no checks reported" while
+    `mergeStateStatus` said `CLEAN` — which here means "no required check applies", not "checks
+    passed", because the `main-pull-request-only` ruleset governs only pull requests targeting
+    `main`. Found independently by two W-B agents and confirmed by the orchestrator. Decide it:
+    widen both `branches:` filters, or forbid stacking web pull requests. Until it is decided the
+    workaround is rebase-onto-`main` and force-push — a real `synchronize` event, since GitHub's
+    auto-retarget on a deleted base fires `edited` and starts nothing — and then reading that
+    checks EXIST rather than that the state says `CLEAN`.
+
+45. **The token export publishes leading in points while W1 writes its own line-heights, and
+    nothing checks they agree.** `CypressFont.LineSpacing` is SwiftUI's EXTRA leading;
+    `web/src/lib/tokens.ts:725` exports it in px and documents the inversion
+    (`line-height = 1.2 + leading / font-size`), naming the two display styles where inverting is
+    wrong because SwiftUI clamps them to `0`. The export deliberately did not invert — that would
+    author a value the design system does not state — and W1 then authored one anyway:
+    `web/src/styles/w1.css:48` sets `--w1-hero-title-line-height: 1.05` from the figure the Swift
+    documents in prose, and three more rules write `line-height: 1.5` as literals. Two
+    transcriptions of one typographic decision, on two platforms, with no guard between them.
+    Decide where line-height lives — a figure in the Swift the export can read, or a rule the web
+    owns explicitly — and guard whichever it is.
+
+46. **`sync-packs.mjs` has no `--only <id>`, so a 713 MB volume is filled or refilled whole.**
+    The local rehearsal made the cost concrete: Queens (199 MB) stalled past the 30 s per-chunk
+    window and the run exited `FAILED`, correctly leaving nothing partial — but recovering meant
+    re-running the whole catalog, which skipped the six already-verified packs and re-fetched only
+    Queens. That worked, and it worked because skipping is cheap. A `--only` would still be worth
+    having for re-verifying one pack, or for filling a volume borough by borough on a slow link.
+
+47. **A refreshed volume is not served until the machine restarts.** `packLibrary` opens packs on
+    first use and keeps them for the life of the process (`immutable=1`, deliberately — a published
+    pack lives at an immutable versioned path). So a sync that replaces bytes under a running server
+    changes nothing a reader sees. Either write the restart into the deploy runbook as a required
+    step, or give the server a reload path. Today it is a sentence in `web/README.md` and nothing
+    enforces it.
+
+48. **Orphaned `.part-` temporaries accumulate and only `--prune` clears them.** Two interrupted
+    runs leave two orphans, each up to 199 MB on Queens, and `--prune` is off by default. The
+    reporting is correct — a plain run names them — but nothing reclaims the space on a volume sized
+    with 1.4 GB of headroom. Consider clearing a temporary whose pid is dead and whose mtime is well
+    outside the stall window, without requiring the flag.
+
+49. **Generalize the `fly.toml`-check-path guard into a rule.** #177 added a guard that resolves
+    `[[http_service.checks]] path` to a file under `src/pages/` and imports it to confirm the verb
+    — because adversarial review set that line to `/healthz` and watched the whole suite stay green
+    while the deployed check would have 404'd every 30 s and rolled the machine back. The guard is
+    specific to that one pair. The general shape — *every path in `fly.toml` that names something in
+    this repository must resolve to it* — is the rule worth having.
+
+50. ~~**Measure the 512 MB.**~~ **MEASURED 2026-09-13, and 512 MB stands.** On the deployed machine
+    after serving sixteen requests — eight NYC tree pages and eight PNG card rasterizations —
+    `memory.current` read **184,729,600 bytes (176 MB)** against a `MemTotal` of 469,892 kB, with
+    `MemAvailable` 358,456 kB. Roughly a third of the budget in use with the rasterizer exercised and
+    seven packs open. 256 MB would probably hold today and is not worth the risk: the headroom is
+    there for SQLite's page cache under concurrency and for resvg, and neither has been measured
+    under load rather than under a warm-up loop. `fly.toml`'s paragraph now carries the number and
+    the date instead of saying it is unmeasured.
+
+51. **`node:sqlite`'s experimental warning prints on every `sync-packs.mjs` run**, because the
+    script imports `PACK_DIRECTORY_VARIABLE` from `packLibrary.ts`, which opens the database module.
+    Moving that constant and `packDirectoryFromEnvironment` into a small module of their own would
+    silence it without a second copy of the name — and a second copy of the name is the thing not to
+    do, since one definition is why the server and the sync cannot disagree about it.
+
+52. ~~**`docker build web` has never been run.**~~ **DONE.** `web.yml` builds the image on every run
+    (`docker build --tag cypress-web:ci web`, since 72575a4), and the first `flyctl deploy` of W-E
+    built it remotely and it serves. What follows is the entry as written. Neither the reviewer's
+    Docker daemon nor the orchestrator's could pull `node:24.13.1-slim` from the registry, and neither guessed at the
+    result. The substitute was a good one — the runtime stage's exact file set plus
+    `npm ci --omit=dev` assembled in a clean directory, with `sync-packs.mjs` running from it and no
+    `Cannot find module`, proving the COPY list sufficient — but the image itself is unbuilt. The
+    first `flyctl deploy` builds it remotely and will be the first real answer.
+
+53. **The feedback artifact's `testerId` is empty on every submission, so it can no longer tell two
+    testers apart.** Found by the 2026-09-28 tester-feedback pull (run 36494988293): all 33
+    submissions carry `"testerId": ""`. That includes the two build-18 reports E254 counted as
+    coming from one tester id. `Tools/appstore_connect.py`'s `related("tester")` reads
+    `relationships.tester.data.id` and returns `""` when `data` is absent. The request has
+    `include=build` only, deliberately, so that no `betaTesters` resource (which carries `email`)
+    is ever fetched. The comment beside it says the API still returns the id without the include.
+    This run says it does not, or no longer does, and the tool reports the loss as an empty string
+    rather than as a note. So "one tester is one tester" (E254) is now unverifiable from the
+    artifact. Fix: find a way to read the opaque id that still never fetches an address, and have
+    the command add a `notes` entry when the field comes back empty instead of writing `""`.
+    Calibrate against a submission whose tester is known. Keep the zero-`@` check as the guard
+    (it held on this run: 0 `@` in the JSON). Small.
+54. **`add_tree`'s `speciesID` write check matches the key case-insensitively, same as
+    `species_claim`/`species_correction` did before PR #184's fix round.** Found by that PR's
+    adversarial review (finding 2) and deliberately left alone there — the ruling was fix the two
+    kinds that name a species as their whole record, and file `add_tree` separately since it is a
+    larger payload with more fields the same class of bug could touch. `addTreePayload.SpeciesID`
+    is a struct field decoded with plain `json.Unmarshal`, so `{"speciesid":"<uuid>"}` or
+    `{"SPECIESID":"<uuid>"}` sets it exactly as `{"speciesID":"<uuid>"}` would, while
+    `store.GroveSpeciesKnown` and every other `payload ->>` read key on the exact spelling. Fix:
+    decode `addTreePayload` the same way `speciesStatementSpeciesID`
+    (`server/internal/api/sync.go`) now does — a raw map, exact key lookup — or otherwise require
+    the literal `"speciesID"` key. Calibrate the same way: red-proof with a case-insensitive
+    decode restored, confirm `{"speciesid":…}` and `{"SPECIESID":…}` are refused.
+55. **`internal/uuid/uuid.go`'s header and `migrations/004_measurement_withdrawal_kind.sql`'s
+    comment say Swift's `JSONEncoder` writes a `UUID` lowercase.** It writes it uppercase. Found
+    during PR #184's fix round (review finding 5): the PR's own comments in
+    `server/internal/api/sync.go` state the uppercase fact correctly (`SpeciesStatement`'s
+    encoder), which means the tree now contradicts itself across two files. `004`'s phrase "the
+    cast `GroveSpeciesKnown` uses" is also stale — that cast was removed by PR #184.
+    Documentation-only: read both files, verify the encoder's actual case empirically (a real
+    `JSONEncoder` round-trip, not another comment), and correct both in one pass so they agree
+    with each other and with `sync.go`.
+56. ~~**Splice the pending shelf: 33 files are waiting (orchestrator's alone).**~~ **DONE,
+    2026-11-16**, by the splice of chip 160, which numbered every file here except the web
+    round's and one erratum (chip 160 lists them; chip 208 keeps them open). The original text
+    follows, with its citations renumbered. Twenty are in
+    `docs/errata-pending/` and thirteen in `docs/rulings-pending/`, counted on 2026-09-29 against
+    `origin/main` with the two READMEs left out. Two are overdue for a reason of their own.
+    The measurements round's rulings (now **RULINGS R113-R115**) were held by the 2026-09-09 splice until F27's round
+    landed, and it has (#154 and #156), so its third entry can now record an outcome instead of
+    "proposed, blocked". **ERRATA E325** is F27's
+    server companion. The rest is everything filed since: the web rounds, the city-disputes round,
+    and the community-trees server rounds. Run it the way the last one ran (gate the cleanup on the
+    script, assert the placeholder counts, and sweep the deleted files' basenames across the whole
+    tree, which is item 1's cheap check), and run `DocumentCitationGuardTests` red and green before
+    merging.
+57. **The Go toolchain is pinned two ways that can drift.** CI installs exactly the version
+    `server/go.mod` names (`go-version-file` in `server.yml`), while `server/Dockerfile` builds on
+    `golang:1.25-alpine`, which floats to the newest 1.25 patch. Once a patch releases, the binary
+    that ships is not the one CI tested. Pin the image to the same patch, or have the workflow
+    follow the image, and say which in `server/README.md`. (From #183.)
+58. **Two things assume `cypress-sync` is one machine on the default deploy strategy.** (a) Migration
+    006's constraint plus a binary older than #182 fails sign-in itself with a 500. That is safe
+    today, because a boot runs the migrations before the new binary serves and the old one never
+    serves beside it (**RULINGS R140**), and it opens the day the app
+    runs on two machines or deploys with a canary or bluegreen strategy. (b) The community tile's
+    delta cursor trails the present by the request timeout, which is correct only with one clock;
+    `server/internal/api/community_reads.go` says so in as many words, and with two machines it
+    needs a skew margin. Do both with whichever change first scales the app. (From #182's review, F4,
+    and #190.)
+59. **Two ways into a device's rows ask for no proof that the caller holds the device (security; not
+    blocking).** `POST /devices/claim` and `POST /auth/oidc` with a `device_uuid` accept any device
+    UUID, and the #174 guard protects only a device that is already claimed. A second account that
+    knows an unclaimed device's UUID can claim it, and since #182 that publishes the device's
+    pending photographs under the claiming account. No route, log or export was found that exposes
+    the UUID, and knowing it already mints a device token, which is why this is not blocking.
+    Separately, `/devices/claim` does not bind the device to the session; only `/auth/oidc` does
+    (found in #187's review). Decide whether a claim should have to show something only the phone
+    has. (From #182's review, F3.)
+60. ~~**`add_tree`'s proximity check is not inside the transaction that inserts the tree.** Two adds a
+    few metres apart, sent at the same moment, can both pass it. It predates #187, which scoped what
+    the check can see and did not change when it looks; #187's review found it. Fix with a lock or a
+    constraint the two inserts contend on, and red-prove the interleaving first, as item 9 asks of
+    its own race.~~ **MOOT, 2026-11-15:** `feat/no-proximity-refusal-server` (chip 140) removes the
+    proximity check from `add_tree` and `POST /trees`, so there is no check left to race. Two trees
+    a few meters apart are now both meant to be recorded.
+61. **Photographs and contributions on a withdrawn or taken-down community tree stay stored, and no
+    read reaches them.** #190's reads hide them, which is why nobody sees it. Nothing deletes them,
+    and nothing says how long they stay. Decide a retention rule; R3's erase-door pattern is the
+    nearest precedent.
+62. ~~**A proximity conflict still shows another adder's address and the exact second a tree was
+    added.** `candidateFrom` (`server/internal/api/sync.go`) builds the candidates of `POST /trees`
+    and of a sync `add_tree`, and serves `address` and full-precision `createdAt` and `updatedAt`.
+    #187 scoped the candidates to trees the caller may see, which closed the leak of other people's
+    unpublished trees; what remains is a published tree's adder-supplied address and creation
+    second, which the tile and the profile both withhold. The fix moves
+    the fixture `proximity_conflict.json` and its Swift test (`GoldenWireFixtureTests`) together,
+    which is why #190 left it.~~ **MOOT, 2026-11-15:** `feat/no-proximity-refusal-server` (chip 140)
+    removes the proximity conflict and `candidateFrom`, so no route serves a candidate any more. The
+    phone-side branch, `feat/no-proximity-refusal-phone`, deletes the fixture and its Swift test.
+63. **Does a photograph's presigned `GET` give away its capture time?** A hypothesis, not
+    reproduced. Object storage normally answers with `Last-Modified`, the upload time to the second,
+    and for a photograph uploaded while online that is close to the capture time decision 14 hides
+    from others. `server/internal/storage/presign.go` is what hands the URL out, and the test
+    presigner is fake, so nothing was measured against Tigris. It predates #190. Measure the real
+    header on a real object before deciding anything. (From #190's review, N3.)
+64. **The server's `Yours` and Grove membership is far wider than the phone's, and nobody has ruled
+    which is right.** `TreeMembershipKinds` (`server/internal/store/reads.go`) enrolls a tree on
+    adding it, on species statements, on wrong-species and never-existed reports, on their
+    dismissals, on photo votes, on withdrawals, on hazard redirects, and on favorites. The phone's
+    `Yours` is visits, observations, measurements, care events, and the reader's own community trees
+    (`Cypress/Data/Store/ContributionStore.swift`), and its Grove Trees pill is visits plus
+    favorites. `RoutedAPI` unions the two, so the server's wider set wins. Needs an owner ruling on
+    what `Yours` means; item 11 is its neighbor. (From #192.)
+65. **Nothing ties `TreeMembershipKinds` to `syncKinds`.** A new sync kind is silently left out of
+    `Yours` and the Grove until somebody adds it, and no test says so. Add an exhaustiveness test
+    that mirrors `TestEveryContributionKindIsClassified`. (From #192's review.)
+66. **The Species tab's cross-device half has never worked, and after #184 it says so.**
+    `GET /me/grove/species` could only ever count kinds that carry a `speciesID`, which are
+    `add_tree`, `species_claim` and `species_correction`, kinds that name a species and do not meet
+    one. City-tree visits carry only a tree id, and their species live in the city file, which the
+    service does not hold. So the route now answers empty for every current client, and
+    `RoutedAPI.refreshedGroveSpecies` merges that into the phone's own answer, so no tester sees a
+    regression. The real fix, if wanted, is for the phone to derive cross-device species from
+    `GET /me/grove`'s tree ids and its own city file. Otherwise retire the route. (From #184.)
+67. **A public photograph is approved before its bytes have arrived, and nothing collects the ones
+    that never do.** Approval does not wait for the upload, and `PhotoRecord.IsPubliclyVisible`
+    (`server/internal/store/photos.go`) does not look at `bytes_received_at`, so a begun upload whose
+    bytes never land is still listed publicly. #187 and #190 closed this for the grove hero and for
+    "built on" (a photograph with no bytes is neither), not for the listing. And the garbage
+    collection of a record with no arriving binary after 72 hours, which
+    `server/migrations/001_initial.sql` says happens server-side, has no code behind it: only
+    comments name it. (From #182.) #194 adds a source of these rows: a photograph whose storage
+    `PUT` or receipt is refused for good after its begin succeeded leaves a live, keyed row with no
+    bytes. Its contributor never sees it, because it pairs with their local photograph, so nothing
+    prompts a delete (review of #194 at `07f5b36`, probe R11).
+68. **Screen 10's first paint is local-only, and its season strip says nothing is public.** The card
+    can show an approved photograph only after the network answers, because the first paint reads
+    the phone. `ShareView.swift` hard-codes "No month has a public photo yet." as the strip's
+    accessibility label, which is already false for any tree whose photographs have been approved.
+    The copy is the owner's under constraint 21. (From #182.)
+69. **Swift comments still say an anonymous photograph stays `pending`, and #182 made that false.**
+    A photograph taken signed out is now approved at sign-in. Read at `4462dbb`:
+    `Cypress/Features/AccountAsk/AccountAskPresentation.swift` (the header and one more),
+    `Cypress/Features/You/AccountSection.swift`, `Cypress/Core/BetaCapability.swift`,
+    `Cypress/Data/API/LocalAPI.swift`, and `Cypress/Features/TreeProfile/TreeProfilePresentation.swift`.
+    Already stale before #182, on "nothing moderates": `Cypress/Core/Models/Photo.swift`,
+    `Cypress/Features/Share/SharePresentation.swift`, and `Cypress/Data/API/CypressAPI.swift`. Two
+    ERRATA entries carry the same sentence (`docs/ERRATA.md`, lines 20095 and 20525 at that
+    commit). A confident comment is where bugs live here, so re-verify each against the code before
+    rewriting it. (From #182.)
+70. ~~**Neither account-deletion door touches `species_assertions`.**~~ **DONE in community-trees C1
+    (with 79).** **Duplicate of 79**, which #186
+    wrote with the measurement; track it there. The table carries `user_id`, and
+    `Cypress/Data/Store/AccountDeletion.swift` never names it, so an owned row survives leaving and
+    erasing alike and still points at the deleted account. Fix it on R3's contribution pattern
+    (leaving anonymizes, erasing deletes), and decide the tombstone question, since these rows have
+    no `client_uuid`. **Fold it into community trees C1**, which touches the table anyway. (From the
+    community-trees design and #186.)
+71. **`ContributionStore.claimDevice` is another hand-kept table list.** *(Community-trees C1 added
+    `community_trees`, `tree_locations` and `species_assertions` to the adoption, which closes this
+    item's `species_assertions` half; the guard it asks for is still open.)* It adopts `visits`,
+    `observations`, `measurements`, `care_events`, reminders, photographs, favorites, and photo
+    votes, and nothing else. `species_assertions` carries a `device_id`, so a species claim made
+    before sign-in is never adopted into the account, and nothing guards the list. (`tree_data_disputes`
+    is not the same case: it has no device column, `raised_by` only, and `DataDisputeStore` documents
+    that a dispute raised before sign-in stays unowned. That is item 10's dead end.) It is a
+    candidate for the same schema-derived guard the account-deletion table paragraph asks for.
+    **PR #186 (still open) adds that guard for deletion, and its review found three gaps to close
+    once it merges**: it does not read generated columns (`pragma_table_xinfo`, not
+    `pragma_table_info`); its `looksLikeIdentity` misses `userid`, `contributor_id`, `uploader`,
+    `email`, and `submitter_uuid`; and installation columns and tombstones are outside it, covered
+    only by the suite. (From #186.)
+72. **A prose-only pull request skips three iOS tests that read `docs/`.** `DocumentCitationGuardTests`,
+    `NYCDisclaimerTests`, and `VitalityRubricTests` open files under `docs/`, and since #188 a
+    prose-only diff runs none of them, so a dangling citation in a document merges green. The
+    comment in `.github/workflows/testflight.yml` that says no test opens a file under `docs/`
+    (checked 2026-08-03) is stale. Either run those three on a diff that touches the documents they
+    read, or scan citations in a job that does not need a simulator. Until then an author of a
+    docs-only change has to run the scan by hand. (From #188.)
+73. **Nothing guards the length of a `run:` block in a workflow.** GitHub refuses a `run:` block
+    longer than 21,000 characters when it holds an expression, and it does so as a workflow file
+    issue: no job runs, no check appears, and a required `gate` waits for ever. #188 did exactly
+    this (run 36510395253, 21,909 characters). Add a check that measures each expression-bearing
+    block and fails with a number, and calibrate it against a block over the limit.
+74. **`Tools/whats_new.py` diffs without `core.quotePath=false`.** A note whose filename contains a
+    non-ASCII character is quoted by git and reads as missing. It fails safe, and it is wrong.
+    (From #188.)
+75. **UI sightings from 2026-09-29, none attributed.** Run 36500821334, `ui (4)` on a server-only
+    diff (#182): the XCUITest runner lost its XPC connection at launch in
+    `MapSuggestionUITests.testTheChipsUnderTheListAreNotCoveredButReachable` ("Connection
+    interrupted", "Restarting after unexpected exit") and the body never ran. And #194's
+    verification saw `MapSearchUITests` and `MapSuggestionUITests` fail with "process main thread
+    busy for 30.0s", with a control at `main` failing the same way, while the host's load average
+    ran between 230 and 510 and the data volume was 99% full; the PR read it as the host and not
+    the diff. Both are flake-watch sightings until one recurs on a quiet machine.
+76. **Two findings from #194's branch, to re-check when it merges.** (a) A signed-out device stops
+    receiving `client_uuid` for photographs adopted into an account, so those photographs can
+    double again there. (b) `withdrawPhotoByClientKey`, on that branch: when the device's own row is
+    already tombstoned and the account's row under the same key is live, a second withdrawal answers
+    failed and forbidden although the removal happened, and its comment says it succeeds. Nothing is
+    wrongly removed; the phone is told a false failure. #194's own remaining finding (a non-retryable
+    begin refusal deletes the `outbox_photos` row, so the photograph counts as sent) was fixed in
+    #194. (b) was re-proved by #194's re-review (probe R10, `server/internal/store/photos.go` doc at
+    `:499` against the code at `:542`); make the second withdrawal answer `applied`, since its own
+    removal happened. (c) Also from that re-review, cosmetic and unproved: `RoutedAPI` reads the
+    phone's withdrawal evidence after the remote fetch, so a withdrawal the drain answers during a
+    refresh can leave that copy deletable for one refresh; read the evidence before the fetch.
+77. ~~**iOS 26 does not draw a `confirmationDialog`'s cancel button.** Found by #185 (its take-back
+    question failed on CI's iOS 26 shard and became an `.alert`). Seven sites still use a
+    `confirmationDialog`: `GrowthHistoryView:45`, `CheckInView:94`, `AccountDeletionSheet:88`,
+    `TreePhotosView:129`, `PhotoViewerView:227`, and `ModerationReviewList:50` and `:61`. On iOS 26
+    each one's cancel action is likely missing and only a tap outside dismisses it; no test taps any
+    of those cancel buttons, so nothing goes red. Needs an iOS 26 runtime to confirm; the fix is
+    #185's (an alert with the same strings) plus a test per site that taps the cancel.~~
+    **DONE in the overnight round of 2026-11-14 (`claude/overnight-bug-fixes-8154ea`).** All seven sites are alerts with the same strings, roles and actions.
+    `DialogCancelUITests` presses the cancel at six of them. `AccountDeletionSheet`'s alert has no UI
+    test, because no deep link signs in (see the follow-up below). The premise was never seen on a
+    local simulator: the round's red-proof run on CI restores the six tested dialogs and is the record
+    of whether each one's cancel was really missing on iOS 26. One correction: CI has no iOS 18 UI
+    shard; every UI shard runs on `macos-26`.
+78. ~~**#185 verifier's leftovers on the dispute screen's 15 s wait (ruling 11).** (a) A test gap:
+    removing the line in `DataDisputeModel` that records the error count at the ask leaves
+    "…an older one does not" green; a reading that still carries the old count after the ask would
+    catch it (probe kept in the orchestration notes as `v185b-ZZVerify185Tests.swift.keep`). (b) Ask,
+    turn Location off (CoreLocation reports denied), turn it back on: the block says it couldn't find
+    the location at once instead of waiting; reset the error baseline whenever it starts waiting
+    again. Low: the first fix replaces the message. (c) The 15 s clock runs while the system
+    location-permission prompt is up, so a slow answer reads as "couldn't find your location" until
+    a fix arrives. Whether the clock should start at the grant is the owner's call.~~ **DONE** —
+    #198 (`fix/dispute-fix-clock`): (a) tested, (b) fixed and tested, (c) ruled by the owner
+    2026-09-29 ("Start at the grant") and built; the ruling is pending a number. #198's reviews
+    left the phone checks in item 82.
+79. ~~**Neither account-deletion door reaches `species_assertions`.**~~ **FIXED in community-trees C1**
+    (the leaving door anonymizes, the erasing door deletes and splices each chain shut, and
+    `claimDevice` now adopts the table, which also closes chip 71's `species_assertions` half). The
+    original entry follows as the record. OPEN (when written). `LocalAPI.addTree`,
+    `claimSpecies` and `correctSpecies` write the signed-in account's id into
+    `species_assertions.user_id` (`SpeciesAssertionStore.insert`), and no statement in
+    `AccountDeletion` or `OutboxStore` names the table. Nothing cascades into it either: it has no
+    trigger, and its only foreign key is its own `superseded_by`. So after `.leaveRecords` or
+    `.eraseEverything` the claim still carries the deleted account's id. `AccountDeletionCoverageTests`
+    (#186) measures this under both doors and classifies it `.notReached` in
+    `AccountDeletion.OwnedTable.fate(under:)`. That is what the code does, not a ruling. The fix
+    follows R3's contribution pattern: the leaving door anonymizes (nulls `user_id`) and the erasing
+    door deletes. **The tombstone question is open.** The table has no `client_uuid`, so v13's
+    `anonymized_contributions` key is not available, and `claimDevice` does not adopt the table
+    today. Decide whether an anonymized claim needs a tombstone at all, and key one if it does. The
+    erasing door also has to handle the chain. `superseded_by` is a deferred foreign key, so deleting
+    a claim that an older row's `superseded_by` points at fails at commit unless that pointer is
+    dealt with first. When a door reaches the table,
+    the guard goes red and the arm changes with it. **Slated by the orchestrator for the
+    community-trees C1 round.**
+80. ~~**OPEN: decide whether 05 and 09's contribution camera gets pinch-to-zoom.**~~ **RULED AND
+    SHIPPED** by `feat/contribution-camera-zoom` (#200). Found by PR #195's review (F33):
+    `ContributionCameraView`, the camera check-in (05) and care log (09) open to attach photographs,
+    owned a `VisitCameraController` like screen 04 and add-a-tree but had no pinch, and neither R80
+    item 5 nor the F33 ruling named it. The owner ruled on 2026-09-29, verbatim: *"Yes, same pinch
+    (Recommended)"* (**RULINGS R169**). It now applies
+    `VisitCameraZoomPinch` to its viewfinder with `isAiming: true`, because that viewfinder never
+    shows a still and so always has something to aim; `isZoomable` still gates it.
+    `CameraZoomPinchTests.contributionCameraWiresItsAimToThePinch` proves the pinch is there once,
+    armed, on the view's own controller, and wrapped around the view that holds `VisitCameraPreview`.
+    The same PR carries a second owner ruling of 2026-09-29, verbatim: *"Always start at 1×
+    (Recommended)"*: every camera opens at 1×, whatever zoom the last one closed at
+    (`VisitCameraZoom.openAtOneX`, called when the session starts). The phone checks are in 81.
+81. **The F33 phone check (#195, and #200).** On the physical phone: the pinch moves the lens on
+    add-a-tree's photo well, on screen 04, and on the camera check-in (05) and care log (09) open; it
+    does not fight the composer's `ScrollView`; screen 04's pinch still arms once the camera session
+    starts (its `isZoomable` is now read inside the modifier); and on 05 and 09's camera it still
+    arms after a frame has been taken, since that viewfinder stays live for the next one. **And the
+    1× opening (#200):** pinch 05/09's camera to about 4×, close it, then open screen 04, add-a-tree
+    and 05/09 in turn; each must open at 1×. That check needs a control or it proves nothing
+    (#200's verification, finding 1): do it in one app process with no force-quit, add 04 → close
+    → 04, and first run it on a build without the reset (before #200) to see the zoom actually carry
+    over. If it never carried over, the reset is unproven rather than working. No simulator has a
+    camera, so neither branch's verification could see any of this. OPEN until done.
+82. **Phone checks for the dispute screen's location wait (#198).** Only a device answers these.
+    (a) Whether turning Location off makes CoreLocation report `kCLErrorDenied` to the running
+    update, and when. #198 takes a new error baseline when the block starts waiting again from a
+    state that was not waiting, which holds if the error arrives while the block is off or in the
+    same update as the reading that turns Location back on; an error delivered strictly after that
+    reading still ends the new wait at once (#198's review, finding 4). (b) Whether iOS hands a
+    running app authorization back as `notDetermined` (Allow Once expiring, or "Ask Next Time"
+    picked in Settings); #198 answers it by putting the block back to not asked, except that a block
+    that already gave up keeps its "couldn't find" sentence. (c) Whether the
+    permission prompt can go away unanswered (the app backgrounded while it is up). The owner ruled
+    on 2026-09-29 that an unanswered prompt gets no ceiling, so the block would wait until the
+    reporter asks again or unticks the pin chip.
+    (d) A narrow race from #198's fix-round verification (proven in the model, the iOS trigger
+    unconfirmed): the reporter comes back from Settings having picked "Ask Next Time" and taps before
+    the authorization callback lands. The prompt goes up, but the ask was read at the stale
+    availability, so the grant that follows is ignored and the block sits at not asked; one more tap
+    recovers it, and Send is never held. A fix would take `promptRequested` from what
+    `MapLocationProvider.start()` actually decided. And a harness trap for whoever writes the test: a
+    provider pinned to `.notAsked` (`CYPRESS_LOCATION`) never prompts, so after a tap the block now
+    waits with no ceiling; no current UI test takes that path.
+83. **Pin `run_tests.sh`'s QoS clamp in `Tools/test_harness_guards.sh`.** PR #197 runs local
+    builds under `taskpolicy -c utility` so a booted simulator's audio keeps its deadline, and
+    nothing guards it (review finding 3). Three facts need a calibrated check each: the header
+    stamps `CYPRESS-RUN: qos-clamp utility` locally and `default` with `CI=true`; the empty-array
+    expansion `${QOS_PREFIX[@]+"${QOS_PREFIX[@]}"}` survives `/bin/bash` 3.2 under `set -u` (a
+    bare `"${QOS_PREFIX[@]}"` dies `unbound variable` on the CI path, the red-proof); and
+    `taskpolicy` execs rather than forks, so `ps` shows `xcodebuild test …` and
+    `xcodebuild_line` still sees the run. Use stand-in `xcrun`/`xcodebuild` on PATH; boot nothing.
+84. **`ZoomTests`' stand-in lens cannot see an unlock without a lock.** From #200's verification
+    (finding 2): only `aCameraOpensAtOneX` checks the lens ends unlocked, and the stand-in counts
+    unlocks without pairing them with locks, so an `openAtOneX` that always unlocks would stay
+    green. Make the stand-in refuse an unmatched unlock, and assert the lens ends unlocked in
+    `aRaisedFloorOpensAtTheFloor` too.
+85. **Washington, D.C.: what shipped, and the species follow-up.** The D.C. round (2026-11-12,
+    `feat/dc-street-trees`) built the `us-dc-dc` pack from DDOT's street tree layer: 200,313 rows
+    (194,086 alive, 3,332 standing dead, 2,895 vacant sites), published beside the seven live packs
+    by `publish_cities.py --add-pack`. Detail: `docs/investigations/dc-street-trees.md`. Species
+    coverage under D20 is 86.27% and was waived for D.C. (**RULINGS R172**).
+    Follow-up: a D.C. species round, the way `nyc_species.yaml` was built. Two parts. First, cited
+    rules for the notation the R0 to R3 cascade misses (`Ginkgo biloba (male)`/`(female)` 3,682 rows,
+    `Genus species` 12,000+ rows, curly-quoted cultivars, `Liquidambar Stryaciflua`). Second, a
+    `dc_species.yaml` content fixture for the D.C. taxa no fixture covers (`Cladrastis lutea`,
+    `Liquidambar rotundiloba`, `Quercus shumardi` and others). No content may be written by hand
+    (DECISIONS constraint 15).
+86. **D.C. in the bundle and the data gates.** The D.C. pack is download-only. If D.C. joins the
+    bundled seed, `Cypress/Data/Tests/DataGates.swift` needs a D.C. bounding box, and
+    `Fixtures/seed/pinned-seed.json` plus `CypressTests/SeedCorpus.swift` need a deliberate bump
+    (the pin's own "HOW TO BUMP IT" steps). `Tools/verify_seed.py` checks are SF-shaped (nyc-ingest
+    §7) and were not extended for D.C.
+87. **Recheck that DDOT's GLOBALID is stable, in early December 2026.** The D.C. uuids are
+    uuid5 over `us-dc-dc:<GLOBALID>`, and nobody has shown that GLOBALID survives a DDOT republish
+    of the live layer. Re-fetch with `Tools/fetch_dc_trees.py` into a new cache and join on
+    GLOBALID against the 2026-11-12 cache: count kept, gone and new ids. If ids churn, every D.C.
+    tree's public identity churns with them, and the id choice needs a decision before more
+    community data attaches to D.C. trees.
+88. **D.C. neighborhoods.** None ship (San Jose's shape). The District publishes neighborhood
+    boundaries; adding them is a schema-free change to the neighborhood stamp, but the polygons are
+    civic content and need a cited source.
+89. **`dim_region` ids collide across packs built from different seeds.** The app's
+    `InventoryUnionSQL.mirrorFirstWins` copies `dim_region` with `id` as PRIMARY KEY and filters only
+    on `pack_id`, so two packs that carry the same region id under different pack ids collide and
+    the second is refused. Every pack before D.C. came from one fused seed, so this never fired.
+    `publish_cities.py --add-pack` works around it by giving the new pack an unused id (D.C. is 8).
+    It is still a trap: a full rebuild that includes D.C. assigns New York's boroughs 4..8 instead
+    of 3..7 (`us-dc-dc` sorts first), so a phone mid-update can hold an old pack and a new pack
+    that share an id. Fix in the app (renumber `dim_region` on mirror, as `dim_city` already is) or
+    freeze region ids in `build_seed.REGIONS`; either needs its own round and a test.
+    The same copy leaves `dim_region.city_id` pointing at the pack's own `dim_city` numbering,
+    which the app renumbers: in a merged union the boroughs' `city_id` 3 points at `us-dc-dc` and
+    D.C.'s `city_id` 2 points at `us-ca-sj` (#203 review). Nothing reads it today
+    (`SeedCities.swift` reads `dim_region.display_name` by `pack_id` only); re-point it through
+    `dim_city.slug` in the same fix. `Tools/test_publish_cities.py`'s region-id test checks
+    `len(cities) + 1` against its own fixture, not the ids live packs use, so it would stay green
+    if an entry were ever removed from the manifest.
+90. **`upload.sh` should refuse a stale previous manifest.** It replaces `manifest-v2.json`
+    whole, so a publish by someone else between the build and the upload is undone silently. The
+    D.C. publish (2026-11-12) re-fetched and compared by hand. Make `upload.sh` compare the live
+    manifest's sha256 with the one `--previous-manifest` read, and refuse on a mismatch.
+91. **Merged species content depends on which packs are installed.** 98 species carry different
+    common names in the D.C. pack and the August packs ("Trident maple" vs "trident maple",
+    "Cherry (Snowgoose)"), and the first installed pack wins. `species_map.species_id` is copied
+    into the union untranslated (only `DataGates` reads it). Decide one source of common names.
+92. **D.C. planting dates use the UTC day.** About 1.7% of dated D.C. trees (1,711 of 102,067)
+    were stamped 00:00-03:59 UTC, the evening before in D.C., so `parse_planted_date` lands them
+    one day late. Convert with America/New_York at the next D.C. build.
+93. **The web does not serve D.C. yet.** `web/src/lib/idSpaces.ts` now knows `us-dc-dc` (#203), but
+    the `cypress-web` volume holds only the seven August packs and is sized for 713 MB; D.C. adds
+    120 MB. Copy the pack to the volume (and restart the machine, chip 47) in its own round.
+94. **DONE 2026-11-12: the owner accepted the agreement; run 43331239955 pulled feedback again.** ~~**P0, owner only: accept the expired Apple agreement (App Store Connect, Business).**~~ Every
+    App Store Connect API call has answered HTTP 403 `REQUIRED_AGREEMENTS_MISSING_OR_EXPIRED` since
+    2026-10-02. The `release` job of run 36968512685 (#200's merge) failed on it, so **build 82
+    (2026-09-30) is the last build testers have**: #200 and #203's release note are on main and in
+    no build, and build 82 expires around **2026-12-29**. The feedback pull (run 43328447485) fails
+    the same way, so no tester feedback after 2026-09-28 has been read. The Account Holder accepts it
+    at App Store Connect > Business; no key is involved. Then re-run the failed `release` job, re-pull
+    feedback, and redo `docs/investigations/beta-feedback-triage-2026-11-12.md` for 2026-09-28 on.
+95. **F1's leftover owner decision.** The leading fix shipped (d7fdbd4a), but ERRATA E254 §2's choice
+    for the no-ghost caption (its 80 pt width, or the copy `no ghost yet · first photo`) was never
+    made; the 2026-08-28 reconciliation counted F1 as fully shipped. Owner call; P3.
+96. **F4 was filed on My Grove > Species (screen 08).** The tester's screenshot answers the "which
+    screen" question the 2026-09-09 section left open, so F4 now waits only on the period vocabulary.
+97. **Chip numbers 85-87 collide.** `feat/community-trees-core` (C1) and PR #201
+    (`ci/build-once-for-ui-shards`) each add their own chips 85-87, and main now uses 85-93 for
+    D.C. Whoever merges either branch renumbers its chips past the highest on main. C1 (`feat/community-trees-c1`) renumbered its chips to 104-106, and #201 renumbered its chips to 121-123, and the 2026-11-14 merge train moved them to 134-136.
+98. **DONE by #208: the queue now decides with an `NWPathMonitor` source, and waiting photos upload when wi-fi returns.** ~~**P0: the "Sync photos on wifi only" switch does nothing (F35, 2026-09-30).**~~ A tester saw
+    photos upload over cellular. Every feature writer and `OutboxViewState.retry`/`retryAll` call
+    `OutboxQueue.drain()`, whose `photoUploadsAllowed` defaults to `true`; the only call that passes
+    the switch is `syncNow(isOnWifi:)`, which nothing calls, because the app has no reachability
+    source (ERRATA E81 names the missing source, not this effect). Fix: one `NWPathMonitor`-backed
+    source, passed to every `drain()`, with a test that fails if a writer drains without it.
+99. **DONE (PR #207): the ring follows the reader's location, owner decision 2026-11-12; strings
+    in RULINGS R173.** ~~**The Grove ring names the most-visited neighborhood, not where the reader is (F38,
+    2026-11-12).** The tester, in D.C., saw My Grove > Species say "in the Castro/Upper Market".
+    `LocalAPI.groveSpecies` follows R29 (most-visited neighborhood) and the caption does not say so;
+    F17 fixed the same complaint on the Journal's stats but not on screen 08. Owner choice: label it
+    "your most-visited neighborhood", reuse F17's picker, or follow location. D.C. ships no
+    neighborhoods yet (chip 88).~~
+100. ~~**A tester's own photo will not open (F36, 2026-10-02).** "That photograph could not be opened"
+    on a tree they added. Unreproduced; suspects are chip 67 (a keyed photo row with no bytes) and
+    chip 76(a). Reproduce first.~~ **DONE in #206.** Cause: a photo row stores an absolute
+    `local_path` into the app's data container, and an add-tree photo keeps it for good because it
+    is never uploaded. An app update can move the container (the tester went from build 77 to 82),
+    so the stored prefix named a folder that no longer existed and the server had no copy. iOS
+    moves the files with the container, so `StoredPhotoPath` now re-roots the part after
+    `Library/Application Support/` onto the current folder when the stored path is missing; no
+    migration. `uploadPhoto` and both deletes use it too, and the viewer now retries a failed read
+    when it opens again. Chips 67 and 76(a) stay open as separate suspects. Follow-up: store
+    relative paths in `addTree` (after C1 merges, since C1 edits those lines).
+101. **A white band under the tab bar (F34, 2026-09-30).** About 60 pt, after browsing the
+    Journal's City and Neighborhood tabs. Unreproduced; same visual family as F8. P2.
+    **Investigated 2026-11-14, still unreproduced, no code changed:**
+    `docs/investigations/f34-white-band.md`. Two corrections from the screenshot (measured by the
+    round's agent, not re-measured since): the band is about 48 pt, and it is on My Grove > Trees,
+    after the tester left the Journal. Grove, Journal and You ignore only the `.container` bottom
+    inset, the code shape F8 corrected on the camera screens; a paint-only fix would turn the band
+    cream and leave the bar floating, so none was made. The note lists what to capture next time, and
+    the probe UI test to write once local UI tests run again (item 112).
+102. ~~**F37 (2026-10-31) is a second report of F31(a), moving a pin.**~~ **Answered by C1's Move pin
+    control for trees the reader added** (owner decision 2026-11-12). C3 still owns the rest of F31.
+103. **`PhotoDeletionReachabilityTests.testTheHeroPhotographReachesADeleteThatWorks` failed once on
+    main** (run 43327553492, ui shard 4, #203's merge, 2026-11-12): "the delete is in the viewer's
+    tree but nothing could" (line 52). The same tree's Swift passed on the PR's merge run, and the
+    merge changed no Swift. A re-run is evidence it is intermittent, not of why. Watch for a second
+    occurrence before chasing it.
+    **Second occurrence, in the sibling test** (run 43421121135, ui shard 4, #206's merge,
+    2026-11-13): `testAPhotographOpenedFromTheBrowserReachesTheSameDelete`, "the metadata pill did
+    not open the photo browser" (line 104). Read from the two runs' recordings and snapshots:
+    - **The first is the race `UIWait.assertReachable` documents.** The viewer stopped moving at
+      6.85 s; the one-shot `isHittable` at 8.99 s said false; the tap at 9.21 s still opened the
+      confirmation. Fixed by waiting for reachability (this PR).
+    - **The second is not explained.** The tap landed at the pill's center (318, 202), and for ten
+      seconds after it nothing changed: no browser, no viewer, the same pixels. Screen 20 was never
+      reached, so F36's changes to `PhotoImageStore` were not on the failing path, and the first
+      failure predates F36. The candidates are a touch dropped while the pushed profile was settling
+      on a loaded runner, or a push the stack did not draw. The test now waits for the pill to be
+      reachable before tapping it, and on failure it reports whether a second tap works, which
+      separates the two. Keep this open until a recurrence says which, or a few dozen green runs.
+    **Still open after `test/flake-classes` (item 132).** That branch makes every positive
+    hittability claim in the UI suite wait, which is the first failure's class. It does not touch
+    the second failure, a tap that changed nothing; that part stays open as described above.
+
+104. ~~**C2 item: the phone's leaving door anonymizes trees the service deletes (decision 12).** From
+    community-trees C1. Decision 12 of 2026-09-28 deletes an *unpublished* tree under both deletion
+    doors, `leaveRecords` included. Publication is the service's fact (decisions 7 and 10: it turns
+    on the license the account held when the tree went live), and C1's phone does not hold it, so
+    `AccountDeletion.forgetCommunityTrees` anonymizes every tree the account added under
+    `leaveRecords` and the service deletes the ones that were never public. The phone then keeps a
+    pin the service has dropped. **Close it in C2**: the tile's withdrawn-ids list is what drops the
+    stale row from `community_tree_cache`, but the stale row is in `community_trees` (the authored
+    table), so C2 has to decide how a phone learns an authored tree was deleted for it — most
+    likely by reading the service's answer to the account's own trees at sign-out or on the next
+    tile — and then delete the local row and its chain. Until then the gap is visible only to the
+    deleted account's own phone.~~
+    **DONE in code by the overnight round of 2026-11-14 (`claude/overnight-bug-fixes-8154ea`), for 104 and 105 together; live only after the service is redeployed (owner
+    action).** `DELETE /me` now answers with `community_trees: {deleted, anonymized}`, the ids of the
+    trees the account added, and the phone acts on that answer: a tree the service deleted is deleted
+    here with its chain under either door, a tree it kept is kept and anonymized, and an id in both
+    lists is kept. Against the service as deployed today the key is absent and the phone does exactly
+    what it did before. No migration on either side. Tile sync (the rest of C2) was not needed.
+105. ~~**C2 item: the erasing door's local "built on" test is the phone's view of the tree.** From
+    community-trees C1. Decision 6 keeps a tree the erasing account added if another identity has
+    built on it; the service decides that from all the rows it holds, and
+    `AccountDeletion.forgetCommunityTrees` decides it from this phone's `visits`, `observations`,
+    `measurements`, `care_events` and `photos` with `deleted_at IS NULL` (`builtOnTables`). Two
+    edges differ. (a) Somebody else's contribution to the tree that never reached this phone
+    does not count locally, so the phone can delete a tree the service keeps, anonymized; the
+    next sync-down would bring it back as somebody else's tree. (b) A row by this same
+    installation but not yet claimed (device-owned) counts locally as "somebody else"; the service
+    reads it as the account's after the claim. C2 should make the service's answer the one the
+    phone acts on, or at least reconcile the two after the deletion lands.~~
+    **DONE with 104, same change.** Both edges are covered by the service's per-tree answer. What is
+    left is in the follow-ups below: a tree this device added before it was claimed, and the rows
+    that stay on a tree the phone deletes.
+106. **Owner question: deletion copy for the new erasing-door behavior (decision 6).** From
+    community-trees C1. The erasing door now deletes a tree the account added unless somebody else
+    has built on it, and the owner's decision 6 says "deletion copy must say so".
+    `AccountDeletionCopy` says nothing about trees the account added: it names visits, check-ins,
+    measurements, care notes, photo votes, tree names and photographs. Copy is the owner's under
+    constraint 21, and C1 has no UI, so none was written. Needs the sentence for both doors (the
+    leaving door keeps the tree and takes the name off; the erasing door deletes it or, where
+    somebody else has built on it, keeps it anonymized), and the confirmation screen's count line
+    if it should report trees.
+
+107. ~~**Move pin is offered on trees the service never received (R77), and on trees whose adder the
+    backfill guessed.** From #209's review (F1) and the owner's ruling of 2026-11-13. A tree added
+    before the sync path existed was never queued, so v23 gives it this installation's current owner
+    and the profile offers Move pin; the service has no such tree and answers the move with a
+    terminal `not_found`, a permanent red row on screen 17. The same happens where the `add_tree` row
+    was pruned (24 h after `done`) and the current owner is not the one the add was made as
+    (`forbidden`). **A cheap rule, proposed and not built:** offer Move pin only when the tree's
+    `add_tree` row is still in the outbox, or the tree's `created_at` is on or after the first build
+    that queued adds (#s34, merged 2026-08-21; read the `build-N` tag for the exact date). That hides
+    every R77 tree and keeps every tree the service has. It does not fix a pruned row with a wrong
+    guess; C2's `added_by_you` from `GET /trees/{id}` is the real answer, and should replace the local
+    adder test once it lands. Owner call: build the cheap rule in C2, or wait for `added_by_you`.
+    **Owner, 2026-11-13: not an issue today**, because every tree added so far was added by the
+    owner. Revisit before other people add trees.~~
+    **The cheap rule is built, in the overnight round of 2026-11-14 (`claude/overnight-bug-fixes-8154ea`)** (the owner put this item on that round's list).
+    `CommunityTreeStore.mayHaveReachedService`: when the tree's `add_tree` row exists, its state
+    decides (offered unless the add `failed`); when no row exists, the tree's `created_at` must be on
+    or after `firstQueuedAddsAt`, 2026-08-21 18:54:57 UTC, the commit `build-43` points at (the first
+    build that contains #s34). It hides only the offer. It does not fix a pruned row with a wrong
+    adder guess; C2's `added_by_you` still replaces it.
+108. ~~**Test wait limits now trip on many CI runs (2026-11-13).** In one day: three `MapSearchTests`
+    timed out at `TestWait.ceiling` (90 s, each failed after 102 s) on #208's run 43495993786;
+    `MapRecenterTests` on a main run; `CityDownloadTests`' 60 s time limit on #207; and
+    `AppleSignInUITests`' 30 s reachability wait on #210. Each passed on a re-run. `TestWait.swift`
+    says a 90 s timeout means to check whether the model settles at all, so investigate before
+    raising any limit. The unit suite has grown to 2,134 tests, which is the first thing to measure.~~
+    **DONE by `test/map-settle-waits`, for the unit tests:** the five map suites no longer wait on a
+    wall clock. `TestWait.settle` awaits `MapModel`'s own tasks and fails at once when the model is
+    idle with the condition false, so time spent queued behind other tests no longer counts.
+    `CityDownloadTests`' limit is now 3 minutes. The `AppleSignInUITests` UI wait was not touched.
+    The deeper cause, pool contention from per-test seed stores, is item 117.
+109. ~~**`PhotoBrowserReachabilityTests` asserts on a one-shot `isHittable`** (lines 60 and 133). That
+    is the race that #210 fixed in `PhotoDeletionReachabilityTests` (item 103). Move both asserts to
+    `UIWait.assertReachable`.~~ **DONE by `test/flake-classes`** (item 132), with 19 more sites of
+    the same shape, and a gate that refuses new ones.
+110. ~~**E81's "offline" state for the outbox pill can now be built.** #208 added `NetworkPathSource`
+    (`NWPathMonitor`), the source E81 said was missing. Out of scope for F35, logged here.~~
+    **DONE in the overnight round of 2026-11-14 (`claude/overnight-bug-fixes-8154ea`).** Screen 17's pill reads `N waiting · offline` when rows are waiting and
+    `NWPath.status` is `.unsatisfied` right now; cellular and `.requiresConnection` are not offline,
+    and nothing is claimed before the first reading. The erratum that amends E81 is
+    **ERRATA E353**. No UI test reads the pill (follow-up below).
+111. ~~**The agent simulators in CLAUDE.md no longer exist.** None of the four UDIDs listed under
+    "Simulators" is on the owner's Mac (checked with `xcrun simctl list devices`, 2026-11-13). This
+    round's agents made their own. Update the list, or say how an agent makes its device. On 2026-11-14 the Mac
+    has only iPhone 17-family devices on iOS 27.2 (17, 17 Pro, 17 Pro Max, 17e); the local
+    Xcode 27 check in item 112 used the iPhone 17 Pro, the model CI uses. Which of them is the owner's
+    own device, and which four agents may use, is the owner's to say in CLAUDE.md.~~
+    **DONE 2026-11-15 (#235):** CLAUDE.md now keeps the plain iPhone 17 for the owner, on every iOS
+    version, and gives agents four iOS 26.5 devices of different widths: 17 Pro (402 pt), 17 Pro Max
+    (440 pt), 17e (390 pt) and Air (420 pt).
+112. ~~**Owner action: local test runs hang on this Mac.** `xcodebuild test` stops with "test runner
+    hung before establishing connection" and "DTServiceHubClient failed to bless service hub". The
+    usual fix is `sudo xcodebuild -runFirstLaunch`, which needs the owner's password. Until then,
+    CI is the only test evidence.
+    **Cause found 2026-11-14, and it is probably not first-launch.** `xcodebuild
+    -checkFirstLaunchStatus` exits 0. The system log at the moment of the hang (`/usr/bin/log show`)
+    has the kernel refusing Xcode's host helper: "mac_vnode_check_signature: …/DTServiceHub: code
+    signature validation failed fatally … com.apple.DTServiceHub disallowed without correct
+    com.apple.private.amfi.version-restriction entitlement version". The Mac is on macOS 27.2 with
+    Xcode 26.6, and an iOS 18.6 simulator hangs the same way as iOS 26.5. That reads as an Xcode
+    that this macOS no longer accepts, so a newer Xcode is the likely fix (not verified; the owner's
+    action). A local run still proves that everything compiles and gives a warning count.~~
+    **DONE 2026-11-14: the owner installed Xcode 27.2 (build 27B52) and selected it.** A local
+    `Tools/run_tests.sh` run on the iPhone 17 Pro (iOS 26.5) built 594 Swift files and
+    ended `VERIFY-OK: ✔ Test run with 6 tests in 1 suite passed` (`RenderSettleTests`), with no
+    hang. Local runs are test evidence again.
+113. ~~**F36 follow-up: thumbnails do not retry a failed read.** #206 made the photo viewer retry;
+    a thumbnail's `load()` still keeps its first failure for the session.~~
+    **DONE in the overnight round of 2026-11-14 (`claude/overnight-bug-fixes-8154ea`).** `PhotoImageStore.load` reads a failed photograph again when a screen shows it
+    again, at most once a second and up to 4 failed reads per photograph per session; a read
+    cancelled because its screen went away is not counted; a deleted photograph is never read again;
+    and a successful viewer read fills the thumbnail behind it. The 1 s and the 4 are the round's own
+    picks.
+114. ~~**F38 follow-ups (#207).** The ring reads the location once, when the tab opens, and does not
+    follow the reader while the tab stays open. It does not check how old the fix is. Two reads that
+    overlap can finish out of order, and the older one can win.~~
+    **DONE in the overnight round of 2026-11-14 (`claude/overnight-bug-fixes-8154ea`).** The ring reads again when the reader moves 100 m or more while My Grove is
+    showing (not while another screen covers it); a fix that was more than 60 s old when the phone
+    delivered it does not place the ring; and the newest read always wins. The 100 m and the 60 s are
+    the round's own picks. Owed on the physical phone: what CoreLocation delivers after
+    `startUpdatingLocation` and after a return from the background when the reader has not moved
+    (follow-up below).
+115. ~~**C1 follow-up: other community kinds can reach the service before their tree's add.** #209
+    holds a pin move until its tree's add is sent. A species claim, a report or a photo vote on a
+    tree whose add is in backoff can still arrive first, and the service answers `not_found`, which
+    is terminal. Hold them the same way, or make the answer retryable.~~
+    **DONE in the overnight round of 2026-11-14 (`claude/overnight-bug-fixes-8154ea`), with the premise corrected.** Only a pin move is refused with `not_found`. A
+    species claim or correction that arrives before its tree is recorded and never applied, a silent
+    loss; reports, dismissals, photo votes, redirects and disputes are recorded with no tree lookup.
+    So `species_claim` and `species_correction` now wait behind their tree's add like
+    `location_correction` (`OutboxItem.Kind.waitsForItsTreeAdd`), and the other kinds do not. The
+    table is in **ERRATA E350**.
+116. ~~**C1 follow-up: a pin move's time held behind its tree's add counts toward its 48 h window.**
+    The held move has no reason on its row, so the F35 credit (`OutboxStore.window`) does not
+    leave the held time out. If the add is in backoff for 47 h and then sends, the released move
+    has about 1 h left, and one transient failure expires it. Give the held move a hold reason that
+    `window` credits, or restart its window when the hold releases. Found by the review of #209's
+    merge with F35.~~
+    **DONE in the overnight round of 2026-11-14 (`claude/overnight-bug-fixes-8154ea`), by a third design:** each drain pass credits the time a held row has waited
+    (`OutboxStore.creditHeldBehindAdd`) and restamps the row, so no reason string and no schema
+    change were needed. It covers all three held kinds.
+117. **Share one opened seed store per read-only suite (follow-up to 108).** 52 test files call
+    `CypressStore.inMemory(seedURL:)`, which opens an in-memory store and attaches the 103 MB seed,
+    and those files hold about 570 `@Test` declarations (counted 2026-11-13). Many tests open their
+    own store. On CI's 3-core runner that work competes for the same cooperative pool as every other
+    test, which is the load that starved the map waits in item 108. A suite that only reads could
+    open the store once and share it. Measure the unit job's time before and after.
+    Two related leftovers from #214's review: `CityDownloadTests`' time limit was raised from one
+    minute to three, not investigated, and is still exposed to the same starvation; and other waits
+    still run against a wall clock (`AlmanacLocationTransitionTests.waitUntil`,
+    `OutboxWifiOnlyTests`' 10 s `waitUntilBlocked`, `PhotoIdentityTests`' one-minute suite limit).
+118. **Move pin sits in a wide empty band on the profile (TestFlight, build 87, 2026-11-13).** The
+    owner's note: "Terrible spacing here". #209 padded the link by a whole tap target (44 pt) above
+    and below, so it sat about 62 pt from its neighbors, center to center. **Shipped in #216 (build 88), and not enough:** a
+    30 pt gap keeps the centers at least 44 pt apart at every text size (about 47.7 pt at the
+    default size), and `MovePinUITests` measures both distances.
+    **Not fixed by #216: build 88 still showed the band** (about 48 pt, the owner's second TestFlight
+    note, 2026-11-14). #216 kept a 44 pt tap-target rule the owner had not asked for. The owner's
+    ruling: match the column. **DONE in #224:** Move pin has no extra padding and sits about 18 pt
+    from its neighbors, like the other links; the test now checks that. It ships with the next
+    release, because releases are paused (see `TESTFLIGHT_RELEASE_PAUSED` in testflight.yml).
+119. ~~**"Say what species you think this is" and "Report that there is no tree here" overlap.** On
+    the profile of a tree with no species, the two links are about 18 pt apart, center to center,
+    so their 44 pt hit areas overlap and a tap meant for one can reach the other. This predates
+    #216 and #216 does not make it worse. Seen in the owner's build 87 screenshot.~~
+    **DONE in the overnight round of 2026-11-14 (`claude/overnight-bug-fixes-8154ea`), with nothing
+    visible changed.** The links stay where they are. Each link in the identity column that can sit
+    under another link now takes taps only from the midpoint of the gap above it
+    (`cypressHitArea(_:reachingAbove:)`), so the upper link keeps its own words; below and to the
+    sides nothing changed, and links that sit under a sentence keep the full area.
+    `ProfileLinkColumnUITests` taps 2 pt either side of each midpoint and checks the column's pitch
+    against itself. Nobody has watched a tap land: which link an overlapped tap reached before the
+    fix was worked out from geometry and from what #139 saw, and the round's red-proof run on CI is
+    the first observation. Since #224 the
+    whole column ("Show me where this is", "Move pin", and these two) sits about 18 pt apart, so
+    every pair of neighbors in it overlaps the same way.
+120. **`addReadingLink`'s comment overstates the hit-area overhang.** `TreeProfileView.swift`
+    (around line 988) says `cypressHitArea` overhangs a 13 pt label by about 17 pt. The background
+    is a centered 44 pt minimum height, so the overhang is about 14 pt at the default text size.
+121. ~~**Owner action: redeploy `cypress-sync` so items 104 and 105 take effect.** The phone acts on
+    `DELETE /me`'s `community_trees` answer only when the service sends it. Merging server code
+    deploys nothing.~~ **DONE 2026-11-14.** `cypress-sync` release v14 booted at 22:25 UTC with
+    `git_sha` `0b67bd6e` (read from `GET /health` and from the boot log), at server schema 7, with
+    no migration. Nobody has called `DELETE /me` against it since; the evidence for the new field
+    is the Go suite, green on that commit.
+122. **Follow-ups from the 2026-11-14 overnight round, account deletion (104, 105).** (a) A tree
+    this device added before it was claimed is device-owned on the phone and the account's on the
+    service; the phone keeps it even when the answer names it, so it can keep a pin the service
+    deleted. (b) When the phone deletes a tree on the service's answer, other rows stay on a
+    `tree_uuid` that names no tree (the account's anonymized visits under the leaving door, this
+    installation's unclaimed visit, a stranger's visit). ~~Nobody checked how the Journal draws such a
+    visit.~~ **Read on 2026-11-14 (code only, nothing was run), at the owner's request before any
+    change.** Nothing crashes. `forgetCommunityTrees` deletes the tree and its `tree_locations` and
+    no other row, and no foreign key points at `community_trees`. What a reader gets: (i) **a
+    Journal row that leads nowhere.** This installation's own unclaimed visit, check-in,
+    measurement or care event on the deleted tree stays in the Journal, titled with the fallback
+    `Tree`; a tap opens the profile's "No record for this tree." with no retry, and the row cannot
+    be removed. The account's own anonymized rows are hidden from the Journal. (ii) This
+    installation's favorite and private reminder on the tree stay: `deviceContributions` on the
+    You tab counts them and My Grove hides them, and the heart cannot be removed. (iii)
+    Photographs on the tree are reachable from no screen; under the leaving door their bytes stay
+    on disk. (iv) The CSV export lists the tree's rows and the GeoJSON export skips them. (v) Found
+    beside it, and not caused by the deletion: `ContributionStore.contributedTreeIDs` has no
+    tombstone clause, so an account's anonymized rows still count under `Yours`. The stranger's
+    visit in the sentence above may not be reachable: the only `INSERT INTO visits` is this
+    phone's own, and the test builds that row with raw SQL. Not settled by reading: whether the
+    drain sends this installation's queued rows after sign-out, whether an anonymized nickname
+    still titles the row, what `privateReminders` draws for a reminder whose tree is gone, and
+    whether the profile's failure state shows a way back. One unit test over `journal`,
+    `grovePage`, `deviceContributions`, `mapMembership`, `privateReminders`, `exportLatest` and
+    `treeProfile` after `finishAccountDeletion` settles the first three; the screen needs a UI
+    run. **Owner question, still open, now with the facts:** should the phone also delete this
+    installation's own unclaimed rows (and the photographs' bytes) on a tree the service deleted,
+    or should the Journal only skip rows whose tree does not resolve, as My Grove does? (c) The service returns the tree ids and logs none of them.
+    (d) Stale prose found by the review of the guard fix: `RemoteSurface.noRouteOnThisService`'s
+    doc in `RemoteWire.swift` lists its users and does not name `finishAccountDeletion`, and its
+    description says "yet" for an act that will never have a route; `APIConformanceGuardTests`'
+    comments give 32 and 33 as the requirement count, and the parsed count is 40.
+123. **Follow-ups, the outbox and Move pin (107, 115, 116).** (a) A species claim released by a
+    `failed` add is sent and silently never applied; if the add is later retried and succeeds, the
+    adder's species never reaches the service's tree. (b) An add refused with `conflict` cannot be
+    repaired by moving the pin, because the add's payload keeps the old coordinate. (c) A tree added
+    after 2026-08-21 18:54:57 UTC on a phone still running build 42 is still offered Move pin.
+    (d) `heldBehindAddSQL` runs `json_extract` over every pending row on each drain pass; fine at
+    today's queue sizes. (e) ~~Owner question: should reports, photo votes and disputes also wait for
+    their tree's add, in case C2 starts applying them to the tree? Today the service is order-safe
+    for them, so they do not wait.~~ **Decided by the owner, 2026-11-14: leave as is.** Only pin
+    moves and species rows wait. Reopen it if C2 makes the service apply those kinds to the tree.
+124. **Follow-ups, the My Grove ring (114).** (a) Owed on the physical phone: what CoreLocation
+    delivers after `startUpdatingLocation` and after a return from the background when the reader has
+    not moved 5 m. If no fresh fix arrives, the ring stays on the most-visited area until the reader
+    moves; before the round it used the cached fix. (b) The age rule measures age on arrival, so a fix
+    that was fresh before the app went to the background is still used on return until a new one
+    arrives. (c) Nothing tests the view's `onChange` wiring; the tests call `followLocation()`
+    directly. (d) Screen 12 (Almanac) never checks a fix's age and polls every 500 ms; it could reuse
+    `MapLocationProvider.fixTiming` and the observation pattern. (e) An older read that paints after
+    the newest read failed can leave the ring on the wrong place until the reader moves 100 m; it
+    needs a 100 m walk out and back inside one local read.
+125. **Follow-ups, photographs (113).** (a) A thumbnail that stays on screen never retries by
+    itself; it recovers when its screen appears again or when the viewer opens it. (b) After 4 failed
+    reads a photograph stays a placeholder for the session unless the viewer reads it. A phone offline
+    for a while can get there. (c) `try?` throws away the failure type; `notFound` and a network
+    error could be told apart. (d) `PhotoImageStore.isMissing` has no production caller.
+126. **The UI suite cannot leave a row waiting in the outbox.** With the network gate off a row is
+    applied and finishes at once, so no UI test can read screen 17's pill, with or without `· offline`
+    (item 110), and `OutboxView`'s two wiring lines are untested. Needs a DEBUG seam that seeds a
+    waiting row (`CYPRESS_NETWORK_PATH=offline` already exists). `OutboxPreviews` and
+    `ScreenSweepShots` have no offline variant of the pill either.
+127. **`AccountDeletionSheet`'s alert has no UI test (item 77).** The delete row draws only for a
+    signed-in account and no deep link signs in. A `Standalone` deep-link case that presents the
+    sheet would let a test tap `Go back`.
+128. **Say in CLAUDE.md how an agent writes in its own worktree.** In a session that runs in an
+    isolated worktree, the Write and Edit tools refuse a subagent's assigned worktree ("belongs to a
+    different worktree") until the agent calls `EnterWorktree` with that path. On 2026-11-14 five of
+    eight authors wrote files through the shell instead, some after the refusal. "Working in a
+    worktree (agents)" should name the tool and forbid the shell route. (CLAUDE.md is the owner's;
+    this round did not edit it.)
+129. **DONE in `test/pin-nudge-waits`: the pin-adjust UI test lost a tap.** Main run 43551707747
+    (ui shard 1) failed `DeepLinkVoiceOverTests.testThePinSaysWhenItHasGoneAsFarAsItGoes`: fifteen
+    north nudges sent back to back left the pin at 70 m, not 75. The same lost second tap failed
+    `MovePinUITests` on run 43536693607. Both tests now wait for each nudge to land.
+130. **Two accessibility checks spend minutes on one-element queries (UI shards 1 and 3).**
+    `assertEveryControlIsLabeled` asked `exists`, `isHittable` and `label` of every control in the
+    app, one query each. Screens 09, 10 and 18 open over the map, so about 150 pin buttons behind
+    the cover were each walked: 135, 127 and 117 s in `DeepLinkVoiceOverTests.testPinAdjust`,
+    `testCareLog` and `testShare`. `DeepLinkSweepTests.testNothingIsAnnouncedTwice` did the same over
+    every static text (about 175 s). **DONE in the PR from `test/snapshot-label-checks`:** both read
+    the labels from one snapshot of the tree, and only an unlabeled control, or a repeated static
+    text, is checked live for hittability. The rules and their failure messages are unchanged.
+131. ~~**The screen-photo tests are most of the unit job's time (2026-11-13).** On main run
+    43543728441, 2,134 tests took 283 s, and the last 218 s was about 35 `@MainActor` render
+    tests. `ScreenSweepShots` alone: `everyScreen` 278 s, `coldStates` 259 s, `cityRecordStates`
+    173 s, `afterTheSave` 150 s. Each capture slept a fixed 0.96 s, then encoded and wrote a PNG and
+    a contact sheet that CI never uploads.~~
+    **DONE by `test/faster-screen-captures`:** `RenderSettle` replaces the fixed sleeps in
+    `ScreenSweepShots`, `DynamicTypeScreenshotTests` and `AX5ReflowTests`. It returns when the
+    layer tree has not changed for three 40 ms passes, no spinner is visible and 160 ms have
+    passed, and never waits longer than the old loop. Screens that load with no spinner (02, 05,
+    06, 09, 12, 12b, 12c, 20, 21 and the e12 states) keep the old 0.96 s floor, and the AX5 width
+    guard on 02 waits for its shortlist query to answer. Without `CYPRESS_SHOT_DIR`, the harnesses
+    still draw each screen and run the blank guard, but encode and write nothing. After: measured
+    on #220's final CI run; see the PR body.
+132. ~~**Three classes of flake from a catalog of 70 CI runs (2026-10-23 to 2026-11-14).**~~
+    **DONE by `test/flake-classes`:**
+    (a) `UIWait.assertReachable` gave up when one accessibility read took most of its 30 s
+    (`AppleSignInUITests`: launch 17 s, one read 29 s). It now looks once more after the deadline,
+    and its failure message prints the element's frame. `settledFrame`'s presence wait does the same.
+    (b) 21 positive one-shot `isHittable` asserts (items 103 and 109's shape) now wait through
+    `assertReachable`, and `HittabilityFilterGateTests` refuses a new one. Negative asserts
+    (`XCTAssertFalse(… .isHittable)`) are left as they are, because waiting for something to stop
+    being hittable lets a slow runner pass by never drawing it.
+    (c) `TreeLocationStore.chain` sorted by time and then by a random id, so an add and a move inside
+    one millisecond could read back head first
+    (`LocationCorrectionTests.theAdderMovesThePin`, main run 43543728441). It now follows the
+    `superseded_by` links from the root.
+133. **`SpeciesAssertionStore.chain` has the same tie-break as item 132(c).** It sorts by
+    `created_at, id`, so two assertions on one tree inside one millisecond can read back in either
+    order. Follow its `superseded_by` links the same way. Found by `test/flake-classes`, not changed
+    there.
+134. **Two unit tests that failed on CI and passed on the next run, neither explained.** (a) `MapSuggestionTests`'
+    "choosing a suggestion narrows the map to that one species and puts its name in the field" failed
+    after 105 s with two issues (`MapSuggestionTests.swift:265` and `:268`), on the unit job of the
+    build-once PR's run 36665812582. That PR changes no app or test source. (b) The day before, on
+    another PR's run 36609447255, `MapRecenterTests`' "moving the camera keeps the species the
+    search narrowed to" and "zooming in on the recenter's second step keeps the narrowing too" failed
+    in the same area. Both are map-narrowing tests, which is the only thing the two sightings share.
+    A green re-run proves a failure was intermittent, never why, so this is a flake-watch entry
+    until one recurs with a cause (item 75 is its UI-side neighbor; item 108 has since fixed the `MapSearchTests` waits).
+135. **What is left of the CI speedup (#199, #201).** (a) `unit` could use `ui-build`'s products too and
+    save about 7 more minutes a run, but only if warning certification moves to `ui-build`'s fresh
+    build log: the owner's call, since `unit` is where the zero-warning line is certified today.
+    (b) The shards could boot their simulators while `ui-build` runs; `prepare` is 2 to 3.5 minutes per
+    shard and is now the largest cost that is not tests. Partly done by item 137: each job now boots
+    in the background, which hides the boot behind `unit`'s build but only about 30 s of it in a shard.
+    Starting the shards before `ui-build` ends would hide the rest, at the cost of runners held idle
+    under the five-job cap. (c) Item 2 (rebalance the shards) is worth
+    doing now: shard time is almost all test time, and `ui (1)` at about 18 minutes of tests sets the
+    pace. (d) The account's concurrent macOS runner cap is untouched: on run 36635369200 three shards
+    waited 32, 36 and 74 minutes for a runner, and no workflow change fixes that. (e) The build artifact
+    is kept one day, so re-running one shard later than that needs a re-run of all jobs.
+136. **Gaps the review of #199 and #201 found and accepted.** (a) `web.yml` groups its pull-request
+    runs by head branch alone (`web-<head_ref>`, cancel on), so two pull requests from one head branch
+    against different bases that both touch `web/` cancel each other's web run; `testflight.yml` and
+    `server.yml` were given the base as well. (b) A fork pull request whose head branch name equals an
+    in-repo branch's, against the same base, shares its run group and can cancel it. (c) `Tools/run_tests.sh`'s
+    DerivedData collision key compares path spellings, not directories: a relative, `..` or symlinked
+    spelling of the same directory is not caught. (d) `verify_test_log.sh` trusts a prebuilt log's header
+    completely: a log with no `CYPRESS-RUN: products` lines, or with a `** TEST SUCCEEDED **` where only
+    `** TEST EXECUTE SUCCEEDED **` can come from `test-without-building`, still ends VERIFY-OK. Reachable
+    only by hand-editing a log or running a pre-fix script, which CLAUDE.md already treats as unknown
+    provenance.
+137. **DONE by #201: CI asks for fewer macOS runner-minutes.** Measured over 14 runs: the account runs
+    at most five macOS jobs at once and each TestFlight run asked for five, so overlapping runs waited
+    20 to 70 minutes for runners; each job built the app itself; and pushes to main used about a
+    quarter of the runner-minutes re-running the suite the pull request had just passed. #201 builds
+    once for the UI shards (`ui-build`), boots each job's simulator in the background while it builds
+    (`unit` now builds with `build-for-testing`, certifies warnings from that fresh build, then tests
+    the products), and skips `unit`, `ui-build` and `ui` on a push to main whose tree already passed
+    on its pull request (decision `tested-on-pr`, CLAUDE.md's fifth string; `release` still runs). No
+    billed or self-hosted runners (owner, 2026-11-13). The first live use of the main-push skip is the
+    merge of #201 itself.
+138. **Two UI flakes from 2026-11-14, neither caused by the PR it hit.** (a) `MapSuggestionUITests`
+    could not give the search field keyboard focus, twice in one day: `testLeavingTheKeyboardClosesTheList`
+    on #222's `ui (4)` (run 43558780976) and `testTypingDropsRowsCarryingBothNames` on #224's `ui (4)`
+    (run 43561537245), both "Failed to synthesize event: Neither element nor any descendant has
+    keyboard focus", both classed `VERIFY-ENV-REFUSED` by `run_tests.sh`, both green on a re-run of
+    the shard. A wait for the field's focus before typing is the likely fix. (b)
+    `AddReadingReachabilityTests.testAFullyMeasuredTreeReachesTheMeasureSheetInOneTap` failed with
+    "Failed to get matching snapshots: Timed out while evaluating UI query" on #217's `ui (2)` (run
+    43558019089), green on re-run. Both are slow-runner shapes; watch for a third sighting.
+139. ~~**Send the community trees that predate syncing, with everything on them (owner's ruling,
+    2026-11-14).** The owner reversed R77 for community trees: "trees that are community added
+    should make it onto everyone's phone regardless of when they were added." Chosen in the decision
+    round: the tree, its photographs, and every visit, measurement and care event recorded on it;
+    sent automatically after the update, with no prompt; a signed-out phone waits for sign-in, as a
+    new tree does; other people see the day the tree was added, not the day it went live. The
+    ruling, and the three facts the building round must verify first (no `add_tree` row exists for
+    these trees, a proximity conflict on an old add, which chip 140 removes, and whether the
+    service keeps the phone's dates), are in **RULINGS R183**. Rows on a city tree are
+    still under R77; the owner was not asked about them. Not built. It belongs with C2, because
+    nobody else sees any community tree until C2 lands.~~ **Built, 2026-11-15**, in two pieces: the
+    service keeps the phone's added day (`feat/community-tree-added-day-server`, server migration
+    008), and the phone sends each old tree once, with its rows and its photographs, retries once
+    each add refused under the 10 m rule, and sends every tree's add photo
+    (`feat/community-trees-send-old`; the reading and its limits are in
+    **RULINGS R216-R221**). The build that carries the phone piece
+    should ship only after `cypress-sync` runs the 10 m change and migration 008: the retry
+    happens once, so a refusal under the old rule would be final. **`cypress-sync` release v16
+    (`4b0e35b7`, deployed 2026-11-15) runs both.**
+140. ~~**Stop refusing a tree that is within 10 m of another (owner's ruling, 2026-11-14).**
+    The owner, on how far a pin may move: "can go anywhere, and also fine to go within 10m of another
+    tree. sometimes they will be close together and that's fine". Asked how far that goes, the owner
+    chose pin moves and new trees. This reverses the second half of DECISIONS constraint 16 and
+    answers F32, finding 3. The service refuses in three places and the phone in two; the Add this
+    tree screen keeps "ALREADY ON RECORD" as a note that does not block ("Something is already on
+    record within 10 m of here. Add this tree only if it is a different one."). **The service change
+    deploys before any build that stops refusing on the phone**, and each `cypress-sync` deploy needs
+    the owner's go-ahead. The ruling and the build notes are in
+    **RULINGS R190**. Not built. It goes before chip 139,
+    whose old trees can otherwise come back as conflicts.~~ **DONE, 2026-11-15:** the phone half is
+    `feat/no-proximity-refusal-phone` and the service half `feat/no-proximity-refusal-server`
+    (PR 236), deployed with the owner's approval as `cypress-sync` release v15 (`bd8a35af`). The
+    owner placed the note at the top of the Add this tree form, above the photo, made a row of the
+    note open its tree over the add screen with the draft kept, and made the note show at 10 m and
+    hide past 15 m (three decisions of 2026-11-15,
+    **RULINGS R192**, **R193** and **R195**). **Owed on the physical phone:
+    the shutter's position with a tree nearby.** A simulator has no live camera; the reviewer measured
+    "Choose a photo from this phone" at about 646 pt with a tree nearby on the 390 pt iPhone 17e, still
+    above the pinned button at about 696 pt.
+141. ~~**The service keeps an index and migration comments that only the 10 m dedupe needed.**~~ Found
+    while building chip 140 (`feat/no-proximity-refusal-server`, 2026-11-15). ~~(a)
+    `idx_community_trees_position` (`server/migrations/001_initial.sql`, line 254) existed for the
+    dedupe's bounding box. With the dedupe gone, no query needs it: the only remaining position
+    filter on `community_trees` is the tile's `published_at IS NOT NULL` arm
+    (`server/internal/store/community_reads.go`), which the partial index
+    `idx_community_trees_public_position` (migration 007) covers. It still costs a write on every
+    add and every pin move. Dropping it needs a server migration, with one migration author named
+    for the round.~~ **(a) DONE, 2026-11-15**, in `feat/community-tree-added-day-server`: migration
+    `008_community_tree_added_on.sql` drops the index, after a grep found no other position filter
+    on `community_trees`; `TestTheTileIndexesServeTheirQueries` still passes. Deployed 2026-11-15 as `cypress-sync`
+    release v16 (`4b0e35b7`). ~~(b) The comments in migration 001 (lines ~37, 205 and 226), 002 (~21) and 007
+    (~139) still describe the 10 m dedupe or its resolution sheet. Decide whether applied
+    migrations' comments are corrected in place or left as the record of their day.~~
+    **(b) CLOSED, 2026-11-16** (the orchestrator's choice): the comments of an applied migration
+    stay as the record of their day. What an applied migration's comment says is not rewritten to
+    match later behavior, and the later migrations and their comments say what changed. (A
+    citation in such a comment is still renumbered at a splice, as chip 160's did in migration
+    005; nothing checksums the files.)
+142. ~~**UI tests leave community trees in the app's database, and they break another test on a
+    reused simulator.** Found in round C2 (2026-11-15). `ProfileLinkColumnUITests` has two tests, and
+    each launches `CYPRESS_SCREEN=profileLinks`, which adds one community tree in a line of slots
+    running west from 37.769, −122.530 (`DebugDeepLink.profileLinksSpot`). So each run of the class
+    leaves two added trees in the ocean off Ocean Beach, and the add-a-tree and Move pin harness cases
+    add more nearby. They count as the reader's own, so after two runs
+    `SeeAllOnMapUITests.testTheLinkCentersTheMapOnTheCityWhereTheReaderHasTheMostTrees` aims the
+    "Yours" camera at them and fails with "the map opened narrowed to “Yours” and drew no tree at
+    all". Seen on `feat/community-trees-sync-down` with four such trees in the database (the camera settled on the newest,
+    37.769, −122.53102), and on main `bd8a35af` too, in the second C2 reviewer's control run. CI is
+    unaffected, because each CI run starts from a fresh simulator. `xcrun simctl uninstall <udid>
+    app.cypress.Cypress` fixes a device: the same tree passed 23 of 23 map and profile UI tests after
+    it. The fix belongs in the harness: fresh state for that test, or a "Yours" camera fit that leaves
+    harness trees out.~~
+    **DONE** on `test/community-test-gaps`: the camera test launches with the DEBUG key
+    `CYPRESS_WITHDRAW_COMMUNITY_TREES`, which soft-deletes every community tree before the screen
+    opens (`LocalAPI.debugWithdrawAllCommunityTrees`); a real reader's "Yours" camera is unchanged.
+    The failure needs this order on one install: `SeeAllOnMapUITests` once (it writes its check-in
+    once), then `ProfileLinkColumnUITests` (its trees are now newer than that check-in, and
+    `ContributedCamera` breaks the tie on the newest contribution). On a fresh install the check-in
+    is the newest, so `ProfileLinkColumnUITests` twice and then `SeeAllOnMapUITests` passes with or
+    without the fix. Without the fix the second order fails on the camera assertion; with it, it passes.
+143. ~~**`CameraZoomPinchTests` fails on main on this Mac's toolchain.**~~ **DONE, 2026-11-16**, in
+    `fix/record-links-and-test-harness`. Cause: on Xcode 27.2 an initialized `@State` is stored as
+    `LazyState`, which a `Mirror` cannot read before the view is installed. `ContributionCameraView`
+    now has `init(camera:onCapture:onDone:)`, which seeds the state with the controller it is given
+    or a new one, and the test passes its own controller in. `VisitCameraController.init` starts
+    nothing (read by the reviewer), so the extra construction is silent. The full unit suite is
+    green locally again (2464 tests). Not run on Xcode 26.6 before CI. The original report
+    follows. "05 and 09's camera hands the
+    pinch its own controller, armed, on its viewfinder" fails at `CameraZoomPinchTests.swift:162`,
+    "Expectation failed: Self.stateModel(of: view, label: "_camera")": a `Mirror` lookup of
+    `_camera` on `ContributionCameraView`, which is SwiftUI's internal state storage. Seen with
+    Xcode 27.2 and the iOS 26.5 simulator runtime. Round C2 saw it on its own branch in every full
+    run; the orchestrator reports that four agents saw it on four simulators on 2026-11-15, on main
+    itself among them. It is reported to pass on CI; this round did not check a CI log. Until it is fixed, every local full unit run ends `VERIFY-FAIL` with exactly this
+    one issue, so read the failing test's name before treating a local red as anything else.
+144. **A species answer on a community tree someone else added counts for everyone.** Owner decision,
+    2026-11-15 (**RULINGS R209**). Today
+    the service keeps a non-adder's species statement and applies it to nobody, and the phone
+    refuses the two species verbs on a tree the reader did not add, so C3 hides "Say what species
+    you think this is" and "Report the species as wrong" on such a profile. The round that builds
+    this brings both controls back, with the owner's two rules: on a tree with no species, the first
+    answer names the tree for everyone, marked "species named by a contributor", and the adder can
+    still correct it; on a tree that has a species, the name stays and the profile shows "Somebody
+    has reported this species as wrong." until the adder or the operator corrects it. It is a
+    service change, a deploy, and a phone change. No round has planned it.
+    **Service half built, not deployed** (branch `feat/species-for-everyone-server`, migration 009,
+    2026-11-16). With the owner's answers of 2026-11-16: only sharing accounts count; the adder's
+    "Keep the species" clears the line for everyone; the namer may correct their own answer until
+    the adder corrects or keeps it; the species stays when the namer erases their account. The
+    operator routes are `POST /operator/community-trees/{id}/species` and
+    `…/species-reports/clear`. The profile gains `species_reported`, `species_report_flag_id` (adder
+    only) and `species_named_by_you`; the history gains `by_you` and three kinds
+    (`server/testdata/README.md`).
+    **Phone half built, not shipped** (branch `feat/species-for-everyone-phone`, no phone
+    migration, 2026-11-16): both controls are back for a sharing reader on somebody else's tree,
+    cached or on this phone; a report sends `disputedSpeciesID`; the adder's phone takes a
+    contributor's species onto its own row; the profile reads the three keys and `by_you` and maps
+    the three history kinds; the namer may correct; the adder keeps through
+    `species_report_flag_id`; the owner's note names the adder. The phone-only correction arms the
+    service never honored (the claim's author, and a lead) are removed. The design is in
+    **RULINGS R233-R237**. **Still to do:** the
+    `cypress-sync` deploy (owner's go-ahead), then a second account seen against the live service
+    (a naming reaching another phone, the adder's phone taking it, the line on a third phone and
+    the keep clearing it). This chip stays open until then. A build with the phone half must not
+    ship before the deploy. Both halves merged in the community gaps train of 2026-11-16 while
+    TestFlight releases are paused (`TESTFLIGHT_RELEASE_PAUSED`), so the merge ships nothing: deploy
+    `cypress-sync` before the release resumes.
+    **DEPLOYED, 2026-11-16**, as `cypress-sync` release v17 (`27d69a6e`), with the owner's
+    go-ahead. After the deploy: `/health` answers `git_sha` `27d69a6e`; migration 009's three
+    columns are present; the README's first check query read 0 rows, and its second read 0 reports
+    and 0 trees. The deploy-before-release rule is met. The owner confirmed the two account rules
+    the same day ("Keep both"). **Still open for one thing:** the check with a second account
+    against the live service, which nobody has run.
+145. **`AreaPickerUITests.testACoarseFixNamesNoNeighborhoodAndOffersThePicker` failed once in CI on a
+    tap.** PR 238, run 43775447999, attempt 1, shard 3, iPhone 17 Pro: "Failed to not hittable:
+    Button, {{34.0, 293.0}, {111.3, 44.3}}, label: 'Sunset/Parkside'". The rerun of that shard
+    passed, which shows the failure is intermittent and not why it happened. The test tapped the
+    picker's row right after `waitForExistence`, and `BottomSheet` draws its card at opacity 0 until
+    its rise finishes, so the row exists before it can be tapped. The log does not show that the tap
+    came in that gap; it is the likely cause, not a proven one. The second merge train of 2026-11-15
+    added `assertReachable` before that tap and before the same tap in the class's two other tests
+    that use the picker. Strike this if the failure does not come back; if it does, the cause is
+    something else.
+146. ~~**`RemoteAPI.claimDevice` sends a body the service refuses.** It sends `user_id`, and
+    `POST /devices/claim` decodes with unknown fields refused. Nothing ships through it today (the
+    live claim goes through `AuthClient` and `AppSession`), and its unit test pins the wrong body.
+    Found by the planner and the author of the "Share my tree records" row, 2026-11-15. Remove the
+    dead path or make it match `claimRequest`.~~ **DONE, 2026-11-16**, in
+    `feat/account-license-readback`: `ClaimDeviceBody` sends `device_uuid` only, never
+    `license_version` (a `null` there would withdraw consent). The test now pins the body's keys as
+    exactly `["device_uuid"]`.
+147. **The app ships no license text to read.** Screen 15's "Read the short version" is drawn as a
+    link and is not a button (`AccountAskView.swift`), and the You tab's "Share my tree records" row
+    offers no link for the same reason. A person agrees to the open database license without a way
+    to read it in the app. Owner's call what the short version says and where it lives.
+148. ~~**A person who declined to share, then reinstalled, cannot agree later.** The "Share my tree
+    records" row shows only when the phone holds the stored "declined" answer. After a reinstall
+    the phone no longer knows the answer (`ContributionSharing.unknown`), so the row does not show
+    and the only route is to sign out and sign in again. The service knows the answer; nothing reads
+    it back.~~ **DONE in code, 2026-11-16**, in `feat/account-license-readback`: both session answers
+    carry `license_version`, and the phone adopts it at launch (no request) and after each refresh.
+    **It takes effect only after `cypress-sync` is deployed with this change, which needs the
+    owner's go-ahead and has not happened.** Until then the service sends no key and the phone
+    behaves as before. Two behaviors are the orchestrator's choice, to be confirmed by the owner
+    (**RULINGS R215**). **Its release note
+    (`docs/whats-new/feat-account-license-readback.md`) is true only after that deploy, so the
+    same rule as chip 144 holds: deploy `cypress-sync` before the release resumes.**
+    **DEPLOYED, 2026-11-16**, as `cypress-sync` release v17 (`27d69a6e`), with the owner's
+    go-ahead, so the service now sends `license_version` and the release note is true. The owner
+    confirmed the two behaviors the same day ("Keep both").
+149. ~~**`server/testdata/README.md` does not say that `tree_history.json`'s "added" row carries the
+    day the tree was added.** Since migration 008 the row is dated by `added_on`, where it used to
+    carry the day the tree went public. Found by the author of the service's added-day change,
+    2026-11-15.~~ **DONE** on `test/community-test-gaps`: the README row now says it, checked against
+    `server/migrations/008_community_tree_added_on.sql` and `server/internal/store/community_reads.go`.
+150. **Two test waits failed once in CI on a busy runner (run 43786913681, the second merge train
+    of 2026-11-15, attempt 1; the rerun of the two jobs passed).** (a) Three `CommunityAddTests`
+    ("a slow read for the old pin position…", "a read that answers after the add began…", "an older
+    read at the same position…") recorded "only 1 reads arrived, not 2" or "the add never reached
+    the API" after 87.5 s each: their wait was 400 turns of a 5 ms sleep, and on that runner 400
+    turns took 87 s. The third train made the wait a 120 s clock. The log does not show why the
+    second read took so long to start, so this is a wider bound and not a found cause. (b)
+    `DeepLinkVoiceOverTests.testThePinSaysWhenItHasGoneAsFarAsItGoes` lost its first nudge: the pin
+    still read "Right where you are standing." 10 s after the tap. The train changed only comments
+    on that screen. The third train makes the first tap wait until the button can be tapped, which
+    rules out one cause. Same family as chip 129. Strike each half if it does not come back.
+    **A different kind of red, for the record (PR 241, run 43946695783, attempt 1, 2026-11-16):**
+    three UI shards were cancelled with "The job was not acquired by Runner of type hosted even
+    after multiple attempts", and `gate` failed for that reason alone. No test ran in those shards.
+    It is GitHub's macOS runner capacity, and `gh run rerun <run> --failed` passed. Read the
+    cancelled job's annotation before looking for a test failure.
+151. ~~**A stripped photo's temporary file can stay on the phone.** `PhotoBinary` writes a hidden
+    `.<name>-<uuid>.clean` file beside the photo and swaps it in with one rename. Its cleanup is a
+    `defer`, which does not run if the app is killed during the strip, and nothing sweeps the photo
+    folder. It costs disk space only; nothing reads the file. Found by the reviewer of chip 139's
+    phone piece, 2026-11-15. A sweep at launch would remove them.~~
+    **DONE in the community gaps round of 2026-11-16 (`fix/community-phone-gaps`).**
+    `PhotoBinary.removeAbandonedCleanCopies` runs at each layer boot (`AppModel`) over the capture
+    folder and the photo folder. It removes only `.<name>-<UUID>.clean` and that copy's own
+    `.stripping` scratch, never a folder. A strip holds its copy's name from before the file exists
+    until it is gone, and the sweep skips a held name, so a reboot during a strip cannot break it.
+    `PhotoCleanCopySweepTests` covers a leftover, the photos and nine look-alike names, and a sweep
+    run inside a strip's rename.
+152. ~~**The Journal treats a pin move and a visit differently at sign-out (owner's call).** Sign-in
+    moves a tree's location rows to the account (`user_id` set, `device_id` NULL), and visits keep
+    their `device_id`. So after sign-out, pin moves leave the Journal and the export while visits
+    stay, and the moves come back at the next sign-in. The same fact has a second side: the
+    Journal's device arm (`device_id = :device`, with no condition on `user_id`) keeps showing a
+    signed-in account's visits after sign-out, and possibly to a second account on the same phone;
+    nobody checked whether sign-out changes the device id. Found by the reviewer of C3's Outbox and
+    Journal package, 2026-11-15 (the probe read 0 moves and 2 visits). Keeping the moves needs a
+    column `tree_locations` does not have, so it is a schema change with a named migration author.~~
+    **DONE, 2026-11-16,** in `feat/journal-keeps-pin-moves`. The owner chose "Everything, pin moves
+    too". Migration v24 adds `tree_locations.set_on_device`, the phone that set each position, and
+    the Journal's pin-move part also matches it; the probe now reads 2 moves and 2 visits. The
+    ruling is **RULINGS R232**. The second side is chip 163.
+153. ~~**Row text breaks badly at the largest text size.** At AX5, `ActivityRow` breaks inside words
+    ("Specie s", "drippi ng"): its timestamp is `.fixedSize()` and squeezes the label. The You tab's
+    SYNC tile shows "…", and "Watered" breaks mid-word. All three predate C3; its authors and
+    reviewers saw them in screenshots, 2026-11-15.~~
+    **DONE in the community gaps round of 2026-11-16 (`fix/community-phone-gaps`), with the premise
+    corrected.** All three are `ActivityRow`. The SYNC tile is on screen 19 (the memorial), not on
+    the You tab, which draws no `ActivityRow`. "Watered" broke as "watere / d" in the Care row on 03.
+    At the accessibility sizes the timestamp now goes under the row, as screen 17's outbox row moves
+    its state word, and the SYNC word takes the outbox tile's line limit and scale floor. The renders
+    at the default size are byte-identical before and after. `AX5ReflowTests` measures a one-word
+    row against a one-letter row at six phone widths.
+154. ~~**A community pin exactly under the reader's location dot does not draw.**~~ **DECIDED,
+    2026-11-16:** the owner chose "No change" (choice (d) below), because a tap on the dot already
+    reaches the tree. MapKit hides it, so
+    a person standing at a tree they or someone else added may not see its pin. Found when a C3 UI
+    test put the reader on the tree, 2026-11-15; 67 m away the pin draws.
+    **Investigated in the community gaps round of 2026-11-16 (`fix/community-phone-gaps`); not
+    fixed, owner's call.** MapKit does not hide the pin. On a clean install on the iPhone 17e
+    simulator, with `CYPRESS_LOCATION` on the `othersTreeOnMap` tree, the pin's view is in the
+    accessibility tree on the first wait, at the dot's frame. It is covered: the dot and the pin are
+    both 18 pt (the dot also draws a halo of about 8 pt around that), and the dot is drawn on top
+    on purpose (`MapLayout.userDotZPriority`, task #150).
+    The dot takes no taps, so a tap on the dot selects the pin under it: the card opens and the
+    pin's selected scale and reticle show around the dot. Every fix changes how the dot or a pin
+    draws: (a) a pin under the dot draws above it, which hides the dot instead; (b) the dot drops
+    its core, or draws see-through, while a pin is under it; (c) the pin or the dot is drawn a few
+    points aside, which puts one of them off its true position; (d) no change, since the tap
+    already reaches the tree. Simulator only; not seen on a phone.
+155. ~~**Sign-out keeps `account_provider`.** A later sign-in that goes only through `claimDevice`
+    (today, DEBUG paths) then reads as "declined to share" where it should read as unknown. Found
+    by the reviewer of C3's profile package, 2026-11-15.~~ **DONE, 2026-11-16**, in
+    `feat/account-license-readback`: `LocalAPI.claimDevice` clears `account_provider` and
+    `account_license_version` in the same transaction that writes `current_user_id`. `linkAccount` and `restoreAccount` write their answer after it.
+    Note: no shipping path calls a bare `claimDevice` today (the DEBUG deep link goes through
+    `linkAccount`), so this was latent.
+156. ~~**A partly fetched community tile counts as asked (a gap in the owner's ruling of 2026-11-15
+    on the map card and the empty list).** The cache writes a tile's row with each page it applies,
+    the service sends at most 100 trees a page, and the "has this phone asked" check reads that
+    row. So in a tile with more than 100 added trees, a fetch that fails after its first page (or
+    that stops at the pass's page limit) leaves the tile marked as asked. The map card and the empty
+    "What tree is this?" list can then show their new text, "Neither has a tree here" and "no added
+    tree is within 60 m of you", while trees on the pages not yet fetched are missing. The next
+    pass corrects it, no sooner than 120 s later, and never while the phone stays offline. Found by
+    the reviewer of C3's add-note package (probe: `ending=stoppedOnError asked=true`). No tile holds
+    100 added trees today. The fix marks a tile complete only when a pass reaches the last page:
+    either a new column on `community_tree_cache_tiles` (a migration, with a named author) or a
+    mark kept in `app_state` in the same transaction. Do it before the community layer grows.~~
+    **DONE in `fix/community-tile-complete`, 2026-11-16:** a tile counts as asked only after a pass
+    reached its last page once. The mark is an `app_state` row per tile
+    (`CommunityTreeCacheStore.completeKey(tile:)`), written with the last page in its transaction,
+    kept through a delta that fails or stops part way, and removed only by `dropTile`. No migration.
+    The reasoning is in **RULINGS R230** (the map card entry).
+157. ~~**`Tools/run_tests.sh` prints `screen-width-pt unknown` on this Mac's simulators.** Seen in
+    every local log of 2026-11-15 on the four iPhone 17-family devices (Xcode 27.2); CI's header
+    prints 402. A width-sensitive UI result from a local log has to take its width from the device
+    table in CLAUDE.md until the probe is fixed.~~ **DONE** on `test/community-test-gaps`: Xcode
+    27.2's `profile.plist` has no `mainScreenWidth` or `mainScreenScale`; the numbers are in the
+    device type's `capabilities.plist` under `ScreenDimensionsCapability`. `read_screen` now reads
+    those first and keeps the old keys as a fallback. The fixed function resolves 440 (17 Pro Max),
+    402 (17 Pro), 390 (17e) and 420 (Air).
+158. **A photo taken between build 55 and F30 and never sent stays on the phone.** Found by the
+    planner of chip 139, 2026-11-15, and outside that chip: the owner's ruling covers community
+    trees and what is recorded on them, and these photos are on city trees.
+159. ~~**A community tree with no name reads "Moved the pin of Tree" in the Journal and "Pin moved ·
+    Tree" in the Outbox.** The fallback title is the same one every community tree row uses. Owner's
+    call whether those two rows want other words for an unnamed tree.~~ **DONE, 2026-11-16**, in
+    `feat/withdraw-owner-answers`, with two owner answers. First: a tree with no name reads `Moved a
+    tree’s pin` in the Journal and `Pin moved` in the Outbox. Second ("Use the species"): Outbox and
+    Journal rows name an added tree as its profile does, so a tree with a species and no given name
+    reads by its species (`Pin moved · Sycamore, London Plane`), and the new words show only for a
+    tree with no name and no species. The second answer replaces the older code rule that an added
+    tree's species is not used as its name in rows (`LocalAPI.displayNameIfPresent` and
+    `resolvedDisplayNames`). Both answers are quoted in
+    **RULINGS R250** and **R251**. My Grove's list is chip 202.
+160. ~~**The pending rulings and errata are not numbered yet.** After the third merge train of
+    2026-11-15, `docs/rulings-pending/` holds 35 files and `docs/errata-pending/` holds 26, from
+    the community-tree rounds and from earlier ones, and SCREENS.md cites several by filename. The splice is its own docs-only change: it
+    replaces the `R???` and `E???` placeholders, rewrites those citations to numbers, and runs
+    `DocumentCitationGuardTests` red and green before it merges.~~ **DONE, 2026-11-16**, on
+    `docs/splice-pending-2026-11-16`: 45 pending files are now **RULINGS R113-R253** and
+    **ERRATA E322-E355**, numbered by the date each file was first written, with each file's own
+    order kept (so a block a later round appended can sit a few numbers away from strict time
+    order). Every citation of a spliced file
+    now names its numbers, and the entries that later rulings replace in part carry a mark (R45,
+    R77, R79, R108, R164, R187, R188 and R238). **Left out on purpose:** the 18 files of the web
+    round (every file whose name starts `web-` or `w1-`, and
+    the public tree read, the public photo grid, and the guard CI skips), and the harness-hardening
+    erratum, which the unmerged branch `tools/fetch-seed-diagnostics` changes. The web files
+    stay for the web round's own splice; its worktree showed no unmerged work on 2026-11-16, so
+    check with the owner whether that round is still live. Chip 208 keeps these 19 files open.
+    One citation was corrected by the review (the unit flip's copy is R113), and the history
+    square's citation now names R210 and R222.
+161. **CI does not write a HEIC, because writing one stalls the unit suite there.** **The reading
+    half is DONE (2026-11-16):** CI run 43946695783 (PR 241) read the checked-in HEIC on the
+    virtual runner. The unit log says "reading the checked-in HEIC took 38765 ms (hv_vmm_present:
+    true)" and 38742 ms for the second test, and both tests passed. Reading works there, slowly,
+    inside the 120 s deadline. The cases that write a HEIC still run on a physical Mac only; that
+    half stays open. The history follows. CI run 43806821528
+    (the third merge train of 2026-11-15) was the first to run chip 139's three tests that write a
+    HEIC with `CGImageDestinationFinalize`. On the GitHub runner, a virtual machine with three
+    worker threads, the unit suite stopped a few lines after those three cases started: no test
+    finished in 33 minutes and the job was cancelled at its time limit. The same tree passes on a
+    physical Mac. The log does not name the blocked call; three threads and three HEIC writers is
+    the evidence. `CommunityTreeBackfillTests` now runs its HEIC cases only where
+    `kern.hv_vmm_present` is 0, and prints the value it read (`CYPRESS-TEST:` in the unit log). The
+    PNG cases run everywhere and take the same path through the app's code. Owed: a small HEIC
+    fixture file checked in, so CI can test reading a HEIC without writing one; nobody has checked
+    whether reading a HEIC works on the runner. Until then a HEIC add photo is tested on a
+    physical Mac only.
+    **Partly done** on `test/community-test-gaps`; **not struck until CI has run the new tests.**
+    `CypressTests/Fixtures/camera-portrait.heic` (1.7 KB, 400 × 300, orientation 6, GPS, capture
+    time, serial numbers) is checked in, and two tests read it on every machine, each on a `Thread`
+    of its own under a 120 s `ContinuousClock` deadline that records "reading a HEIC did not finish
+    in 120 s" and prints a `CYPRESS-TEST: reading the checked-in HEIC took N ms` line:
+    `aCheckedInHEICIsReadAndCopiedAsAJPEG` (the ingest keeps a HEIC; the JPEG copy is clean and
+    upright) and `aCheckedInHEICAddPhotoIsSentAsAJPEG` (the add photo is staged and sent as a clean,
+    upright JPEG). Still tested on a physical Mac only: the cases that *write* a HEIC
+    (`aHEICStaysAHEICThroughTheIngest` and the HEIC arm of the two picked-type cases). Read the new
+    line in CI's unit log: if it says "did not finish", reading stalls on the runner too. Local note:
+    the read took 97 ms alone and about 24 s inside the full suite (the two new tests and the
+    HEIC-writing cases ran together), so the deadline is 120 s: a slow read on a busy runner
+    passes, and only a read that does not come back fails.
+    **Found while doing it, not fixed (it is app behavior):** the ingest (`PhotoBinary.write`) leaves
+    the Exif, TIFF, Apple and GPS blocks in a staged HEIC (`carriesIdentifyingMetadata` is true after
+    it), where it removes them from a JPEG. The JPEG copy that is sent is clean. The staged HEIC stays
+    on the phone with its location in it.
+162. **A refresh that finishes after a sign-out stores a session again.** `AppSession.performMint`
+    calls `persist` after `client.refresh` returns, with no check that the person is still signed
+    in. So a refresh in flight across a sign-out writes the account's session back into the
+    Keychain, and if another account signed in meanwhile, it overwrites that account's stored
+    session. It predates the license readback change. Found by the reviewer of
+    `feat/account-license-readback`, 2026-11-16.
+163. **A second account on a phone sees the first account's work (the second side of chip 152).**
+    The service refuses a second account's sign-in while the first account still owns the phone.
+    One path gets past that: the first account is deleted from a different phone. The service then
+    unlinks every phone and ends the first account's sessions, and this phone signs out, but its
+    rows still name the first account and this phone, with no tombstone. When a second account
+    signs in, its Journal, My Grove, export, and species ring show the first account's visits and
+    notes, and it can delete the first account's photos and withdraw its readings. Anyone holding
+    the signed-out phone sees the same rows before that. **Since migration v24
+    (`feat/journal-keeps-pin-moves`) the exposure includes the first account's pin moves:** the
+    second account's Journal and export show them through `tree_locations.set_on_device`, and it
+    cannot move those pins, because `correctLocation` and the move control read the tree adder's
+    `user_id`. The reviewer of that branch measured it with `claimDevice`: A signs in, adds a tree,
+    moves it, visits it, signs out; B's Journal then shows 1 move and 1 visit (0 moves on main). The
+    fix belongs where the phone learns its account was deleted elsewhere: make that account's rows
+    on this phone anonymous, as the keep-records door does, **and clear `set_on_device` on its
+    `tree_locations` rows in the same statement, as that door does.** Found by reading, by the
+    planner of chip 152, 2026-11-16; the pin-move half was run by the reviewer.
+164. **A queued item made while signed in is refused after sign-out.** Sign-out keeps the outbox
+    sending with the device credential. The service answers an item whose payload names an account
+    with `forbidden` ("Sign in to send this."), which is final, so the row fails for good with
+    "This couldn't be sent." A signed-out phone that withdraws or deletes one of the account's
+    readings or photos meets the same refusal ("belongs to a different contributor"). Found by
+    reading the code (`server/internal/api/sync.go`), by the planner of chip 152, 2026-11-16; not
+    run. **Since the withdrawal round this has an effect a person can see:** a withdrawal queued
+    while signed in and still unsent at sign-out is refused the same way, and the tree comes back
+    on the phone with "This couldn't be sent." (read by the reviewer of the assembled train,
+    2026-11-16).
+165. **The Grove species ring skips the tombstone check.** `GroveQueries.ownContributions` has no
+    `notAnonymized` clause. After a keep-records account deletion, the deleted account's visits keep
+    `device_id`, so they still count in the species ring for whoever holds the phone. The comment on
+    `notAnonymized` says the rule holds in "all five" places, and this reader is outside them.
+    Found by the planner of chip 152, 2026-11-16.
+166. ~~**Open for the owner: a namer's correction leaves the reported line, and old reports can come
+    back (ROADMAP 144).**~~ **DECIDED, 2026-11-16:** the owner chose "Goes away with the old name",
+    which is what the service does. Nothing to build. On the service a report counts against the species it disputed. The
+    namer's own correction does not clear reports, but a report about the old name stops counting
+    once that name is gone; if the namer changes the name back, those reports count again. Only
+    the adder and the operator clear reports. Asked for by the service author of 144, 2026-11-16:
+    the owner may want to decide whether the line should stay after a namer's change.
+167. **The erase door disagrees about species on this phone's own trees.** When an account is
+    erased, the phone reverts the species that account named on its own trees
+    (`AccountDeletion.swift`), while the service keeps the species (the owner's "The species
+    stays", 2026-11-16). Found by the planner of 144 (finding h2); not changed by 144's phone half.
+168. ~~**Naming or reporting a species puts somebody else's tree in your grove on the service.**
+    `TreeMembershipKinds` (`server/internal/store/reads.go`) counts species statements and reports,
+    so since 144 a stranger's tree joins the sender's "Yours" grove on the service. Found by the
+    planner of 144 (finding h4) and repeated by its service author. Owner's call whether that is
+    wanted.~~ **DECIDED, 2026-11-16:** the owner chose "Yes, it counts (Recommended)": "Naming or reporting a
+    species is a contribution like a visit, so the tree joins your trees. This is how the service
+    works today. Nothing to build." Nothing was built. The answer is written up in
+    `docs/rulings-pending/owner-answers-2026-11-16-names-and-rows.md` until it is spliced.
+169. **A tree you added on another phone gets a stranger's species controls on this one, until the
+    service says it is yours.** It reaches this phone only through the community cache, and this
+    phone has no record that you added it. **The local profile**, which is drawn first and stays
+    when offline, treats a sharing adder as a stranger: the claim on an
+    unnamed tree, and on a named one "Report the species as wrong" with the note "This goes to the
+    person who added the tree and to a reviewer. The city is not notified.", which names the
+    reader. **After any service read that says `added_by_you`** for a tree this phone holds only in
+    the cache (release v16 already sends it), `CommunitySpeciesMerge.offer` answers `.unavailable` and
+    the profile offers no species control, and no reported line either. What the service does with
+    each act sent from that phone, because the sender is the adder: a claim on an unnamed tree is
+    the adder's naming and is applied; a correction after it is the adder's correction and is
+    applied, and clears every report; a report is recorded, answered `applied`, and does not count
+    (the adder's own reports never count), while this phone draws the line from its own open flag
+    until a service read replaces it. Owed: tell this phone it holds the reader's own tree (for
+    example from `added_by_you` on the tile page), so it can offer the adder's controls. Found by
+    the planner of 144 (finding h5); reworded after the review of 2026-11-16.
+170. **A reader whose sharing answer the phone does not know gets no species control on somebody
+    else's tree.** After a reinstall `ContributionSharing` is `.unknown` (chip 148), and 144's
+    controls show only for `.sharing`. `feat/account-license-readback` may make this rare; check
+    after it merges. Found by the phone author of 144, 2026-11-16.
+171. **Against a service without 144's keys, a species report's line never clears on the phone
+    that raised it.** The line comes from the reporter's own open flag, and nothing on that phone
+    closes it. Against release v17 the service's `species_reported` decides instead. Found by the
+    phone author of 144, 2026-11-16; it matters only if the phone build ships before the deploy.
+172. ~~**The adder can report their own tree as never having been there (owner's call).**
+    `recordDefectOffer` answers `.reportable` for a tree the reader added, so the profile of their
+    own tree shows `Report that there is no tree here` directly above `Withdraw this tree`. Whether
+    the adder should still see the report once they can withdraw is the owner's question. Found by
+    the withdrawal round's planner, 2026-11-16.~~ **DONE, 2026-11-16**, in
+    `feat/withdraw-owner-answers`. The owner chose "Hide it while withdraw shows":
+    `TreeProfilePresentation.recordDefect` draws no report link while the withdrawal offer is
+    `.available`. When withdraw is not offered (others have added to the tree, and the reason line
+    shows), the report link is drawn. A report already under review stays drawn.
+173. **Rows and photographs on a withdrawn tree are kept with no end date (ROADMAP 61).** The
+    service keeps every contribution and photograph on a withdrawn or taken-down tree and hides it
+    from every read. Withdrawal (`feat/withdraw-tree`) adds more such rows. How long they are kept
+    is still undecided.
+174. **A photograph still queued for a tree its adder withdrew is uploaded, and the service stores
+    it unseen.** `POST /photos/begin` does not check for a hidden tree (`server/internal/api/photos.go`),
+    so a photo of the tree that was waiting for wi-fi when the person withdrew it still uploads.
+    Nobody can see it, and it adds to chip 173. Found by the withdrawal round's planner.
+175. ~~**A refused tap on `Withdraw this tree` draws no sentence.**~~ **DECIDED, 2026-11-16:** the
+    owner chose "Nothing": the profile reloads without the control and says nothing, as built. If the reader signs out between the
+    profile's read and the tap, the verb answers `forbidden`, and the profile reloads without the
+    control and without saying why. The owner has given no sentence for it, so none was written
+    (**RULINGS R246**). Owner's call.
+176. **Two more breaks at the largest text size on screen 03.** At AX5 the title "Grandmother
+    Cypress" breaks inside the word ("Grandmoth / er"; ERRATA records it as cosmetic), and a history
+    detail such as "· 12 m north" breaks between the number and its unit, where a non-breaking space
+    would hold it (D7). Seen by the author of chip 153, 2026-11-16.
+177. ~~**`Photos/<id>.jpg.stripping` can stay on the phone.** `LocalAPI.uploadPhoto` goes through
+    `writeStrippingMetadata(from:to:)`, which leaves that file if the app is killed during the
+    strip. Chip 151's sweep removes only the `.<name>-<UUID>.clean` shape. Found by the author of
+    chip 151, 2026-11-16.~~ **DONE, 2026-11-16**, in `fix/outbox-and-photo-sweeps`: the launch
+    sweep also removes `<UUID>.jpg.stripping`, and it leaves a file alone while a strip in this
+    process holds its name (the registry counts holders, so two strips of one name are safe).
+    Tests in `PhotoCleanCopySweepTests`.
+178. **`Tools/test_harness_guards.sh` has failing checks on main.** Four checks in its "prebuilt end
+    to end" group fail on main's own scripts, and a fifth fails only when the script runs inside a
+    worktree. Seen by the author of chip 157, 2026-11-16; not investigated.
+179. **A staged HEIC keeps its location on the phone, and `addTree` does not check the strip.** The
+    ingest (`PhotoBinary.write`) leaves the Exif, TIFF, Apple, and GPS blocks in a staged HEIC (chip
+    161 has the detail); the JPEG copy that is sent is clean. `LocalAPI.addTree` also ignores the
+    result of `stripMetadataInPlace`. Found by the author of chip 161, 2026-11-16.
+180. **The service's license answer has four loose ends** (found by the reviewer of
+    `feat/account-license-readback`, 2026-11-16). (a) A sign-in that declines on a second phone
+    overwrites an earlier acceptance, and because the service's answer wins, the first phone then
+    reads "did not agree". (b) A repeated agreement overwrites `license_accepted_at`. (c) NULL
+    means both "declined" and "never asked". (d) No Go guard compares the phone's `ClaimDeviceBody`
+    with `claimRequest`, or `SessionCredentials` with `sessionResponse`.
+181. **Under the leaving door, only one of two pin moves came back to the Journal in a red-proof.**
+    Seen by the reviewer of chip 152 while breaking the code, 2026-11-16; the tombstone rules may
+    explain it. Not investigated.
+182. **`server/testdata/README.md` says "the adder's own calendar day" for the "added" row.** That is
+    approximate for a tree the backfill sent later. Found by the reviewer of chip 149, 2026-11-16.
+183. ~~**Record links center their second line at the largest text size.**~~ **DONE, 2026-11-16**,
+    in `fix/record-links-and-test-harness`: the `recordLinkAction` label and the `speciesClaim`
+    label take `.multilineTextAlignment(.leading)`. `ProfileLinkColumnUITests
+    .testEveryLineOfAColumnLinkStartsOnTheColumnEdge` reads the screenshot's pixels and holds every
+    line's first ink within 4 pt of the column edge, at AX5 and at the default size. Seen flush by
+    the reviewer on the 420 pt iPhone Air, light and dark. The original report follows. At AX5 "Report the species
+    as wrong" and "Report that there is no tree here" wrap, and the second line is centered and
+    sits a few points right of the column edge. It comes from the shared `recordLinkAction` Button
+    label and is older than chip 144; the label probably needs `.multilineTextAlignment(.leading)`.
+    Seen by the author and the reviewer of chip 144's phone half, and in the withdrawal round's AX5
+    screenshots, 2026-11-16.
+184. ~~**Finished Outbox rows are never swept.** `OutboxQueue.pruneCompleted()` has no caller in
+    `Cypress/` (checked by search, 2026-11-16), so `done` rows stay past
+    `OutboxQueue.completedRetention`. Comments in `OutboxPresentation`, `CommunityTreeStore`,
+    `CommunityTreeBackfill`, and `AppSchema` describe a sweep that does not run, and so does item 3
+    of **RULINGS R237**. Found by the reviewer of chip
+    144's phone half.~~ **DONE, 2026-11-16**, in `fix/outbox-and-photo-sweeps`: `DataLayer.boot`
+    calls `pruneCompleted()` once at each launch, after `recoverInterrupted` and before the
+    backfill. It deletes `done` rows more than 24 hours old and nothing else. The comments now
+    describe what runs. One effect to know, which follows chip 139's ruling: a tree added before
+    add photos were shared, whose `done` add row is swept, gets a new `add_tree` queued with its
+    add photo; the service answers `duplicate` and takes the photo. Tests in
+    `OutboxCompletedSweepTests`.
+185. **A namer's correction that the service applied to nobody stays on the namer's own profile.**
+    When the adder kept or corrected the species first, the service records the namer's correction
+    and changes nothing, so no tile page brings the tree again. The profile drawn from local data
+    then shows the namer's species and "Correct the species" for as long as the `done` Outbox row
+    lives (since chip 184's sweep: until the first launch more than 24 hours after it was sent;
+    before that sweep, for good), while the profile merged with a service read shows the service's
+    species, so the screen changes on each online open. The same holds for a namer whose correction
+    equals what the adder later corrected to. Found by the reviewer of chip 144's phone half
+    (probe C), 2026-11-16.
+186. **A refused species act on a cached tree would say the wrong reason.** For a reader who does
+    not share, the `.forbidden` failure sentences say "This tree comes from the city inventory…".
+    No screen reaches them today, because the controls are hidden for that reader. Found by the
+    author of chip 144's phone half.
+187. **Species verbs can still find a withdrawn tree.** `speciesTarget` reads
+    `communityTrees.tree(id:)`, which does not leave out a withdrawn row. No screen reaches it,
+    because a withdrawn tree's profile answers `notFound`. Older than chip 144. Check it against the
+    withdrawal round's rules.
+188. **An erased account with a withdrawal in mid-send can leave a tree showing here that the
+    service withdrew.** The erasing door restores the tree of every queued `tree_withdrawal` with
+    `remote_sent = 0`, and that includes a row in state `uploading`. If the service applied that
+    send, this phone shows the tree and its own row wins over the cache. Inferred by the reviewer
+    of the withdrawal round, 2026-11-16; not run.
+189. **The withdraw control costs a five-table scan on each profile read.** `othersHaveAddedTo`
+    reads `CommunityTreeBackfill.phoneMadeAccounts` on every profile read of a tree the reader
+    added; it applies `upper()` and `julianday()` to columns, so no index helps. Cheap for one
+    person's history. It could be computed once per session. Found by the reviewer of the
+    withdrawal round.
+190. **Small test gaps left by the community gaps round.** No debug link reaches
+    `.reportedYoursToCorrect`, so no screenshot covers it. `testTheReasonLineAtTheLargestTextSize`
+    is a screenshot only, and its `reach` stops before the whole line is on screen; at AX5 the
+    reason line's gap (`CypressSpacing.gapRows`) is small next to the line spacing.
+191. **Three test runs at once overload this Mac.** With three concurrent `xcodebuild` test runs
+    the load average reached 300 to 700 on 2026-11-16, and two `AddTreeNoteTests` hit their 300 s
+    timeouts on a tree that passes alone. The cap in `CLAUDE.md` is three; two may be the real
+    limit for full runs.
+192. ~~**Under the keep-records door, a withdrawal that was not sent yet is lost, and the tree stays
+    public for good.**~~ **DONE, 2026-11-16**, in `fix/withdraw-keep-records-door`: when the
+    account has an unsent withdrawal, `RoutedAPI.deleteAccount` under the keep-records door first
+    sends the queue through the ordinary drain (`OutboxQueue.sendBeforeAccountDeletion`), and it
+    refuses the deletion with `WithdrawalNotSentBeforeDeletion` if a withdrawal is still unsent
+    after that. With no withdrawal queued, the deletion goes ahead as before. The design is in
+    **RULINGS R252**; tests in
+    `WithdrawBeforeAccountDeletionTests`. The original report follows. Steps: a sharing account adds a tree, the tree is published, the account
+    withdraws it while offline, and the account is then deleted with the keep-records door
+    (`RoutedAPI.deleteAccount` does not send the queue first). The withdrawal stays queued with no
+    account in its payload, the service has made the tree anonymous, and it answers the device
+    credential with `forbidden` (`withdrawCommunityTree`, `server/internal/store/community_trees.go`).
+    The row fails with "This couldn't be sent.", the tree comes back, and nobody can withdraw it.
+    The erasing door handles its own case (`OutboxStore.forgetAccount`). Fix: send the queue before
+    `deleteAccountOnService`, so the withdrawal reaches the service while the account still owns
+    the tree. Phone side run, service answer read, by the reviewer of the assembled train,
+    2026-11-16. Next batch.
+193. ~~**Two pairs of debug screens put a tree at the same spot.**~~ **DONE, 2026-11-16**, in
+    `fix/record-links-and-test-harness`: `othersTree` sits at 37.7924 and `othersTreeUnnamed` at
+    37.7942. `DebugDeepLink.treeSpot(for:)` lists every screen's spot in a switch with no
+    `default`, and `DebugDeepLinkSpotTests` holds every two spots 100 m apart north to south. The
+    reviewer ran `OthersTreeUITests` and then `AddTreeNearbyUITests` on one install, and both
+    passed. One limit: `treeSpot` reads the same constants the screens read, but nothing forces a
+    screen's placement code to go through it, so a placement edited in place would pass the test.
+    The original report follows. `othersTreeSeat` puts
+    `othersTreeUnnamed`'s cached tree exactly at `addTreeAloneSpot` and `othersTree`'s exactly at
+    `addTreeNearbySpot` (`DebugDeepLink.swift`; on main since round C3). `addTreeAlone` throws when
+    it finds any community tree within 10 m, cache included, so after `OthersTreeUITests` runs on a
+    simulator, the `addTreeAlone` case of `AddTreeNearbyUITests` fails there.
+    `CYPRESS_WITHDRAW_COMMUNITY_TREES` does not help, because it does not touch the cache. CI is
+    unaffected: the two classes run on different shards, each on a fresh simulator. Fix: give the
+    seats their own latitudes. Read by the reviewer of the assembled train, 2026-11-16.
+194. **A tree a lead took down can still get its add photo.** A takedown reaches the adder's phone
+    only through the community cache (the tile refresher does not write the adder's own row), so
+    the tree stays live there. After chip 184's sweep removes the `done` add row, the backfill can
+    queue that tree's add photo again, and `POST /photos/begin` does not check whether the tree is
+    deleted (the same gap as chip 174), so the bytes can land on a tree that was taken down. Low
+    risk while no takedown has happened. Inferred by the reviewer of
+    `fix/outbox-and-photo-sweeps`, 2026-11-16; not run.
+195. **The account deletion sheet shows no progress, and its requests have no time limit.** While a
+    deletion runs the sheet is dimmed with Cancel disabled and no indicator, and no request sets a
+    timeout, so it can sit that way for 60 s or more. Since chip 192's fix a keep-records deletion
+    can also send the queue first, which makes the wait longer. Older than that fix. Found by the
+    reviewer of `fix/withdraw-keep-records-door`, 2026-11-16.
+196. **A withdrawal the service keeps refusing holds a keep-records deletion, under a line that is
+    not accurate then (owner's call if better is wanted).** If the service answers a withdrawal
+    with an error the phone retries, the deletion is refused each time with "Your account was not
+    deleted. Check your connection and try again.", for up to the 48-hour window. When the window
+    ends the row fails for good, the deletion goes ahead, and the tree stays public and anonymous.
+    The ruling (**RULINGS R252**) names both cases. Found
+    by the reviewer of `fix/withdraw-keep-records-door`, 2026-11-16. The same holds for a
+    withdrawal that already failed for good for another reason (`forbidden`, or the window ended
+    before the deletion): the door counts only rows that have not failed, so the deletion goes
+    ahead and that tree becomes anonymous with its withdrawal never applied (read by the reviewer
+    of `feat/withdraw-owner-answers`).
+197. **An unsent pin move does not hold a keep-records deletion.** The door sends the whole queue
+    first only when a withdrawal is queued, and only an unsent withdrawal refuses the deletion. A
+    pin move still queued when the account is deleted is refused by the service afterward, as chip
+    164 describes. Found by the author of `fix/withdraw-keep-records-door`, 2026-11-16.
+198. **Two small leftovers from the sweep round.** (a) The comment on
+    `OutboxStore.unsentClientUUIDs` is out of date. (b) `PhotoBinary.write(_:strippingMetadataTo:)`
+    can leave a `cypress-strip-<UUID>/` folder in the temporary directory if the app is killed
+    during the strip; the system clears that directory in its own time, and no sweep of ours does.
+    Found by the author of `fix/outbox-and-photo-sweeps`, 2026-11-16.
+199. **Things seen on Xcode 27.2 during the community gaps round and not followed up.** (a) Eleven
+    warnings from Swift 6 macro expansion in `ZoomTests.swift` and `ScreenHeaderRowsTests.swift`
+    that the source-file warning check does not count. (b) An initialized `@State` is now stored
+    as `LazyState`, which a `Mirror` cannot read before the view is installed (chip 143); other
+    tests that read state through a `Mirror` may meet the same thing. (c) `xcrun simctl ui
+    <udid> appearance dark` did not reach the running app until the simulator was rebooted, so a
+    dark screenshot can be a light one; `DataDisputeUITests` may name its dark shots wrongly for
+    that reason. (d) A system location prompt drew on a fresh install with `CYPRESS_LOCATION`
+    pinned. Seen by authors and reviewers, 2026-11-16; none investigated.
+200. **The profile's link column starts 2 pt further right on a cached tree.** The pixel test of
+    chip 183 measured the column edge at 16 pt on `profileLinks` (the reader's own tree) and at
+    18 pt on `othersTreeSharing` (somebody else's tree from the cache), and the header text sits
+    about 2 pt further right there too. It may be an inset difference between the two profile
+    kinds. Measured by the reviewer of `fix/record-links-and-test-harness` on the iPhone Air,
+    2026-11-16; not investigated.
+201. ~~**A withdrawal the service refused because others added to the tree offered Retry, and a
+    retry could never succeed.**~~ **DONE, 2026-11-16**, in `feat/withdraw-owner-answers`, with two
+    owner answers: "Remove Retry there", then "Row stays, reason only". A `tree_withdrawal` row
+    that failed with `conflict` draws its reason and no Retry, and the queue refuses to retry it
+    (`OutboxRetryPolicy.acceptsRetry`, and the same rule in SQL in `OutboxStore.retry` and
+    `retryAllFailed`). The row is what keeps the reason line on the tree's profile, and the launch
+    sweep of chip 184 never removes it (it deletes `done` rows only). A withdrawal refused for
+    another reason keeps Retry. Chip 204 lists when the row can never leave.
+202. ~~**My Grove's Trees list names an added tree by the old rule.**~~ **DONE, 2026-11-16**, in
+    `feat/grove-names-by-species`. The owner chose "Yes, use the species". My Grove
+    (`LocalAPI.grove()`, `groveCityFileRows`, and `RoutedAPI.resolvedCityFileRows`) now names a
+    tree through the same resolver as the Journal and the Outbox: the active given name, else the
+    seed species, else the species the profile title shows. An added tree with neither still reads
+    "Tree". `GroveBatchReadTests` fails if My Grove, the Journal, and the profile title disagree
+    for a tree, and `GroveStatementCensusTests` pins the statement count. The author's sweep of
+    other places found the map card, memorial, photos, share, activity, and reminders already read
+    the profile or the resolver. Chip 205 lists the three that do not.
+203. **The app reads the location permission on the main thread at launch, and it can block for
+    30 s.** `MapLocationProvider.init` reads `CLLocationManager.authorizationStatus` (a
+    synchronous call to the location daemon), reached from `RootView.init` inside
+    `CypressApp.body`. On a fresh install on the simulator one `WithdrawTreeUITests` test failed
+    once in four runs with "Unable to perform work on main run loop, process main thread busy for
+    30.0s", and a sample showed the main thread waiting in that read. `WithdrawTreeUITests` now
+    launches with `CYPRESS_LOCATION` pinned, which builds a provider that does not make the call,
+    so the class is stable (three of three alone on a clean install, twice). The read is still in
+    the app, and other UI classes that launch with no pinned location (`DialogCancelUITests`
+    among them) can meet it. Not seen on a phone. Owed: move the read off the main thread or to
+    the delegate callback, and say why the sign-in in that one test makes it more likely (not
+    found). Found by the author of `feat/withdraw-owner-answers`, 2026-11-16.
+204. **A refused withdrawal row can stay in the Outbox for the life of the install.** The owner's
+    "Row stays" ruling (chip 201) expected the row to leave with an account deletion that erases
+    everything. Two cases never reach that: (a) after a keep-records deletion the row stays
+    `failed` with its reason, its payload names no account any more, so a later erasing deletion
+    does not match it; the tree has no adder then, the profile's reason line goes away, and
+    `Report that there is no tree here` is offered. (b) A withdrawal made while signed out names
+    only the device, and `OutboxStore.forgetAccount` matches rows by account; the
+    `withdrawTreeRefused` debug screen makes such a row. Both are written into
+    **RULINGS R249** and SCREENS.md. No unit test in the tree
+    covers case (a); a reviewer's probe ran it. ~~Owner's call whether such a row needs a way out.~~
+    **DECIDED, 2026-11-16:** the owner chose "Leave it (Recommended)": "Both cases are rare, and the
+    row is one line that says why the tree stays on the map. Nothing to build. The roadmap keeps the
+    note." Such a row gets no way out, and this note stays as the record of the two cases.
+    Found by the reviewer of the assembled second train, 2026-11-16.
+205. ~~**Three pickers call an added tree with a species "Unidentified tree" (owner's call).** The
+    "What tree is this?" shortlist (`VisitShortlist.swift`), the Add-this-tree "ALREADY ON RECORD"
+    note (`VisitAddTreeView.swift`), and the site neighbor title (`SitePresentation.swift`,
+    `VisitDistinguisher.swift`) are fed by `LocalAPI.treesNear`, which sets `speciesCommonName` to
+    nil for added trees. These lists show species only and never a given name, and the
+    distinguisher logic reads the same fields, so the owner's two answers on row names (chips 159
+    and 202) do not clearly cover them.~~ **DONE, 2026-11-16**, in
+    `feat/picker-names-and-second-phone-grove`. The owner chose "Yes, show the species
+    (Recommended)": "An added tree with a species reads, for example, "Sycamore, London Plane" in
+    those three lists". The owner also chose "Yes, any species counts" for the "Tell them apart by
+    species" banner, so an added tree's species counts there too.
+    `LocalAPI.treesNear` now gives an added tree's nearby record the species its profile title
+    shows, with the reader's own naming laid over a cached tree, through the same overlay as the
+    row names. A tree with no species still reads "Unidentified tree", and a given name is not
+    shown. `NearbySpeciesTests` fails if a list and the profile disagree, and
+    `NearbyStatementCensusTests` pins the statement count. Still open, for the record: the two routed arms of
+    `resolvedCityFileRows` disagree about a withdrawn tree (the provider arm answers `unnamed`, the
+    loop arm answers neither and marks the read as fallen back); production always uses the
+    provider arm, so only tests see it. Found by the author of `feat/grove-names-by-species`,
+    2026-11-16.
+206. ~~**On a second phone, an added tree with no name and no species is missing from My Grove.** The
+    owner's answer on My Grove (chip 202) says such a tree "still reads "Tree"". That holds for a
+    tree this phone holds in its own grove. A tree this phone reaches only through the account's
+    grove (`RoutedAPI.refreshedGrove`: your own added tree seen from another phone, or somebody
+    else's cached tree you visited from another device) is put in `unnamed` by both routed arms,
+    and `refreshedGrove` drops the row (`RoutedAPI.swift`, near line 807). The drop is older than
+    chip 202 (commit `3c9f3197`), and before chip 202 it also dropped such trees that had a
+    species. Fix: answer a held tree with no name as named with an empty title, so the list draws
+    "Tree" as the local arm does, and keep `unnamed` for a withdrawn tree only. Run by the
+    reviewer of `feat/grove-names-by-species`, 2026-11-16 (`own none: local='' provider=unnamed`).~~
+    **DONE, 2026-11-16**, in `feat/picker-names-and-second-phone-grove`, as proposed: both routed
+    arms name a held tree with no name and no species with an empty title, which My Grove draws as
+    "Tree", and the read is still not marked as fallen back. `unnamed` now holds only a tree this
+    phone withdrew. A seed tree with no species and no name, reached the same way, also reads
+    "Tree" now (it was dropped too).
+207. **Two name differences the species rule leaves (not investigated).** (a) A city tree with no
+    species shows its street address as its profile title (`TreeProfilePresentation.title`), while
+    My Grove and the Journal show "Tree" for it. (b) My Grove's Species tab and ring leave out an
+    added tree's species (`GroveQueries`, on purpose until now), while the Trees list beside them
+    now names that tree by it. The owner may want both to agree. Seen by the reviewer of
+    `feat/grove-names-by-species`, 2026-11-16.
+208. **Nineteen pending files are not spliced, and the citation guards have three gaps.** (a) The
+    splice of chip 160 left the web round's 18 files in `docs/rulings-pending/` and
+    `docs/errata-pending/`, and `docs/errata-pending/harness-hardening.md`, which the unmerged
+    branch `tools/fetch-seed-diagnostics` changes. They splice when that work lands. (b)
+    `DocumentCitationGuardTests` and `PendingCitationGuardTests` do not catch a pending file cited
+    by its bare filename, a number above the highest entry (`R999`), a number that names the
+    wrong entry, or any citation in Go, SQL, or scripts. A check of the highest R and E numbers
+    cited across the tree would cost one line. (c) `CypressTests/OutboxStampTests.swift` (about
+    line 255) still defers to "the entry the orchestrator splices into `docs/RULINGS.md` at
+    merge", as it has since 2026-08-21, and no ruling matches it. (d) A splice gets the
+    "server-only" or "only prose" CI decision, so CI never runs the two guards on it; a local run
+    is the only evidence. Found by the reviewer of the splice, 2026-11-16.
+209. **Six things around the nearby lists, older than chip 205's change or left by it (not
+    fixed).** (a) `LocalAPI.treesNear` does not apply a lead's status overrides, so a community
+    tree a lead took down is listed with its inventory status, and a site's "nearest standing
+    tree" filter (`SiteModel.isStanding`) reads that status. (b) At the largest text size the
+    "What tree is this?" card title breaks inside words for every tree, city trees too ("Syca /
+    more, Londo / n Plane"). (c) A single added candidate on that list draws no "Closest" eyebrow
+    where a single city tree does (seen on screen, not investigated). (d) `VisitThumbnail` picks a
+    card's gradient from `tree.speciesCurrentID`, which does not include the reader's own naming
+    of a cached tree, so the gradient can differ from the species in the title. (e) A site's
+    nearest-tree line and the saved screen's "Next nearest" line have unit tests for an added
+    tree's species but no screen check. (f) The doc comments on `NearbyTree.tell` and in
+    `VisitDistinguisher` say no curated tell ships yet, but the bundled seed carries `id_tips`
+    for 40 of its 731 species (counted 2026-11-16), and the banner's first step uses them for
+    city trees. Found by the author and the reviewer of
+    `feat/picker-names-and-second-phone-grove`, 2026-11-16.
 
 
 **Retire the format-1 manifest — DONE, 2026-08-23.** The owner overrode the trigger the day after
@@ -655,7 +3188,67 @@ city inventory stays read-only, and sync-back to the city is explicitly deferred
 "community rows only" deferral in `SpeciesClaim.swift`'s header. Needs the writable-schema
 migration seat after the §3.4 round's. Sequenced after §3.4 lands; exact slot at scheduling.
 
-**Copy audit: remove demo-era narrative holdovers.** Owner instruction, 2026-08-21: every piece of
+**Part 1 is in flight** (owner decision round, 2026-09-10; the round's decisions and rulings are
+**RULINGS R117-R124**). The owner split this entry into four
+scheduled pieces, and part 1 is **the record and its two verbs**: `AppSchema` v22's
+`tree_data_disputes` and its two children, `raiseDataDispute` / `withdrawDataDispute` on
+`CypressAPI`, the two `OutboxItem.Kind` cases that carry them to `cypress-sync`, and city rows
+ceasing to answer `.unavailable` on the tree profile. Client is PR-A; the server's sync vocabulary
+is PR-B; screen 03's dispute **sheet** is PR-C.
+
+**Part 2 — the dispute screen — shipped** (PR-C, 2026-09-28). A city record this reader may dispute
+draws *Report a mistake in the city's record* where the community flag actions sit on screen 03; it
+pushes a screen modeled on 06 with the owner's four choices (*Pin is in the wrong place* · *Wrong
+species* · *Wrong planted year* · *There's no tree here*), a suggestion under each (the reporter's own
+fix with its accuracy and the 10 m floor explained, the app's species picker, a year field, nothing
+for the empty plot), notes, and a disclosure that the city has not been notified. A standing dispute
+draws *You reported a mistake…* and *Take back your report*. The screen's decisions are in
+**RULINGS R125-R139**, part 2. PR #185's fix round implemented the
+owner's and orchestrator's rulings 1–10 after review (no-tree stands alone, *The city has: …* under
+each section, a confirmation before the take-back, a refusal sentence that reads Precise Location
+and never quotes a substituted accuracy, a later fix replacing a refused one, and *Send* waiting for
+a pending fix); ruling 5, that a mistake report does not enroll a tree in *Yours*, is a server PR of
+its own.
+
+Still open after part 2, each its own scheduled PR and none of them started:
+- the flag **badge** on flagged trees, on the map and in the list — and it is the piece that needs a
+  server **read** endpoint, because part 1's ruling is that the service records disputes without
+  materializing them, so a device knows only its own;
+- the **"trees with data issues"** filter in the filters box;
+- the **missing-tree entry point** — a tree on city property and absent from the city database,
+  whose report has no profile to open from;
+- the **community-flagging redesign**, which is where community trees get their location and species
+  disputes: part 1 leaves `flagWrongSpecies` / `flagNeverExisted` untouched, and "location and
+  species only" is a narrowing of that flow rather than an addition beside it.
+
+~~**Nothing enumerates the tables that carry a user column, and `forgetAccount` has now gone stale
+three times.** Twice on the outbox kind list, and once on a whole table: `AppSchema` v22 added
+`tree_data_disputes` with a `raised_by` column and neither account-deletion door could see it, which
+PR #165's review measured and PR #165 fixed. Every one of the three failed **silently**, because a
+hand-kept list of table names matches nothing when it is short rather than erroring. The outbox half
+was closed by making `OutboxItem.Kind.accountDeletionTreatment` an exhaustive `switch`, so the
+compiler asks the question when a case is added; the table half has no equivalent. Design one — a
+test that reads the live schema for columns named `user_id` / `raised_by` / `given_by` / `set_by`
+and requires each to be named by one door or explicitly exempted is the obvious shape, and it is the
+shape that would have caught this. **A fourth hand-audit is not the fix.** Unscheduled; the badge
+round is the natural slot, because it is the next round to touch this table.~~
+**DONE** by `test/account-deletion-table-guard`. `AccountDeletion.OwnedTable` classifies every table
+that names a person or installation, with an exhaustive `fate(under:)` per door, and
+`AccountDeletionCoverageTests` derives the set from the live migrated schema (`pragma_table_info`), not
+from a list: every column name must be filed as identity or ordinary, so a new spelling cannot slip
+past; the derived tables and columns must equal the classified ones both ways; and under each door an
+owned row must end as classified while a stranger's is unchanged. **Writing it found a fourth
+instance, which it now measures:** `species_assertions.user_id` is named by neither door, so a species claim keeps the
+deleted account's id after either one. It is classified `.notReached` (what the code does, not a
+ruling), and the open item is chip backlog **54**.
+
+~~**Copy audit: remove demo-era narrative holdovers.**~~ **SHIPPED** as PR #119 (merged 2026-08-25);
+both decision rounds closed on 2026-08-23, and `docs/investigations/copy-audit-2026-08-23.md` is the
+record. **Three questions are still the owner's** (its §9, items 7 to 9): screen 13 no longer says
+its three charts share one scale, and the fact is unstated rather than wrong; `stays yours alone`
+survives once, in screen 06's dashed disclosure; and the seed database's own prose has never been
+screened. **R26 is waived; do not re-flag it.** The entry as first written:
+Owner instruction, 2026-08-21: every piece of
 user-facing copy gets screened for usefulness and appropriateness. Lines narrating the app to
 itself — "This is that almanac's 'walk the nine' list, one tree at a time" (screen 14) and its
 kin — are holdovers from a demo-era voice and come out. The audit enumerates every candidate line
@@ -683,9 +3276,10 @@ dependency is kept removable: dropping it costs 11 bloom arrays, 8 fruit arrays 
 array, and should remain a configuration change rather than a refactor. **Needs a human answer
 before launch, not before the next screen.**
 
-**The vitality rubric.** The source documents themselves flag this as the highest-value unresolved
+~~**The vitality rubric.** The source documents themselves flag this as the highest-value unresolved
 question. Screen 05 is built with rubric text as data specifically so that answering it later is a
-content change.
+content change.~~ **RESOLVED.** The owner chose Candidate A (RULINGS **R69**), R70 closes the fork,
+and `CypressTests/VitalityRubricTests.swift` guards the shipped text against the documents.
 
 **The MapKit road-color inversion.** The mock draws streets lighter than blocks; MapKit renders
 roads darker and exposes no way to recolor them independently. `MapCanvas(basemap:overlay:)` is

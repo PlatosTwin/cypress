@@ -210,8 +210,16 @@ struct RecordDefectTests {
             try await api.flagNeverExisted(treeID: seedTree.id)
         }
         // And the profile does not offer the control it would refuse.
+        //
+        // **`.dataDispute` and not `.unavailable` since `AppSchema` v22**, which is R79 arriving and
+        // not this refusal weakening: `flagNeverExisted` still refuses a city row for the reason
+        // above — nothing here can withdraw one — and what changed is that the record now has a
+        // *different* surface, whose control this profile may honestly offer. The two are asserted
+        // together on purpose, because the failure worth catching is the profile offering the verb
+        // the line above proves is refused.
         let profile = try await api.treeProfile(id: seedTree.id)
-        #expect(profile.recordDefect == .unavailable)
+        #expect(profile.recordDefect == .dataDispute(.raisable))
+        #expect(profile.cityDataDispute == .raisable)
     }
 
     @Test("a second report on one record is refused")

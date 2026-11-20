@@ -10,8 +10,10 @@ import XCTest
 /// a payload. So this file asserts the sentences and taps the buttons.
 ///
 /// It also writes a PNG per state, for `AlmanacGroupTapTests`' reason: the result of a tap should be
-/// something a person can look at rather than a string a test agreed with. Set `CYPRESS_SHOT_DIR`
-/// (as `TEST_RUNNER_CYPRESS_SHOT_DIR` on the `xcodebuild` command line) to choose where.
+/// something a person can look at rather than a string a test agreed with. To choose where,
+/// **`export TEST_RUNNER_CYPRESS_SHOT_DIR=<dir>` in the shell before `Tools/run_tests.sh`** — see
+/// that script's header for why the exported spelling is the one that works, and what the
+/// command-line spelling this comment used to prescribe does instead (nothing, silently).
 ///
 /// **The coarse-fix case is launched, not simulated.** `CYPRESS_LOCATION=lat,lon,accuracy` is R58's
 /// own hook and it takes a stated accuracy, so the state F17 comes from — a fix in hand that is too
@@ -58,7 +60,7 @@ final class AreaPickerUITests: XCTestCase {
             pill.exists,
             "the almanac's header pill is not a button, so the screen offers no way to change its area"
         )
-        XCTAssertTrue(pill.isHittable, "the header pill is a button nobody can press")
+        assertReachable(pill, "the header pill, a button a reader must be able to press,")
 
         // The retired control, checked for while a control that proves the screen rendered is in
         // hand — `pill` above. An absence on its own would pass on a screen that drew nothing.
@@ -109,6 +111,8 @@ final class AreaPickerUITests: XCTestCase {
             elsewhere.waitForExistence(timeout: 20),
             "“\(Self.otherNeighborhood)” is not in the picker, which reads the whole inventory"
         )
+        // The checks above pass while the sheet is still rising, so they are not a wait for it.
+        assertReachable(elsewhere, "the picker's “\(Self.otherNeighborhood)” row")
         elsewhere.tap()
 
         // The header pill is the screen naming its own subject, and it is what a reader checks.
@@ -147,7 +151,7 @@ final class AreaPickerUITests: XCTestCase {
             "the City segment does not name the city it is about as a button, so it either fails to "
                 + "name it (the record carries the name) or offers no way to change it"
         )
-        XCTAssertTrue(pill.isHittable, "the City segment's header pill is a button nobody can press")
+        assertReachable(pill, "the City segment's header pill, a button a reader must be able to press,")
         XCTAssertFalse(
             app.buttons[Self.retiredChangeButton].exists,
             "the boxed “\(Self.retiredChangeButton)” button is still under the City segment's "
@@ -240,7 +244,7 @@ final class AreaPickerUITests: XCTestCase {
         // And the picker is offered here too: this reader has 41 neighborhoods to choose from and no
         // polygon of their own. It is the pill above, so what is left to say is that it is pressable
         // — and that the control it replaced did not survive on this screen either.
-        XCTAssertTrue(pill.isHittable, "the fallback's header pill is a button nobody can press")
+        assertReachable(pill, "the fallback's header pill, a button a reader must be able to press,")
         XCTAssertFalse(
             app.buttons[Self.retiredChangeButton].exists,
             "the boxed “\(Self.retiredChangeButton)” button is still on the radius fallback"
@@ -270,6 +274,8 @@ final class AreaPickerUITests: XCTestCase {
         pick.tap()
         let elsewhere = app.buttons[Self.otherNeighborhood]
         XCTAssertTrue(elsewhere.waitForExistence(timeout: 20))
+        // The same gap as in the coarse-fix test below: the row exists before the sheet settles.
+        assertReachable(elsewhere, "the picker's “\(Self.otherNeighborhood)” row")
         elsewhere.tap()
         XCTAssertTrue(
             composition(app).waitForExistence(timeout: 20),
@@ -311,6 +317,9 @@ final class AreaPickerUITests: XCTestCase {
 
         let elsewhere = app.buttons[Self.otherNeighborhood]
         XCTAssertTrue(elsewhere.waitForExistence(timeout: 20))
+        // The row exists before BottomSheet's rise has finished (opacity 0 until it settles); CI failed
+        // this tap once as "Failed to not hittable" (2026-11-15), most likely in that gap.
+        assertReachable(elsewhere, "the picker's “\(Self.otherNeighborhood)” row")
         elsewhere.tap()
         XCTAssertTrue(
             composition(app).waitForExistence(timeout: 20),
@@ -464,6 +473,11 @@ final class AreaPickerUITests: XCTestCase {
 
     /// A PNG per state, plus the same image on the result bundle —
     /// `AlmanacGroupTapTests.record(_:named:note:)`, verbatim in intent.
+    ///
+    /// **This runs in the runner, not in the app**, which is why the directory arrives through
+    /// xcodebuild's `TEST_RUNNER_` forwarding and not through `app.launchEnvironment`. The printed
+    /// path is the fallback's only receipt: unset, it names a directory inside the runner's own
+    /// container on the simulator.
     private func record(_ app: XCUIApplication, named name: String) {
         let shot = XCUIScreen.main.screenshot()
         let attachment = XCTAttachment(screenshot: shot)

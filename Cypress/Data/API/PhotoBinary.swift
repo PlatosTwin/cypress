@@ -31,6 +31,17 @@ enum PhotoBinary {
         return (width: width, height: height)
     }
 
+    /// Whether the file at `path` is a JPEG the system can read.
+    ///
+    /// The service stores every photograph under `photos/<id>.jpg` and checks nothing about the
+    /// bytes, so a file that is not a JPEG would be published under a name that says it is.
+    static func isJPEG(atPath path: String) -> Bool {
+        guard let source = CGImageSourceCreateWithURL(URL(fileURLWithPath: path) as CFURL, nil),
+              let type = CGImageSourceGetType(source)
+        else { return false }
+        return (type as String) == UTType.jpeg.identifier
+    }
+
     /// Copies an image file with its metadata sidecar dropped — GPS, capture time, camera and lens
     /// identity, Maker Notes, IPTC, XMP — leaving the compressed pixels untouched.
     ///
@@ -58,7 +69,14 @@ enum PhotoBinary {
     ///
     /// - Throws: `APIError.validationFailed` when the file is not an image container this can
     ///   rewrite. The caller decides what to do about that; it must not decide to publish it.
-    static func writeStrippingMetadata(from source: URL, to destination: URL) throws {
+    ///
+    /// - Parameter whileScratchExists: runs after the first pass has written the scratch file and
+    ///   before the second pass reads it. Only a test passes one, to sweep at that moment.
+    static func writeStrippingMetadata(
+        from source: URL,
+        to destination: URL,
+        whileScratchExists: () -> Void = {}
+    ) throws {
         let sourceProperties = CGImageSourceCreateWithURL(source as CFURL, nil)
             .flatMap { CGImageSourceCopyPropertiesAtIndex($0, 0, nil) as? [CFString: Any] }
         let orientation = sourceProperties?[kCGImagePropertyOrientation]
@@ -80,10 +98,18 @@ enum PhotoBinary {
         ]
 
         let scratch = destination.appendingPathExtension("stripping")
-        defer { try? FileManager.default.removeItem(at: scratch) }
+        // Held before the file can exist and released after it is gone, so a sweep that runs while
+        // this strip is in progress leaves the scratch alone (`removeAbandonedCleanCopies`). The
+        // `defer` does not run when the process is killed, which is what leaves the file behind.
+        stripsInProgress.insert(scratch.lastPathComponent)
+        defer {
+            try? FileManager.default.removeItem(at: scratch)
+            stripsInProgress.remove(scratch.lastPathComponent)
+        }
 
         try copyContainer(from: source, to: needsOrientationRestored ? scratch : destination, options: stripping)
         if needsOrientationRestored {
+            whileScratchExists()
             try copyContainer(
                 from: scratch,
                 to: destination,
@@ -127,13 +153,72 @@ enum PhotoBinary {
         try data.write(to: incoming, options: .atomic)
         try writeStrippingMetadata(from: incoming, to: stripped)
 
-        // A rename inside one volume, so the staged file is either absent or complete — the same
-        // promise `.atomic` was making, kept the same way. The previous file goes first, because a
-        // retake reuses the name.
-        if FileManager.default.fileExists(atPath: destination.path) {
-            try FileManager.default.removeItem(at: destination)
+        try install(stripped, over: destination)
+    }
+
+    /// Puts `source` at `destination` in one `rename(2)`, replacing any file already there.
+    ///
+    /// One call, so at every moment `destination` is either the old file or the new one. The
+    /// previous code removed the old file and then moved the new one in: a process killed between the
+    /// two left no file at all, and `stripMetadataInPlace` runs over a person's only copy of a
+    /// photograph. Both paths are in one folder or under one temporary root on the same volume, which
+    /// `rename` requires; across volumes it fails and leaves `destination` as it was.
+    ///
+    /// - Parameter rename: the swap itself. Only a test passes one, to fail it.
+    static func install(
+        _ source: URL,
+        over destination: URL,
+        rename: (URL, URL) throws -> Void = PhotoBinary.rename
+    ) throws {
+        try rename(source, destination)
+    }
+
+    /// `rename(2)`, which replaces `to` atomically when both are on one volume.
+    static func rename(_ from: URL, _ to: URL) throws {
+        guard Foundation.rename(from.path, to.path) == 0 else {
+            throw CocoaError(.fileWriteUnknown, userInfo: [NSFilePathErrorKey: to.path])
         }
-        try FileManager.default.moveItem(at: stripped, to: destination)
+    }
+
+    /// Whether ImageIO can read the file at `path` as an image.
+    static func isReadableImage(atPath path: String) -> Bool {
+        guard let source = CGImageSourceCreateWithURL(URL(fileURLWithPath: path) as CFURL, nil),
+              CGImageSourceGetType(source) != nil
+        else { return false }
+        return CGImageSourceGetCount(source) > 0
+    }
+
+    /// A JPEG of the image at `source`, written to `destination`, with nothing in it but the pixels
+    /// and which way up they go.
+    ///
+    /// For a file that is not a JPEG: a HEIC or PNG from the photo library, which the ingest path
+    /// keeps in its own container (`copyContainer` writes the source's type). The service names every
+    /// photograph `photos/<id>.jpg`, so such a file is sent as this copy. This re-encodes, unlike the
+    /// strip above, and is used only where the original cannot be sent as it is. The person's own
+    /// file is not touched.
+    ///
+    /// The image is decoded and encoded fresh, so no metadata container of the source is carried
+    /// across. The orientation tag is written back, for the reason `writeStrippingMetadata` gives.
+    ///
+    /// - Throws: `APIError.validationFailed` when the file is not an image ImageIO can decode.
+    static func writeJPEGCopy(from source: URL, to destination: URL) throws {
+        guard let imageSource = CGImageSourceCreateWithURL(source as CFURL, nil),
+              CGImageSourceGetCount(imageSource) > 0,
+              let image = CGImageSourceCreateImageAtIndex(imageSource, 0, nil)
+        else { throw APIError.validationFailed }
+        let properties = CGImageSourceCopyPropertiesAtIndex(imageSource, 0, nil) as? [CFString: Any]
+        var options: [CFString: Any] = [kCGImageDestinationLossyCompressionQuality: 0.9]
+        if let orientation = properties?[kCGImagePropertyOrientation] as? Int, orientation != 1 {
+            options[kCGImagePropertyOrientation] = orientation
+        }
+        guard let imageDestination = CGImageDestinationCreateWithURL(
+            destination as CFURL, UTType.jpeg.identifier as CFString, 1, nil
+        ) else { throw APIError.validationFailed }
+        CGImageDestinationAddImage(imageDestination, image, options as CFDictionary)
+        guard CGImageDestinationFinalize(imageDestination) else {
+            try? FileManager.default.removeItem(at: destination)
+            throw APIError.validationFailed
+        }
     }
 
     /// Cleans a file that is about to become a record, when it may already have been cleaned.
@@ -153,11 +238,106 @@ enum PhotoBinary {
     ///   cannot be rewritten. Nothing has produced that combination — reading a GPS dictionary out of
     ///   a container means ImageIO knows the container — and if something does, refusing the record is
     ///   the correct end of it.
-    static func stripMetadataInPlace(atPath path: String) throws {
+    static func stripMetadataInPlace(
+        atPath path: String,
+        rename: (URL, URL) throws -> Void = PhotoBinary.rename
+    ) throws {
         guard carriesIdentifyingMetadata(atPath: path) else { return }
         let file = URL(fileURLWithPath: path)
-        let data = try Data(contentsOf: file)
-        try write(data, strippingMetadataTo: file)
+        // The clean copy is made next to the file, so the swap is a rename inside one folder: the
+        // temporary directory `write` uses may be on another volume, where `rename` cannot replace.
+        let clean = file.deletingLastPathComponent()
+            .appendingPathComponent(".\(file.lastPathComponent)-\(UUID().uuidString)\(cleanCopySuffix)")
+        // Registered before the file exists and released after it is gone, so a sweep that runs while
+        // this strip is in progress leaves its copy alone (`removeAbandonedCleanCopies`).
+        stripsInProgress.insert(clean.lastPathComponent)
+        defer {
+            try? FileManager.default.removeItem(at: clean)
+            stripsInProgress.remove(clean.lastPathComponent)
+        }
+        try writeStrippingMetadata(from: file, to: clean)
+        try install(clean, over: file, rename: rename)
+    }
+
+    /// The end of the name `stripMetadataInPlace` gives its clean copy.
+    private static let cleanCopySuffix = ".clean"
+
+    /// The end of the name `writeStrippingMetadata` gives its own scratch file, beside its
+    /// destination. When the destination is a clean copy, that scratch is part of the same strip.
+    private static let strippingScratchSuffix = ".stripping"
+
+    /// The end of the name `LocalAPI.uploadPhoto` gives the photograph it writes, `<UUID>.jpg`.
+    private static let uploadedPhotoSuffix = ".jpg"
+
+    /// The clean copies and scratch files of strips running in this process now, by file name.
+    private static let stripsInProgress = InProgressNames()
+
+    /// Removes the files that strips killed part-way left in `directory`, and returns the files it
+    /// removed.
+    ///
+    /// `stripMetadataInPlace` removes its clean copy, and `writeStrippingMetadata` its scratch file,
+    /// in a `defer`, which does not run when the process is killed during the strip. Nothing reads
+    /// such a file; it only takes disk space, and it is a copy of a photograph the person may have
+    /// withdrawn since.
+    ///
+    /// A file is removed only when its name has one of three exact shapes, and only when no strip in
+    /// this process holds that name:
+    /// - the clean copy, `.<name>-<UUID>.clean`;
+    /// - that copy's own scratch, `.<name>-<UUID>.clean.stripping`, held under its copy's name;
+    /// - the scratch of `LocalAPI.uploadPhoto`'s strip, `<UUID>.jpg.stripping` (ROADMAP 177), held
+    ///   under its own name.
+    ///
+    /// A strip holds its name from before the file is created until after it is removed or renamed,
+    /// and the check and the removal happen under the lock that guards the names, so a file that is
+    /// in progress is never removed, whenever this runs. The app is one process, so a file no strip
+    /// in this process holds is one a killed process left. Folders, and names that only look
+    /// similar, are kept.
+    @discardableResult
+    static func removeAbandonedCleanCopies(in directory: URL) -> [URL] {
+        let manager = FileManager.default
+        guard let names = try? manager.contentsOfDirectory(atPath: directory.path) else { return [] }
+        var removed: [URL] = []
+        for name in names {
+            guard let heldName = cleanCopyName(of: name) ?? uploadScratchName(of: name) else { continue }
+            let file = directory.appendingPathComponent(name)
+            var isDirectory: ObjCBool = false
+            guard manager.fileExists(atPath: file.path, isDirectory: &isDirectory), !isDirectory.boolValue
+            else { continue }
+            // Checked and removed under the lock, so a strip cannot take this name in between.
+            let didRemove = stripsInProgress.unlessHeld(heldName) {
+                (try? manager.removeItem(at: file)) != nil
+            }
+            if didRemove == true { removed.append(file) }
+        }
+        return removed
+    }
+
+    /// The clean copy's file name when `name` is a clean copy or its scratch, and nil otherwise.
+    static func cleanCopyName(of name: String) -> String? {
+        let copyName = name.hasSuffix(cleanCopySuffix + strippingScratchSuffix)
+            ? String(name.dropLast(strippingScratchSuffix.count))
+            : name
+        guard copyName.hasPrefix("."), copyName.hasSuffix(cleanCopySuffix) else { return nil }
+        // `.<name>-<UUID>.clean`: a UUID is 36 characters, after a hyphen, after at least one
+        // character of the photo's own name.
+        let body = copyName.dropFirst().dropLast(cleanCopySuffix.count)
+        let uuidLength = 36
+        guard body.count >= uuidLength + 2 else { return nil }
+        let uuid = body.suffix(uuidLength)
+        let hyphen = body.dropLast(uuidLength).last
+        guard hyphen == "-", UUID(uuidString: String(uuid)) != nil else { return nil }
+        return copyName
+    }
+
+    /// `name` itself when it is the scratch file of `LocalAPI.uploadPhoto`'s strip,
+    /// `<UUID>.jpg.stripping`, and nil otherwise. The whole name before `.jpg.stripping` must be a
+    /// UUID, which is how `uploadPhoto` names the photograph (`photos.id`).
+    static func uploadScratchName(of name: String) -> String? {
+        let suffix = uploadedPhotoSuffix + strippingScratchSuffix
+        guard name.hasSuffix(suffix) else { return nil }
+        let stem = String(name.dropLast(suffix.count))
+        guard stem.count == 36, UUID(uuidString: stem) != nil else { return nil }
+        return name
     }
 
     /// One container-level rewrite, source to destination, under the given ImageIO options.
@@ -230,5 +410,35 @@ enum PhotoBinary {
             kCGImagePropertyTIFFCopyright,
         ]
         return tiffKeys.contains { tiff[$0] != nil }
+    }
+}
+
+/// File names behind a lock: the clean copies and scratch files `PhotoBinary` is writing now.
+final class InProgressNames: @unchecked Sendable {
+    private let lock = NSLock()
+    /// How many strips hold each name. Counted, because an upload's scratch is named for its
+    /// photograph rather than with a fresh UUID: if two strips ever held one name, the first to end
+    /// must not release it for the other.
+    private var names: [String: Int] = [:]
+
+    func insert(_ name: String) {
+        lock.lock()
+        names[name, default: 0] += 1
+        lock.unlock()
+    }
+
+    func remove(_ name: String) {
+        lock.lock()
+        if let count = names[name] { names[name] = count > 1 ? count - 1 : nil }
+        lock.unlock()
+    }
+
+    /// Runs `body` while holding the lock, and returns its result, unless `name` is held. Returns
+    /// nil when it is held.
+    func unlessHeld<T>(_ name: String, _ body: () -> T) -> T? {
+        lock.lock()
+        defer { lock.unlock() }
+        guard names[name] == nil else { return nil }
+        return body()
     }
 }

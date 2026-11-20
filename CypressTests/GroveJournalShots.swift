@@ -45,7 +45,7 @@ struct GroveJournalShots {
 
     @Test("the two personal lists, over one history, in one image")
     func theTwoListsTogether() async {
-        print("SWEEP DIR \(ScreenSweepShots.outputDirectory.path)")
+        print("SWEEP DIR \(ScreenSweepShots.shotDirectory?.path ?? "not set: nothing is written")")
 
         var drawn: [(label: String, image: UIImage)] = []
         var accessible: [(label: String, image: UIImage)] = []

@@ -1,0 +1,329 @@
+qSpecies_string,species_id,confidence
+Acer rubrum,aeddf3cd-6091-5b26-bf15-70dd35c56c54,1.00
+Quercus phellos,846ca270-8ea5-5c41-91f3-27c605ec452c,1.00
+Quercus palustris,1f46b39b-30b0-51a9-8f88-3916a1ef6af5,1.00
+Ulmus americana,79cca032-a54f-5ab0-94c3-1f4b36de2745,1.00
+Zelkova serrata,3614781d-c947-5e25-b21b-b87b6bb2267a,1.00
+Platanus x acerifolia,5a327f8b-7a05-5bb3-b971-ed0eb9b55bc8,0.75
+Quercus rubra,81e6db1f-a2e3-57bf-a230-c48b23d81b7e,1.00
+Lagerstroemia indica,86820f2a-dd18-5630-91b5-335a0c7131c2,1.00
+Cercis canadensis,f768334a-6811-5485-8b5f-f4d14c698ece,1.00
+Quercus bicolor,f6f9d59c-62ae-55a3-b1a9-c20652e1c907,1.00
+Celtis occidentalis,870cf55e-0c5b-5642-ace4-fce540523f06,1.00
+Ulmus parvifolia,b4ad0a9f-7aa9-5eee-b136-8d3622a32dc1,1.00
+Acer saccharum,d903b3ee-075f-5d06-bed5-e70b04461ffc,1.00
+,,0.00
+Pistacia chinensis,eb5835fd-0ae8-5378-9a10-9f0c0b40d5bf,1.00
+Ginkgo biloba (male),fb674014-fa23-5bc0-b7a4-d3ce26b231ff,0.90
+Nyssa sylvatica,383fddb5-3cee-5381-b40b-42dc05918558,1.00
+Prunus serrulata 'Kwanzan',967ed14a-54ac-5a8d-a8b6-eeebcd89226b,0.90
+Quercus coccinea,75ec88fe-97e7-55e3-aa0d-5517c87be880,1.00
+Quercus lyrata,fe04c404-9b6d-5a4e-bf78-5d02a153a848,1.00
+Other (See Notes),,0.00
+Gymnocladus dioicus,2602811e-24d1-5583-a14b-3181359c1b2f,1.00
+Prunus species,04a64f84-3aa5-55a4-add9-c2eeb97e6d75,0.75
+Taxodium distichum,b36c0ca5-f642-549d-a681-585a585189e5,1.00
+Tilia cordata,d4c85034-f65a-58ba-b069-b2b837e634b7,1.00
+Acer platanoides,2597f641-0924-5655-a365-c01d1ba4c620,1.00
+Platanus occidentalis,d9b77210-1b3f-5d0c-ac22-649f0360c6dc,1.00
+Liriodendron tulipifera,22570857-6689-52dd-856c-630e8306c299,1.00
+Liquidambar styraciflua,16934db9-16c4-5fb9-86e3-45177c3737ae,1.00
+Cladrastis lutea,179a926c-895f-548c-9301-1aba075ad21d,1.00
+Carpinus caroliniana,e8b1e468-a8d9-52ae-b8f5-4cd7092f6820,1.00
+Prunus 'Snow Goose',e92722fd-49c3-5b42-a2b1-0583f692a4bf,0.60
+Prunus yedoensis,5d49f59c-a85e-5577-aa69-5efa04cc2a40,1.00
+Ulmus species,080db62d-b23b-5934-bd98-a536c62001dc,0.75
+Acer campestre,4113058e-62f3-56fe-a34c-d728254892b3,1.00
+Syringa reticulata,4d22c9a2-3c83-50eb-a47e-f06e339b9546,1.00
+Gleditsia triacanthos var. inermis 'Shademaster',71db7bba-f635-5df6-93ec-15e0a570fffc,0.90
+Prunus virginiana,9165bf2d-8c78-5470-ab81-a952c82bade6,1.00
+Cercis species,7ac20aec-1e70-5318-a21a-b6d3abb1450c,0.75
+Quercus nuttallii,3f464932-67b0-50ab-978b-7ddf3395e997,1.00
+Betula nigra,dfaa8415-82d4-58eb-84d6-6d96d9aee807,1.00
+Ulmus americana 'Jefferson',188bf407-26d5-5408-93ab-83fe08a1b8e1,0.90
+Liquidambar rotundiloba,ca5c50fc-52f4-53da-be92-c20431485e65,1.00
+Quercus acutissima,afdbdfed-8465-56ad-ac00-98b4995137c6,1.00
+Tilia tomentosa,1a46577c-59c4-5f35-8297-1de9f2402ca4,1.00
+Malus species,5b3c4422-04cc-5d7e-a48e-1aa8866fe886,0.75
+Ginkgo biloba,f5df51ba-bfd4-5f80-b241-85f8d6763671,1.00
+Magnolia virginiana,7bf90b97-d84d-54c7-b1d3-72e3798ffeda,1.00
+Koelreuteria paniculata,74a57c4a-235f-59c0-b636-6f4178b18506,1.00
+Ulmus americana 'Princeton',289b8597-121b-5569-9774-24f00c549a03,0.90
+Quercus alba,c39785dd-406a-596a-8947-85a546e18786,1.00
+Metasequoia glyptostroboides,1096258a-3fba-5dae-8d70-f7cbe5a022c5,1.00
+Cladrastis kentukea,2a91a69d-4ccb-509b-ae94-4ee6866c5855,1.00
+Quercus species,14ac428f-43d9-5d0f-bfb6-9ed6032a21ee,0.75
+Zelkova serrata 'Green Vase',9d2cdfdb-88fa-5e31-9033-3f66c4151851,0.90
+Acer saccharinum,a4084acb-f39b-5e0b-9a5e-cce5a367f282,1.00
+Tilia americana,d3fc96d6-1c66-53ec-b3ff-15b9ecf1abd3,1.00
+Pinus taeda,051fef9a-85ab-56d5-9377-1fdf722138ca,1.00
+Juniperus virginiana,6283702e-40b5-5a23-9ba5-47d1cc64231f,1.00
+Ulmus americana 'New Harmony',2fed5f2f-48bb-5941-b98f-4f52749b6296,0.90
+Quercus macrocarpa,a9594485-e325-5e3f-beae-f73c05dc9da5,1.00
+Gleditsia species,4df2a638-47c7-5c06-b890-3960aee27cd8,0.75
+Platanus x acerifolia 'Bloodgood',a66a2861-7670-559c-939a-5bdb212c96a3,0.75
+Pyrus calleryana 'Bradford',8194800e-7200-5c99-86b1-c50daf41b20c,0.90
+Acer buergeranum,6910c579-8460-56c9-9b4e-fbd394e25d17,1.00
+Prunus Okame,c1d4d100-6918-58fe-a4f0-c254e9832325,0.60
+Ulmus 'Accolade',0c8edecd-57ba-52dc-b852-9f9b1da1a1e3,0.60
+Ilex opaca,24d4d93b-351c-57df-9402-a0e3e3573685,1.00
+Prunus x yedoensis,6249ead3-4bd6-5e00-9390-feea11c998ea,0.75
+Gleditsia triacanthos var. inermis 'Skyline',2656a63f-aae3-5131-8694-f7ebd4a9c79b,0.90
+Amelanchier arborea,1fa32ef0-555d-5fff-93ce-a7ee272dedeb,1.00
+Liquidambar Stryaciflua 'Sterile',0dae6ef7-9dd2-57d2-9459-9e9fdb3fb456,0.60
+Amelanchier species,9119d75c-0740-5954-9c1b-d89c1ad7b263,0.75
+Gleditsia triacanthos var. inermis,c524e80e-b73b-5ff2-b32b-19515bf5c0a6,0.90
+Betula nigra 'Dura heat',4c7ce7a7-e937-5ed5-b033-580197b2386c,0.90
+Acer species,4fdf8eb5-148a-51bd-88b7-f2c142f43565,0.75
+Ginkgo biloba (female),0903222c-8236-5e69-b794-548d5e37c42b,0.90
+Morus alba,efb76f39-c039-588c-a88a-5b8356c72356,1.00
+Robinia pseudoacacia,e6d5c938-c52c-5152-8aa6-406118c692b2,1.00
+Magnolia grandiflora,9633ad82-e024-5fdf-ac1c-fc877b82dbc2,1.00
+Cercis canadensis 'Forest Pansy',105c3731-7d28-5bf2-951d-043fdd4b1b52,0.90
+Celtis laevigata,cecc69f6-68d3-57a4-bb1a-e1b79e090704,1.00
+Ostrya virginiana,7883c4ba-29af-52a5-9094-8d54a0a5f3c4,1.00
+Aesculus carnea,7cafeb68-c0af-5c76-8b21-a372078ac8db,1.00
+Cornus kousa,428b06b8-6727-5a51-80ce-4fdebed40e63,1.00
+Nyssa sylvatica 'Wildfire',601415f6-67ff-5908-b0dd-773311839930,0.90
+Gymnocladus dioicus 'Espresso',0121c875-6c19-5c6d-ad50-b2a9b08278d0,0.90
+Fagus grandifolia,0d70fd5f-d543-562c-8ce6-c9d61a969e7f,1.00
+Quercus shumardi,eabf40a6-50c2-5fcc-afcd-d3e5d3a08b2b,1.00
+Cornus florida,68cf86fe-1217-550b-b651-04a870463229,1.00
+Tilia americana 'McKSentry',1d8e0648-01ea-57bb-9c2f-b829a4f8507d,0.90
+Magnolia Species,d96a6ed7-b27f-5050-a7d8-83a33fa7730e,0.75
+Styphnolobium japonicum,a274dcbb-80fb-5d23-8250-dc3650ae29af,1.00
+Chionanthus retusus,235bfca9-b40a-5491-b5dd-f25ece4649f0,1.00
+Quercus imbricaria,006c9599-3909-547c-bc42-5bc64132dde9,1.00
+Magnolia virginiana 'Moonglow',cdd0755b-8b01-5bee-b877-222ffa2d7f3d,0.90
+Ulmus pumila,6438a6d0-c3c5-53c8-a0c1-c669528ae05f,1.00
+Prunus 'Okame',2ded6e66-48f6-532e-9262-8b4eb871b033,0.60
+Catalpa bignonioides,678eb2ee-226b-5f68-ab3c-1e3ef7994707,1.00
+Rhus typhina,a961753a-b6cf-5856-b73b-b52db885c509,1.00
+Ailanthus altissima,35faf581-4855-569b-8698-d28ff7df11f8,1.00
+Platanus x acerifolia ‘Morton Circle’,8850c624-f30a-5348-8079-fceff7d16ae4,0.75
+Cornus species,21b39752-7083-5b2c-a0a7-bb19ced8b866,0.75
+Carpinus betulus,938eae33-7294-56b6-bf84-1b8d00151b63,1.00
+Acer x freemanii,10abcc98-d512-5a8d-b1a5-18324788bb40,0.75
+Liquidambar styraciflua 'Slender Silhouette',bc84dd0b-542b-5875-8a0e-3bf52b11984d,0.90
+Tilia species,0965ee25-1d94-564a-b38b-54ed737a2835,0.75
+Acer buergerianum,5eb0e735-b6f6-598d-89eb-de2f38172ca8,1.00
+Tilia americana 'Redmond',529f9424-9976-5868-858f-22febcc2d7eb,0.90
+Platanus species,1cd024a1-1bd3-51f5-9914-2e8f08ba5ade,0.75
+Carpinus species,6f954859-8357-53ab-8e5d-1607b3809a80,0.75
+Acer rubrum 'October Glory',a7b4dd43-4ccc-5bd6-8510-10ab3c6159db,0.90
+Quercus falcata,5b34b858-4d22-54fa-b863-aeb3b76236ab,1.00
+Pinus strobus,574f58de-5361-5488-9aed-cd1c486cc9d2,1.00
+Acer negundo,d348f8b4-f4f2-5ae6-945d-0b29372307f9,1.00
+Parrotia persica,7dc2fb47-49fc-54fe-9eff-76abe521e912,1.00
+Magnolia x soulangeana,56b7c912-8911-5288-9072-1a8420fdbfd4,0.75
+Eucommia ulmoides,251576c6-236b-5fa6-ae8d-208d5ae76cd8,1.00
+Amelanchier laevis,f08cb7ea-bcfa-5924-bb34-42ccfa00593c,1.00
+Acer ginnala,2c4f47c0-1634-5531-99d0-5c3da1e8c8a3,1.00
+Prunus cerasifera,6393a177-ef67-568b-85a1-34e11cc3c720,1.00
+Juglans nigra,cf57bc73-73be-53c4-87f8-f3fe9a9bd7c6,1.00
+Magnolia grandiflora 'Brackens Brown Beauty',d122ee2d-daa7-5a5b-b5da-479014cfcf9f,0.90
+Amelanchier x grandiflora 'Autumn Brilliance',2b020de1-3893-513a-bb20-bd21fc9abaec,0.75
+Syringa reticulata 'Ivory Silk',eeba61a4-a0b8-5ab1-8164-91d437dc9d23,0.90
+Liquidambar styraciflua 'Happidaze',aedacc6c-d43e-5d4c-9c68-1d2c2a1a9d27,0.90
+Malus 'Adirondack',5fbe61e9-ea65-5c48-a3c3-3ed8bf505819,0.60
+Ulmus x ‘Morton’ Accolade,79659c90-05ce-5eec-a232-3565d113c0fe,0.75
+Quercus robur fastigiata,2f04ef3d-a38a-5944-b1d3-b4d39a7849c5,0.90
+Koelreuteria bipinnata,0e2e3a4c-48e4-5113-9c9f-c197f5be6cc6,1.00
+Quercus montana,170c41cd-6995-5ba8-bca4-d76eabb0c59e,1.00
+Fraxinus species,56d7d27a-b4b5-51f6-bf26-8446a6fb8e43,0.75
+Cercidiphyllum japonicum,3328f338-92cc-5a5f-a50b-12b7b6a4f60c,1.00
+Ulmus 'Morton Glossy',758062ee-6544-5e02-acea-196da7d81dc8,0.60
+Lagerstroemia indica 'Natchez',7803e77e-5e08-5010-8a17-51e4459e9432,0.90
+Liquidambar styraciflua 'Rotundiloba',41614d77-2e11-5690-8406-5b08959ab2ab,0.90
+Cryptomeria japonica,6e2f27b0-c4d6-5471-a15d-a76a06905fbd,1.00
+Carya species,6c364002-6895-5ec5-bb47-53bb32e96499,0.75
+Quercus prinus,4d5d4bf7-851e-5537-b4c7-fba5915c1c46,1.00
+Acer griseum,37dc4139-eda6-5a65-95a5-efe8f5c75286,1.00
+Prunus serrulata 'Snowgoose',ffc8c9d7-e71a-5741-8248-ad09fdcdf698,0.90
+Liquidambar styraciflua 'Cherokee',73975d33-35d5-5b91-af43-938fb207e622,0.90
+Tilia cordata 'Greenspire',ba9b1516-7e48-5669-b87c-d218fa4bcadd,0.90
+Halesia carolina,954347d9-fb2d-51f0-b40d-74947aebbf8e,1.00
+Ulmus parvifolia 'Bosque',a0750e26-0491-5c32-bd31-efcef61d24e9,0.90
+Amelanchier canadensis,b7117e87-cc95-5420-a487-478ff909b08e,1.00
+Ulmus carpinifolia,5e32c0d2-95d4-54aa-ae35-7abefc5716fb,1.00
+Malus 'Harvest Gold',67096bfd-94ec-5c88-9e57-3b367455a08e,0.60
+Styrax japonicus,b64d2848-20e9-57d6-b947-24d4dafb49b1,1.00
+Prunus serotina,4db01dc0-9cdf-5c16-ba0b-1b479a4903d8,1.00
+Acer palmatum,fc3456c8-9312-5bc8-851e-e50242e170f6,1.00
+Longleaf pine Pinus palustris,7a9724a7-019f-55a5-8681-0ac442147f08,0.90
+Malus 'Snowdrift',04993cb6-9168-5256-bd8c-21f30211092f,0.60
+Ulmus americana 'Augustine',48fbc682-66b7-5fb5-a61d-cdd0943e40cf,0.90
+Quercus palustris 'Pringreen',67502fe4-acd3-5fcd-a2ca-6e4a6fda1742,0.90
+Thuja occidentalis,758a8fdd-182b-585f-a6d6-8879ec6d1583,1.00
+Aesculus pavia,7fbf4bf1-a8a2-5054-875e-0d0b6d449566,1.00
+Quercus x warei,725088fa-22f4-53a8-8307-8de20f1397b8,0.75
+Quercus muehlenbergii,7045aba9-fddf-5118-8ef9-aece40b1ba0a,1.00
+Pinus virginiana,303ca6e4-3738-5adf-9394-a2ed10623dc2,1.00
+Cedrus deodora,6b257081-6baf-5218-aaba-e1a6db2d7c6d,1.00
+Aesculus x carnea,af1edbf1-d5a9-5b2e-b265-689dcd00fdd4,0.75
+Zelkova serrata 'Village Green',607fcaca-3d71-53d6-8645-87c16b66dcb0,0.90
+Quercus shumardii,d7d4976d-3879-59a8-8c07-d51b12ce7ab8,1.00
+Prunus virginiana 'Canada Red',9d766d6c-9ed0-5758-b102-1d6b4a5b60e7,0.90
+Ginkgo biloba 'Princeton sentry',6006b15a-fb2c-5726-a543-3a3d58dcd60f,0.90
+Aesculus flava,34545fd1-aca1-51b2-a91a-32586d8e5362,1.00
+Taxodium ascendens,296f77cb-9925-5f52-bff1-b20003d4150c,1.00
+Crataegus viridis 'Winter King',8ee4cae2-768c-5f52-93f4-30a084c6112d,0.90
+Chionanthus virginicus,60c34e6c-2dbb-556c-8ce5-48b43999e42b,1.00
+Diospyros virginiana,a4ed8fe8-acad-55b2-950b-c8ef2c81c9da,1.00
+Prunus subhirtella var. autumnalis,e345996d-3830-5f27-a827-132965c21a10,0.90
+Ilex x 'Nellie R Stevens',88919576-06c4-5cb3-b9f1-37cfed027458,0.75
+Quercus stellata,0cf4b379-43b3-558c-b7ce-2ffec88571f4,1.00
+Aesculus hippocastanum,d444c8e3-5244-514f-8bea-643628fa4519,1.00
+Carpinus betulus 'Fastigiata',3d4962bc-5fba-5eee-8200-4aa09466f95e,0.90
+Magnolia Liliflora x sprengeri,c5fb062a-4c59-5fb9-bead-7a75051fb137,0.60
+Picea abies,dfecce62-fab9-5fb3-b3cb-8e7684d8f982,1.00
+Acer truncatum 'Pacific Sunset',11aa692e-f062-58c9-b943-62597e4dad60,0.90
+Gleditsia triacanthos var. inermis 'Imperial',4fc1a3a0-812d-5f1c-9873-ba0a2981f21f,0.90
+Crataegus phaenopyrum,abeacb77-f5ea-598b-b815-af18f3353a04,1.00
+Oxydendrum arboreum,2a798b58-8448-5577-9982-aab5c032fa8c,1.00
+Diospyros Virginia,76b1a390-5d5c-50f5-80fa-100f54f5d47b,0.60
+Cornus florida var . rubra,b761ec50-aedc-55a6-9bd4-fe529c6adeb2,0.90
+Malus 'Donald Wyman',277df4ea-066b-5efd-8860-fa5579a94662,0.60
+Quercus nigra,4fdb040c-b46f-533d-a6b2-ed98272af83c,1.00
+Tsuga canadensis,ed980b1b-b98c-5578-8083-8da20bcd8358,1.00
+Malus 'Arnold',2ce8b64d-4a5d-57bb-95a8-7769bcbbd67d,0.60
+Cotinus obovatus,52d21753-6ab4-5a19-8543-312c330397e6,1.00
+Gymnocladus dioicus 'Stately Manor',4e2c91b2-3d0e-52e3-8c75-a6832c9d9536,0.90
+Zelkova serrata 'Musashino',b0dbb2f0-1f3e-5560-90a1-2ea5f5b3557a,0.90
+Crataegus lavallei,c11bc7f5-f4f9-5308-968f-f3f7dd071fb9,1.00
+Hamamelis virginiana,3ba0f222-a10a-5287-b3c9-a5123ddf5cde,1.00
+Maclura pomifera,85c34771-31c5-54d3-993f-52b01cccee35,1.00
+Ulmus americana 'Valley Forge',04ebd23c-695f-5c6b-be82-07cce54865aa,0.90
+Zelkova serrata 'Halka',6969352b-be5e-5eb3-bef3-6cb0f3efff1e,0.90
+Lagerstroemia indica 'Biloxi',ae5aaf23-381a-5bc6-9a06-95aecb890e36,0.90
+Sassafras albidum,92568136-8603-5983-b29b-a87b5bbce2b3,1.00
+Lagerstroemia indica 'Tuscarora',c8a6b3de-61b9-554f-b616-40befda3e29c,0.90
+Betula species,6ba60288-11a4-5b0d-8a28-c0376b6c77aa,0.75
+Cercis canadensis 'Rising Sun',8a0dc599-9de5-556e-8a94-3f77df24e109,0.90
+Fagus sylvatica,dc9c06ec-dc27-55b7-8bbc-0b31b2c1e652,1.00
+Robinia pseudoacacia 'Purple Robe',57db3ff1-3fa8-597e-9853-2737c9b2fe9c,0.90
+Asimina triloba,4f26dbb1-c440-516a-88a4-d0b2d271127b,1.00
+Populus species,2cb940e1-a478-5513-a183-48fdb5cb9f4d,0.75
+Quercus velutina,7c025376-9730-5d0f-8a5d-76a96caebcf8,1.00
+Gleditsia triacanthos var. inermis 'Sunburst',0c2fedcb-e2d3-553a-88bd-f77dd665fca3,0.90
+Magnolia acuminata,b91a273c-ad1d-534d-9f00-18312f901f40,1.00
+Malus 'Radiant',08f2d7a4-a3ab-5ea0-9a5c-56a9f1dd12c3,0.60
+Lagerstroemia indica 'Muskogee',3c18412b-8749-5a50-a534-b45e39cb9b2f,0.90
+Prunus mume,71f3cc60-c908-5092-9106-1b60b4aeb5d9,1.00
+Quercus pagoda,6a37b4be-e840-56eb-b3e7-edc9ecb66996,1.00
+Chitalpa tashkentensis 'Strawberry Moon',35c872e8-fa94-5315-a8f0-68d05164b950,0.90
+Persimmon Diospyros Virginia,31b076c2-2a59-5754-aa87-d6f2d0abeee3,0.60
+Cornus florida x kousa 'Rutgan',691227de-7452-5138-b0cb-0ccdbbd96c87,0.90
+Morus rubra,af1c5f70-6ebd-578c-95c1-03c5fcafecdc,1.00
+Maclura pomifera 'White Shield',ee338364-d62c-523c-8922-1cbe52a99f6c,0.90
+Acer saccharum 'Green Mountain',e6271b0d-0f52-537a-8b30-ce0b591005bd,0.90
+Magnolia stellata,c45b993f-23bd-5b67-bc20-861ff72202cc,1.00
+Acer platanoides 'Crimson King',9152bf7a-d4bc-5b11-bbe5-7acda4238be6,0.90
+Corylus colurna,1ac4d91a-0d17-5b7d-87f9-243c8ede71c7,1.00
+Magnolia x 'Butterflies',d754a116-fdac-5c45-b1b6-857be9e8f1eb,0.75
+Paulownia tomentosa,3141c682-e63c-5ca8-8d78-fbf173daa91e,1.00
+Salix species,24619cf6-5738-515b-a4dc-4bf4b4bf158f,0.75
+Quercus robur 'Fastigiata',fd4065ac-e1cc-55e4-ba8f-baa67164b26a,0.90
+Pinus palustris,b6f384d4-a965-56e5-9c16-9aa44bbb5594,1.00
+Pinus rigida,005673a5-267a-5f1e-8c3e-d5738e5841e9,1.00
+Pyrus calleryana 'Whitehouse',88c9c2e7-9a8e-5ac8-aac5-741f47f2d301,0.90
+Cercis canadensis 'Oklahoma',2e6f634b-105d-56e1-93e5-3918b9a7a505,0.90
+Gleditsia triacanthos var. inermis 'Moraine',fa469576-a3b8-5f6c-97e9-0ee7c2a5d6dd,0.90
+Ulmus 'New Horizon',53a3fab9-7630-5384-ae87-7bda4d850774,0.60
+Cornus florida 'Cherokee Princess',eacc8e1a-4c77-51db-8e7f-e5be39a6aae1,0.90
+Quercus palustris 'Sovereign',052f5b00-546d-5771-851b-aaeffaf0fc09,0.90
+Robinia pseudoacacia 'Frisia',7baee918-d1fc-5d3b-a8fa-be0e5e928e20,0.90
+Liquidambar styraciflua 'Sterile',b4273744-cedc-5f6d-912a-dfb917757c1b,0.90
+Aralia spinosa,cf43312e-c258-5f34-8dc6-707d6c49c997,1.00
+Betula nigra 'Cully' Heritage,a6d3fbd5-b20b-5964-b06d-85ae225d2019,0.90
+Quercus bicolor 'American Dream',66c91e47-b3cc-5ea2-82d6-e5f70f4d23c2,0.90
+Stewartia pseudocamellia,48390e00-9650-5dc0-9cfd-d31b5ce05578,1.00
+Cornus mas,8bd0992d-090a-5a96-8eed-52f15f940304,1.00
+Maackia amurensis,44b4daa3-4b37-5393-9461-430dba6ff301,1.00
+Syringa reticulata subsp. pekinensis 'China Snow',f8cd2f37-8ab9-57f8-9f15-29db2402b194,0.90
+Acer pseudoplatanus,37ea58a2-321d-5d66-b4be-190c9735879c,1.00
+Cercis chinensis,e0b59c5c-9391-543e-8d75-638f008c22a6,1.00
+Diospyros kaki 'Giant Fuyu',f72c674e-4aea-5671-99fe-0eda33f1759f,0.90
+Fraxinus pennsylvanica,03f4308b-d185-5702-9355-d51310576c36,1.00
+Acer rubrum Columnare,70ef1bfc-8139-5c7f-a746-ebd7f7a626a0,0.90
+Magnolia 'Galaxy',948722e3-7aad-503d-8cf8-0563cd85d658,0.60
+Cornus 'Rutgan' CELESTIAL',534ff8ef-5c14-5b88-bda0-54d018f97e37,0.60
+Laburnum species,56ea09da-297f-56ef-8c01-8894d8fef56d,0.75
+Populus deltoides,3065f22e-055f-52f2-be09-80cd3c23088f,1.00
+Salix babylonica,1fd5fc2f-f539-5c9a-a02c-19b6c0459199,1.00
+Tilia cordata 'Glenleven,847318e9-b3f6-509b-9c0c-3b1859f7290a,0.90
+Ulmus pioneer,978727d3-8f62-508f-8c99-1a29f7937af6,1.00
+Cercis canadensis 'Oklahoma'',4614985d-de3e-57c2-b1d8-5b337218b86b,0.90
+Magnolia grandiflora 'Edith Bogue',e70e420b-faff-5216-a064-f0ea643f69be,0.90
+Phellodendron amurense,0ee10c60-5ca6-5e87-82ae-d8ef6f0a6e74,1.00
+Quercus 'Darlingtoni',e0dca7e1-3c7f-5eb6-ac1c-2bfa5e01fe85,0.60
+Betula nigra 'Dura-heat',437d9c2d-1978-5eda-867e-be99a7ab55ef,0.90
+Cercis reniformis 'Oklahoma',06001c10-d822-5bae-9822-3096bf26c71b,0.90
+Morus spp,85b99e72-c00e-5c8f-bb39-e17ec2a0cb0e,0.75
+Amelanchier arborea x grandiflora 'Autumn Brilliance',e357c0ba-5383-5160-8e2b-9f6063c11055,0.90
+Carya illinoinensis,582d3915-6818-51c5-a073-5993644bfafb,1.00
+Celtis occidentalis 'Prarie Pride',70a79db4-b644-5528-8d83-c25d77d008c3,0.90
+Crataegus viridis 'Winter King'',904ca870-9af6-5d84-a445-124cd80e478c,0.90
+Fraxinus pennsylvanica lanceolata,74e58ae5-2355-5ce2-804e-658b02055a95,0.90
+Prunus cerasifera 'Thundercloud',6aed8b6d-7309-5707-a0dc-bc74fa5d24d0,0.90
+Cedrus atlantica,7aadb1f5-3422-5338-b99e-68ef3daa3ba8,1.00
+Crataegus oxyacantha superba 'Crimson Cloud',218653d2-c2a3-572b-b066-2079657e3a69,0.90
+Ficus carica,9f52120a-0194-5559-91bc-a5616f04a0fb,1.00
+Ilex decidua,a0378253-4423-59ff-b790-33c8adbdece4,1.00
+Liriodendron tulipifera 'Compactum',74f96689-d2dd-5b38-80f7-272655810d04,0.90
+Magnolia liliflora x sprengeri,c5fb062a-4c59-5fb9-bead-7a75051fb137,0.90
+Quercus laevis,7bf024d9-67ee-57fb-aba5-087f31557096,1.00
+Taxus baccata,33abfd07-4205-56c7-91d4-9f0686fb6703,1.00
+Cornus alternifolia,956ffeb2-86ac-546b-919b-c1e97d07565f,1.00
+Malus domestica 'Liberty',ebb334b6-b82f-5c43-95ea-b53e6e02f978,0.90
+Pyrus calleryana 'Autumn Blaze',ba64595d-20fa-5ca8-ae6f-67ea93b2d15a,0.90
+Quercus michauxii,8f4df5aa-2e0d-51d3-a374-0cf72009a6b6,1.00
+Ulmus glabra,4d1f3b24-fc61-51ca-9cff-481a4177b1ae,1.00
+Zelkova serrata 'Shmidtlow',f5f6a59d-359b-50bc-962e-1b94843f6ee4,0.90
+Juniperus virginiana 'Taylor',4a8d3b92-605b-542e-b190-5b2649e1d2e5,0.90
+Viburnum prunifolium,f8dfe8a7-c946-5b46-8b32-aa6cdb305d80,1.00
+Acer rubrum 'Columnare',39f4e0dc-cb2d-5c03-b8f6-fff2f2ba480b,0.90
+Acer saccharum 'Columnare',a66fbb59-d0ec-5880-b837-3d80e68a24eb,0.90
+Carya illinoensis 'Kanza',406bc663-abba-5a16-9235-d2630da00265,0.90
+Quercus marilandica,b590a5e1-df81-5c3b-9c1e-90035e0130bf,1.00
+Albizia julibrissin,248ed22b-1dbf-5648-9ced-7dc11917a3d7,1.00
+Juglans regia,9ed1fe2e-6690-5c55-a100-a8e3029a62c3,1.00
+Liriodendron tulipifera 'Little Volunteer',503d82d6-165f-5171-9695-846902812aea,0.90
+Quercus ilicifolia,f426afbc-d913-5bdf-90c8-82e07567ab76,1.00
+Ulmus 'Pioneer',2b6a2ea8-1807-51e2-8f5b-06aa1d64647c,0.60
+Acer platanoides 'Summershade',ed124489-3de5-5d6e-9143-802882c35e57,0.90
+Carya spp,23b0c2f2-43d3-5ad9-9f4f-319389eff6ac,0.75
+Castanea mollissima,dad0a475-736c-596c-afa3-9b1791a21f2c,1.00
+Cornus x 'Rutdan' Celestial,5d9f9bc0-bd38-5160-b051-1cef56c52fe5,0.75
+Fagus sylvatica 'Atropuncea',2320f0ca-29b8-5195-bb4a-c153b489276e,0.90
+Juniperus scopulorum 'Skyrocket',311e5154-3c34-5073-858f-288788254ffd,0.90
+No Tree,927ad1a5-e7e5-58f6-8fc9-d2dfa0ea5735,0.60
+Prunus persica,30b4e651-6d3f-589d-9d51-8dff94cdbc64,1.00
+Prunus x yodoensis,19519981-273c-5349-a673-b80209b0bc09,0.75
+Quercus virginiana,f25c7b11-8e79-5548-9dbf-0a6ff324c45c,1.00
+Tsuga canadensis (Eastern Hemlock),f0cca506-8445-5006-84b9-e1678498704f,0.90
+Ulmus hollandica 'Bea Schwartz',66d3d6a9-73cb-5308-a95a-f38700a92d66,0.90
+Ulmus hollandica 'Groenveldt',ad87ccd1-5160-5598-9555-a57027388395,0.90
+Zelkova serrata 'Myrimar',c7ecf024-137e-5f89-8476-ae5fe1e3da70,0.90
+Magnolia acuminata 'Elizabeth',035d6633-5bc6-5413-a277-7da305a8f0d3,0.90
+Prunus armeniaca 'OrangeRed',aa4bca10-c947-5400-80f3-c4e08da770c0,0.90
+Prunus salicina ‘Methley' (Methley Plum),57ce6d04-3d68-5a21-82d7-fa46d12a2ada,0.90
+Ulmus americana 'Lewis & Clark',35ac5ca5-24a9-56c5-af67-9f35e5a7db97,0.90
+Ulmus hollandica 'Commelin',e7076a49-52c1-5ee8-bfc5-b5b59b06400d,0.90
+Acer platanoides 'Cleveland',3cf1dd43-dc35-5fb7-8043-1bcfb5f23bf2,0.90
+Acer platanoides 'Emerald Queen',4af17d10-8f6f-508b-9bd7-4ec7d9b6e6ab,0.90
+Fagus grandiflora,83192242-4847-5c85-9e88-ed07ecec2fb5,1.00
+Juglans ailantifolia 'Heartnut',e793b72e-d02a-51d8-99d9-39a1b8e8840c,0.90
+Ulmus hollandica Blandford,01a3aeb5-3d63-5a14-8bf2-bb2d8552cdfc,0.90
+Acer platanoides 'Columnare',86a4f5af-9150-5e49-9dec-8fd23f2b37df,0.90
+Acer saccharum 'Seneca Chief',294a1fd4-84bb-55d6-ada8-dbbd5e05de28,0.90
+Alnus glutinosa,c729d848-8abb-5e16-9021-4d9e87de4248,1.00
+Asimina triloba 'KSU Benson',5e262aa3-1737-5f8b-93a0-1485b0f5a744,0.90
+Castanea pumila,430498f4-8413-58a5-a1b2-8ba769606d50,1.00
+Populus caroliniana,59f5dc57-895a-5eb1-af2c-459d602a98e8,1.00
+Prunus cerasus 'Montmorency' (Tart Cherry),f12a46d1-b4f3-5780-a0a2-fc0731fa8a1c,0.90
+Pyrus calleryana,fc55d55a-8706-593e-9ca8-c2d0b6cba3e7,1.00
+Styphnolobium japonicum 'Regent',a450c9ad-3bc3-54d5-8244-b1e309f4859e,0.90
+Styrax japonicas,0e471ce8-8a06-5b51-9a8e-65c7a346766a,1.00
+Tilia euchlora,607273ec-4f0d-5607-ac64-b6bfe44b0099,1.00
+Toona sinensis,e57d173b-4ded-5571-93ca-6f89b159ae3b,1.00

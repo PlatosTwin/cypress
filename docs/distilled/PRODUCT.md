@@ -53,6 +53,31 @@ Five pillars:
 | Unverified citizen rows silently entering city inventory | Open export stamps them unfit for inventory ingestion until the verification tier ships. |
 | Step wizards / judgment on the Visit path | Visit is "no judgment required". |
 
+**The first row is narrowed by RULINGS R27.1, and this annotation is the owner's ruling of
+2026-09-10 closing a contradiction that had stood unrecorded.** As transcribed, row 1 forbids
+"ranked counts of photos/check-ins/care/**favorites**". R27.1 — taken 2026-07-31, hours after R27
+and overruling its second half — orders trees by how many distinct people have favorited them and
+says in as many words that showing the number is *"permitted and preferred"*, because "ranking while
+coyly hiding the count is the worst of both, since the reader infers a number anyway and cannot tell
+how thin the margin is."
+
+**R27.1 governs, and the distinction it turns on is whose actions are counted.** D1 forbids ranking
+**people**; a ranking of *trees* by distinct favoriters contains no person, exposes no person and
+rewards no person. R27 had generalized a constraint on one noun to a different noun, and the owner
+corrected it the same day. This row was written before that distinction existed and was never
+revisited.
+
+**What survives of row 1, unchanged:** photographs, check-ins and care events are still not counted
+or ranked anywhere, publicly or privately — R27.1 §5 is explicit that the owner did not want photo
+counts, and it authorizes **one** signal, favorites, and no composite of several. R27.1 §2's
+k-anonymity floor (≥3 distinct people, provisional pending a measurement of the real distribution)
+and §3's absolute bar on naming, counting or reaching any person through the list are both part of
+what makes the narrowing safe, and neither is optional.
+
+Recorded here rather than left to be rediscovered: an agent building to this row's flat prohibition
+would refuse a surface the owner has twice asked for, and one already did in this project's history —
+that refusal is what R27.1 exists to overturn.
+
 ---
 
 ## 2. Users and roles

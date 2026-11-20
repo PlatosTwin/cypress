@@ -242,22 +242,26 @@ public struct RoutedAPI: CypressAPI {
     /// Two different things make a row not appear on screen, and collapsing them mislabels the read.
     /// A tree this installation's inventories do not carry at all is a piece of the service's answer
     /// that **did not make it** — under D16 an ordinary case, the other device was in another city —
-    /// and `.fellBackToLocal` is the honest mark for it. A tree the inventories *do* carry, which
-    /// D15 gives no name, is not a loss: it is the rule being applied, correctly, to a complete
-    /// answer. Recording that as a degraded read would tell a §4.3 surface "showing what's on this
+    /// and `.fellBackToLocal` is the honest mark for it. A tree the inventories *do* carry and a
+    /// rule leaves off the list is not a loss: it is the rule being applied, correctly, to a
+    /// complete answer. Recording that as a degraded read would tell a §4.3 surface "showing what's on this
     /// phone" about a read where nothing was missing.
     ///
     /// PR #144's review is what separated them. The first cut had only the named dictionary, so an
     /// intended D15 refusal and a genuinely unresolvable row were the same absence and both marked
-    /// the read degraded.
+    /// the read degraded. **A tree with no name and no species is no longer one of those rows**
+    /// (ROADMAP chip 206, the owner's answer of 2026-11-16 that such a tree "still reads "Tree""):
+    /// it is `named` with an empty title, as `LocalAPI.grove()` names it, so it reaches My Grove and
+    /// still does not mark the read degraded.
     public struct CityFileRows: Sendable {
 
-        /// Trees the city file carries and D15 names.
+        /// Trees the city file carries, with the name the row name rule gives them: a nickname,
+        /// else the species the tree's profile title shows (the owner's answer of 2026-11-16, "Yes,
+        /// use the species"), else empty, which My Grove draws as "Tree".
         public let named: [UUID: CityFileRow]
 
-        /// Trees the city file **carries** and D15 declines to name — a nickname-less community
-        /// record, whose only species is one somebody asserted about it. Dropped from the grove, and
-        /// not a reason to call the read degraded.
+        /// Trees the city file **carries** and My Grove leaves out: a community tree this phone
+        /// withdrew. Dropped from the grove, and not a reason to call the read degraded.
         public let unnamed: Set<UUID>
 
         public init(named: [UUID: CityFileRow], unnamed: Set<UUID>) {
@@ -295,20 +299,76 @@ public struct RoutedAPI: CypressAPI {
     /// the service named that this phone has not met.
     public let resolveSpecies: (@Sendable ([UUID]) async -> [UUID: Species])?
 
+    /// What the phone knows about this tree's photographs that the service's rows cannot say —
+    /// which were sent, and which a queued withdrawal names — or nil to fold only what an id or a
+    /// key proves.
+    ///
+    /// `refreshedTreeProfile(id:)`'s side of photo identity (report F30). `DataLayer.boot` wires
+    /// `LocalAPI.photoIdentityEvidence(treeID:)`. See `PhotoIdentityEvidence`.
+    public let resolvePhotoEvidence: (@Sendable (UUID) async -> PhotoIdentityEvidence)?
+
+    /// The phone's photographs whose service `photo_id` a refresh has established, by local id.
+    /// Written by `refreshedTreeProfile(id:)`, read by `deletePhoto(id:)`. See `PhotoIdentityLedger`.
+    public let photoIdentities: PhotoIdentityLedger
+
+    /// Withdraws a photograph on the phone and has its queued withdrawal name the service's id for
+    /// it, or nil to withdraw by the phone's id alone. `DataLayer.boot` wires
+    /// `LocalAPI.deletePhoto(id:servicePhotoID:)`.
+    public let deletePhotoNamingServiceRow: (@Sendable (UUID, UUID) async throws -> PhotoDeletion)?
+
+    /// Queues a withdrawal of a service row this phone holds no row for, by its id and its tree's,
+    /// or nil to leave such a row undeletable from here. `DataLayer.boot` wires
+    /// `LocalAPI.withdrawServicePhoto(id:treeID:)`. See `deletePhoto(id:)`.
+    public let withdrawServicePhoto: (@Sendable (UUID, UUID) async throws -> PhotoDeletion)?
+
+    /// ROADMAP 144's reach into `LocalAPI`, or nil to keep the phone's own species answers.
+    /// `DataLayer.boot` wires it. See `CommunitySpeciesSeam`.
+    public let speciesSeam: CommunitySpeciesSeam?
+
+    /// The reports the service named to this phone's adder. See `ServedSpeciesReports`.
+    public let servedSpeciesReports: ServedSpeciesReports
+
+    /// Sends the outbox before a keep-records deletion, and answers how many of the account's tree
+    /// withdrawals are still unsent (`OutboxQueue.sendBeforeAccountDeletion`; ROADMAP 192).
+    /// `DataLayer.boot` wires it when the network gate is open. Nil keeps the deletion as it was:
+    /// no send first, which is right for a router with no outbox behind it.
+    public let sendQueueBeforeDeletion: (@Sendable (UUID) async throws -> Int)?
+
+    /// Thrown by `deleteAccount` under the keep-records door when a tree withdrawal the account
+    /// queued could not be sent first. Nothing was deleted, on the service or on this phone.
+    public struct WithdrawalNotSentBeforeDeletion: Error, Equatable {
+        /// How many of the account's withdrawals are still unsent.
+        public let unsent: Int
+    }
+
     public init(
         local: any CypressAPI,
         remote: RemoteAPI,
         log: RemoteReadLog = RemoteReadLog(),
         signedInUserID: (@Sendable () async -> UUID?)? = nil,
         resolveGroveRows: (@Sendable ([UUID]) async -> CityFileRows)? = nil,
-        resolveSpecies: (@Sendable ([UUID]) async -> [UUID: Species])? = nil
+        resolveSpecies: (@Sendable ([UUID]) async -> [UUID: Species])? = nil,
+        resolvePhotoEvidence: (@Sendable (UUID) async -> PhotoIdentityEvidence)? = nil,
+        photoIdentities: PhotoIdentityLedger = PhotoIdentityLedger(),
+        deletePhotoNamingServiceRow: (@Sendable (UUID, UUID) async throws -> PhotoDeletion)? = nil,
+        withdrawServicePhoto: (@Sendable (UUID, UUID) async throws -> PhotoDeletion)? = nil,
+        speciesSeam: CommunitySpeciesSeam? = nil,
+        servedSpeciesReports: ServedSpeciesReports = ServedSpeciesReports(),
+        sendQueueBeforeDeletion: (@Sendable (UUID) async throws -> Int)? = nil
     ) {
+        self.sendQueueBeforeDeletion = sendQueueBeforeDeletion
+        self.speciesSeam = speciesSeam
+        self.servedSpeciesReports = servedSpeciesReports
         self.local = local
         self.remote = remote
         self.log = log
         self.signedInUserID = signedInUserID
         self.resolveGroveRows = resolveGroveRows
         self.resolveSpecies = resolveSpecies
+        self.resolvePhotoEvidence = resolvePhotoEvidence
+        self.photoIdentities = photoIdentities
+        self.deletePhotoNamingServiceRow = deletePhotoNamingServiceRow
+        self.withdrawServicePhoto = withdrawServicePhoto
     }
 
     // MARK: - Class L — the city layer, and no remote failure mode
@@ -382,6 +442,26 @@ public struct RoutedAPI: CypressAPI {
         try await local.addTree(draft)
     }
 
+    /// Local, like every write: the move lands on this phone and reaches the account through the
+    /// queue as a `location_correction` (`AppSchema` v23).
+    public func correctLocation(
+        treeID: UUID,
+        to coordinate: Coordinate,
+        placement: TreePlacement,
+        locationAccuracyM: Double?
+    ) async throws -> Tree {
+        try await local.correctLocation(
+            treeID: treeID, to: coordinate, placement: placement,
+            locationAccuracyM: locationAccuracyM
+        )
+    }
+
+    /// Local, like every write: the tree leaves this phone at once and the withdrawal reaches the
+    /// service through the queue as a `tree_withdrawal`.
+    public func withdrawTree(treeID: UUID) async throws {
+        try await local.withdrawTree(treeID: treeID)
+    }
+
     public func claimSpecies(treeID: UUID, speciesID: UUID) async throws -> Tree {
         try await local.claimSpecies(treeID: treeID, speciesID: speciesID)
     }
@@ -394,8 +474,19 @@ public struct RoutedAPI: CypressAPI {
         try await local.flagWrongSpecies(treeID: treeID)
     }
 
+    /// The local keep first: a report raised on this phone is closed here and queued. A report the
+    /// service named to the adder (`species_report_flag_id`) has no row on this phone, so the local
+    /// verb answers `notFound` for it, and the keep is queued by the tree a profile read recorded
+    /// for that flag (ROADMAP 144).
     public func dismissSpeciesReview(flagID: UUID) async throws {
-        try await local.dismissSpeciesReview(flagID: flagID)
+        do {
+            try await local.dismissSpeciesReview(flagID: flagID)
+        } catch APIError.notFound {
+            guard let speciesSeam, let treeID = await servedSpeciesReports.tree(of: flagID) else {
+                throw APIError.notFound
+            }
+            try await speciesSeam.keep(treeID, flagID)
+        }
     }
 
     public func flagNeverExisted(treeID: UUID) async throws {
@@ -414,8 +505,66 @@ public struct RoutedAPI: CypressAPI {
         try await local.setPhotoVote(photoID: photoID, vote: vote)
     }
 
+    /// Local, like every contribution write — with the service's id for the photograph when a
+    /// refresh has established it.
+    ///
+    /// The queued `photo_withdrawal` names the photograph for the service. For anything sent since
+    /// report F30's fix the phone's own id is enough: it is the begin's `client_uuid`, and the
+    /// service withdraws by it. A photograph sent by build 77 or earlier has a local id the service
+    /// never heard of and a key the phone no longer holds, so a withdrawal naming the local id
+    /// matched nothing there and the photograph stayed public. When `refreshedTreeProfile(id:)` has
+    /// paired it with its service row unambiguously, the withdrawal names that row instead.
+    ///
+    /// **What this cannot reach, stated rather than discovered:** a photograph whose tree has not
+    /// been refreshed in this process (the ledger is memory, not a table — a table is a migration),
+    /// and a photograph that shares its framing and capture second with another of this phone's on
+    /// the same tree. Both are withdrawn on the phone and by the phone's id, as before.
+    ///
+    /// Nothing here uploads or re-enqueues anything (RULINGS R77): the one queued row is the
+    /// withdrawal this call has always queued.
+    ///
+    /// **A row the phone never held.** The profile also draws the caller's own service rows that
+    /// fold into nothing here — a photograph from the account's other phone, or, since the ruling on
+    /// #194's review (finding 3), one whose earlier withdrawal the service answered without taking
+    /// it down. The service lists those as this caller's to delete (`deletable_photo_ids`), and the
+    /// phone has no row to tombstone, so the withdrawal is queued naming the service's id directly
+    /// and the service checks ownership on the way in. Only an id the last refresh *drew* is
+    /// treated so: a service row folded into a local one is never shown, so it never arrives here.
     public func deletePhoto(id: UUID) async throws -> PhotoDeletion {
-        try await local.deletePhoto(id: id)
+        if let naming = deletePhotoNamingServiceRow,
+           let serviceID = await photoIdentities.serviceID(for: id) {
+            return try await naming(id, serviceID)
+        }
+        if let withdrawServicePhoto,
+           let treeID = await photoIdentities.treeOfServiceRow(id) {
+            return try await withdrawServicePhoto(id, treeID)
+        }
+        return try await local.deletePhoto(id: id)
+    }
+
+    /// Local, like every other contribution write: the reading is on this phone, and the account's
+    /// copy is reached through the queue rather than through a second call (`AppSchema` v21).
+    public func withdrawMeasurement(id: UUID) async throws -> WithdrawnMeasurement {
+        try await local.withdrawMeasurement(id: id)
+    }
+
+    /// Local, like every other contribution write: the dispute is a row in this phone's writable
+    /// database referencing a city record it must never write, and the account's copy is reached
+    /// through the queue rather than through a second call (`AppSchema` v22).
+    public func raiseDataDispute(
+        treeID: UUID,
+        issues: Set<TreeDataDispute.IssueKind>,
+        suggestions: TreeDataDispute.Suggestions,
+        notes: String?
+    ) async throws -> TreeDataDispute {
+        try await local.raiseDataDispute(
+            treeID: treeID, issues: issues, suggestions: suggestions, notes: notes
+        )
+    }
+
+    /// Local, for the reason above. The dispute being taken back is this device's own row.
+    public func withdrawDataDispute(disputeID: UUID) async throws {
+        try await local.withdrawDataDispute(disputeID: disputeID)
     }
 
     public func logHazardRedirect(_ event: HazardRedirectEvent) async throws {
@@ -477,8 +626,10 @@ public struct RoutedAPI: CypressAPI {
     ///   phone did.
     /// - Throws: whatever the remote half threw — `APIError`, or a `SessionError` for a credential
     ///   that could not be refreshed — unchanged and unwrapped, so a caller can tell an offline
-    ///   phone from a refusal. `AccountModel.deleteAccount` turns any of them into the one fact the
-    ///   deletion sheet can draw: nothing was deleted.
+    ///   phone from a refusal. Under the keep-records door it can also throw
+    ///   `WithdrawalNotSentBeforeDeletion`, before the service is asked, or whatever the outbox's
+    ///   own read or write threw. `AccountModel.deleteAccount` turns any of them into the one fact
+    ///   the deletion sheet can draw: nothing was deleted.
     @discardableResult
     public func deleteAccount(_ choice: AccountDeletionChoice) async throws -> AccountDeletion.Outcome {
         // ── What this guard reads, and what the screen above it reads ──────────────────────────
@@ -497,11 +648,47 @@ public struct RoutedAPI: CypressAPI {
         //
         // That is the extent of what is verified here: the two convergence paths exist and run in
         // the direction of signed-out. It is not a claim that no in-run window exists.
-        guard let signedInUserID, await signedInUserID() != nil else {
+        guard let signedInUserID, let userID = await signedInUserID() else {
             return try await local.deleteAccount(choice)
         }
-        _ = try await remote.deleteAccount(choice)
-        return try await local.deleteAccount(choice)
+        // ── Under the keep-records door, the queue goes first (ROADMAP 192) ────────────────────
+        //
+        // That door makes the account's published trees anonymous on the service, and nobody may
+        // withdraw an anonymous tree. A withdrawal still queued would be refused after the
+        // deletion, its tree would come back here, and it would stay public for good, against
+        // what the person asked. So, when the account has a withdrawal queued, the account's queue
+        // is sent now, while the account still owns its trees. With none queued, nothing is sent
+        // first and the requests are the ones this method made before. If a withdrawal still did
+        // not go (no connection, the service is down), this throws before `DELETE /me`, so
+        // nothing is deleted anywhere and the person can try again:
+        // the same state, and the same failure line, as a deletion that could not reach the service.
+        //
+        // The erasing door does not wait for the queue. It discards the account's queued rows and
+        // puts back the tree of an unsent withdrawal (`OutboxStore.forgetAccount`), and the service
+        // deletes or anonymizes the account's trees itself, so sending first would change nothing
+        // it ends with.
+        if choice == .leaveRecords, let sendQueueBeforeDeletion {
+            let unsent = try await sendQueueBeforeDeletion(userID)
+            guard unsent == 0 else { throw WithdrawalNotSentBeforeDeletion(unsent: unsent) }
+        }
+        // The service's answer about the trees the account added goes to the local half, which
+        // acts on it instead of guessing (`ROADMAP` 104 and 105). Nil from an older service keeps
+        // the phone's own rule. If this answer is lost (the request throws after the service
+        // deleted), nothing local runs at all, which is the arm the header above describes.
+        let answer = try await remote.deleteAccountOnService(choice)
+        return try await local.finishAccountDeletion(choice, actingOn: answer.trees)
+    }
+
+    /// The local half alone, for a caller that already holds the service's answer. This type's own
+    /// `deleteAccount` is that caller for the `LocalAPI` under it, so this forwards to the local
+    /// half and asks the service nothing. Declared here rather than left to the protocol's default,
+    /// which would call `deleteAccount` above, and that asks the service to delete.
+    @discardableResult
+    public func finishAccountDeletion(
+        _ choice: AccountDeletionChoice,
+        actingOn serviceTrees: AccountDeletion.ServiceTreeVerdicts?
+    ) async throws -> AccountDeletion.Outcome {
+        try await local.finishAccountDeletion(choice, actingOn: serviceTrees)
     }
 
     // MARK: - Class R, R-degraded: the account's own rows
@@ -515,9 +702,11 @@ public struct RoutedAPI: CypressAPI {
     /// they are this *device's* rows").
     ///
     /// **A row the service names and this phone has never seen is resolved through the city file**,
-    /// which is where a name and a coordinate live. The rule for the name is
-    /// `LocalAPI.displayNameIfPresent`'s, restated through the payload it already returns: the one
-    /// active nickname (D15), else the species common name, and **never a fabricated label**. A tree
+    /// which is where a name and a coordinate live. The name follows the row name rule the Journal,
+    /// the Outbox and My Grove share (the owner's answers of 2026-11-16, "Use the species" and "Yes,
+    /// use the species"): the one active nickname, else the common name of the species the tree's
+    /// profile title shows, for a city tree and a community tree alike, and **never a fabricated
+    /// label** (`resolvedCityFileRows`). A tree
     /// this installation's city file does not carry at all — the other device was in another city,
     /// which D16 makes an ordinary case — is left out rather than drawn nameless at a coordinate
     /// this client would have to invent, and the read is marked degraded because part of the answer
@@ -620,8 +809,9 @@ public struct RoutedAPI: CypressAPI {
             }
             guard let resolved = cityFileRows.named[row.treeID] else {
                 // **Degraded only when the city file could not answer at all.** A tree it holds and
-                // D15 declines to name (`CityFileRows.unnamed`) is the rule being applied to a
-                // complete answer, not a piece of the answer going missing — see `CityFileRows`.
+                // a rule leaves out (`CityFileRows.unnamed`, a withdrawn tree) is the rule being
+                // applied to a complete answer, not a piece of the answer going missing — see
+                // `CityFileRows`.
                 if !cityFileRows.unnamed.contains(row.treeID) { everythingResolved = false }
                 continue
             }
@@ -717,17 +907,20 @@ public struct RoutedAPI: CypressAPI {
     /// than as an error.
     ///
     /// **This method is the paint and it does not touch the wire** — `grove()`'s note above, for the
-    /// same ruling and the same reason. The join is `refreshedGroveSpecies()`, and this screen's
+    /// same ruling and the same reason. The join is `refreshedGroveSpecies(near:)`, and this screen's
     /// Species pill is the one the owner reported as worst: it is the tab My Grove opens on, so its
     /// read was the one every visit waited through.
-    public func groveSpecies() async throws -> GroveSpecies {
-        try await local.groveSpecies()
+    public func groveSpecies(near coordinate: Coordinate?) async throws -> GroveSpecies {
+        try await local.groveSpecies(near: coordinate)
     }
 
-    /// `groveSpecies()` again, with `GET /me/grove/species` merged in — the read that reaches the
+    /// `groveSpecies(near:)` again, with `GET /me/grove/species` merged in — the read that reaches the
     /// service. See `refreshedGrove()` for what "refreshed" means here and what it does to `log`.
-    public func refreshedGroveSpecies() async throws -> GroveSpecies {
-        let mine = try await local.groveSpecies()
+    ///
+    /// `coordinate` is the same fix the paint was read with, so the merge cannot repaint the ring
+    /// about a different area than the one on screen (F38).
+    public func refreshedGroveSpecies(near coordinate: Coordinate?) async throws -> GroveSpecies {
+        let mine = try await local.groveSpecies(near: coordinate)
         guard let delta = try? await remote.groveSpeciesDelta() else {
             // `refreshedGrove()`'s cancellation note, for the same reason and the same reader.
             if !Task.isCancelled { await log.record(.groveSpecies, .fellBackToLocal) }
@@ -901,8 +1094,12 @@ public struct RoutedAPI: CypressAPI {
     /// position, its species and its inventory row are Class L, and a profile that fetched them
     /// would put the map's own data on the network for no gain.
     ///
-    /// Photographs are merged by id, with the phone's row winning a collision: a photograph this
-    /// device took has a `storageKey` and real pixel dimensions, and the service's row has neither.
+    /// Photographs are merged by identity, with the phone's row winning: a photograph this device
+    /// took has a `storageKey` and real pixel dimensions, and the service's row has neither. **Which
+    /// rows are the same photograph is `communityPhotosNotOnThisPhone`'s question**, and it used to
+    /// be "the same id" alone — which never matched, because the service answers its contributor
+    /// under a `photo_id` it minted and the phone never kept, so every photograph a person sent came
+    /// back as a second one on their own profile (report F30). That function names the three links.
     /// The own and deletable sets are unioned for the same reason they exist as separate sets —
     /// "own" is what this reader may *see* and "deletable" is what they may *unmake*, and the two
     /// differ on exactly the rows an account deletion anonymized.
@@ -944,22 +1141,92 @@ public struct RoutedAPI: CypressAPI {
     /// `try? await remote.treeCommunityHalf(id:)` answers nil for a cancellation exactly as it does
     /// for an unreachable host.
     public func refreshedTreeProfile(id: UUID) async throws -> TreeProfile {
-        let mine = try await local.treeProfile(id: id)
+        var mine = try await local.treeProfile(id: id)
+        // ROADMAP 144: the reader's queued species acts, read **before** the service is asked. An
+        // act queued then may reach the service after it answered, so that answer must not
+        // overwrite the phone's own row; one sent before the question is in the answer.
+        let speciesState: SpeciesAnswerState?
+        if mine.tree.source == .community {
+            speciesState = await speciesSeam?.state(id)
+        } else {
+            speciesState = nil
+        }
+        // The history is asked for beside the community half, and only for a community tree: a
+        // city tree has none, and the service would answer `not_found` for it every time (round
+        // C2). A history that fails costs the history alone, never the photographs.
+        let askedAbout = mine.tree
+        async let asked = Self.history(of: askedAbout, from: remote)
         guard let community = try? await remote.treeCommunityHalf(id: id) else {
+            _ = await asked
             // Nothing is recorded for a refresh we cancelled ourselves — `refreshedGrove()`'s note.
             if !Task.isCancelled { await log.record(.treeProfile, .fellBackToLocal) }
             return mine
         }
+        let history = await asked
+
+        // ROADMAP 144, the species. The adder's phone takes a species somebody else gave the tree
+        // onto its own row, and reads the profile again so every line agrees with the row.
+        if let served = community.species, let speciesSeam, let speciesState,
+           mine.isAddedHere, mine.addedByYou, !speciesState.anyActQueued,
+           let servedID = served.speciesID, servedID != mine.tree.speciesCurrentID,
+           await speciesSeam.adopt(id, mine.tree.speciesCurrentID, servedID) {
+            mine = try await local.treeProfile(id: id)
+        }
+        if let flagID = community.species?.reportFlagID {
+            await servedSpeciesReports.remember(flagID: flagID, treeID: id)
+        }
+        var tree = mine.tree
+        var species = mine.species
+        if !mine.isAddedHere, mine.tree.source == .community {
+            let shown = CommunitySpeciesMerge.shownSpecies(
+                local: mine.tree.speciesCurrentID, served: community.species, state: speciesState
+            )
+            if shown != tree.speciesCurrentID {
+                // A species this phone cannot resolve keeps the phone's answer rather than drawing a
+                // tree whose species nobody can look up.
+                var resolved: Species?
+                if let shown { resolved = try? await local.species(id: shown) }
+                if shown == nil || resolved != nil {
+                    tree.speciesCurrentID = shown
+                    species = resolved
+                }
+            }
+        }
+        let addedByYou = mine.addedByYou || community.addedByYou
+        let speciesCorrection = CommunitySpeciesMerge.offer(
+            local: mine.speciesCorrection,
+            served: community.species,
+            state: speciesState,
+            isAdder: mine.addedByYou,
+            addedOnAnotherPhone: community.addedByYou && !mine.isAddedHere,
+            readerShares: mine.readerSharing == .sharing,
+            hasSpecies: tree.speciesCurrentID != nil,
+            treeID: id
+        )
 
         var photos = mine.photos.items
-        let known = Set(photos.map(\.id))
-        photos.append(contentsOf: community.photos.filter { !known.contains($0.id) })
+        let evidence = await resolvePhotoEvidence?(id) ?? .none
+        let matched = Self.photoIdentityMatch(community, onThisPhone: mine.photos.items, evidence: evidence)
+        // Matched on the wire's instants first, then dated for the screen: the copy test above
+        // compares capture seconds, and a display date must never take part in it.
+        photos.append(contentsOf: matched.added.map {
+            Self.datedForDisplay($0, capturedOn: community.capturedOn[$0.id], in: .current)
+        })
+        // Remembered so a withdrawal of one of these can name the row the service holds — see
+        // `deletePhoto(id:)`.
+        await photoIdentities.remember(
+            matched.serviceIDs,
+            deletableServiceRows: matched.added.map(\.id).filter(community.deletablePhotoIDs.contains),
+            onTree: id
+        )
 
         await log.record(.treeProfile, .live)
         return TreeProfile(
-            tree: mine.tree,
+            // ROADMAP 144: a cached tree shows the service's species once nothing of the reader's
+            // is queued (`CommunitySpeciesMerge.shownSpecies`); every other tree is the phone's.
+            tree: tree,
             activeName: mine.activeName,
-            species: mine.species,
+            species: species,
             neighborhoodName: mine.neighborhoodName,
             cityShortName: mine.cityShortName,
             latestObservation: mine.latestObservation,
@@ -979,16 +1246,239 @@ public struct RoutedAPI: CypressAPI {
             siteLineageTreeID: mine.siteLineageTreeID,
             ownPhotoIDs: mine.ownPhotoIDs.union(community.ownPhotoIDs),
             deletablePhotoIDs: mine.deletablePhotoIDs.union(community.deletablePhotoIDs),
+            // The local answer, like `measurements` itself two lines up: the readings on this
+            // payload are this phone's, the community half carries none, and there is nothing to
+            // union. A remote half that one day carried readings would have to carry this set
+            // beside them, for the reason the photo line above unions rather than picks.
+            withdrawableMeasurementIDs: mine.withdrawableMeasurementIDs,
             anonymizedPhotoIDs: mine.anonymizedPhotoIDs,
             photoTallies: mine.photoTallies,
             inventorySource: mine.inventorySource,
-            speciesCorrection: mine.speciesCorrection,
+            // ROADMAP 144: the service decides who counts, over the reader's queued acts.
+            speciesCorrection: speciesCorrection,
             recordDefect: mine.recordDefect,
             // The local answer, like `tree` itself: `tree_status_overrides` is this device's table
             // and the service has no view of it. Taking the remote half's value here would let a
             // merge quietly un-attribute a death this phone's reviewer confirmed.
-            statusProvenance: mine.statusProvenance
+            statusProvenance: mine.statusProvenance,
+            // The local answer: who added a tree is this phone's `community_trees` row, and the
+            // move it gates is a local write.
+            canMovePin: mine.canMovePin,
+            // The local answer, narrowed by one fact only the service holds: a photograph of this
+            // tree that it served the reader as somebody else's (`TreeWithdrawalOffer`).
+            treeWithdrawal: Self.withdrawalOffer(mine.treeWithdrawal, community: community),
+            // **The adder is adopted from the service when it says yes** (round C2): a tree the
+            // reader's account added on another phone reaches this one only through the cache, and
+            // only the service can say whose it is. Its "no" never overrides this phone's yes, for
+            // `TreeProfile.addedByYou`'s reasons.
+            addedByYou: addedByYou,
+            communityHistory: history,
+            // The phone's facts: which table holds the tree, and what the reader agreed to.
+            isAddedHere: mine.isAddedHere,
+            readerSharing: mine.readerSharing,
+            // The service's answer, nil unless it sent the tree (`TreeCommunityDelta.isPublished`).
+            isPublished: community.isPublished
         )
+    }
+
+    /// The withdraw offer after the service's profile read (the owner's answer of 2026-11-16, Q8).
+    ///
+    /// **Only a photograph the service served as somebody else's turns the control into the reason
+    /// line.** The service serves another identity's photograph only when it is approved, not
+    /// deleted and its bytes arrived (`store/reads.go`), and that is a photograph its withdrawal
+    /// rule counts (`othersHaveBuiltOn`). "Somebody else's" is the service's own `own_photo_ids`
+    /// answer, for the identity that will send the withdrawal. Nothing else on this read says
+    /// anybody else met the tree: it carries no visits.
+    static func withdrawalOffer(
+        _ local: TreeWithdrawalOffer,
+        community: RemoteAPI.TreeCommunityDelta
+    ) -> TreeWithdrawalOffer {
+        guard local == .available else { return local }
+        let othersPhotographed = community.photos.contains { !community.ownPhotoIDs.contains($0.id) }
+        return othersPhotographed ? .othersHaveAddedToIt : .available
+    }
+
+    /// A community tree's history from the service, or nil: a city tree (nothing is asked), the
+    /// service's `not_found`, or a read that failed.
+    static func history(of tree: Tree, from remote: RemoteAPI) async -> CommunityTreeHistory? {
+        guard tree.source == .community else { return nil }
+        return (try? await remote.treeHistory(id: tree.id)) ?? nil
+    }
+
+    /// A service photograph as the screen dates it (round C2, decision 14a).
+    ///
+    /// **When the service sent `captured_on`, the photograph is shown on that calendar date**, in
+    /// every reader's zone. Every surface formats `capturedAt` in the reader's zone, so the
+    /// photograph keeps its `captured_at` when the reader's zone already prints it as that day, and
+    /// otherwise takes the nearest second of that day in `zone` (`CalendarDay.instant(nearest:in:)`).
+    /// Without this, the noon-UTC instant the service sends a stranger renders as the next day at
+    /// UTC+12 and beyond.
+    ///
+    /// **Why the nearest second and not a fixed noon** (round C2's review): the profile sorts its
+    /// photographs by `capturedAt`, newest first, and its hero pill reads the earliest. The service
+    /// serves a contributor their own rows at the exact `captured_at` and everyone else's at noon
+    /// UTC of the date (`server/testdata/README.md`). A fixed noon in the reader's zone moved even
+    /// the exact rows: a photograph the reader took at 10:00 on another phone sorted after one they
+    /// took at 11:00 on this phone. The nearest second moves a photograph only when the reader's
+    /// zone and `captured_on` disagree about the day, and then only to the edge of that day.
+    ///
+    /// **When it did not**, the photograph keeps `captured_at`, which the reader's zone formats as
+    /// the shipped client always has. A UTC calendar would be wrong here: a photograph sent with no
+    /// date is served its exact time, and its UTC date is a day off for an evening in the Americas.
+    ///
+    /// Only the service's rows that the merge **adds** are dated this way, and only after the copy
+    /// test has run on the wire's instants. The phone's own photographs keep their real time.
+    static func datedForDisplay(_ photo: Photo, capturedOn: CalendarDay?, in zone: TimeZone) -> Photo {
+        guard let capturedOn else { return photo }
+        let shown = capturedOn.instant(nearest: photo.capturedAt, in: zone)
+        return Photo(
+            id: photo.id,
+            treeID: photo.treeID,
+            visitID: photo.visitID,
+            storageKey: photo.storageKey,
+            shotType: photo.shotType,
+            moderationState: photo.moderationState,
+            blurApplied: photo.blurApplied,
+            width: photo.width,
+            height: photo.height,
+            capturedAt: shown,
+            publicCoordinate: photo.publicCoordinate,
+            createdAt: shown,
+            updatedAt: shown,
+            deletedAt: photo.deletedAt
+        )
+    }
+
+    /// The service's photographs that are **not** a copy of one this phone holds — the rows the
+    /// merge may add without drawing any photograph twice (report F30).
+    ///
+    /// ── Three links, tried in order, and one rule for withdrawals ───────────────────────────────
+    ///
+    /// 1. **The same id.** The merge's original rule, kept: nothing on the wire today is named by a
+    ///    phone's id, but a row that is costs nothing to recognise.
+    /// 2. **The begin's key.** `GET /trees/{id}` echoes `client_uuid` on the caller's own rows and on
+    ///    no one else's (`treeProfileBody` in `reads.go`), and since F30's fix the phone mints its
+    ///    `photos.id` from that same key (`PhotoUploadRequest.idempotencyKey`). So an own row whose
+    ///    key is a live local id is that local photograph, exactly.
+    /// 3. **A photograph sent before the key was the local id.** Those carry a key the phone no
+    ///    longer holds: it was `outbox_photos.id`, and that row is deleted the moment the send
+    ///    completes. What both copies still share is what the send copied off the phone's row — the
+    ///    framing, and the capture time. So a keyed row that matched nothing is paired with one
+    ///    local photograph **that has left the phone** (`PhotoIdentityEvidence.sent`), of the same
+    ///    framing, captured in the second the service's stamp names.
+    ///
+    /// **Withdrawals.** A withdrawn photograph has no live local row, so none of the three can
+    /// match it. An own service row that a **still-queued** withdrawal names — by its id or by its
+    /// key — is hidden instead, because that withdrawal is on its way. Once the withdrawal has been
+    /// answered it is not hidden any more: a copy the service still serves after that is still
+    /// public, and its contributor seeing it is the only sign of that they get (the ruling on
+    /// #194's review, finding 3).
+    ///
+    /// ── Why the third link is bounded the way it is ─────────────────────────────────────────────
+    ///
+    /// - **Keyed rows only.** The service sends a key only to that photograph's own contributor, so
+    ///   a stranger's photograph can never be folded away however closely it matches.
+    /// - **Sent local rows only** (review of #194, finding 1). A photograph that has not been sent —
+    ///   waiting for Wi-Fi, a failed begin, a begin refused for good, the add-a-tree photograph —
+    ///   has no copy on the service, so an own row that matches it is some other photograph: the
+    ///   same account's other phone, same framing, same second. Pairing them hid that photograph and named it in this one's
+    ///   withdrawal, which would have deleted it.
+    /// - **The signed gap** (finding 2). The wire keeps whole seconds and truncates — the client's
+    ///   `.iso8601` encoder and the service's `Timestamp` both drop the fraction — while the phone's
+    ///   row keeps milliseconds. So a true copy is always `0 ≤ local − service < 1`. A symmetric
+    ///   window also accepted the *next* second, and at `t + 0.999` that folded a distinct photograph
+    ///   and drew the true copy twice.
+    /// - **One-to-one.** Each local row is paired at most once, so two photographs from one visit —
+    ///   which share a capture time, because they share an item — fold into two local rows.
+    ///
+    /// The remaining false match is the same account's other phone sending a photograph of this
+    /// tree, framed the same way, in the same second as one this phone **sent**.
+    ///
+    /// **Display only.** Nothing here uploads, re-enqueues or rewrites a row (RULINGS R77): a folded
+    /// service row is simply not added to the series this read returns.
+    static func communityPhotosNotOnThisPhone(
+        _ community: RemoteAPI.TreeCommunityDelta,
+        onThisPhone local: [Photo],
+        evidence: PhotoIdentityEvidence
+    ) -> [Photo] {
+        photoIdentityMatch(community, onThisPhone: local, evidence: evidence).added
+    }
+
+    /// `communityPhotosNotOnThisPhone`, and the service id of every phone photograph it could name
+    /// **without guessing** — the id a withdrawal of that photograph must carry (`deletePhoto(id:)`).
+    ///
+    /// `serviceIDs` maps a local `photos.id` to the service's `photo_id` for link 2, which is exact,
+    /// and for a link-3 pair only when the pair is **unambiguous**: the service row had exactly one
+    /// local candidate and that local row was a candidate for exactly one service row. Two
+    /// photographs from one visit with the same framing share a capture time, so their copies could
+    /// be paired either way round. That is harmless for a count and not for a deletion, where naming
+    /// the wrong copy would withdraw the photograph the person kept and leave the one they withdrew
+    /// public. So those are folded for display and never named.
+    ///
+    /// `local` is the profile's **live** rows. A row listed twice is counted once.
+    static func photoIdentityMatch(
+        _ community: RemoteAPI.TreeCommunityDelta,
+        onThisPhone local: [Photo],
+        evidence: PhotoIdentityEvidence
+    ) -> (added: [Photo], serviceIDs: [UUID: UUID]) {
+        var seen: Set<UUID> = []
+        let local = local.filter { seen.insert($0.id).inserted }
+        let localIDs = Set(local.map(\.id))
+
+        // Links 1 and 2, and the rows a queued withdrawal is taking down.
+        var unmatched: [Photo] = []
+        var claimed: Set<UUID> = []
+        var serviceIDs: [UUID: UUID] = [:]
+        for photo in community.photos {
+            let key = community.clientUUIDs[photo.id]
+            if localIDs.contains(photo.id) {
+                claimed.insert(photo.id)
+                continue
+            }
+            if let key, localIDs.contains(key) {
+                claimed.insert(key)
+                serviceIDs[key] = photo.id
+                continue
+            }
+            if community.ownPhotoIDs.contains(photo.id),
+               evidence.withdrawing.contains(photo.id) || key.map(evidence.withdrawing.contains) == true {
+                continue
+            }
+            unmatched.append(photo)
+        }
+
+        // Link 3: keyed service rows, and local rows that have left the phone.
+        let candidates = local.filter { !claimed.contains($0.id) && evidence.sent.contains($0.id) }
+        let gap = { (localPhoto: Photo, servicePhoto: Photo) in
+            localPhoto.capturedAt.timeIntervalSince(servicePhoto.capturedAt)
+        }
+        let isCopy = { (localPhoto: Photo, servicePhoto: Photo) -> Bool in
+            let seconds = gap(localPhoto, servicePhoto)
+            return localPhoto.shotType == servicePhoto.shotType && seconds >= 0 && seconds < 1
+        }
+        let keyedUnmatched = unmatched.filter { community.clientUUIDs[$0.id] != nil }
+
+        // Which pairs are unambiguous is decided over the whole set, before any row is taken: a
+        // service row that is "the only one left" after its twin paired first is not thereby known.
+        for servicePhoto in keyedUnmatched {
+            let twins = candidates.filter { isCopy($0, servicePhoto) }
+            guard twins.count == 1, let only = twins.first else { continue }
+            let rivals = keyedUnmatched.filter { isCopy(only, $0) }
+            if rivals.count == 1 { serviceIDs[only.id] = servicePhoto.id }
+        }
+
+        var remaining = candidates
+        var added: [Photo] = []
+        for photo in unmatched {
+            guard community.clientUUIDs[photo.id] != nil,
+                  let twin = remaining.firstIndex(where: { isCopy($0, photo) })
+            else {
+                added.append(photo)
+                continue
+            }
+            remaining.remove(at: twin)
+        }
+        return (added, serviceIDs)
     }
 
     /// The bytes of a photograph, from the phone when it has them and from the service when it
@@ -1048,45 +1538,48 @@ extension RoutedAPI {
     /// Names and positions for trees only the account knows about, from the city file.
     ///
     /// **Three outcomes per tree, and the difference between the last two is the whole of `CityFileRows`.**
-    /// A tree is `named`; or it is `unnamed` — the inventories hold it and D15 gives it no name; or it
-    /// is in neither, which means the inventories do not carry it at all. Under D16 the last is an
-    /// ordinary case rather than an error (the other device may have been in a city this installation
-    /// has not installed), and it is the only one of the three that marks the read degraded, because
-    /// it is the only one where part of the service's answer did not make it.
+    /// A tree is `named` (with an empty title when the rule gives it no name, drawn as "Tree"); or
+    /// it is `unnamed` — a community tree this phone withdrew, which only the provider arm can see;
+    /// or it is in neither, which means the inventories do not carry it at all. Under D16
+    /// the last is an ordinary case rather than an error (the other device may have been in a city
+    /// this installation has not installed), and it is the only one of the three that marks the read
+    /// degraded, because it is the only one where part of the service's answer did not make it.
     ///
-    /// ── The name rule, which is D15's and which both arms now apply ────────────────────────────
+    /// ── The name rule, which both arms apply ───────────────────────────────────────────────────
     ///
-    /// The one active nickname; else the **seed** species' common name; never a fabricated label. The
-    /// second fallback deliberately does not consult a *community* record's species, and PR #144's
-    /// review is why that sentence is here rather than merely implied: this loop used to read
-    /// `profile.species?.commonName` unconditionally, and `LocalAPI.treeProfile` fills that field for
-    /// a community record out of `tree.speciesCurrentID` — somebody's self-assertion about a tree they
-    /// added. So a nickname-less community tree carrying a claimed species got named after it, which
-    /// `LocalAPI.grove()` has always refused to do ("a self-asserted species is not a name the app
-    /// puts on a tree", D15) and which this method's own comment already claimed it refused. The
-    /// reviewer proved the two arms disagreed on exactly that row. The batch's rule is the ruled one;
-    /// the loop was the drift, and the `source == .community` guard below is the correction.
+    /// The one active nickname; else the species the tree's profile title shows, for a city tree and
+    /// a community tree alike; never a fabricated label. This loop reads that species off
+    /// `treeProfile`, which is the profile title's own source. The provider arm
+    /// (`LocalAPI.groveCityFileRows`) reads it through `LocalAPI.communitySpeciesNames`, the same
+    /// rule the Journal and the Outbox use.
+    ///
+    /// **History, kept because it is why the two arms are tested against each other.** PR #144's
+    /// review found this loop naming a nickname-less community tree after its species while the
+    /// batch did not, and the fix then made the loop refuse the species (D15's "a self-asserted
+    /// species is not a name the app puts on a tree"). The owner's answer of 2026-11-16, "Yes, use
+    /// the species", replaced that rule for My Grove, so both arms now name the tree by its species.
     ///
     /// `GroveCityFileBatchTests` holds the two arms against each other row for row over a fixture
-    /// that now carries that shape, because "the same answer, in one query" is exactly the kind of
+    /// that carries that shape, because "the same answer, in one query" is exactly the kind of
     /// claim this project has been wrong about in a comment.
     func resolvedCityFileRows(for treeIDs: [UUID]) async -> CityFileRows {
         guard !treeIDs.isEmpty else { return CityFileRows(named: [:], unnamed: []) }
         if let resolveGroveRows { return await resolveGroveRows(treeIDs) }
 
         var named: [UUID: CityFileRow] = [:]
-        var unnamed: Set<UUID> = []
         for treeID in treeIDs {
             guard let profile = try? await local.treeProfile(id: treeID) else { continue }
-            // D15: a community record's species is a self-assertion, not a name. See the note above.
-            let speciesName = profile.tree.source == .community ? nil : profile.species?.commonName
-            guard let name = profile.activeName?.name ?? speciesName, !name.isEmpty else {
-                unnamed.insert(treeID)
-                continue
-            }
+            // The species the profile title shows, for a city tree and a community tree alike (the
+            // owner's answer of 2026-11-16, "Yes, use the species"). See the note above.
+            // A tree with neither is named with an empty title, which My Grove draws as "Tree"
+            // (ROADMAP chip 206). A tree this phone withdrew throws `notFound` from `treeProfile`
+            // and lands in neither set here, where the provider arm answers `unnamed`; production
+            // always takes the provider arm.
+            let speciesName = profile.species?.commonName
+            let name = profile.activeName?.name ?? speciesName ?? ""
             named[treeID] = CityFileRow(displayName: name, coordinate: profile.tree.coordinate)
         }
-        return CityFileRows(named: named, unnamed: unnamed)
+        return CityFileRows(named: named, unnamed: [])
     }
 
     /// The two names of species only the account knows about, from the city file.
@@ -1106,4 +1599,60 @@ extension RoutedAPI {
         }
         return found
     }
+}
+
+// MARK: - Which service row is this phone's photograph
+
+/// The service's `photo_id` for each of the phone's photographs that a profile refresh has matched
+/// to one (report F30), by the phone's `photos.id`.
+///
+/// **Memory, deliberately.** A persistent map is a column or a table, and a table is a migration
+/// this round does not hold. It is read at exactly one moment — a person withdrawing a photograph,
+/// from a screen that refreshed the tree it is on — so what a launch forgets, the next refresh of
+/// that tree relearns.
+///
+/// It also holds, by service id, the caller's own service rows the last refresh of each tree **drew**
+/// (did not fold), with their tree — the rows `RoutedAPI.deletePhoto(id:)` withdraws by the
+/// service's id because the phone holds nothing for them. Replaced per tree on every refresh, so a
+/// row that has since folded or gone is forgotten.
+public actor PhotoIdentityLedger {
+    private var byLocalID: [UUID: UUID] = [:]
+    private var drawnServiceRows: [UUID: UUID] = [:]
+
+    public init() {}
+
+    func remember(_ pairs: [UUID: UUID], deletableServiceRows: [UUID], onTree treeID: UUID) {
+        byLocalID.merge(pairs) { _, newer in newer }
+        drawnServiceRows = drawnServiceRows.filter { $0.value != treeID }
+        for row in deletableServiceRows { drawnServiceRows[row] = treeID }
+    }
+
+    func serviceID(for localID: UUID) -> UUID? {
+        byLocalID[localID]
+    }
+
+    func treeOfServiceRow(_ serviceID: UUID) -> UUID? {
+        drawnServiceRows[serviceID]
+    }
+}
+
+/// What the phone knows about one tree's photographs that the service's rows cannot say, for
+/// `RoutedAPI.photoIdentityMatch` (report F30).
+public struct PhotoIdentityEvidence: Sendable, Equatable {
+    /// Live local photographs that have left the phone — applied through the outbox, with no send
+    /// still owed and none refused for good (`ContributionStore.sentPhotoIDs`). The only rows the
+    /// inexact link may pair.
+    public var sent: Set<UUID>
+    /// The ids this phone's **still-queued** `photo_withdrawal`s on the tree name
+    /// (`OutboxStore.queuedPhotoWithdrawals`): the phone's id, which is the begin's key, or the
+    /// service's row.
+    public var withdrawing: Set<UUID>
+
+    public init(sent: Set<UUID>, withdrawing: Set<UUID>) {
+        self.sent = sent
+        self.withdrawing = withdrawing
+    }
+
+    /// Nothing known: fold only what an id or a key proves.
+    public static let none = PhotoIdentityEvidence(sent: [], withdrawing: [])
 }

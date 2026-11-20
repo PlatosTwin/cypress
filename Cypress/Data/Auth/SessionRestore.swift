@@ -56,16 +56,22 @@
 //  - **`current_user_role`** — no route on this service returns it. It reads back as `.member`
 //    (`AppStateKey.currentUserRole`: "absent means member"), which is the ground state and the safe
 //    direction: a role is authority, and inventing one from a reinstall would grant it.
-//  - **`account_provider` and `account_license_version`** — no route returns these either. They are
-//    left **unwritten**, which is not a gap being papered over: `AccountLinkRecord`'s header already
-//    names this exact shape — "a missing `provider` is an account claimed by something other than
-//    screen 15" — and `AccountCopy.licenseLine(for:)` already returns nil for it, so the You tab
-//    draws no license line rather than a wrong one. Writing `LicenseConsent.currentVersion` here
-//    would be this app claiming somebody agreed to a license on the strength of a reinstall.
+//  - **`account_provider` and `account_license_version`** — these now travel, inside the session.
+//    Both session answers carry the account's stored license answer (`license_version`, ROADMAP
+//    chip 148), the session keeps it in the Keychain (`SessionCredentials.licenseVersion`), and the
+//    restore writes it back through `LocalAPI.adoptLicenseAnswer` with no round trip. An accepted
+//    answer reads `.sharing`; a `null` reads "did not agree", which draws the "Share my tree
+//    records" row (the orchestrator's choice of 2026-11-16, to be confirmed by the owner; the
+//    service cannot tell "declined" from "never asked"). A session stored by an older build carries
+//    no answer, and then both are left **unwritten**: `AccountLinkRecord`'s header names that shape
+//    ("a missing `provider` is an account claimed by something other than screen 15") and
+//    `AccountCopy.licenseLine(for:)` returns nil for it, so the You tab draws no license line until
+//    the first refresh brings the answer. The phone never writes `LicenseConsent.currentVersion` on
+//    the strength of a reinstall; it writes only what the service stored.
 //
 //    That is also the whole of the answer to DECISIONS constraint 21 for this round: **the restored
-//    state needs no drawn state of its own.** It is the signed-in You tab, minus a line the mocks
-//    already allow to be absent. No spinner, no partial-data state, nothing invented — and nothing
+//    state needs no drawn state of its own.** It is the signed-in You tab, with the license line and
+//    row the mocks already have, or without the line, which the mocks already allow to be absent. No spinner, no partial-data state, nothing invented — and nothing
 //    to invent one for, because the restore is synchronous, offline and finished before the first
 //    frame.
 //  - **the journal, and the photographs** — not rebuildable, and not faked. `RemoteAPI.journal`

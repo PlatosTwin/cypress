@@ -34,16 +34,23 @@ struct TreeProfilePresentation {
 
     /// One row of the activity feed (C9).
     struct ActivityItem: Identifiable {
-        enum Kind { case visit, care }
+        /// `history` is one event of a community tree's public history (round C3): added, pin
+        /// moved, species named, species corrected.
+        enum Kind { case visit, care, history }
 
         let id: UUID
         let kind: Kind
-        /// The bold lead-in: `Visit` / `Care`.
+        /// The bold lead-in: `Visit` / `Care` / `Added` / `You moved the pin`.
         let label: String
         /// Everything after it, verbatim including its separator.
         let detail: String
         /// Trailing mono timestamp, e.g. `Oct 12`.
         let timestamp: String
+        /// The day the row is dated by, as its timestamp prints it, and the instant the feed sorts
+        /// by within that day. A history row has only a day; its instant is that day's noon in the
+        /// reader's zone.
+        let day: CalendarDay
+        let sortDate: Date
     }
 
     /// Where a stat card leads, when it leads anywhere.
@@ -318,8 +325,9 @@ struct TreeProfilePresentation {
     ///   tree for Share to render badly.
     ///
     /// The two things 14's delta list is still honored on are the regulars row and the activity
-    /// feed, which the view keeps behind `isCold` — and those are the two that would draw *nothing*
-    /// on a cold record anyway, because there are no caretakers and no activity to draw.
+    /// feed, which the view keeps behind `isCold`. Since round C3 the feed is behind it for city
+    /// trees only: a cold community tree draws its history rows. A cold city tree can still carry
+    /// care entries, because `isCold` reads photos and visits only, and its feed stays hidden.
     ///
     /// `acceptsContributions` still decides which cells (`quadActions`), so a memorial keeps losing
     /// the two that write (E95, E112). This is the row's existence, not its contents.
@@ -481,10 +489,13 @@ struct TreeProfilePresentation {
         return TreeProfilePresentation.speciesNamedByContributor
     }
 
-    /// "a contributor", not "the contributor". `community_trees` records no author — it has no
-    /// `user_id` and no `device_id` — so the record cannot say *which* person, and a line that said
-    /// "the contributor" would imply the one who added the tree and quietly be wrong the moment a
-    /// second person names the species on somebody else's row.
+    /// "a contributor", not "the contributor". The species on a community tree is named by a
+    /// species statement, and the person who made it need not be the one who added the tree:
+    /// `claimSpecies` takes a first name from anybody, and `AppSchema` v23's adder column says who
+    /// added the tree, not who named it. On somebody else's tree the phone does not know either —
+    /// the service serves no actor (the owner's decision 4). So the record cannot say *which*
+    /// person, and a line that said "the contributor" would imply the adder and quietly be wrong
+    /// the moment a second person names the species on somebody else's row.
     static let speciesNamedByContributor = "species named by a contributor"
 
     /// Whether this screen offers to name the species — the "after" half of the owner's request.
@@ -504,8 +515,75 @@ struct TreeProfilePresentation {
     /// - **Only where a contribution is welcome.** A memorial and a vacant site refuse every other
     ///   write on this screen (E95); naming the species of a tree that has been removed, or of a site
     ///   that never had one, is the same kind of claim about a thing that is not there.
+    /// - **On a tree somebody else added, only for a reader who shares (ROADMAP 144).** The first
+    ///   answer names the tree for everyone (the owner's ruling of 2026-11-15), and the service
+    ///   counts it only from a signed-in account that agreed to share tree records (the owner's
+    ///   answer of 2026-11-16, "Only people who share"). For everybody else the control does not
+    ///   show, as the C3 build had it. The reader's own tree keeps the control whatever they agreed.
+    /// - **Not on a tree the reader added on another phone**, which reaches this one only through
+    ///   the cache: the claim there would be the adder's, and nothing on this phone can act as the
+    ///   adder of a tree it does not hold (ROADMAP 144, recorded as open).
     var offersSpeciesClaim: Bool {
-        tree.source == .community && species == nil && acceptsContributions
+        guard tree.source == .community, species == nil, acceptsContributions else { return false }
+        if profile.addedByYou { return profile.isAddedHere }
+        return profile.readerSharing == .sharing
+    }
+
+    /// The note under "Report the species as wrong": where the report goes.
+    ///
+    /// On a community tree somebody else added the report reaches the person who added it and a
+    /// reviewer (the owner's answer of 2026-11-16, "Name the adder"). Any other tree answers the
+    /// older sentence, but no screen draws it now: the view draws this note only with the
+    /// `.reportable` offer, the adder never gets that offer, and a city row gets `.dataDispute`.
+    var reportSpeciesNote: String {
+        tree.source == .community && !profile.addedByYou
+            ? TreeProfileCopy.reportSpeciesNoticeOthersTree
+            : TreeProfileCopy.reportSpeciesNotice
+    }
+
+    /// The line that tells the adder of a community tree that only they can see it yet (round C3).
+    ///
+    /// Drawn only when all of these hold, and each is the owner's (2026-11-14 and 2026-11-15):
+    /// - **The reader added the tree.** Nobody else is told anything about who can see it.
+    /// - **The service has not said the tree is public.** An `is_published` of true draws nothing.
+    /// - **The reader is signed out, or signed in without agreeing to share.** Signed out: the
+    ///   service keeps a device's trees private until a sign-in claims them. Not sharing: it
+    ///   publishes an account's trees only once the account agrees (`publishAccountTrees`).
+    /// - **When the phone does not know the answer** (`.unknown`: a reinstall, or an account from
+    ///   before the answer was stored), nothing, unless the service says this tree is not public.
+    ///   Then the reader is signed in and the tree is held back, which is the not-sharing case.
+    ///
+    /// A reader who agreed gets no line, even for an add the service refused: the Outbox screen
+    /// already says that one could not be sent.
+    var onlyYouCanSeeNote: String? {
+        guard tree.source == .community, profile.addedByYou else { return nil }
+        guard profile.isPublished != true else { return nil }
+        switch profile.readerSharing {
+        case .signedOut:
+            return TreeProfileCopy.onlyYouSignedOut
+        case .notSharing:
+            return TreeProfileCopy.onlyYouNotSharing
+        case .unknown:
+            return profile.isPublished == false ? TreeProfileCopy.onlyYouNotSharing : nil
+        case .sharing, nil:
+            return nil
+        }
+    }
+
+    /// What the record controls draw about withdrawing this tree (the owner's answers of
+    /// 2026-11-16). Decided behind `CypressAPI` (`TreeProfile.treeWithdrawal`), because the
+    /// answer needs the adder and the reader.
+    var treeWithdrawal: TreeWithdrawalOffer {
+        tree.source == .community ? profile.treeWithdrawal : .unavailable
+    }
+
+    /// The alert's message: the "only you" one exactly when the profile tells the reader that only
+    /// they can see the tree (`onlyYouCanSeeNote`), and the shared one otherwise. One rule, so the
+    /// alert can never say "only you" about a tree the profile says everyone sees, or the reverse.
+    var withdrawTreeMessage: String {
+        onlyYouCanSeeNote == nil
+            ? TreeProfileCopy.withdrawTreeMessageShared
+            : TreeProfileCopy.withdrawTreeMessageOnlyYou
     }
 
     /// What this screen offers about a species that has **already** been claimed — tickets #86 and
@@ -541,7 +619,33 @@ struct TreeProfilePresentation {
     /// claim that the record was never true is *most* worth making about a record the app has
     /// stopped taking contributions on, and a memorial for a tree that never lived is precisely the
     /// state R46 exists to prevent.
-    var recordDefect: RecordDefectOffer { profile.recordDefect }
+    ///
+    /// ── One narrowing, made here: the adder who can withdraw is not offered the report ──────────
+    ///
+    /// The owner's answer of 2026-11-16 ("Hide it while withdraw shows"): "The adder sees only
+    /// "Withdraw this tree". When the tree cannot be withdrawn because others added to it, the report
+    /// link comes back as the adder's way to say the tree is gone." So `.reportable` is drawn as
+    /// `.unavailable` exactly while `treeWithdrawal` is `.available`. Every other arm passes through:
+    /// a report already raised still reads `.underReview`, the reason line brings the link back, and
+    /// a reader who did not add the tree never has `.available`.
+    ///
+    /// **Here and not in `LocalAPI`**, because the withdrawal offer is final only after
+    /// `RoutedAPI.withdrawalOffer` has read the service's photographs, which can turn `.available`
+    /// into `.othersHaveAddedToIt`. A rule in the local offer would hide the link on a tree whose
+    /// profile then draws the reason line. `flagNeverExisted` is left as it is: a report is still a
+    /// valid act on a community tree this phone added, and the screen simply does not offer it.
+    var recordDefect: RecordDefectOffer {
+        if case .reportable = profile.recordDefect, treeWithdrawal == .available { return .unavailable }
+        return profile.recordDefect
+    }
+
+    /// Whether this screen offers to move the tree's pin: the owner's Move pin control of
+    /// 2026-11-12, **NOT SPECIFIED** in SCREENS.md. Read straight off the payload for
+    /// `speciesCorrection`'s reason: "the reader added this tree" is an `Attribution` question.
+    /// `LocalAPI` answers it with `correctLocation`'s adder test plus ROADMAP 107's test that the
+    /// service may hold the tree. Hidden for every tree the reader did not add, a city record
+    /// included, and for a tree the service never received.
+    var offersMovePin: Bool { profile.canMovePin }
 
     /// How this record's coordinate was arrived at — the fourth element of the subtitle, and the last
     /// one, because it is the finest-grained provenance fact the row carries.
@@ -779,7 +883,19 @@ struct TreeProfilePresentation {
     /// screen 13's shipped state is a header and one line, because no tree in the seed carries any
     /// activity at all; a link that led there from a profile with nothing on it would be a door onto
     /// the empty state, which is ARCHITECTURE §5.6's argument in link form.
-    var offersActivityLink: Bool { !activity.isEmpty }
+    ///
+    /// **Visits and care only (round C3).** Every community tree now draws at least its "Added"
+    /// row, and screen 13 charts visits, check-ins and care, none of which a history row is. A link
+    /// from a tree whose feed is history alone would open that empty state again.
+    var offersActivityLink: Bool { !visitAndCareItems.isEmpty }
+
+    /// Whether the view draws the activity feed at all (round C3).
+    ///
+    /// Before C3 the feed sat behind `!isCold`, per screen 14's "no activity feed". A cold
+    /// community tree now draws it, because its "Added" row must show. A cold city tree still does
+    /// not, even with care entries: `isCold` reads photos and visits only, so a city tree with care
+    /// and nothing else is cold, and screen 14 stays as it was for it.
+    var drawsActivityFeed: Bool { !isCold || tree.source == .community }
 
     // MARK: - Regulars row (A8, D1)
 
@@ -855,8 +971,37 @@ struct TreeProfilePresentation {
 
     // MARK: - Activity feed
 
-    /// Visits and care events, most recent first.
+    /// Visits, care events and a community tree's history, most recent first, at most
+    /// `activityLimit` of them.
+    ///
+    /// **The order (round C3).** Newest day first. On one day, visits and care sort above history
+    /// rows, and history rows keep the service's order (newest first) with the phone's own
+    /// "Added" row last. A history row carries a day and no time, so "above" is the only order that
+    /// does not invent one: a visit and a pin move on the same day have no known order, and a
+    /// history row placed at a guessed hour would jump around visits as their times change.
     var activity: [ActivityItem] {
+        let items = visitAndCareItems + historyItems
+        let ordered = items.enumerated().sorted { left, right in
+            let (a, b) = (left.element, right.element)
+            if a.day != b.day { return a.day > b.day }
+            let aHistory = a.kind == .history
+            let bHistory = b.kind == .history
+            if aHistory != bHistory { return !aHistory }
+            if aHistory { return left.offset < right.offset }
+            if a.sortDate != b.sortDate { return a.sortDate > b.sortDate }
+            return left.offset < right.offset
+        }
+        return Array(ordered.map(\.element).prefix(TreeProfilePresentation.activityLimit))
+    }
+
+    /// SCREENS.md draws two rows on 03 but does not say what bounds the feed. Four is a "recent
+    /// history" window that keeps the screen near its drawn height; it is a **judgment call**, not
+    /// a spec value. The owner's answer of 2026-11-14 keeps it for history rows too: "That list
+    /// shows the four most recent rows, so older rows drop off."
+    static let activityLimit = 4
+
+    /// The visit and care rows, unsorted.
+    private var visitAndCareItems: [ActivityItem] {
         var items: [ActivityItem] = visibleVisits.items.map { visit in
             ActivityItem(
                 id: visit.id,
@@ -866,7 +1011,9 @@ struct TreeProfilePresentation {
                     note: visit.note,
                     phenologyTags: visit.phenologyTags
                 ),
-                timestamp: TreeProfilePresentation.dayStamp.string(from: visit.capturedAt)
+                timestamp: TreeProfilePresentation.dayStamp.string(from: visit.capturedAt),
+                day: readerDay(of: visit.capturedAt),
+                sortDate: visit.capturedAt
             )
         }
         items += profile.careEvents.items.filter { $0.deletedAt == nil }.map { event in
@@ -877,26 +1024,91 @@ struct TreeProfilePresentation {
                 detail: event.actions.isEmpty
                     ? ""
                     : " · " + event.actions.map(TreeProfilePresentation.careActionLabel).joined(separator: ", "),
-                timestamp: TreeProfilePresentation.dayStamp.string(from: event.capturedAt)
+                timestamp: TreeProfilePresentation.dayStamp.string(from: event.capturedAt),
+                day: readerDay(of: event.capturedAt),
+                sortDate: event.capturedAt
             )
         }
-        return Array(
-            items
-                .sorted { left, right in sortDate(of: left) > sortDate(of: right) }
-                .prefix(TreeProfilePresentation.activityLimit)
+        return items
+    }
+
+    /// A community tree's history rows (round C3), unsorted. Empty for a city tree.
+    ///
+    /// **"You" is the service's `by_you` for each row** (ROADMAP 144): since a contributor's naming
+    /// and the operator's correction make events too, the adder is no longer the only actor. A
+    /// service that sends no `by_you` (release v16 and older) serves only the adder's events, so
+    /// the row is the reader's exactly when the reader added the tree
+    /// (`CommunityTreeHistory.Event.isByReader`). A contributor's or the operator's species row
+    /// keeps the adder's words, "Species named" and "Species corrected" (the orchestrator's choice
+    /// of 2026-11-16, "history wording does not change"). The "Added" row the phone draws itself
+    /// is the adder's act, so it still reads `addedByYou`.
+    ///
+    /// **The "Added" row is always there.** The service's `added` event when the history has one;
+    /// otherwise (no history read, an empty one, or one capped before its oldest row) a row from
+    /// what the phone knows, with no message about the rest (the owner's answer of 2026-11-14).
+    /// Its day is the day the tree was added on its adder's phone (the owner's ruling of
+    /// 2026-11-15): for this phone's own row that is the add's instant in the reader's zone, and
+    /// for a cached row it is the service's day, which the cache stores as midnight UTC and which
+    /// must be read as the UTC day, never in the reader's zone.
+    private var historyItems: [ActivityItem] {
+        guard tree.source == .community else { return [] }
+        let byYou = profile.addedByYou
+        let events = profile.communityHistory?.events ?? []
+        var items: [ActivityItem] = events.compactMap { event in
+            let label: String
+            var detail = ""
+            let mine = event.isByReader(readerAddedTree: byYou)
+            switch event.kind {
+            case .added:
+                label = mine ? TreeProfileCopy.historyAddedByYou : TreeProfileCopy.historyAdded
+            case .locationCorrected:
+                label = mine ? TreeProfileCopy.historyPinMovedByYou : TreeProfileCopy.historyPinMoved
+                detail = TreeProfileCopy.pinMovedDetail(from: event.fromCoordinate, to: event.toCoordinate)
+            case .speciesNamed, .speciesNamedByContributor:
+                label = mine ? TreeProfileCopy.historySpeciesNamedByYou : TreeProfileCopy.historySpeciesNamed
+            case .speciesCorrected, .speciesCorrectedByContributor, .speciesCorrectedByOperator:
+                label = mine
+                    ? TreeProfileCopy.historySpeciesCorrectedByYou
+                    : TreeProfileCopy.historySpeciesCorrected
+            case .unrecognized:
+                // A kind the service learned after this build: no row, rather than a guess.
+                return nil
+            }
+            return historyItem(id: event.id, label: label, detail: detail, day: event.day)
+        }
+        if !events.contains(where: { $0.kind == .added }) {
+            let day = profile.isAddedHere
+                ? readerDay(of: tree.createdAt)
+                : CalendarDay(utcDayOf: tree.createdAt)
+            items.append(historyItem(
+                id: tree.id,
+                label: byYou ? TreeProfileCopy.historyAddedByYou : TreeProfileCopy.historyAdded,
+                detail: "",
+                day: day
+            ))
+        }
+        return items
+    }
+
+    private func historyItem(id: UUID, label: String, detail: String, day: CalendarDay) -> ActivityItem {
+        ActivityItem(
+            id: id,
+            kind: .history,
+            label: label,
+            detail: detail,
+            timestamp: TreeProfilePresentation.stamp(day),
+            day: day,
+            sortDate: day.midday(in: calendar.timeZone)
         )
     }
 
-    /// SCREENS.md draws two rows on 03 but does not say what bounds the feed. Four is a "recent
-    /// history" window that keeps the screen near its drawn height; it is a **judgment call**, not
-    /// a spec value.
-    static let activityLimit = 4
-
-    private func sortDate(of item: ActivityItem) -> Date {
-        if item.kind == .visit {
-            return visibleVisits.items.first { $0.id == item.id }?.capturedAt ?? .distantPast
-        }
-        return profile.careEvents.items.first { $0.id == item.id }?.capturedAt ?? .distantPast
+    /// The day an instant falls on in the reader's zone (`calendar`'s).
+    private func readerDay(of instant: Date) -> CalendarDay {
+        let parts = calendar.dateComponents([.year, .month, .day], from: instant)
+        guard let year = parts.year, let month = parts.month, let day = parts.day,
+              let readerDay = CalendarDay(year: year, month: month, day: day)
+        else { return CalendarDay(utcDayOf: instant) }
+        return readerDay
     }
 
     /// Everything after the bold `Visit`, separator included: the note the mock draws, then the
@@ -1430,6 +1642,22 @@ struct TreeProfilePresentation {
     /// `Oct 12`.
     static let dayStamp = fixedFormat("MMMd")
 
+    /// `Mar 20` for a calendar day (round C3), in every reader's zone: `dayStamp`'s format, fixed
+    /// to UTC and given the day's noon in UTC, so no zone can move it. A community-tree day travels
+    /// as midnight UTC, and formatting that instant in the reader's zone prints the day before
+    /// anywhere west of UTC.
+    static func stamp(_ day: CalendarDay) -> String {
+        utcDayStamp.string(from: day.midday(in: utc))
+    }
+
+    private static let utc = TimeZone(secondsFromGMT: 0) ?? .gmt
+
+    private static let utcDayStamp: DateFormatter = {
+        let formatter = fixedFormat("MMMd")
+        formatter.timeZone = utc
+        return formatter
+    }()
+
     /// `26 July 2026` — the day the city's inventory was read.
     ///
     /// Spelled out rather than `Jul 26`: this stamp is read once, at the bottom of a section, by
@@ -1467,6 +1695,69 @@ enum TreeProfileCopy {
     /// It asks rather than instructs, and it says *you think* rather than *it is*, because the act it
     /// starts records an opinion and the label should not promise more than the column stores.
     static let claimSpeciesAction = "Say what species you think this is"
+
+    // MARK: - A community tree's history (round C3)
+
+    // The owner's words, chosen in the question dialog of 2026-11-14, one pair per event: what
+    // other readers see, and what the person who did it sees on their own phone. Every event the
+    // service serves was made by the tree's adder (only the adder publishes, moves the pin, or
+    // names the species in a way that makes an event), so "the person who did it" is the adder.
+
+    static let historyAdded = "Added"
+    static let historyAddedByYou = "You added this tree"
+    static let historyPinMoved = "Pin moved"
+    static let historyPinMovedByYou = "You moved the pin"
+    static let historySpeciesNamed = "Species named"
+    static let historySpeciesNamedByYou = "You named the species"
+    static let historySpeciesCorrected = "Species corrected"
+    static let historySpeciesCorrectedByYou = "You corrected the species"
+
+    /// ` · 12 m north`: how far a move took the pin, in whole meters, and which of the eight
+    /// directions, in the words the Move pin screen uses (`VisitPinAdjustCopy.spelledOut`). Empty
+    /// when either end of the move is unknown, so the row reads `Pin moved` alone.
+    static func pinMovedDetail(from origin: Coordinate?, to destination: Coordinate?) -> String {
+        guard let origin, let destination else { return "" }
+        let meters = Int(origin.distance(to: destination).rounded())
+        // A move that rounds to 0 m names no direction, as `VisitShortlist.label` prints a
+        // distance that rounds to 0 m. The owner has not ruled on this case.
+        guard meters > 0 else { return " · 0 m" }
+        let heading = VisitPinAdjustCopy.spelledOut(VisitBearing.compass(from: origin, to: destination))
+        return " · \(meters) m \(heading)"
+    }
+
+    // MARK: - Your own tree that only you can see (round C3)
+
+    // The owner's words of 2026-11-15, which replaced the approved "This tree is only on this
+    // phone…" lines: the phone does send such a tree to the service, which keeps it private.
+
+    /// Signed out, on a tree this reader added.
+    static let onlyYouSignedOut = "Only you can see this tree. Everyone can see it after you sign in."
+    /// Signed in, and the account did not agree to share tree records.
+    static let onlyYouNotSharing =
+        "Only you can see this tree. Everyone can see it after you agree to share your tree records."
+
+    // MARK: - Withdrawing a tree you added (the owner's answers of 2026-11-16)
+
+    // Every string below is the owner's, character for character.
+
+    /// The control, in the record controls below "Report that there is no tree here".
+    static let withdrawTreeAction = "Withdraw this tree"
+    /// The alert's title.
+    static let withdrawTreeConfirmTitle = "Withdraw this tree?"
+    /// The alert's destructive button.
+    static let withdrawTreeConfirmAction = "Withdraw tree"
+    /// The alert's cancel button.
+    static let withdrawTreeCancel = "Keep it"
+    /// The alert's message for a tree other people can see.
+    static let withdrawTreeMessageShared = "Everyone using Cypress stops seeing this tree once this "
+        + "is sent. If someone else has visited or photographed it, it stays. This cannot be undone."
+    /// The alert's message for a tree only the reader can see.
+    static let withdrawTreeMessageOnlyYou =
+        "Only you can see this tree. It comes off the map. This cannot be undone."
+    /// The line drawn in place of the control when this phone already knows the service would
+    /// refuse (`TreeWithdrawalOffer.othersHaveAddedToIt`). The same sentence the Outbox row reads
+    /// after a refusal, so it is the one constant.
+    static let treeStaysOnTheMap = OutboxFailureReason.treeStaysOnTheMap
 
     // MARK: - The species the record never named (see `TreeProfilePresentation.unreadSpeciesNote`)
 
@@ -1522,8 +1813,10 @@ enum TreeProfileCopy {
         "Cypress reads the city's record as a tree \(place)."
     }
 
-    /// "A contributor", not "the contributor" — `community_trees` records no author, exactly as
-    /// `speciesNamedByContributor` explains one block up.
+    /// "A contributor", not "the contributor". The land context is stated by whoever added the
+    /// tree, and since `AppSchema` v23 this phone records its own adds' adder — but a tree from the
+    /// service arrives with no actor at all (the owner's decision 4), and the one sentence serves
+    /// both. `speciesNamedByContributor` one block up gives the rest of the argument.
     ///
     /// It states the fact directly, where the inferred arm cites itself, because a contributor
     /// standing at the tree *observed* this. Softening an observation into a reading would be the
@@ -1573,6 +1866,11 @@ enum TreeProfileCopy {
     /// tapping this is reasonably hoping somebody official will fix the record, and DECISIONS §3.3
     /// forbids implying it (D16 made that permanent).
     static let reportSpeciesNotice = "This goes to a community reviewer. The city is not notified."
+
+    /// The same note on a community tree somebody else added, where a report now reaches the
+    /// tree's adder (ROADMAP 144). The owner's exact words of 2026-11-16 ("Name the adder").
+    static let reportSpeciesNoticeOthersTree =
+        "This goes to the person who added the tree and to a reviewer. The city is not notified."
 
     /// Drawn while a report is open, to everybody: the disagreement is on the record and the screen
     /// says so rather than showing the species as if nobody had objected.
@@ -1680,6 +1978,46 @@ enum TreeProfileCopy {
     /// names what the map ends up with, and because nothing is thrown away — the report keeps its
     /// row, marked answered. `keepSpeciesAction`'s argument, one seam over.
     static let keepRecordAction = "Keep this record"
+
+    // MARK: - Disputing a city record's data (RULINGS R79, part 2)
+    //
+    // **No mock specifies any of these**; they are listed in the PR that adds them for the owner to
+    // rule on (DECISIONS constraint 21). They sit in this block's existing shape — an action, and a
+    // muted sentence saying where it goes — and in its register.
+
+    /// The action on a city record this reader may dispute. Opens the data-dispute screen.
+    static let dataDisputeAction = "Report a mistake in the city’s record"
+
+    /// Where the report goes, in `reportSpeciesNotice`'s register and with its negation spelled the
+    /// way that constant spells it: the city is not told, and the sentence says so rather than
+    /// letting the reader assume otherwise (DECISIONS §3 constraint 3, D16).
+    static let dataDisputeNotice = "This is saved with your contributions. The city is not notified."
+
+    /// Drawn while this reader's own dispute stands.
+    static let dataDisputeRaised = "You reported a mistake in the city’s record for this tree."
+
+    /// The way back. "Take back" rather than "withdraw", because this block already uses *withdraw*
+    /// for a lead removing a record from the map, and the two acts must not share a word.
+    static let withdrawDataDisputeAction = "Take back your report"
+
+    /// The question in front of the take-back (owner, 2026-09-28). The dialog's action repeats
+    /// `withdrawDataDisputeAction`, so the button says exactly what the link said.
+    static let withdrawDataDisputeConfirmTitle = "Take back your report?"
+
+    /// `GrowthHistoryCopy.withdrawCancel`'s words for the same choice: the button that does nothing
+    /// says what nothing means here.
+    static let withdrawDataDisputeCancel = "Keep it"
+
+    static func dataDisputeWithdrawFailure(_ error: APIError) -> String {
+        switch error {
+        case .notFound:
+            return "That report was already taken back."
+        case .forbidden:
+            return "That report was made under another account, so it can’t be taken back here."
+        default:
+            return "Your report could not be taken back. Nothing was changed."
+        }
+    }
 
     /// `.forbidden` carries two meanings across the three writes — a city row on the raise, a
     /// non-lead on the resolve — and the city sentence is the one written here because it is the

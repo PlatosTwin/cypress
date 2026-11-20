@@ -25,6 +25,17 @@ enum Route: Hashable {
     case growthHistory(UUID)    // 11
     case checkIn(UUID)          // 05
     case report(UUID)           // 06
+    /// Reporting a mistake in a **city** record's data (RULINGS R79, part 2). **No mocked screen** —
+    /// the owner ruled its shape on 2026-09-28: pushed, and modeled on screen 06. Its one entrance is
+    /// the text action screen 03 draws where the community flag actions sit (`TreeProfileView
+    /// .recordDefect`), and only for a city row this viewer may dispute (`DataDisputeOffer.raisable`).
+    case dataDispute(UUID)
+    /// Moving the pin of a community tree the reader added. **No mocked screen**: the owner approved
+    /// a minimal control on 2026-11-12 as an exception to constraint 21 (`MovePinPresentation`). Its
+    /// one entrance is the profile's `Move pin` action, drawn only when `TreeProfile.canMovePin`.
+    /// Carries the tree's position for `pinSet`'s reason: the screen opens on the spot the profile
+    /// just read, and a second read could open somewhere else.
+    case movePin(UUID, Coordinate)
     case almanac                // 12
     case activity(UUID)         // 13
     /// 19. Separate from `treeProfile` rather than a variant of it: 14 is a *cold* profile, whose
@@ -214,7 +225,21 @@ final class AppRouter {
     }
 
     func present(_ route: Route) { sheet = route }
-    func pop() { if !path.isEmpty { path.removeLast() } }
+
+    /// Set only on a router that hosts screens **over** another screen, which `RootView`'s
+    /// `ExistingTreeHost` does for a tree the add screen's note lists (the owner's decision of
+    /// 2026-11-15). Popping that router's last screen calls this instead, so the host is closed as a
+    /// whole and the screen under it comes back, rather than the stack popping onto an empty root
+    /// first. Nil on the app's own router, whose `pop()` is unchanged.
+    @ObservationIgnored var closesInsteadOfPoppingLast: (() -> Void)?
+
+    func pop() {
+        if path.count == 1, let close = closesInsteadOfPoppingLast {
+            close()
+            return
+        }
+        if !path.isEmpty { path.removeLast() }
+    }
     func popToRoot() { path.removeAll() }
 
     /// Back to the map, from wherever the app is — the one **absolute** destination in this router.

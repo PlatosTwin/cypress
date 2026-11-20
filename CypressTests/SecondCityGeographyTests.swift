@@ -317,7 +317,7 @@ struct SecondCityGeographyTests {
             )
         }
 
-        let grove = try await Self.api(store).groveSpecies()
+        let grove = try await Self.api(store).groveSpecies(near: nil)
         let neighborhood = try #require(grove.neighborhood, "one Sunset visit resolved no area")
         #expect(neighborhood.area == .named("Sunset/Parkside"))
 
@@ -332,7 +332,12 @@ struct SecondCityGeographyTests {
             on: store
         )
         #expect(neighborhood.species.totalCount == direct, "the ring's denominator moved")
-        #expect(GroveCopy.caption(area: neighborhood.area) == "you can recognize in the Sunset/Parkside")
+        // F38: with no fix the polygon is the most-visited one, and the caption now says so.
+        #expect(neighborhood.basis == .mostVisited)
+        #expect(
+            GroveCopy.caption(area: neighborhood.area, basis: neighborhood.basis)
+                == "you can recognize in the Sunset/Parkside, your most-visited neighborhood"
+        )
     }
 
     /// The hole itself: `residentNeighborhood` joins through `seed.neighborhoods`, so every San
@@ -352,7 +357,7 @@ struct SecondCityGeographyTests {
             )
         }
 
-        let grove = try await Self.api(store).groveSpecies()
+        let grove = try await Self.api(store).groveSpecies(near: nil)
         let neighborhood = try #require(grove.neighborhood, "a San Jose contributor still has no area")
         #expect(neighborhood.area == .radius(meters: AlmanacLimits.fallbackRadiusM))
 

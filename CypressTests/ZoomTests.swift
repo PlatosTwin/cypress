@@ -167,4 +167,58 @@ struct ZoomTests {
     func theCeilingIsWhatTheseTestsAssume() {
         #expect(VisitCameraController.preferredMaxZoom == Self.lens.upperBound)
     }
+
+    // MARK: - Every camera opens at 1× (owner ruling, 2026-09-29)
+    //
+    // `VisitCameraController.configureAndRun` hands the device to `VisitCameraZoom.openAtOneX` as a
+    // session starts. No simulator has a device, so that call never runs here, and a test cannot
+    // tell whether it is made. What can be tested is what the call does to a lens, using a stand-in
+    // for `AVCaptureDevice`. That the real lens then reads 1× is for the phone (ROADMAP chip 81).
+
+    /// A lens left zoomed by the last camera, with a lock that can be refused.
+    private final class StandInLens: VisitCameraLens {
+        struct Refused: Error {}
+        var videoZoomFactor: CGFloat
+        let refusesLock: Bool
+        private(set) var isLocked = false
+
+        init(at factor: CGFloat, refusesLock: Bool = false) {
+            videoZoomFactor = factor
+            self.refusesLock = refusesLock
+        }
+
+        func lockForConfiguration() throws {
+            if refusesLock { throw Refused() }
+            isLocked = true
+        }
+
+        func unlockForConfiguration() { isLocked = false }
+    }
+
+    @Test("a camera opened after one left at 4× opens at 1×, and says so")
+    func aCameraOpensAtOneX() {
+        let lens = StandInLens(at: 4)
+        let reported = VisitCameraZoom.openAtOneX(lens, in: Self.lens)
+        #expect(lens.videoZoomFactor == 1, "a lens left at 4× was not put back to 1× on opening")
+        #expect(reported == 1, "the controller was told the lens is at \(reported)")
+        #expect(!lens.isLocked, "the lens was left locked for configuration")
+    }
+
+    /// A device whose current floor is above 1 cannot go to 1. It opens at its floor, which is as
+    /// close to 1× as it allows.
+    @Test("a lens whose floor is above 1 opens at its floor")
+    func aRaisedFloorOpensAtTheFloor() {
+        let lens = StandInLens(at: 4)
+        #expect(VisitCameraZoom.openAtOneX(lens, in: 1.5...6) == 1.5)
+        #expect(lens.videoZoomFactor == 1.5)
+    }
+
+    /// When the lock is refused nothing is written, and the controller is told where the lens really
+    /// is, so the first pinch multiplies from the true zoom instead of jumping.
+    @Test("a lens that refuses the lock is reported as it reads")
+    func aRefusedLockReportsTheLens() {
+        let lens = StandInLens(at: 4, refusesLock: true)
+        #expect(VisitCameraZoom.openAtOneX(lens, in: Self.lens) == 4)
+        #expect(lens.videoZoomFactor == 4)
+    }
 }

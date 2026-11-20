@@ -68,7 +68,7 @@ struct FailedReadTests {
     private struct FailsOnce: CypressAPI {
         let attempts: Attempts
 
-        func groveSpecies() async throws -> GroveSpecies {
+        func groveSpecies(near coordinate: Coordinate?) async throws -> GroveSpecies {
             attempts.grove += 1
             if attempts.grove == 1 { throw APIError.serverError }
             return .empty

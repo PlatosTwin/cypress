@@ -297,11 +297,10 @@ final class PrimaryCTAReachabilityTests: XCTestCase {
         for label in target.arm {
             let control = app.buttons[label]
             let spent = reach(control, in: app)
-            XCTAssertTrue(
-                control.exists && control.isHittable,
-                "\(screen): the arming control '\(label)' never became reachable at AX5 after "
-                    + "\(spent) swipes, so the CTA was never brought into the state this probe "
-                    + "judges it in"
+            assertReachable(
+                control,
+                "\(screen): the arming control '\(label)', after \(spent) swipes at AX5 (until it is "
+                    + "pressed, the CTA is not in the state this probe judges it in),"
             )
             guard control.exists, control.isHittableWithoutRaising(in: app) else { return }
             control.tap()
@@ -318,10 +317,9 @@ final class PrimaryCTAReachabilityTests: XCTestCase {
         )
         guard cta.exists else { return }
 
-        XCTAssertTrue(
-            cta.isHittable,
-            "\(screen): the primary CTA “\(cta.label)” is in the tree but never became hittable "
-                + "after \(Self.scrollBudget) swipes at AX5, so a reader cannot press it"
+        assertReachable(
+            cta,
+            "\(screen): the primary CTA “\(cta.label)”, after \(Self.scrollBudget) swipes at AX5,"
         )
         XCTAssertTrue(
             cta.isEnabled,

@@ -56,10 +56,7 @@ final class PhotoBrowserReachabilityTests: XCTestCase {
             "the photograph was pressed, the viewer opened over one photograph, and there was no way "
                 + "on from it to the tree's other photographs — which is the whole of the report"
         )
-        XCTAssertTrue(
-            door.isHittable,
-            "the way onward is in the viewer's tree and nothing could press it"
-        )
+        assertReachable(door, "the way onward from the viewer")
 
         // Presence is not the claim. Pressing it is, and what it lands on is.
         door.tap()
@@ -130,7 +127,7 @@ final class PhotoBrowserReachabilityTests: XCTestCase {
             "the photographs are listed and there is no thumbs up on them — \"no option at all to "
                 + "thumbs up/down\" is the report's second clause"
         )
-        XCTAssertTrue(thumbUp.isHittable, "the thumbs up is in the tree and nothing could press it")
+        assertReachable(thumbUp, "the thumbs up on the listed photographs")
 
         for segment in Self.subjectSegments {
             XCTAssertTrue(

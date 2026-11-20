@@ -6,16 +6,19 @@
 //
 //  ── Why this file exists at all ───────────────────────────────────────────────────────────
 //  The trait the design intends is the species `id_tip` — "scale-like leaves, lemony when
-//  crushed". `NearbyTree.tell` is `nil` for every row today, because the curated species pipeline
-//  (BUILD-PLAN §8) has not landed, and BUILD-PLAN §15 forbids inventing one.
+//  crushed". `.tell` is the first branch and reads `NearbyTree.tell`, which the seed fills for a
+//  city tree whose species carries curated tips (some do) and which is `nil` for an added tree.
+//  BUILD-PLAN §15 forbids inventing one.
 //
-//  So D6 and §15 pull in opposite directions, and the resolution is: **distinguish on facts the
-//  record actually carries.** A street number, a planting year, a city DBH range and a site type
-//  are inventory data, not botany. They separate two records standing 8 m apart just as well as a
-//  leaf shape does, and none of them is made up.
+//  So the resolution is: **distinguish on facts the record actually carries.** A street number, a
+//  planting year, a city DBH range and a site type are the record's own fields, not botany. They
+//  separate two records standing 8 m apart just as well as a leaf shape does.
 //
-//  When the curated tips land, `.tell` becomes the first branch and everything below it becomes
-//  the fallback for the long tail — no call site changes.
+//  **The species step is the one exception to "inventory data".** It compares the two cards'
+//  species names, and a tree someone added carries the species a person gave it. The owner's
+//  answer of 2026-11-16 ("Yes, any species counts") made that species count here too, accepting
+//  that the hint can rest on one person's guess. A pair of the same species, or a pair where one
+//  tree names no species, is never told apart by species.
 //
 
 import Foundation

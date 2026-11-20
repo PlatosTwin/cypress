@@ -23,7 +23,9 @@
 //  visible retry button (screen 17)". `OutboxItem.State.failed` is that terminal state and is the
 //  only one `OutboxItemSnapshot.showsRetryAffordance` admits — a row that has failed four times and
 //  is still inside the window is `pending` and still reads `waiting`, because it is still trying.
-//  The terminal row is the amber C24 card, and it is the only row with a control on it.
+//  The terminal row is the amber C24 card, and it is the only row with a control on it. One
+//  terminal row has none: a withdrawal the service refused with `conflict` keeps its reason and no
+//  button, for good (the owner's answers of 2026-11-16; `OutboxRetryPolicy.acceptsRetry`).
 //
 //  ── 3. Never "sent to the city" ──────────────────────────────────────────────────────────
 //  ARCHITECTURE §5.4. Nothing in `OutboxCopy` says an authority was told anything: `synced` here
@@ -88,9 +90,13 @@ struct OutboxPresentation {
         /// Terminal rows take C24's amber card. A row inside its retry window does not, however many
         /// times it has failed.
         var isTerminal: Bool { state != .waiting }
+        /// Whether the row's item may be retried (`OutboxRetryPolicy.acceptsRetry`).
+        var acceptsRetry: Bool = true
         /// Every terminal row gets the control (BUILD-PLAN §4 attaches it to `failed`, and the
-        /// owner's ruling 3 of 2026-08-14 keeps a refused row in that same failed row).
-        var showsRetryButton: Bool { state == .retry }
+        /// owner's ruling 3 of 2026-08-14 keeps a refused row in that same failed row), except a
+        /// withdrawal the service refused with `conflict`: the owner's answers of 2026-11-16 keep
+        /// that row with its reason and no button. It is still a terminal (amber) row.
+        var showsRetryButton: Bool { state == .retry && acceptsRetry }
     }
 
     /// One dimmed receipt in §4's `Synced earlier today`.
@@ -103,17 +109,22 @@ struct OutboxPresentation {
     }
 
     let snapshot: OutboxSnapshot
+    /// `OutboxViewState.isOffline`: a reading of the network path that found no satisfied path.
+    /// False before any reading.
+    private let isOffline: Bool
     private let now: Date
     private let calendar: Calendar
     private let locale: Locale
 
     init(
         snapshot: OutboxSnapshot,
+        isOffline: Bool = false,
         now: Date = Date(),
         calendar: Calendar = .current,
         locale: Locale = .current
     ) {
         self.snapshot = snapshot
+        self.isOffline = isOffline
         self.now = now
         self.calendar = calendar
         self.locale = locale
@@ -121,18 +132,22 @@ struct OutboxPresentation {
 
     // MARK: - §1 Header pill
 
-    /// `3 waiting`, or nil.
+    /// `3 waiting · offline`, `3 waiting`, or nil.
     ///
-    /// **The mock's second clause is dropped.** §1 draws `3 waiting · offline`, and nothing in this
-    /// app knows whether it is offline: there is no reachability monitor, and a failure sentence
-    /// reading "No connection." is a record of the last attempt rather than a statement about now.
-    /// Printing `offline` beside a live connection would be the same class of untrue label as
-    /// "sent to the city" (ARCHITECTURE §5.4). See ERRATA.
+    /// **The mock's second clause is drawn only from a reading of now.** ERRATA E81 dropped
+    /// `· offline` because nothing in the app knew whether it was offline. `NetworkPathSource` now
+    /// says whether the phone has any path, and `isOffline` is true only after it read the path and
+    /// found none (`.unsatisfied`). Before the first reading, and on cellular with the wi-fi toggle on,
+    /// the pill says `3 waiting` and stops. A failure sentence reading "No connection." is still
+    /// never the source: it records the last attempt, not the present, and printing `offline` beside
+    /// a live connection would be the same class of untrue label as "sent to the city"
+    /// (ARCHITECTURE §5.4).
     ///
-    /// Absent at zero, because `0 waiting` is the zero ARCHITECTURE §5.6 does not draw.
+    /// Absent at zero, because `0 waiting` is the zero ARCHITECTURE §5.6 does not draw. The pill has
+    /// no accessibility label of its own, so VoiceOver reads this same text.
     var headerPill: String? {
         guard snapshot.waitingCount > 0 else { return nil }
-        return OutboxCopy.waitingPill(count: snapshot.waitingCount)
+        return OutboxCopy.waitingPill(count: snapshot.waitingCount, offline: isOffline)
     }
 
     // MARK: - §2 The queue
@@ -169,7 +184,8 @@ struct OutboxPresentation {
             timeText: detail == nil && quantity == nil ? time : OutboxCopy.metaSeparator + time,
             reason: reason(for: item),
             state: state(for: item),
-            tile: tile(for: item)
+            tile: tile(for: item),
+            acceptsRetry: OutboxRetryPolicy.acceptsRetry(kind: item.kind, errorCode: item.errorCode)
         )
     }
 
@@ -182,7 +198,9 @@ struct OutboxPresentation {
     /// it in both places on a queue of one is the screen telling somebody the same thing twice.
     private func reason(for item: OutboxItemSnapshot) -> String? {
         guard let reason = item.reason else { return nil }
-        return reason == OutboxFailureReason.awaitingWifi(photoCount: item.photoCount) ? nil : reason
+        // By kind, not by count: a withdrawn photograph changes the count after the sentence was
+        // written (F35 review).
+        return OutboxFailureReason.isAwaitingWifi(reason) ? nil : reason
     }
 
     /// `waiting` / `retry`.
@@ -231,8 +249,11 @@ struct OutboxPresentation {
 
     /// The receipts, newest first.
     ///
-    /// `OutboxQueue.completedRetention` is 24 h and `pruneCompleted` sweeps past it, so this section
-    /// can never become a week — **but 24 h of retention spans two calendar days for most of the
+    /// `OutboxQueue.completedRetention` is 24 h and `pruneCompleted` sweeps past it at each launch
+    /// (`DataLayer.boot`), so this section holds the receipts of the day before this launch and the
+    /// ones since. It becomes a week only for a process that runs a week without a relaunch.
+    /// No build before ROADMAP 184's fix called the sweep, so every receipt stayed until then.
+    /// **But 24 h of retention spans two calendar days for most of the
     /// day**, and this line used to argue from the first fact that the section "is exactly what its
     /// heading claims". It is not: the two-day case is precisely the one that flips the stamps to
     /// dates, and it is common rather than exotic (PR #102 review). The heading asks the same
@@ -286,7 +307,8 @@ struct OutboxPresentation {
     /// `today · 14 synced · 0 lost`, or nil.
     ///
     /// **The mock's window is not the one the app keeps.** §5 draws `this week · 14 synced · 0
-    /// lost`, and a `done` row is swept after `OutboxQueue.completedRetention`, which is one day. A
+    /// lost`, and a `done` row is swept at the first launch after `OutboxQueue.completedRetention`,
+    /// which is one day. A
     /// week's figure is not a number this app has, so the line says the window it can actually
     /// answer for. `0 lost` is computed rather than asserted, which is why it is worth printing.
     /// Absent when nothing has gone today, because `0 synced` is a zero (ARCHITECTURE §5.6).
@@ -316,15 +338,24 @@ enum OutboxCopy {
     /// §1's header title.
     static let screenTitle = "Outbox"
 
-    /// §1's amber pill, minus its `offline` clause. See `OutboxPresentation.headerPill`.
-    static func waitingPill(count: Int) -> String { "\(count) waiting" }
+    /// §1's amber pill. The `offline` clause is the mock's, drawn only when the path source reads
+    /// no satisfied path. See `OutboxPresentation.headerPill`.
+    static func waitingPill(count: Int, offline: Bool = false) -> String {
+        offline ? "\(count) waiting · offline" : "\(count) waiting"
+    }
 
     /// §2's row titles — `Visit · Grandmother Cypress`.
     ///
     /// The tree falls back to `TreeProfilePresentation.fallbackTitle`, the same word every other
     /// surface uses for a tree with no name in hand, rather than to a blank half-title.
+    ///
+    /// **One exception: a pin move on a tree with no name reads `Pin moved` alone**, the app owner's
+    /// words of 2026-11-16 over "Pin moved · Tree". `treeName` is nil exactly when no name was
+    /// resolved for the tree: no given name and no species (`LocalAPI.displayNames`, which names an
+    /// added tree by its species since the owner's answer of 2026-11-16, "Use the species").
     static func title(kind: OutboxItem.Kind, treeName: String?) -> String {
-        "\(kindLabel(kind)) · \(treeName ?? TreeProfilePresentation.fallbackTitle)"
+        if kind == .locationCorrection, treeName == nil { return kindLabel(kind) }
+        return "\(kindLabel(kind)) · \(treeName ?? TreeProfilePresentation.fallbackTitle)"
     }
 
     /// §2 names four of the six kinds it was written against. `Favorite` and `Reminder` are **NOT
@@ -357,6 +388,22 @@ enum OutboxCopy {
         case .photoVote: return "Photo vote"
         case .photoWithdrawal: return "Photo removed"
         case .hazardRedirect: return "Hazard redirect"
+        // `Photo removed`'s twin, one contribution table over: the queue row says what was
+        // withdrawn, and `detail(for:)` below says which of the two series it was in.
+        case .measurementWithdrawal: return "Reading withdrawn"
+        // R79's two. **NOT SPECIFIED** in the same way as everything above, and answered the same
+        // way: `Data issue` is the owner's own noun for this — the ruling asks for a "trees with
+        // data issues" filter in those words — and the retraction takes `Reading withdrawn`'s shape
+        // rather than a second noun. Neither invents a botanical or civic fact.
+        case .dataDispute: return "Data issue"
+        case .dataDisputeWithdrawal: return "Data issue withdrawn"
+        // The owner's words for a pin move, chosen on 2026-11-14 from "Pin moved", "Move pin", and
+        // "Location correction": the row reads `Pin moved · Grandmother Cypress` and has no second
+        // line (see `detail(for:)`). A refused move reads `refusedTerminally`, the sentence every
+        // other kind reads; `OutboxFailureReason.describe` does not look at the kind.
+        case .locationCorrection: return "Pin moved"
+        // The owner's words, chosen on 2026-11-16 with the control's. No second line.
+        case .treeWithdrawal: return "Tree withdrawn"
         }
     }
 
@@ -409,8 +456,27 @@ enum OutboxCopy {
         // makes that a stop-and-ask, and the kind label already says what the person did.
         case .addTree, .speciesClaim, .speciesCorrection, .wrongSpeciesReport, .neverExistedReport,
              .speciesReviewDismissal, .recordReviewDismissal, .photoVote, .photoWithdrawal,
-             .hazardRedirect:
+             .hazardRedirect,
+             // R79's two, for the identical reason and not by analogy. The dispute payload *does*
+             // carry its checked issue kinds — but printing them needs a human phrase per checkbox,
+             // and R79 is the constraint-21 authority for which controls exist while the words on
+             // them are still the owner's to give (the sheet's whole copy is PR-C's ask). A sub-line
+             // here would be this file inventing that copy first and the sheet inheriting it.
+             .dataDispute, .dataDisputeWithdrawal,
+             // A moved pin: the owner ruled on 2026-11-14 that its row has no second line. The
+             // label `Pin moved` already says what the person did, and printing coordinates would
+             // be worse than nothing.
+             .locationCorrection,
+             // A withdrawn tree: `Tree withdrawn` says it all, and the act carries nothing more.
+             .treeWithdrawal:
             return nil
+
+        // The one §3.4-shaped kind that *does* carry a sub-line, because the fact is on the payload
+        // rather than invented for the row: `MeasurementWithdrawal.kind` is one of D7's two series,
+        // and this is the identical clause the `.measurement` row above prints. Nothing else about
+        // the withdrawn reading travels — see that type's header for why the value does not.
+        case let .measurementWithdrawal(withdrawal):
+            return kindLabel(withdrawal.kind)
 
         case nil:
             return nil
@@ -515,7 +581,9 @@ enum OutboxCopy {
     /// ── **Why the year appears and usually does not** ─────────────────────────────────────────
     ///
     /// `Aug 19` is unambiguous inside a list that cannot reach back a year, and the synced section
-    /// cannot: `OutboxQueue.completedRetention` sweeps it at 24 h. The **queue** has no such sweep —
+    /// cannot: `pruneCompleted` sweeps it at the first launch after `OutboxQueue.completedRetention`
+    /// (24 h), and a process that ran a year without a relaunch is not a case worth a stamp. The
+    /// **queue** has no such sweep —
     /// a terminally failed row waits for a tap and waits as long as it takes — so a queue really can
     /// hold two rows whose `Aug 19`s are twelve months apart. A stamp carries its year when it is
     /// not in `now`'s year, which costs nothing in the ordinary case and stops the one case where

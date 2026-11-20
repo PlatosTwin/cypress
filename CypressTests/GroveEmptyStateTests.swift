@@ -117,7 +117,7 @@ struct GroveEmptyStateTests {
     /// state `speciesTab` has no branch for at all. Cancelled for free when the hosting window comes
     /// down at the end of `render(_:)`, the same way any other screen's in-flight `.task` is.
     private struct NeverRespondingAPI: CypressAPI {
-        func groveSpecies() async throws -> GroveSpecies {
+        func groveSpecies(near coordinate: Coordinate?) async throws -> GroveSpecies {
             try await Task.sleep(for: .seconds(3_600))
             return .empty
         }

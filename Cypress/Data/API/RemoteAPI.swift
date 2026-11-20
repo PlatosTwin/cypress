@@ -155,59 +155,44 @@ public struct RemoteAPI: CypressAPI {
         throw RemoteSurface.communityHalfOnly
     }
 
-    /// `POST /trees` — community add, with the 10 m proximity dedupe.
+    /// **No route, on purpose** (the community-trees round C1). `POST /trees` exists on the service
+    /// and this method used to call it; it is refused here now because the two halves would not
+    /// name the same tree.
     ///
-    /// ── The candidate list does not survive the transport seam, and that is a real loss ────────
+    /// The one-id rule (`CommunityLayer`'s header) is that a community tree's identity is
+    /// `Tree.id` on the phone and on the service alike: `addTree` mints it, the queue carries it as
+    /// `TreeAddition.treeID`, and the service stores the tree under it. `POST /trees` predates that
+    /// rule: it sends only the act's `client_uuid`, and the service keys the tree on that — so a
+    /// tree added through it would carry the act's key as its id on the service and `Tree.id` on the
+    /// phone, one tree under two ids, the double the whole of `AppSchema` v23 is built not to store. §3.4 has always routed `addTree` local
+    /// (`RoutedAPI.addTree`), so nothing that ships reached this; a throw is what stops the next
+    /// caller from reaching it by accident. The add reaches the account through `/sync` as the
+    /// `add_tree` kind.
     ///
-    /// `LocalAPI` throws `ProximityConflict` carrying the candidates, because the candidates are the
-    /// whole point of the refusal — "a `conflict` with nothing in it is a dead end wearing the same
-    /// code" (`sync.go`). The service sends them, as a sibling of `error` rather than inside it,
-    /// because `APIError.Envelope`'s nested container decodes exactly `code`, `message` and
-    /// `retryable`. **They are dropped one layer below this one**: `AuthorizedTransport.send` hands
-    /// back a 2xx body or throws the taxonomy code, so by the time a `conflict` reaches here the
-    /// body that carried `detail.candidates` is gone.
-    ///
-    /// This throws the bare `.conflict` rather than a `ProximityConflict` with an empty list, which
-    /// would be the dead end wearing the right type as well as the right code. Re-sending the draft
-    /// to read the body a second time is **not** the fix and is not done: it would need the bearer,
-    /// which only `transport` holds, and asking the seam for the error body is a change to the
-    /// session layer that every other caller of it would then have to understand. It is written up
-    /// in this round's errata entry as work for the round that wires this method,
-    /// and it costs nothing today because §3.4 keeps `addTree` routed local, where the candidates
-    /// are produced from the installed inventory.
-    ///
-    /// **The returned `Tree` is this client's own echo of the draft it just sent.** The service
-    /// answers `{id, status}` and nothing else, so every other column comes from the `TreeDraft` —
-    /// which is the authority for all of them — plus the three values `candidateFrom` in `sync.go`
-    /// fixes for every row of this table: community source, unverified, alive. The two timestamps
-    /// are this device's clock and not the row's, which is the one place this value differs from a
-    /// re-read; it is stated here rather than left to be discovered.
+    /// `noRouteOnThisService` rather than `.validationFailed` or a decoded answer: the route is not
+    /// wrong about the draft, it is the wrong route.
     public func addTree(_ draft: TreeDraft) async throws -> Tree {
-        guard !draft.photoLocalPath.isEmpty else { throw APIError.validationFailed }
+        throw RemoteSurface.noRouteOnThisService
+    }
 
-        let body = AddTreeBody(
-            clientUUID: draft.clientUUID,
-            lat: draft.coordinate.latitude,
-            lon: draft.coordinate.longitude,
-            address: draft.address,
-            placement: draft.placement.rawValue,
-            speciesID: draft.speciesID,
-            landContext: draft.landContext?.rawValue
-        )
+    /// **No route.** A pin move is queued (`location_correction`, `AppSchema` v23) and reaches the
+    /// service through `/sync`; the service has no endpoint for it and should not grow one.
+    /// Overrides `LocationCorrection.swift`'s `.notFound` default, whose sentence would be "there is
+    /// no such tree" about a tree nothing was asked about.
+    public func correctLocation(
+        treeID: UUID,
+        to coordinate: Coordinate,
+        placement: TreePlacement,
+        locationAccuracyM: Double?
+    ) async throws -> Tree {
+        throw RemoteSurface.noRouteOnThisService
+    }
 
-        let data = try await transport.send(try request("trees", method: "POST", body: body))
-        let response = try decode(AddTreeResponse.self, from: data)
-        return Tree(
-            id: response.id,
-            source: .community,
-            coordinate: draft.coordinate,
-            address: draft.address,
-            status: .alive,
-            speciesCurrentID: draft.speciesID,
-            verificationState: .unverified,
-            placement: draft.placement,
-            statedLandContext: draft.landContext
-        )
+    /// **No route.** A tree withdrawal is queued (`tree_withdrawal`) and reaches the service through
+    /// `/sync`; the service has no endpoint for it. Overrides `TreeWithdrawal.swift`'s `.notFound`
+    /// default, for `correctLocation`'s reason above.
+    public func withdrawTree(treeID: UUID) async throws {
+        throw RemoteSurface.noRouteOnThisService
     }
 
     /// **No route.** A first species claim is one of spec §3.4's nine, and §3.4 rules them Class L
@@ -324,19 +309,7 @@ public struct RemoteAPI: CypressAPI {
     public func sync(_ items: [OutboxItem]) async throws -> [SyncResult] {
         guard !items.isEmpty else { return [] }
 
-        let bodies = try items.map { item -> SyncItemBody in
-            let payload = try OutboxPayload.decode(kind: item.kind, from: item.payload)
-            return SyncItemBody(
-                clientUUID: item.clientUUID,
-                kind: item.kind.rawValue,
-                treeUUID: payload.treeID,
-                occurredAt: payload.occurredAt,
-                payload: try JSONValue.parse(item.payload),
-                userID: payload.ownerUserID,
-                deviceID: payload.ownerDeviceID,
-                isFavorite: payload.isFavorite
-            )
-        }
+        let bodies = try items.map(Self.syncItemBody(for:))
 
         let data = try await transport.send(
             try request("sync", method: "POST", body: SyncRequestBody(items: bodies))
@@ -352,6 +325,25 @@ public struct RemoteAPI: CypressAPI {
         }
     }
 
+    /// One queued item as `POST /sync` sends it.
+    ///
+    /// A static function rather than a closure inside `sync(_:)` so the Swift half of a wire fixture
+    /// can encode through the path the app ships (`LocationCorrectionFixtureTests` against
+    /// `server/testdata/sync_location_correction.json`) rather than through a copy of it.
+    static func syncItemBody(for item: OutboxItem) throws -> SyncItemBody {
+        let payload = try OutboxPayload.decode(kind: item.kind, from: item.payload)
+        return SyncItemBody(
+            clientUUID: item.clientUUID,
+            kind: item.kind.rawValue,
+            treeUUID: payload.treeID,
+            occurredAt: payload.occurredAt,
+            payload: try JSONValue.parse(item.payload),
+            userID: payload.ownerUserID,
+            deviceID: payload.ownerDeviceID,
+            isFavorite: payload.isFavorite
+        )
+    }
+
     /// `POST /photos/begin` — reserves the photo id and returns the presigned `PUT` (spec §1.1
     /// step 3).
     ///
@@ -360,11 +352,38 @@ public struct RemoteAPI: CypressAPI {
     /// `Photo.isPubliclyVisible` is evaluated at render time from the row rather than from this
     /// answer.
     public func beginPhotoUpload(_ request: PhotoUploadRequest) async throws -> PhotoUploadTicket {
-        let body = BeginPhotoBody(
+        let body = Self.beginPhotoBody(for: request, timeZone: .current)
+        let data = try await transport.send(try self.request("photos/begin", method: "POST", body: body))
+        let response = try decode(BeginPhotoResponse.self, from: data)
+        return PhotoUploadTicket(photoID: response.photoID, destination: response.presignedPutURL)
+    }
+
+    /// The begin body for one upload, with `captured_on` read in `timeZone`.
+    ///
+    /// ── `captured_on` (the owner's decision 14a of 2026-09-28) ────────────────────────────────
+    ///
+    /// Other people are shown a photograph's **date**, not its time (decision 14), and the date is
+    /// the phone's: the calendar day the photograph was taken where it was taken. The service
+    /// cannot compute that — it knows the instant and not the zone — so the phone sends it, as
+    /// `YYYY-MM-DD` in the Gregorian calendar, and the service checks it is within a day of the
+    /// instant's UTC date (`validCapturedOn` in `photos.go`).
+    ///
+    /// **The zone is the phone's when the begin is built, not when the shutter fired.** Nothing on
+    /// the row records the zone of the capture, and a photograph queued in one zone and sent after
+    /// a flight to another is dated in the second. The service's one-day bound holds either way,
+    /// because every civil zone is within a day of UTC. The field is optional on the wire; it is
+    /// always sent, because nothing on this phone lacks the instant it is computed from.
+    ///
+    /// Static, and taking the zone, so `LocationCorrectionFixtureTests` can build it east of UTC —
+    /// the case `server/testdata/photos_begin.json` pins, where the local date is a day after the
+    /// UTC date of the same instant.
+    static func beginPhotoBody(for request: PhotoUploadRequest, timeZone: TimeZone) -> BeginPhotoBody {
+        BeginPhotoBody(
             treeUUID: request.treeID,
             visitClientUUID: request.visitID,
             shotType: request.shotType.rawValue,
             capturedAt: request.capturedAt,
+            capturedOn: localDate(of: request.capturedAt, in: timeZone),
             width: request.width,
             height: request.height,
             // Nil by every path that ships, and ERRATA **E42** is why: the tree's own pin is already
@@ -376,9 +395,17 @@ public struct RemoteAPI: CypressAPI {
             // instead of making a second photograph (ERRATA E264).
             clientUUID: request.idempotencyKey
         )
-        let data = try await transport.send(try self.request("photos/begin", method: "POST", body: body))
-        let response = try decode(BeginPhotoResponse.self, from: data)
-        return PhotoUploadTicket(photoID: response.photoID, destination: response.presignedPutURL)
+    }
+
+    /// `YYYY-MM-DD` for `instant` in `timeZone`. A fixed Gregorian calendar and the POSIX locale,
+    /// so a phone set to a Buddhist or Japanese calendar still sends the year the service parses.
+    static func localDate(of instant: Date, in timeZone: TimeZone) -> String {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = timeZone
+        let parts = calendar.dateComponents([.year, .month, .day], from: instant)
+        return String(
+            format: "%04d-%02d-%02d", parts.year ?? 0, parts.month ?? 0, parts.day ?? 0
+        )
     }
 
     /// `PUT`s the binary **straight to storage** at the presigned destination (spec §1.1 step 4),
@@ -476,6 +503,60 @@ public struct RemoteAPI: CypressAPI {
         throw RemoteSurface.communityHalfOnly
     }
 
+    /// **No route.** F27's withdrawal is new in this round and the service has no verb for it —
+    /// there is no `DELETE /measurements/{id}` in BUILD-PLAN §6 and none deployed. The way it
+    /// reaches an account is the queue: `AppSchema` v21 widened `outbox.kind` so a
+    /// `measurement_withdrawal` row can be written, and `POST /sync` is the route that carries it
+    /// **once the service accepts the kind**.
+    ///
+    /// It does not yet, and the failure is terminal rather than pending: `sync.go`'s `syncKinds` and
+    /// the `contributions_kind_is_known` CHECK both stop at the sixteen kinds v17 established, so a
+    /// drained withdrawal is answered `validation_failed` — which `APIError` puts in the
+    /// non-retryable arm, so `OutboxRetryPolicy.nextState` moves the item to `failed` on its first
+    /// attempt and screen 17 keeps a red row. Widening those two is a change to `server/`, which has
+    /// no CI and does not travel with an app change; until it is merged and deployed, this device's
+    /// own record is the whole of what a withdrawal does.
+    ///
+    /// Declared here rather than inherited from `MeasurementWithdrawalAccess.swift`'s default for
+    /// the reason `APIConformanceGuardTests` enforces on every shipping conformance: an inherited
+    /// answer is a static-dispatch trap beside a requirement, and `noRouteOnThisService` says which
+    /// of the two "no" answers this is, where the default's `notFound` would claim the reading is
+    /// not there.
+    public func withdrawMeasurement(id: UUID) async throws -> WithdrawnMeasurement {
+        throw RemoteSurface.noRouteOnThisService
+    }
+
+    /// **No route.** R79's disputes are new in this round and the service has no verb for either of
+    /// them — BUILD-PLAN §6 predates the ruling and nothing is deployed. The way a dispute reaches an
+    /// account is the queue: `AppSchema` v22 widened `outbox.kind` so `data_dispute` and
+    /// `data_dispute_withdrawal` rows can be written, and `POST /sync` is the route that carries
+    /// them **once the service accepts the kinds**.
+    ///
+    /// It does not yet, and the failure is terminal rather than pending, exactly as
+    /// `withdrawMeasurement` above describes for its own kind: `sync.go`'s `syncKinds` and the
+    /// `contributions.kind` CHECK stop short of these two, so a drained dispute is answered
+    /// `validation_failed` — non-retryable, so `OutboxRetryPolicy.nextState` moves the item to
+    /// `failed` on its first attempt and screen 17 keeps a red row. Widening those two is this
+    /// round's PR-B, a change to `server/`, which has no CI and does not travel with an app change.
+    ///
+    /// Declared here rather than inherited from `DataDispute.swift`'s defaults, for the reason
+    /// `APIConformanceGuardTests` enforces on every shipping conformance: an inherited answer is a
+    /// static-dispatch trap beside a requirement, and `noRouteOnThisService` says which of the two
+    /// "no" answers this is, where the default's `notFound` would claim the record is not there.
+    public func raiseDataDispute(
+        treeID: UUID,
+        issues: Set<TreeDataDispute.IssueKind>,
+        suggestions: TreeDataDispute.Suggestions,
+        notes: String?
+    ) async throws -> TreeDataDispute {
+        throw RemoteSurface.noRouteOnThisService
+    }
+
+    /// **No route**, for `raiseDataDispute`'s reason and through the same queue.
+    public func withdrawDataDispute(disputeID: UUID) async throws {
+        throw RemoteSurface.noRouteOnThisService
+    }
+
     // MARK: - Personal surfaces
 
     /// **Community half only.** `GET /me/grove` sends `tree_uuid`, the favorite bit, the last visit,
@@ -522,7 +603,7 @@ public struct RemoteAPI: CypressAPI {
     ///
     /// Overrides the protocol's `.empty` default: an empty grove would draw a contributor's real
     /// collection as a cold start.
-    public func groveSpecies() async throws -> GroveSpecies {
+    public func groveSpecies(near coordinate: Coordinate?) async throws -> GroveSpecies {
         throw RemoteSurface.communityHalfOnly
     }
 
@@ -544,9 +625,13 @@ public struct RemoteAPI: CypressAPI {
 
     /// `POST /devices/claim` — the idempotent sweep that re-homes a device's unattributed rows onto
     /// an account (D9).
+    ///
+    /// `userID` is not sent: the service takes the account from the session's bearer and refuses an
+    /// unknown body field (`ClaimDeviceBody`). The parameter stays because the protocol requirement
+    /// is shared with `LocalAPI`, whose half needs it.
     public func claimDevice(deviceUUID: UUID, userID: UUID) async throws {
         _ = try await transport.send(
-            try request("devices/claim", method: "POST", body: ClaimDeviceBody(deviceUUID: deviceUUID, userID: userID))
+            try request("devices/claim", method: "POST", body: ClaimDeviceBody(deviceUUID: deviceUUID))
         )
     }
 
@@ -586,6 +671,29 @@ public struct RemoteAPI: CypressAPI {
     ///   injected — see that property for why an empty array is not an acceptable substitute.
     @discardableResult
     public func deleteAccount(_ choice: AccountDeletionChoice) async throws -> AccountDeletion.Outcome {
+        try await deleteAccountOnService(choice).outcome
+    }
+
+    /// **No route.** This is the local half of a deletion, and the service has no call for it: the
+    /// rows it acts on are on the phone. `RoutedAPI.deleteAccount` calls it on its local half and
+    /// never on this type. A refusal rather than the protocol's default, because that default
+    /// calls `deleteAccount`, which on this type sends `DELETE /me`.
+    @discardableResult
+    public func finishAccountDeletion(
+        _ choice: AccountDeletionChoice,
+        actingOn serviceTrees: AccountDeletion.ServiceTreeVerdicts?
+    ) async throws -> AccountDeletion.Outcome {
+        throw RemoteSurface.noRouteOnThisService
+    }
+
+    /// `DELETE /me`, returning the service's answer about the community trees the account added
+    /// beside the outcome (`ROADMAP` 104 and 105). `trees` is nil when the answer carried none: a
+    /// service deployed before the field, or a value this build cannot read (`DeleteAccountResponse`).
+    /// `RoutedAPI.deleteAccount` hands `trees` to the local half. Everything `deleteAccount(_:)`
+    /// says above holds here too.
+    func deleteAccountOnService(
+        _ choice: AccountDeletionChoice
+    ) async throws -> (outcome: AccountDeletion.Outcome, trees: AccountDeletion.ServiceTreeVerdicts?) {
         guard let pendingOutboxKeys else { throw RemoteSurface.communityHalfOnly }
         let pending = try await pendingOutboxKeys()
 
@@ -608,7 +716,7 @@ public struct RemoteAPI: CypressAPI {
             outcome.deletedContributions = response.contributions
             outcome.deletedPhotos = response.photos
         }
-        return outcome
+        return (outcome, response.communityTrees)
     }
 
     /// **Class D — device-only, never remote** (spec §3.1).
@@ -722,6 +830,104 @@ public extension RemoteAPI {
         public let photos: [Photo]
         public let ownPhotoIDs: Set<UUID>
         public let deletablePhotoIDs: Set<UUID>
+        /// The begin's key for each of the caller's own photographs, by the service's `photo_id`.
+        ///
+        /// A dictionary beside `photos` rather than a field on `Photo`, because it is a fact about
+        /// the wire and not about a photograph: the phone's own rows have no such value (their id
+        /// *is* the key), and a stranger's rows never carry one.
+        public let clientUUIDs: [UUID: UUID]
+        /// Each photograph's `captured_on`, by the service's `photo_id`, for the rows that carry
+        /// one (decision 14a). A dictionary beside `photos` for `clientUUIDs`' reason: it is a fact
+        /// about the wire. `RoutedAPI.refreshedTreeProfile(id:)` is where it reaches the screen.
+        public var capturedOn: [UUID: CalendarDay] = [:]
+        /// The service's `added_by_you`: the caller added this community tree. False for a city
+        /// tree, an unknown id and a hidden one alike, and for a service that sent no key.
+        public var addedByYou: Bool = false
+        /// The service's `is_published` (round C3), and nil when the response carried no
+        /// `community_tree`. The service answers `false` for a city tree, an unknown id and a
+        /// hidden one alike, so its `false` is a fact about this tree only when it sent the tree.
+        /// The profile reads it to decide whether to tell the adder that only they can see it.
+        public var isPublished: Bool?
+        // The response's `community_tree` is decoded and deliberately not carried here, apart from
+        // its species below: `TreeCommunityHalfResponse.communityTree` says why.
+
+        /// The service's species answers on this tree (ROADMAP 144), or nil when it sent no
+        /// `community_tree` or sent none of the three keys (release v16 and older).
+        public var species: ServedSpecies?
+
+        /// What the service says about a community tree's species.
+        public struct ServedSpecies: Hashable, Sendable {
+            /// `community_tree.speciesCurrentID`: the species in force on the service.
+            public var speciesID: UUID?
+            /// `species_reported`.
+            public var isReported: Bool
+            /// `species_report_flag_id`, sent to the adder only.
+            public var reportFlagID: UUID?
+            /// `species_named_by_you`: the caller is the namer in force and shares, so may correct
+            /// their own answer now.
+            public var namedByYou: Bool
+
+            public init(speciesID: UUID?, isReported: Bool, reportFlagID: UUID?, namedByYou: Bool) {
+                self.speciesID = speciesID
+                self.isReported = isReported
+                self.reportFlagID = reportFlagID
+                self.namedByYou = namedByYou
+            }
+        }
+    }
+
+    /// `GET /community-trees?tile=14/x/y[&cursor=]` — one page of one tile of the community layer.
+    ///
+    /// A nil cursor asks for a snapshot. The answer's cursor is stored and sent back unchanged.
+    /// `CommunityTileRefresher` is the one caller; it applies each page in one transaction with its
+    /// cursor (`CommunityTreeCacheStore.apply`). The service answers `validation_failed` for a
+    /// cursor it no longer accepts (a rotated key, another tile's cursor), which arrives here as
+    /// `APIError.validationFailed` and which the refresher answers by dropping the tile.
+    func communityTile(_ tile: CommunityTile, cursor: String?) async throws -> CommunityTilePage {
+        var query = [URLQueryItem(name: "tile", value: tile.path)]
+        if let cursor { query.append(URLQueryItem(name: "cursor", value: cursor)) }
+        let data = try await transport.send(try request("community-trees", method: "GET", query: query))
+        let response = try decode(CommunityTileResponse.self, from: data)
+        return CommunityTilePage(
+            tile: response.tile,
+            trees: response.trees,
+            withdrawnTreeIDs: response.withdrawnTreeIDs,
+            nextCursor: response.nextCursor,
+            hasMore: response.hasMore
+        )
+    }
+
+    /// `GET /trees/{id}/history` — a community tree's public history, or **nil for the service's
+    /// `not_found`**, which means "no history" and not an error to surface: a city tree, an unknown
+    /// id and a tree hidden from the caller all answer it alike (`server/testdata/README.md`).
+    ///
+    /// Each event's `occurred_at` is midnight UTC of its day and becomes a `CalendarDay`, so no
+    /// surface can shift it into the reader's zone.
+    func treeHistory(id: UUID) async throws -> CommunityTreeHistory? {
+        let data: Data
+        do {
+            data = try await transport.send(try request("trees/\(id.uuidString)/history", method: "GET"))
+        } catch APIError.notFound {
+            return nil
+        }
+        let response = try decode(TreeHistoryResponse.self, from: data)
+        return CommunityTreeHistory(
+            treeID: response.treeUUID,
+            events: response.events.map { event in
+                CommunityTreeHistory.Event(
+                    id: event.id,
+                    kind: CommunityTreeHistory.Kind(wire: event.kind),
+                    day: CalendarDay(utcDayOf: event.occurredAt),
+                    fromCoordinate: event.fromCoordinate,
+                    toCoordinate: event.toCoordinate,
+                    fromSpeciesID: event.fromSpeciesID,
+                    toSpeciesID: event.toSpeciesID,
+                    placement: event.placement.map(CommunityTreeHistory.Placement.init(wire:)),
+                    byYou: event.byYou
+                )
+            },
+            isComplete: response.complete
+        )
     }
 
     /// `GET /me/grove`.
@@ -778,7 +984,33 @@ public extension RemoteAPI {
                 )
             },
             ownPhotoIDs: Set(response.ownPhotoIDs),
-            deletablePhotoIDs: Set(response.deletablePhotoIDs)
+            deletablePhotoIDs: Set(response.deletablePhotoIDs),
+            clientUUIDs: Dictionary(
+                response.photos.compactMap { row in row.clientUUID.map { (row.photoID, $0) } },
+                uniquingKeysWith: { first, _ in first }
+            ),
+            // A `captured_on` that is not a real `YYYY-MM-DD` is treated as absent, so the row
+            // falls back to `captured_at` in the reader's zone rather than failing the profile.
+            capturedOn: Dictionary(
+                response.photos.compactMap { row in
+                    row.capturedOn.flatMap(CalendarDay.init(isoDate:)).map { (row.photoID, $0) }
+                },
+                uniquingKeysWith: { first, _ in first }
+            ),
+            addedByYou: response.addedByYou ?? false,
+            isPublished: response.communityTree == nil ? nil : response.isPublished,
+            // Only beside a tree the service sent, and only when it sent the keys: a service
+            // without them says nothing about reports, and its silence is not "no report".
+            species: response.communityTree.flatMap { tree in
+                response.speciesReported.map { reported in
+                    TreeCommunityDelta.ServedSpecies(
+                        speciesID: tree.speciesCurrentID,
+                        isReported: reported,
+                        reportFlagID: response.speciesReportFlagID,
+                        namedByYou: response.speciesNamedByYou ?? false
+                    )
+                }
+            }
         )
     }
 

@@ -56,6 +56,42 @@ final class MapLocationProvider {
     private(set) var availability: Availability = .notAsked
     private(set) var authorization: CLAuthorizationStatus
 
+    /// What CoreLocation said about a fix besides where it is and how wide its circle is.
+    ///
+    /// **Separate from `availability`, for `headingDegrees`' reason**: `Availability.located` is
+    /// read by every screen that records a contribution, and none of them needs either fact below.
+    /// The one reader is the data-dispute screen (RULINGS R79 part 2), whose refusal sentence has
+    /// to be true about *why* a fix was too coarse — PR #185's orchestrator rulings 6 and 9.
+    struct Precision: Equatable, Sendable {
+        /// Precise Location is off for this app — `CLAccuracyAuthorization.reducedAccuracy`, which
+        /// iOS answers with an approximate fix whatever the sky is doing. The one case Settings can
+        /// fix, and so the one case a sentence may send the reader there for.
+        var isReduced = false
+        /// Whether CoreLocation stated an accuracy for the fix in `availability`.
+        ///
+        /// `false` when it answered with a negative `horizontalAccuracy` — "could not work one out".
+        /// `Delegate` still publishes `VisitShortlist.assumedAccuracyM` for such a fix, so that D6
+        /// excludes it by arithmetic, and that number is **not CoreLocation's**. A sentence that
+        /// quotes a fix's accuracy to the reader has to know it would be quoting a substitute.
+        var accuracyIsKnown = true
+
+        /// Full accuracy, and a stated radius: every fix before iOS 14 and most after it.
+        static let ordinary = Precision()
+    }
+
+    /// See `Precision`. Written by `apply(authorization:)` (whether Precise Location is on) and by
+    /// `publish(coordinate:accuracyM:accuracyIsKnown:)` (whether the published fix stated a radius).
+    private(set) var precision = Precision.ordinary
+
+    /// How many times CoreLocation has answered `didFailWithError` since this provider was built.
+    ///
+    /// **Nothing on the map reads it**, and the map's own answer to an error is still to keep drawing
+    /// without a fix until one arrives. The reader is the data-dispute screen, whose pin section
+    /// holds *Send report* while it waits and must stop waiting when the phone says it cannot answer
+    /// (owner ruling 11 on PR #185). A count, not a flag: the screen compares it with the count it
+    /// saw when the reporter asked, so an old error never cancels a new request.
+    private(set) var failureCount = 0
+
     /// Which way the reader is facing, in degrees clockwise from **true** north, or `nil` for
     /// "nobody knows" (task #155).
     ///
@@ -65,6 +101,57 @@ final class MapLocationProvider {
     /// and folding it in would rewrite the fix — and everything watching it — every time the reader
     /// turned on the spot. `nil` is a state the map draws (the bare dot), not an error.
     private(set) var headingDegrees: Double?
+
+    /// When CoreLocation took the newest fix it has delivered, and when this provider received it
+    /// (ROADMAP 114, F38's follow-ups).
+    ///
+    /// **The gap between the two is the age that matters, not the gap to now.** While updates run,
+    /// CoreLocation stays silent for as long as the reader has not moved `distanceFilter` meters, so
+    /// a reader standing still in a café keeps an old capture time and a fix that is still true. The
+    /// fix that lies is the one CoreLocation replays from its cache when updates start: it arrives
+    /// as if new and can be minutes or hours old. `receivedAt - capturedAt` tells the two apart.
+    ///
+    /// Written for every published fix, and for a fix `isWorthPublishing` drops **only when that
+    /// fix is not itself a replay**. A dropped fix is within five meters of the published one, so a
+    /// fresh one says the published place is current now. A dropped replay says nothing about now,
+    /// and it does not overwrite a fresh timing.
+    ///
+    /// `@ObservationIgnored` because it is written at CoreLocation's own rate (24 to 42 a second on
+    /// a route, see `publishDistanceM`), and an observed property would re-run every view that reads
+    /// it. The one change a reader must hear about, replayed to fresh or back, is `fixIsReplayed`.
+    struct FixTiming: Equatable, Sendable {
+        var capturedAt: Date
+        var receivedAt: Date
+
+        /// How old the fix already was when it arrived.
+        var ageOnArrival: TimeInterval { receivedAt.timeIntervalSince(capturedAt) }
+
+        /// Whether CoreLocation replayed this fix from its cache rather than took it now.
+        var isReplayed: Bool { ageOnArrival > MapLocationProvider.replayedFixAgeOnArrival }
+    }
+
+    @ObservationIgnored private(set) var fixTiming: FixTiming?
+
+    /// How old a fix may already be when it arrives and still count as taken now (ROADMAP 114).
+    ///
+    /// **NOT SPECIFIED** — no source names a number. A live fix arrives within a second or two of
+    /// being taken; a replay from CoreLocation's cache can be hours old. Sixty seconds is far
+    /// outside the first, and a walker covers about 85 m in it, a fifth of the 400 m circle a
+    /// neighborhood is resolved over (`AlmanacLimits.neighborhoodResolutionRadiusM`).
+    ///
+    /// `nonisolated` because `FixTiming.isReplayed`, a `Sendable` value's property, reads it.
+    nonisolated static let replayedFixAgeOnArrival: TimeInterval = 60
+
+    /// `fixTiming.isReplayed`, observed. Written **only when it changes**, so it costs no redraw
+    /// per fix: it is how a reader such as My Grove's ring hears that a replayed place has been
+    /// confirmed by a fresh fix that `isWorthPublishing` dropped, which leaves `availability`
+    /// unchanged. `false` when there is no fix: `apply(authorization:)` resets it, with
+    /// `fixTiming`, whenever a denial or a reset drops the fix.
+    private(set) var fixIsReplayed = false
+
+    /// The clock `fixTiming.receivedAt` is read from. Injected so a test can deliver a fix of a
+    /// known age without waiting.
+    @ObservationIgnored private let now: () -> Date
 
     private let manager: CLLocationManager
     private var delegate: Delegate?
@@ -83,18 +170,28 @@ final class MapLocationProvider {
     /// session. A provider nobody asked is inert, which is what makes a stray one harmless.
     private var hasStarted = false
 
-    init(manager: CLLocationManager = CLLocationManager()) {
+    init(manager: CLLocationManager = CLLocationManager(), now: @escaping () -> Date = { Date() }) {
         self.manager = manager
+        self.now = now
         self.authorization = manager.authorizationStatus
         let delegate = Delegate()
         delegate.onAuthorizationChange = { [weak self] status in
             self?.apply(authorization: status)
         }
-        delegate.onLocation = { [weak self] coordinate, accuracyM in
-            self?.publish(coordinate: coordinate, accuracyM: accuracyM)
+        delegate.onLocation = { [weak self] coordinate, accuracyM, accuracyIsKnown, capturedAt in
+            guard let self else { return }
+            self.receive(
+                coordinate: coordinate,
+                accuracyM: accuracyM,
+                accuracyIsKnown: accuracyIsKnown,
+                timing: FixTiming(capturedAt: capturedAt, receivedAt: self.now())
+            )
         }
         delegate.onHeading = { [weak self] heading in
             self?.publish(heading: heading)
+        }
+        delegate.onFailure = { [weak self] in
+            self?.failureCount += 1
         }
         self.delegate = delegate
         manager.delegate = delegate
@@ -139,9 +236,22 @@ final class MapLocationProvider {
     /// making `manager` optional and adding a `nil` branch to every use of it on the shipping path —
     /// a change to production code to serve a test double, which is the wrong direction. It has no
     /// delegate and is never started, so it does nothing.
-    init(pinnedAvailability: Availability) {
+    ///
+    /// `precision` pins the two facts `Precision` carries — Precise Location off, and a fix whose
+    /// radius CoreLocation did not state — which a simulator cannot be made to produce on demand.
+    ///
+    /// A pinned fix is **current**: it was taken and received at construction (`fixTiming`). The
+    /// pin states where the reader is now (R58's `CYPRESS_LOCATION`), so no reader may judge it a
+    /// replayed fix.
+    init(pinnedAvailability: Availability, precision: Precision = .ordinary) {
         self.manager = CLLocationManager()
+        let pinnedAt = Date()
+        self.now = { pinnedAt }
         self.availability = pinnedAvailability
+        self.precision = precision
+        if pinnedAvailability.coordinate != nil {
+            self.fixTiming = FixTiming(capturedAt: pinnedAt, receivedAt: pinnedAt)
+        }
         switch pinnedAvailability {
         case .notAsked:                     self.authorization = .notDetermined
         case .denied:                       self.authorization = .denied
@@ -268,13 +378,46 @@ final class MapLocationProvider {
             || abs(lastAccuracy - accuracyM) >= publishAccuracyM
     }
 
+    /// Whether `publish` will write this fix: `isWorthPublishing`, or a change in whether the radius
+    /// was stated (see `publish`).
+    private func willPublish(coordinate: Coordinate, accuracyM: Double, accuracyIsKnown: Bool) -> Bool {
+        precision.accuracyIsKnown != accuracyIsKnown
+            || Self.isWorthPublishing(coordinate: coordinate, accuracyM: accuracyM, over: availability)
+    }
+
+    /// Every fix CoreLocation delivers comes through here (ROADMAP 114).
+    ///
+    /// The timing is written **before** `availability`, so a reader woken by the `availability`
+    /// write reads the timing that belongs to that fix. A dropped fix that is itself a replay leaves
+    /// the timing alone (see `fixTiming`). `fixIsReplayed` is written only when it changes.
+    private func receive(
+        coordinate: Coordinate,
+        accuracyM: Double,
+        accuracyIsKnown: Bool,
+        timing: FixTiming
+    ) {
+        let published = willPublish(coordinate: coordinate, accuracyM: accuracyM, accuracyIsKnown: accuracyIsKnown)
+        if published || !timing.isReplayed {
+            fixTiming = timing
+            if fixIsReplayed != timing.isReplayed { fixIsReplayed = timing.isReplayed }
+        }
+        if published {
+            publish(coordinate: coordinate, accuracyM: accuracyM, accuracyIsKnown: accuracyIsKnown)
+        }
+    }
+
     /// The one place `availability` is written from a fix.
-    private func publish(coordinate: Coordinate, accuracyM: Double) {
-        guard Self.isWorthPublishing(
-            coordinate: coordinate,
-            accuracyM: accuracyM,
-            over: availability
-        ) else { return }
+    ///
+    /// A fix whose radius went from stated to unstated (or back) is published even when
+    /// `isWorthPublishing` would drop it: the substitute is 25 m, so a stated 25 m fix and an
+    /// unstated one read as the same `availability`, and only `precision` tells them apart.
+    /// `precision` is written first, so a reader woken by the `availability` write reads the fact
+    /// that belongs to that fix.
+    private func publish(coordinate: Coordinate, accuracyM: Double, accuracyIsKnown: Bool) {
+        let knownChanged = precision.accuracyIsKnown != accuracyIsKnown
+        guard willPublish(coordinate: coordinate, accuracyM: accuracyM, accuracyIsKnown: accuracyIsKnown)
+        else { return }
+        if knownChanged { precision.accuracyIsKnown = accuracyIsKnown }
         availability = .located(coordinate, accuracyM: accuracyM)
         #if DEBUG
         MapFrameProbe.shared.noteLocationPublish()
@@ -298,6 +441,11 @@ final class MapLocationProvider {
 
     private func apply(authorization status: CLAuthorizationStatus) {
         authorization = status
+        // The same callback reports a change to either setting (`locationManagerDidChange
+        // Authorization` fires for `accuracyAuthorization` too), so a reader who turns Precise
+        // Location on in Settings and comes back is read here, not only at construction.
+        let isReduced = manager.accuracyAuthorization == .reducedAccuracy
+        if precision.isReduced != isReduced { precision.isReduced = isReduced }
         switch status {
         case .notDetermined:
             availability = .notAsked
@@ -316,15 +464,25 @@ final class MapLocationProvider {
         @unknown default:
             availability = .notAsked
         }
+        // A dropped fix takes its timing with it, so `fixIsReplayed` is `false` with no fix, as
+        // its doc says. Written only when it is `true`, so nothing extra is observed.
+        if availability.coordinate == nil {
+            fixTiming = nil
+            if fixIsReplayed { fixIsReplayed = false }
+        }
     }
 
     /// `CLLocationManagerDelegate` has to be an `NSObject`, and `@Observable` has to not be one.
     /// Keeping the delegate separate is cheaper than fighting either constraint.
     private final class Delegate: NSObject, CLLocationManagerDelegate {
         var onAuthorizationChange: (@MainActor (CLAuthorizationStatus) -> Void)?
-        var onLocation: (@MainActor (Coordinate, Double) -> Void)?
+        /// A fix, its radius, whether CoreLocation stated that radius (see `Precision`), and when
+        /// CoreLocation took it (see `FixTiming`).
+        var onLocation: (@MainActor (Coordinate, Double, Bool, Date) -> Void)?
         /// A heading, or `nil` for one that cannot be trusted. See `MapHeading.usable`.
         var onHeading: (@MainActor (Double?) -> Void)?
+        /// CoreLocation could not produce a fix. See `failureCount`.
+        var onFailure: (@MainActor () -> Void)?
 
         func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
             let status = manager.authorizationStatus
@@ -339,9 +497,14 @@ final class MapLocationProvider {
             // follows, and one rule in the codebase beats two: at 25m it sits the wrong side of
             // D6's 15m gate, so an unknown fix is excluded from charting by arithmetic instead of
             // by a special case someone has to remember.
+            //
+            // Whether it was substituted travels alongside, because one reader has to say the
+            // number out loud and must not say this one (`Precision.accuracyIsKnown`).
             let accuracy = last.horizontalAccuracy
-            let effective = accuracy >= 0 ? accuracy : VisitShortlist.assumedAccuracyM
-            MainActor.assumeIsolated { onLocation?(coordinate, effective) }
+            let isKnown = accuracy >= 0
+            let effective = isKnown ? accuracy : VisitShortlist.assumedAccuracyM
+            let capturedAt = last.timestamp
+            MainActor.assumeIsolated { onLocation?(coordinate, effective, isKnown, capturedAt) }
         }
 
         func locationManager(_ manager: CLLocationManager, didUpdateHeading newHeading: CLHeading) {
@@ -363,7 +526,9 @@ final class MapLocationProvider {
 
         func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {
             // A failed fix is not a refusal — it is "map without location" until the next one
-            // arrives, which is the state the map already draws. Nothing to do.
+            // arrives, which is the state the map already draws, so `availability` is untouched.
+            // It is counted for the one screen that waits on a fix it asked for (`failureCount`).
+            MainActor.assumeIsolated { onFailure?() }
         }
     }
 }

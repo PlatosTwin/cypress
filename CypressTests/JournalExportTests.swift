@@ -91,6 +91,41 @@ struct JournalExportTests {
         #expect(seen.count == Self.visitCount)
     }
 
+    // MARK: - A pin move
+
+    /// **A pin move is exported, as the journal row it is.** The export is "a copy of everything
+    /// you have recorded on this phone" (`JournalCopy.exportBody`), and it is the whole journal
+    /// (`LocalAPI.wholeJournal`), so a move this person made is in the file with kind `pinMoved`.
+    /// The add's root row is not a move and is not exported. The fixture's 250 visits stay 250.
+    ///
+    /// Red-proof: delete the fifth arm from `journalSQL`, and this goes red on "exported 0 pin
+    /// moves".
+    @Test("a pin move is exported once, and the add's root row is not")
+    func aPinMoveIsExported() async throws {
+        let (_, api, tree) = try await Self.makeStore()
+        _ = try await api.correctLocation(
+            treeID: tree.id,
+            to: ProximityDedupeTests.diagonal(from: tree.coordinate, meters: 30),
+            placement: .contributorPlaced,
+            locationAccuracyM: 5
+        )
+
+        let csv = try #require(String(data: try await api.exportLatest(.csv), encoding: .utf8))
+        let rows = csv.split(separator: "\n").dropFirst(2)
+        let moves = rows.filter { $0.hasPrefix("pinMoved,") }
+        #expect(moves.count == 1, "exported \(moves.count) pin moves, not 1")
+        #expect(moves.first?.contains(tree.id.uuidString) == true)
+        #expect(rows.count == Self.visitCount + 1, "the CSV holds \(rows.count) rows, not the visits and one move")
+
+        let root = try #require(
+            try JSONSerialization.jsonObject(with: try await api.exportLatest(.geojson)) as? [String: Any]
+        )
+        let features = try #require(root["features"] as? [[String: Any]])
+        let kinds = features.compactMap { ($0["properties"] as? [String: Any])?["kind"] as? String }
+        #expect(kinds.filter { $0 == "pinMoved" }.count == 1)
+        #expect(features.count == Self.visitCount + 1)
+    }
+
     // MARK: - The store's own page-versus-series answer
 
     @Test("a limited read says it is a page; an unlimited one says it is the series")

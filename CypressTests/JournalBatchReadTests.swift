@@ -17,14 +17,16 @@ import Testing
 /// visible on a row that is not the common case:
 ///
 /// 1. the display name is the tree's one active nickname, else the **seed** species' common name,
-///    else nothing — and the second fallback is `TreeQueries`-only, so a community tree with no
-///    nickname is nameless even when its row carries a self-asserted species (D15);
+///    else, for a community tree, the common name of the species its profile shows (the owner's
+///    answer of 2026-11-16, "Use the species"; `aCommunityTreeIsNamedByItsSpecies`), else nothing;
 /// 2. the nickname match is case-insensitive on `tree_uuid`, which is what `activeNamesSQL`'s
 ///    `COLLATE NOCASE` is for and what a `lower()` "optimization" would silently change.
 ///
-/// Every name below is checked **against `displayNameIfPresent` itself** — untouched by this round
-/// and still the per-tree implementation — so the claim is a comparison rather than a restatement
-/// of what the new code does.
+/// Every name below is checked **against `displayNameIfPresent` itself**, the per-tree form of the
+/// same rule, so the claim is a comparison rather than a restatement of what the new code does.
+/// `theReadersOwnClaimNamesTheRows` and `theReadersCorrectionNamesTheRowsUntilTheCacheWins` hold
+/// the set form, the per-tree form, My Grove and the profile to one name while the reader's own
+/// naming or correction of somebody else's tree is in force.
 ///
 /// The thumbnails move from the unscoped `ContributionStore.heroPhotoIDs()` to the scoped
 /// `heroPhotoIDs(treeIDs:attribution:)` (ERRATA E204), and the two do not answer identically in
@@ -280,6 +282,184 @@ struct JournalBatchReadTests {
             )
         }
         #expect(batched[Self.phantom] == nil, "an id with no name must be absent, not present and empty")
+    }
+
+    /// **The owner's answer of 2026-11-16, "Use the species": rows name a community tree as its
+    /// profile does.** Four trees the coordinator named, plus a withdrawn one:
+    ///
+    /// - an added tree with a species reads that species' common name;
+    /// - an added tree with none reads nothing (the caller draws the owner's nameless words);
+    /// - an added tree with a given name and a species reads the given name;
+    /// - a cached tree of somebody else's with a species reads that species;
+    /// - an added tree this phone withdrew still reads its species, so its Outbox rows name it.
+    ///
+    /// Each is checked on the data layer (the page, the set form and the per-tree form agree) and
+    /// on the two row titles, for a pin move and a visit. Red-proof: in
+    /// `LocalAPI.resolvedDisplayNames`, drop the community arm (`guard !unresolved.isEmpty …` made
+    /// to return `names` always); this goes red on "an added tree with a species read ''".
+    @Test("an added or cached tree with a species is named by it in the Journal and the Outbox")
+    func aCommunityTreeIsNamedByItsSpecies() async throws {
+        let (api, store) = try await Self.openSeeded()
+        let candidates = try await api.treesNear(
+            Coordinate(latitude: 37.7694, longitude: -122.4862), radiusM: 900, limit: 200
+        )
+        let source = try #require(
+            candidates.first(where: { $0.speciesCommonName != nil && $0.tree.speciesCurrentID != nil }),
+            "no seed tree near the opening center carries a species id and a common name"
+        )
+        let speciesID = try #require(source.tree.speciesCurrentID)
+        let common = try #require(source.speciesCommonName)
+        let attribution = await api.attribution
+
+        func add(_ suffix: String, _ latitude: Double, species: UUID?) async throws -> UUID {
+            try await api.addTree(
+                TreeDraft(
+                    coordinate: Coordinate(latitude: latitude, longitude: -122.4870),
+                    speciesID: species,
+                    photoLocalPath: "/tmp/cypress-journal-species-\(suffix).jpg",
+                    attribution: attribution
+                )
+            ).id
+        }
+        let withSpecies = try await add("a", 37.7700, species: speciesID)
+        let withNone = try await add("b", 37.7701, species: nil)
+        let givenAndSpecies = try await add("c", 37.7702, species: speciesID)
+        let withdrawn = try await add("d", 37.7703, species: speciesID)
+        try await Self.name(givenAndSpecies, "The Named Plane", store: store)
+        try await api.withdrawTree(treeID: withdrawn)
+
+        // Somebody else's tree, as the tile refresher writes it: only the cache holds it.
+        let cached = UUID(uuidString: "C0000000-0000-4000-8000-0000000000CA")!
+        let stamp = SQLiteTimestamp.string(from: Self.moment)
+        try await store.queue.write { connection in
+            try connection.execute("""
+                INSERT INTO community_tree_cache
+                    (id, lat, lon, placement, status, verification_state, species_current,
+                     created_at, updated_at, tile, fetched_at)
+                VALUES ('\(cached.uuidString)', 37.7704, -122.4870, 'gps', 'alive', 'unverified',
+                        '\(speciesID.uuidString.lowercased())', '\(stamp)', '\(stamp)', 't', '\(stamp)');
+                """)
+        }
+
+        let expected: [(UUID, String?, String)] = [
+            (withSpecies, common, "an added tree with a species"),
+            (withNone, nil, "an added tree with no species"),
+            (givenAndSpecies, "The Named Plane", "an added tree with a given name and a species"),
+            (cached, common, "somebody else's cached tree with a species"),
+            (withdrawn, common, "a withdrawn added tree with a species")
+        ]
+        for (offset, (id, _, _)) in expected.enumerated() {
+            try await Self.visit(id, at: Self.moment.addingTimeInterval(Double(offset) * 60), api: api, store: store)
+        }
+
+        let batched = await api.displayNames(for: expected.map(\.0))
+        let page = try await api.journal(cursor: nil, limit: JournalLimits.pageSize)
+        for (id, name, what) in expected {
+            #expect(batched[id] == name, "\(what) read '\(batched[id] ?? "")' in the set form")
+            let perTree = try await api.displayNameIfPresent(for: id)
+            #expect(perTree == name, "\(what) read '\(perTree ?? "")' in the per-tree form")
+            // A visit on a withdrawn tree leaves the Journal (`journal()` hides it), so only the
+            // trees still standing are looked for on the page.
+            if id != withdrawn {
+                let row = page.items.first { $0.treeID == id }
+                #expect(row?.treeDisplayName == (name ?? ""), "\(what) read '\(row?.treeDisplayName ?? "<no row>")' on the page")
+            }
+
+            // The two row titles, for a pin move and a visit.
+            let journalMove = JournalCopy.rowTitle(kind: .pinMoved, treeName: batched[id])
+            let journalVisit = JournalCopy.rowTitle(kind: .visit, treeName: batched[id])
+            let outboxMove = OutboxCopy.title(kind: .locationCorrection, treeName: batched[id])
+            let outboxVisit = OutboxCopy.title(kind: .visit, treeName: batched[id])
+            if let name {
+                #expect(journalMove == "Moved the pin of \(name)", "\(what): \(journalMove)")
+                #expect(journalVisit == "Visited \(name)", "\(what): \(journalVisit)")
+                #expect(outboxMove == "Pin moved · \(name)", "\(what): \(outboxMove)")
+                #expect(outboxVisit == "Visit · \(name)", "\(what): \(outboxVisit)")
+            } else {
+                #expect(journalMove == "Moved a tree’s pin", "\(what): \(journalMove)")
+                #expect(journalVisit == "Visited Tree", "\(what): \(journalVisit)")
+                #expect(outboxMove == "Pin moved", "\(what): \(outboxMove)")
+                #expect(outboxVisit == "Visit · Tree", "\(what): \(outboxVisit)")
+            }
+        }
+    }
+
+    // MARK: - The reader's own naming of somebody else's tree
+
+    /// One name for `id` on every surface that names it: the set form (the Journal and the Outbox),
+    /// the per-tree form, the profile's species, and My Grove's row. `expected` is the species
+    /// common name the case says the profile shows.
+    private static func expectOneName(
+        _ id: UUID, _ expected: String, _ what: String, api: LocalAPI
+    ) async throws {
+        let batched = await api.displayNames(for: [id])[id]
+        let perTree = try await api.displayNameIfPresent(for: id)
+        let profile = try await api.treeProfile(id: id).species?.commonName
+        let grove = try await api.grove().first { $0.treeID == id }?.displayName
+        #expect(profile == expected, "calibration, \(what): the profile shows '\(profile ?? "nil")', not '\(expected)'")
+        #expect(
+            batched == profile && perTree == profile && grove == profile,
+            """
+            \(what): the rows and the profile disagree. Set form '\(batched ?? "nil")', per-tree \
+            '\(perTree ?? "nil")', My Grove '\(grove ?? "<absent>")', profile '\(profile ?? "nil")'
+            """
+        )
+    }
+
+    /// **The overlay arm of the batched resolver**: a cached tree with no species, which this reader
+    /// (signed in and sharing) names a plane. Until a page serves the tree again, the cache holds no
+    /// species, and only `localSpeciesAnswers`' overlay gives the profile its plane. The rows have to
+    /// say the same, which is what `resolvedDisplayNames`' `treesWithAClaim` loop exists for.
+    ///
+    /// Red-proof: make `communitySpeciesNames` skip that loop (iterate an empty set) — red on "the
+    /// rows and the profile disagree", with the set form, the per-tree form and My Grove all 'nil'.
+    @Test("a cached tree the reader named reads the reader's species in the rows, as in the profile")
+    func theReadersOwnClaimNamesTheRows() async throws {
+        typealias O = OthersTreeControlsTests
+        let store = try await O.seededStore()
+        let api = LocalAPI(store: store, deviceID: O.readerDevice)
+        try await O.signIn(api)
+        let plane = try await O.plane(api)
+        let id = try await O.cached(api, species: nil)
+        try await Self.visit(id, api: api, store: store)
+
+        _ = try await api.claimSpecies(treeID: id, speciesID: plane.id)
+        try await Self.expectOneName(id, plane.commonName, "the claim queued", api: api)
+        try await O.answerEverything(store)
+        try await Self.expectOneName(id, plane.commonName, "the claim answered, no page since", api: api)
+    }
+
+    /// **The chain branch of the same arm**, `OthersTreeControlsTests
+    /// .theAdderSettingTheReplacedSpeciesBackWins`'s story: the reader names the tree a plane, a
+    /// page serves plane, the reader corrects it to an oak and the service accepts that. Before the
+    /// next page the overlay shows the oak; once a page serves plane again (the adder set it back),
+    /// the cache wins. The rows follow the profile in both states.
+    ///
+    /// Red-proof: the same break as above — red on "the correction accepted, no page since", where
+    /// the rows read the cache's plane and the profile the oak.
+    @Test("the reader's correction names the rows until the adder's species is served, then the cache does")
+    func theReadersCorrectionNamesTheRowsUntilTheCacheWins() async throws {
+        typealias O = OthersTreeControlsTests
+        let store = try await O.seededStore()
+        let api = LocalAPI(store: store, deviceID: O.readerDevice)
+        try await O.signIn(api)
+        let plane = try await O.plane(api)
+        let oak = try await O.oak(api, besides: plane)
+        let id = try await O.cached(api, species: nil)
+        try await Self.visit(id, api: api, store: store)
+        let day = { (n: Double) in Date(timeIntervalSince1970: 1_790_000_000 + n * 86_400) }
+
+        _ = try await api.claimSpecies(treeID: id, speciesID: plane.id)
+        try await O.acceptEverything(store, at: day(1))
+        try await O.serve(api, store, id: id, species: plane.id, at: day(2))
+        try await Self.expectOneName(id, plane.commonName, "the claim served", api: api)
+
+        _ = try await api.correctSpecies(treeID: id, speciesID: oak.id)
+        try await O.acceptEverything(store, at: day(3))
+        try await Self.expectOneName(id, oak.commonName, "the correction accepted, no page since", api: api)
+
+        try await O.serve(api, store, id: id, species: plane.id, at: day(4))
+        try await Self.expectOneName(id, plane.commonName, "the adder's plane served after the correction", api: api)
     }
 
     /// **An empty page asks for nothing.** `json_each('[]')` is legal but `IN ()` is not, and a

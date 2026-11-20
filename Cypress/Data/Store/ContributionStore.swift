@@ -174,6 +174,56 @@ public struct ContributionStore {
         return try statement.fetchAll(Self.decodeMeasurement)
     }
 
+    /// Test seam (`LocalAPI.debugSeedMeasurement`): the id of the reading a `client_uuid` names on
+    /// this tree, **withdrawn or not**, with any withdrawal undone.
+    ///
+    /// **Why the seam needs its own read, rather than `measurements(treeID:)` above.** That one
+    /// filters `deleted_at IS NULL`, which is correct for every product reader and wrong for a
+    /// harness: since v21 a reading can be withdrawn, and a withdrawn one is still a `client_uuid`
+    /// the insert's `ON CONFLICT` answers `duplicate` for. The seam then read back nothing and threw
+    /// `notFound`, so a device on which anybody had exercised the withdrawal control stopped being
+    /// able to open the fully-measured deep link at all — permanently, until the app was
+    /// uninstalled. It broke two UI tests on that simulator, and the failure looked like a defect in
+    /// an unrelated test (the family E202 and E133 are about).
+    ///
+    /// **It clears the tombstone rather than merely ignoring it**, because the seam's contract is
+    /// that the tree carries this reading when it returns. Reading the row back and leaving it
+    /// withdrawn would answer the caller and still leave the tree half-measured, which is the same
+    /// broken harness one assertion later.
+    ///
+    /// Scoped to the tree, exactly as the read it replaces was: a `client_uuid` held by a *different*
+    /// tree still answers nil here, and the seam still throws on it. That is a caller reusing one key
+    /// across trees, which is a mistake to name rather than to paper over.
+    ///
+    /// Not a product path. Nothing in the app un-withdraws a reading — R3's ruling and
+    /// `withdrawMessage`'s "This cannot be undone" are the product answer — and this is reachable
+    /// only through the debug deep link, keyed on a `client_uuid` the harness itself minted.
+    public func restoreSeededMeasurement(
+        clientUUID: UUID,
+        treeID: UUID,
+        at date: Date,
+        connection: SQLiteConnection
+    ) throws -> UUID? {
+        let revive = try connection.cachedStatement("""
+            UPDATE measurements
+               SET deleted_at = NULL, updated_at = :now
+             WHERE client_uuid = :key COLLATE NOCASE
+               AND tree_uuid = :tree COLLATE NOCASE
+               AND deleted_at IS NOT NULL
+            """)
+        _ = try revive.bind([":key": clientUUID.uuidString, ":tree": treeID.uuidString, ":now": date])
+        try revive.run()
+        _ = try revive.reset()
+
+        let statement = try connection.cachedStatement("""
+            SELECT id FROM measurements
+             WHERE client_uuid = :key COLLATE NOCASE AND tree_uuid = :tree COLLATE NOCASE
+            """)
+        _ = try statement.bind([":key": clientUUID.uuidString, ":tree": treeID.uuidString])
+        defer { _ = try? statement.reset() }
+        return try statement.fetchOne { try $0.uuidIfPresent("id") } ?? nil
+    }
+
     // MARK: - Care events
 
     @discardableResult
@@ -386,6 +436,56 @@ public struct ContributionStore {
         return Self.series(try statement.fetchAll(Self.decodePhoto), limit: limit)
     }
 
+    /// This tree's live photographs that **have left the phone**, by id.
+    ///
+    /// The phone's side of the one inexact link in photo identity (report F30,
+    /// `RoutedAPI.photoIdentityMatch`'s link 3): pairing a service row with a local one by framing
+    /// and capture second. That rule may only ever be offered a photograph whose copy could be on
+    /// the service, because a photograph that has not been sent has no copy there — so any own row
+    /// that happens to match it is some *other* photograph, and pairing the two hides that one and
+    /// names it in this one's withdrawal (review of #194, finding 1). Two conditions, each excluding
+    /// one way a row can still be on the phone alone:
+    ///
+    ///   - **`storage_key IS NOT NULL`** — the row was written by the outbox's apply
+    ///     (`LocalAPI.uploadPhoto` sets it), so a send was queued for it. The add-a-tree photograph
+    ///     keeps `local_path` and never has one, so it is never offered here. It is sent since the
+    ///     owner's answer of 2026-11-15 (`CommunityTreeBackfill`), always keyed by its `photos.id`,
+    ///     so photo identity's exact link pairs its service copy and this inexact one is not needed.
+    ///   - **no `outbox_photos` row names it** — the send is not still owed. The row is deleted by
+    ///     `OutboxStore.completePhoto` when the send completes; while it exists the photograph is
+    ///     waiting for Wi-Fi, or its begin failed, or it has not been tried yet.
+    ///   - **no refusal is recorded for it** — the service did not refuse its send for good. A
+    ///     refusal that will not change deletes the queue row too, so without this a photograph
+    ///     the service turned away read as sent (`OutboxStore.recordRefusedPhoto`).
+    ///
+    /// **What this cannot tell apart, stated rather than discovered:**
+    ///   - a binary staged before the send path existed (`sendable = 0`) has its queue row deleted
+    ///     at the apply, so it reads as sent although R77 kept it on the phone;
+    ///   - a binary refused for good by a build earlier than the refusal record had its queue row
+    ///     deleted and nothing written, so it reads as sent too.
+    /// Nothing on the row records either difference, and recording it would be a migration.
+    public func sentPhotoIDs(treeID: UUID, connection: SQLiteConnection) throws -> Set<UUID> {
+        let statement = try connection.cachedStatement("""
+            SELECT id FROM photos
+             WHERE tree_uuid = :tree COLLATE NOCASE
+               AND deleted_at IS NULL
+               AND storage_key IS NOT NULL
+               AND NOT EXISTS (
+                     SELECT 1 FROM outbox_photos
+                      WHERE outbox_photos.photo_id = photos.id COLLATE NOCASE
+                   )
+               AND NOT EXISTS (
+                     SELECT 1 FROM app_state
+                      WHERE app_state.key = :refused || upper(photos.id)
+                   )
+            """)
+        _ = try statement.bind([
+            ":tree": treeID.uuidString,
+            ":refused": OutboxStore.refusedPhotoKeyPrefix,
+        ])
+        return Set(try statement.fetchAll { try $0.uuid("id") })
+    }
+
     // MARK: - Hero photographs, batched (#176)
 
     /// One photograph id per tree, chosen by `PhotoHero.choose` — the same rule the profile hero
@@ -456,22 +556,14 @@ public struct ContributionStore {
     /// rows are not.
     public func heroPhotoIDs(treeIDs: Set<UUID>, connection: SQLiteConnection) throws -> [UUID: UUID] {
         guard !treeIDs.isEmpty else { return [:] }
-        let photoStatement = try connection.cachedStatement("""
-            SELECT * FROM photos
-             WHERE deleted_at IS NULL
-               AND tree_uuid COLLATE NOCASE IN (SELECT value FROM json_each(:trees))
-            """)
+        let photoStatement = try connection.cachedStatement(Self.ownHeroPhotoCandidatesSQL)
         _ = try photoStatement.bind(
             "[\(treeIDs.map { "\"\($0.uuidString)\"" }.joined(separator: ","))]", forName: ":trees"
         )
         let photos = try photoStatement.fetchAll(Self.decodePhoto)
         guard !photos.isEmpty else { return [:] }
 
-        let talliesStatement = try connection.cachedStatement("""
-            SELECT photo_id, SUM(vote) AS score FROM photo_votes
-             WHERE photo_id COLLATE NOCASE IN (SELECT value FROM json_each(:photos))
-             GROUP BY photo_id
-            """)
+        let talliesStatement = try connection.cachedStatement(Self.scopedHeroPhotoTalliesSQL)
         _ = try talliesStatement.bind(
             "[\(photos.map { "\"\($0.id.uuidString)\"" }.joined(separator: ","))]", forName: ":photos"
         )
@@ -482,11 +574,34 @@ public struct ContributionStore {
         return Self.chooseHeroes(from: photos, tallies: tallyPairs)
     }
 
+    /// The candidate half of the read above, as a property, for `journalSQL`'s reason: a gate can
+    /// then name the text the app runs instead of holding a copy of it.
+    ///
+    /// **What separates this from `scopedHeroPhotoCandidatesSQL` is the `is_own` column.** Both
+    /// narrow `photos` to a caller-supplied set of trees. The `attribution:` form additionally
+    /// selects `removalPredicate()`, because its rows may be a stranger's and it has to judge each
+    /// one through `TreeProfile.isPhotoVisible`. This caller's rows are already its own — the
+    /// method's doc above argues that at length — so there is nothing to judge and no column to
+    /// select. Two texts rather than one text with a branch, because the two reads answer different
+    /// questions and PR #144's review records what conflating them does.
+    ///
+    /// **The tallies half is now shared rather than copied** (PR #147's review, F4). It was written
+    /// out a second time inside this method, byte for byte, and nothing compared the two strings —
+    /// so the pair could drift apart in silence. `scopedHeroPhotoTalliesSQL` is the one copy.
+    static let ownHeroPhotoCandidatesSQL = """
+        SELECT * FROM photos
+         WHERE deleted_at IS NULL
+           AND tree_uuid COLLATE NOCASE IN (SELECT value FROM json_each(:trees))
+        """
+
     /// The pure half every hero read ends with: tally, then `PhotoHero.choose` per tree.
     ///
     /// Shared because it is the *choice*, and two copies of a choice rule is how one of them drifts
-    /// (`removalPredicate()`'s argument). The SQL is deliberately **not** shared: each of the three
-    /// reads has its own predicate, and those predicates are the whole of what distinguishes them.
+    /// (`removalPredicate()`'s argument). The candidate SQL is deliberately **not** shared: each of
+    /// the three reads has its own predicate, and those predicates are the whole of what
+    /// distinguishes them. Their *tallies* statements are a different matter — the two scoped reads
+    /// ask `photo_votes` the identical question and now read it off one property
+    /// (`scopedHeroPhotoTalliesSQL`), which is a copy removed, not a distinction erased.
     private static func chooseHeroes(from photos: [Photo], tallies: [(UUID, Int)?]) -> [UUID: UUID] {
         let scores = Dictionary(uniqueKeysWithValues: tallies.compactMap { $0 })
             .mapValues { PhotoTally(score: $0) }
@@ -637,7 +752,10 @@ public struct ContributionStore {
            AND tree_uuid COLLATE NOCASE IN (SELECT value FROM json_each(:trees))
         """
 
-    /// See `scopedHeroPhotoCandidatesSQL`.
+    /// See `scopedHeroPhotoCandidatesSQL` — and note that this one is read by **both** scoped hero
+    /// reads: `heroPhotoIDs(treeIDs:attribution:connection:)` above and
+    /// `heroPhotoIDs(treeIDs:connection:)`, which used to carry a byte-identical second copy.
+    /// The candidates differ between those two reads; the tallies question does not.
     static let scopedHeroPhotoTalliesSQL = """
         SELECT photo_id, SUM(vote) AS score FROM photo_votes
          WHERE photo_id COLLATE NOCASE IN (SELECT value FROM json_each(:photos))
@@ -916,6 +1034,180 @@ public struct ContributionStore {
         return counts
     }
 
+    // MARK: - Withdrawing one reading (AppSchema v21)
+
+    /// One measurement, as a withdrawal needs to see it: whose it is, which tree it is on, and which
+    /// of D7's two series it was in.
+    ///
+    /// Returned as a whole rather than as three reads for `PhotoForDeletion`'s reason — the caller
+    /// holds all of it at once, and two reads of a table a third statement is about to change is how
+    /// a withdrawal ends up naming one reading and tombstoning another.
+    public struct MeasurementForWithdrawal: Sendable, Equatable {
+        public let id: UUID
+        public let treeID: UUID
+        public let kind: MeasurementKind
+        /// The account the row names, or nil for a reading contributed before sign-in **and** for
+        /// one the leaving door unlinked. `isAnonymized` is what tells those two apart.
+        public let userID: UUID?
+        /// `measurements.device_id` is NOT NULL, so unlike a photograph a reading always names an
+        /// installation. That is why there is no `.nobody` owner here and why the anonymized case
+        /// has to be read off `anonymized_contributions` instead — see `isAnonymized`.
+        public let deviceID: UUID
+        /// Whether an account deletion unlinked this row through the door that leaves the work in
+        /// place (`AppSchema` v13, `AccountDeletion.anonymizeContributions`).
+        ///
+        /// **This is the whole of R3 on this table, and it cannot be read off the owner columns.**
+        /// The leaving door nulls `user_id` and deliberately leaves `device_id`, so an anonymized
+        /// reading is indistinguishable by columns alone from D9's ordinary case — an unsigned-in
+        /// contributor's own work on their own phone — which is precisely the pair
+        /// `claimDevice`'s own comment says the tombstone exists to tell apart.
+        public let isAnonymized: Bool
+    }
+
+    /// The reading a withdrawal is about, or nil when there is no live row with that id.
+    public func measurementForWithdrawal(
+        id: UUID,
+        connection: SQLiteConnection
+    ) throws -> MeasurementForWithdrawal? {
+        let statement = try connection.cachedStatement("""
+            SELECT tree_uuid, kind, user_id, device_id,
+                   NOT (\(Self.notAnonymized("measurements"))) AS anonymized
+              FROM measurements
+             WHERE id = :id COLLATE NOCASE AND deleted_at IS NULL
+            """)
+        _ = try statement.bind([":id": id.uuidString])
+        defer { _ = try? statement.reset() }
+        return try statement.fetchOne { row in
+            MeasurementForWithdrawal(
+                id: id,
+                treeID: try row.uuid("tree_uuid"),
+                // `row.value` throws on a `kind` the enum does not know rather than defaulting to
+                // one, which is the same refusal `decodeMeasurement` makes: a withdrawal that
+                // guessed the series would queue a false statement about which chart lost a point.
+                kind: try row.value("kind", MeasurementKind.self),
+                userID: try row.uuidIfPresent("user_id"),
+                deviceID: try row.uuid("device_id"),
+                isAnonymized: try row.bool("anonymized")
+            )
+        }
+    }
+
+    /// Which of this tree's live readings this person may withdraw.
+    ///
+    /// `deletablePhotoIDs`' twin, and the differences between the two are all facts about the
+    /// tables rather than about the rule:
+    ///
+    /// - **No provenance arm.** `AppSchema` v16's `taken_on_device` is a `photos` column and there
+    ///   is no equivalent here, so the reading stranded-under-an-adopted-account case E277 records
+    ///   simply does not arise: `claimDevice` sets `measurements.user_id` and **leaves
+    ///   `device_id`**, so a reading adopted by an account is still reachable through the device arm
+    ///   afterwards. A row this installation wrote never stops naming it.
+    /// - **The anonymized refusal is a tombstone lookup, not a null check.** `measurements.device_id`
+    ///   is NOT NULL, so a reading is never ownerless by columns; R3's promise on this table lives
+    ///   in `anonymized_contributions`, which is the same clause `journal`, `groveRecords` and
+    ///   `claimDevice` already lead with. Without it, a reading somebody deliberately unlinked from
+    ///   themselves would be withdrawable by whoever holds the phone next — which is the
+    ///   re-identification `claimDevice`'s own comment refuses.
+    ///
+    /// Read with the caller's attribution and in the same transaction as the readings themselves, so
+    /// a control cannot be drawn on a row that has since gone.
+    public func withdrawableMeasurementIDs(
+        treeID: UUID,
+        attribution: Attribution,
+        connection: SQLiteConnection
+    ) throws -> Set<UUID> {
+        let statement = try connection.cachedStatement("""
+            SELECT id FROM measurements
+             WHERE tree_uuid = :tree COLLATE NOCASE AND deleted_at IS NULL
+               AND \(Self.withdrawalPredicate())
+            """)
+        _ = try statement.bind([
+            ":tree": treeID.uuidString,
+            ":user": attribution.userID?.uuidString,
+            ":device": attribution.deviceID.uuidString
+        ])
+        defer { _ = try? statement.reset() }
+        return Set(try statement.fetchAll { try $0.uuidIfPresent("id") }.compactMap { $0 })
+    }
+
+    /// Who may take a reading back, in one place because it is written in two: the set that draws
+    /// the control, and the tombstone `UPDATE` that acts on it.
+    ///
+    /// `removalPredicate`'s reasoning applies verbatim — a check made in Swift and an `UPDATE` that
+    /// would have matched anyway are one refactor apart from a withdrawal that reaches somebody
+    /// else's reading — and the two copies here are shared for the reason that one names: four
+    /// copies of a permission rule is how one of them drifts.
+    ///
+    /// The anonymized clause leads, exactly as `removalPredicate`'s does and as
+    /// `PhotoOwner.permitsRemoval` refuses `.nobody` on its first line. R3 is not a clause in an
+    /// `||`. See `withdrawableMeasurementIDs` for why it is a tombstone lookup on this table.
+    private static func withdrawalPredicate() -> String {
+        """
+        \(notAnonymized("measurements"))
+                 AND ((:user IS NOT NULL AND user_id = :user COLLATE NOCASE)
+                      OR device_id = :device COLLATE NOCASE)
+        """
+    }
+
+    /// Tombstones one reading, behind the same predicate that drew the control.
+    ///
+    /// **Soft and *not* stripped**, which is where this parts company with `deletePhoto` and the
+    /// difference is the whole of it. A photograph's row loses `storage_key`, `local_path`, its
+    /// dimensions and its fuzzed coordinate, because the reason somebody withdraws a photograph is
+    /// usually what is *in* it and a tombstone that could still find the picture would be a lie. A
+    /// reading holds no picture: it is a number, its unit, its method and when it was taken. What
+    /// somebody withdrawing it is asking is that it stop counting — off the chart, off the log, out
+    /// of the stat card — and `deleted_at` is exactly that, in every reader (`isChartable`,
+    /// `measurements(treeID:)`, `journal`, `groveRecords`, `ownContributions`).
+    ///
+    /// Stripping `value` and `method` would also break the row's own CHECKs, which is D7 saying the
+    /// same thing the schema's way: there is no such thing here as a stored measurement with the
+    /// number taken out.
+    ///
+    /// - Returns: 1 when the row was tombstoned, 0 when the predicate matched nothing.
+    public func withdrawMeasurement(
+        id: UUID,
+        attribution: Attribution,
+        at date: Date,
+        connection: SQLiteConnection
+    ) throws -> Int {
+        let statement = try connection.cachedStatement("""
+            UPDATE measurements
+               SET deleted_at = :now, updated_at = :now
+             WHERE id = :id COLLATE NOCASE AND deleted_at IS NULL
+               AND \(Self.withdrawalPredicate())
+            """)
+        _ = try statement.bind([
+            ":id": id.uuidString,
+            ":user": attribution.userID?.uuidString,
+            ":device": attribution.deviceID.uuidString,
+            ":now": date
+        ])
+        try statement.run()
+        let changed = connection.changes
+        _ = try statement.reset()
+        return changed
+    }
+
+    /// Whether this tree still holds a live reading of one kind.
+    ///
+    /// Read *after* a withdrawal commits, to answer the one thing the caller cannot work out for
+    /// itself: whether screen 03's stat card for that measurement has gone back to being an empty
+    /// slot. See `WithdrawnMeasurement.leftTheKindWithNoReading`.
+    public func hasLiveMeasurement(
+        treeID: UUID,
+        kind: MeasurementKind,
+        connection: SQLiteConnection
+    ) throws -> Bool {
+        let statement = try connection.cachedStatement("""
+            SELECT COUNT(*) AS n FROM measurements
+             WHERE tree_uuid = :tree COLLATE NOCASE AND kind = :kind AND deleted_at IS NULL
+            """)
+        _ = try statement.bind([":tree": treeID.uuidString, ":kind": kind.rawValue])
+        defer { _ = try? statement.reset() }
+        return (try statement.fetchOne { try $0.int("n") } ?? 0) > 0
+    }
+
     // MARK: - Photo votes (AppSchema v8)
 
     /// Casts or changes one owner's vote on one photograph.
@@ -1113,6 +1405,9 @@ public struct ContributionStore {
     /// device-owned rows in front of them. There is no "everyone's reminders" query and no way to
     /// ask for another owner's: a caller states who it is, and privacy is the shape of the API
     /// rather than a filter someone can forget (D4, DECISIONS §3.11).
+    ///
+    /// A reminder on a community tree this phone withdrew is left out. The row stays saved, but the
+    /// You tab opens a reminder's tree, and a withdrawn tree has no profile to open.
     public func privateReminders(
         userID: UUID?,
         deviceID: UUID?,
@@ -1120,11 +1415,12 @@ public struct ContributionStore {
         connection: SQLiteConnection
     ) throws -> [PrivateReminder] {
         let statement = try connection.cachedStatement("""
-            SELECT * FROM private_reminders
-             WHERE deleted_at IS NULL
-               AND ((:user IS NOT NULL AND user_id = :user COLLATE NOCASE)
-                    OR (:device IS NOT NULL AND device_id = :device COLLATE NOCASE))
-             ORDER BY created_at DESC LIMIT :limit
+            SELECT r.* FROM private_reminders r
+             WHERE r.deleted_at IS NULL
+               AND ((:user IS NOT NULL AND r.user_id = :user COLLATE NOCASE)
+                    OR (:device IS NOT NULL AND r.device_id = :device COLLATE NOCASE))
+               AND \(Self.notOnAWithdrawnTree("r"))
+             ORDER BY r.created_at DESC LIMIT :limit
             """)
         _ = try statement.bind([
             ":user": userID?.uuidString,
@@ -1282,15 +1578,11 @@ public struct ContributionStore {
     /// yours there is, so a `Yours` map that omitted it would be wrong in the one case the reader
     /// would notice first.
     ///
-    /// **That arm carries no owner clause, because the table carries no owner columns**, and this is
-    /// correct rather than a hole: `community_trees` has neither `user_id` nor `device_id`, and it
-    /// does not need them, because there is no sync that brings anybody else's rows down — every row
-    /// in `main.community_trees` is one this installation wrote. `CommunityTreeStore` relies on the
-    /// same fact, and `TreeProfile.ownPhotoIDs` states it in the same words: "`main.photos` holds
-    /// what this device wrote and nothing else". If a `RemoteAPI` ever lands rows from elsewhere,
-    /// this arm needs an owner clause on the same day the columns arrive — and the schema change is
-    /// where that will be noticed, because this query will not compile against a table it has to
-    /// filter and cannot.
+    /// **That arm carries no owner clause.** `community_trees` has had `user_id` and `device_id`
+    /// since `AppSchema` v23, but every row in it is still one this installation wrote: other
+    /// people's trees arrive in a different table, `community_tree_cache` (round C2), which this
+    /// query does not read. So the arm lists every tree added on this phone, by any account that
+    /// used it. Whether it should list only the reader's is an open question, not settled here.
     ///
     /// Privacy is the shape of the query (D11): the caller states who it is, both owners are read
     /// because a row saved before sign-in and a row saved after are both this person's
@@ -1322,14 +1614,21 @@ public struct ContributionStore {
     /// when the row reached the database. `community_trees` has no `captured_at`; adding one is
     /// what the record would say if the reader had told it, and they did not, so that arm uses
     /// `created_at` and the difference is stated here rather than smoothed over.
+    ///
+    /// **A tree this phone withdrew is on none of the five arms** (the owner's answer of
+    /// 2026-11-16): the person's own rows on it stay saved, and the tree leaves the Yours map.
     private static let contributedRowsSQL = """
                 SELECT tree_uuid, captured_at AS at FROM visits \(ownerClause)
+                   AND \(notOnAWithdrawnTree("visits"))
                 UNION ALL
                 SELECT tree_uuid, captured_at AS at FROM observations \(ownerClause)
+                   AND \(notOnAWithdrawnTree("observations"))
                 UNION ALL
                 SELECT tree_uuid, captured_at AS at FROM measurements \(ownerClause)
+                   AND \(notOnAWithdrawnTree("measurements"))
                 UNION ALL
                 SELECT tree_uuid, captured_at AS at FROM care_events \(ownerClause)
+                   AND \(notOnAWithdrawnTree("care_events"))
                 UNION ALL
                 SELECT id AS tree_uuid, created_at AS at FROM community_trees
                  WHERE deleted_at IS NULL
@@ -1457,7 +1756,7 @@ public struct ContributionStore {
 
     /// The active nicknames for a set of trees, keyed by tree — one statement instead of one per
     /// tree, for `LocalAPI.grove()` and, since PR #143, for
-    /// `LocalAPI.displayNames(for:treeQueries:contributions:connection:)` — which is the name rule
+    /// `LocalAPI.resolvedDisplayNames(for:connection:)` — which is the name rule
     /// behind `journal()`, `AccountModel` and `DataLayer.treeNameResolver`.
     ///
     /// **Dropping the `LIMIT 1` loses nothing, and that is a property of the schema rather than of
@@ -1739,23 +2038,7 @@ public struct ContributionStore {
         deviceID: UUID,
         connection: SQLiteConnection
     ) throws -> [UUID: GroveRecord] {
-        let statement = try connection.cachedStatement("""
-            SELECT tree_uuid, kind, COUNT(*) AS n FROM (
-                SELECT tree_uuid, 'visit' AS kind, user_id, device_id, client_uuid, deleted_at FROM visits
-                UNION ALL
-                SELECT tree_uuid, 'observation', user_id, device_id, client_uuid, deleted_at FROM observations
-                UNION ALL
-                SELECT tree_uuid, 'measurement', user_id, device_id, client_uuid, deleted_at FROM measurements
-                UNION ALL
-                SELECT tree_uuid, 'care_event', user_id, device_id, client_uuid, deleted_at FROM care_events
-            ) record
-             WHERE deleted_at IS NULL
-               AND (device_id = :device COLLATE NOCASE
-                    OR (:user IS NOT NULL AND user_id = :user COLLATE NOCASE))
-               -- `journal`'s clause, for the same reason (`AppSchema` v13).
-               AND \(Self.notAnonymized("record"))
-             GROUP BY tree_uuid, kind
-            """)
+        let statement = try connection.cachedStatement(Self.groveRecordsSQL)
         _ = try statement.bind([":device": deviceID.uuidString, ":user": userID?.uuidString])
 
         var visits: [UUID: Int] = [:]
@@ -1789,6 +2072,30 @@ public struct ContributionStore {
             )
         })
     }
+
+    /// The text `groveRecords` runs, as a property, for `groveTreeIDsSQL`'s reason: the gate
+    /// explains the text the app runs rather than holding a copy of it.
+    ///
+    /// The four arms are the four contribution tables, unioned so one statement answers "what did
+    /// this person do, by tree" for the whole grove — the method's own doc argues why that is a
+    /// count and why the count is allowed here.
+    static let groveRecordsSQL = """
+        SELECT tree_uuid, kind, COUNT(*) AS n FROM (
+            SELECT tree_uuid, 'visit' AS kind, user_id, device_id, client_uuid, deleted_at FROM visits
+            UNION ALL
+            SELECT tree_uuid, 'observation', user_id, device_id, client_uuid, deleted_at FROM observations
+            UNION ALL
+            SELECT tree_uuid, 'measurement', user_id, device_id, client_uuid, deleted_at FROM measurements
+            UNION ALL
+            SELECT tree_uuid, 'care_event', user_id, device_id, client_uuid, deleted_at FROM care_events
+        ) record
+         WHERE deleted_at IS NULL
+           AND (device_id = :device COLLATE NOCASE
+                OR (:user IS NOT NULL AND user_id = :user COLLATE NOCASE))
+           -- `journal`'s clause, for the same reason (`AppSchema` v13).
+           AND \(Self.notAnonymized("record"))
+         GROUP BY tree_uuid, kind
+        """
 
     /// Where a journal page left off: the last row's capture time **and its id**.
     ///
@@ -1835,7 +2142,8 @@ public struct ContributionStore {
         }
     }
 
-    /// `GET /me/journal`. One stream over the four contribution kinds, newest first.
+    /// `GET /me/journal`. One stream over the four contribution kinds and this person's pin moves,
+    /// newest first.
     ///
     /// The cursor is the last row returned — its `captured_at` **and its id**, because the
     /// timestamp alone is not a position in the list; see `JournalCursor`. It is stable under
@@ -1853,9 +2161,12 @@ public struct ContributionStore {
         deviceID: UUID,
         before cursor: JournalCursor?,
         limit: Int,
+        includingWithdrawn: Bool = false,
         connection: SQLiteConnection
     ) throws -> [(id: UUID, kind: JournalEntry.Kind, treeID: UUID, capturedAt: Date, summary: String)] {
-        let statement = try connection.cachedStatement(Self.journalSQL)
+        let statement = try connection.cachedStatement(
+            includingWithdrawn ? Self.exportJournalSQL : Self.journalSQL
+        )
         _ = try statement.bind([
             ":device": deviceID.uuidString,
             ":user": userID?.uuidString,
@@ -1929,7 +2240,64 @@ public struct ContributionStore {
     /// The `SEARCH tomb` step is `Self.notAnonymized`'s lookup, one indexed probe per candidate
     /// row. It is correctly indexed, it is inside each arm now rather than over the union, and it
     /// excludes exactly the rows it excluded before.
-    static let journalSQL = """
+    ///
+    /// The `SEARCH withdrawn` step is `Self.notOnAWithdrawnTree`'s lookup, the same shape: one
+    /// probe of `idx_community_trees_id` per candidate row, inside each arm. A row on a community
+    /// tree this phone withdrew is not listed (the owner's answer of 2026-11-16), so no Journal row
+    /// opens to an empty profile.
+    ///
+    /// ── The fifth arm: a pin move (the app owner's decision of 2026-11-14) ──────────────────────
+    ///
+    /// A row of `tree_locations` (`AppSchema` v23) that this phone's person wrote, and that is a
+    /// move rather than where the tree was first put. The Journal reads it as "Moved the pin of X".
+    /// Four rules, each a `WHERE` clause:
+    ///
+    /// - **`id <> tree_id`: not the root row.** Every tree has a root row whose id is the tree's own
+    ///   id; it records the add, which is not a move. Every later row has its own id (the service
+    ///   refuses a correction spelled with the tree's id). `NOCASE`, so a root row whose id and
+    ///   `tree_id` differ only in case is still a root.
+    /// - **The owner predicate the other four arms use, or this phone set it.** A move on this
+    ///   phone by another device or account is not this person's act. The third test,
+    ///   `set_on_device` (`AppSchema` v24), is what the four other arms get from `device_id`: sign-in
+    ///   keeps a visit's `device_id` but clears a move's, because `tree_locations` has at most one
+    ///   owner. Without it a move made on this phone left the Journal and the export at sign-out
+    ///   while the visits beside it stayed. The owner chose on 2026-11-16 that both stay.
+    /// - **Not on a withdrawn tree.** A withdrawal keeps the chain (it is the record, v23), but the
+    ///   tree's profile no longer opens, and every Journal row opens a profile. `NOCASE`, the
+    ///   collation every reader of `community_trees.id` compares in, so the probe seeks
+    ///   `idx_community_trees_id` (`AppSchema` v19). `NOT EXISTS` on a withdrawn row rather than
+    ///   `EXISTS` on a live one.
+    /// - **`notAnonymized`**, the same tombstone check as the other arms.
+    ///
+    /// **This arm walks `tree_locations` and does not sort.** The table has no index on
+    /// `occurred_at` by itself, and adding one is a migration. So the arm has no `ORDER BY` and no
+    /// `LIMIT` of its own: it hands every move before the cursor to the outer merge, which sorts it
+    /// with the other four arms' rows. The plan keeps one temp b-tree. The table holds one root row
+    /// for each tree this phone added and one row per move, so both the walk and the extra rows in
+    /// the merge are bounded by one person's own adds and moves. `JournalQueryPlanTests` allows the
+    /// walk by name with that as the premise, as it allows `tree_names`.
+    static let journalSQL = journalStatement(includingWithdrawn: false)
+
+    /// The same read with the withdrawn-tree clauses left out, for the export only. The export's
+    /// promise is everything this person recorded on this phone, and the owner's answer of
+    /// 2026-11-16 says a withdrawn tree's rows stay saved; it names only the Journal, My Grove and
+    /// the Yours map as the places the tree leaves. Keeping the export whole is the orchestrator's
+    /// choice of 2026-11-16, not the owner's. For the four contribution arms this is the statement
+    /// the Journal ran before withdrawals existed. The pin-move arm differs: before, it already left
+    /// out a pin move on a tree a lead withdrew, in the Journal and in the export, and the export
+    /// now lists it.
+    static let exportJournalSQL = journalStatement(includingWithdrawn: true)
+
+    private static func journalStatement(includingWithdrawn: Bool) -> String {
+        func withdrawnClause(_ qualifier: String) -> String {
+            includingWithdrawn ? "1" : notOnAWithdrawnTree(qualifier)
+        }
+        let pinMoveWithdrawnClause = includingWithdrawn ? "1" : """
+            NOT EXISTS (SELECT 1 FROM community_trees withdrawn
+                                WHERE withdrawn.id = tree_locations.tree_id COLLATE NOCASE
+                                  AND withdrawn.deleted_at IS NOT NULL)
+            """
+        return """
         SELECT id, kind, tree_uuid, captured_at, summary FROM (
             SELECT id, 'visit' AS kind, tree_uuid, captured_at, COALESCE(note, '') AS summary
               FROM (SELECT * FROM visits e
@@ -1939,6 +2307,7 @@ public struct ContributionStore {
                        AND (captured_at, id COLLATE NOCASE)
                            < (COALESCE(:cursorAt, char(0x10FFFF)), COALESCE(:cursorID, char(0x10FFFF)))
                        AND \(Self.notAnonymized("e"))
+                       AND \(withdrawnClause("e"))
                      ORDER BY captured_at DESC, id COLLATE NOCASE DESC
                      LIMIT :limit)
             UNION ALL
@@ -1952,6 +2321,7 @@ public struct ContributionStore {
                        AND (captured_at, id COLLATE NOCASE)
                            < (COALESCE(:cursorAt, char(0x10FFFF)), COALESCE(:cursorID, char(0x10FFFF)))
                        AND \(Self.notAnonymized("e"))
+                       AND \(withdrawnClause("e"))
                      ORDER BY captured_at DESC, id COLLATE NOCASE DESC
                      LIMIT :limit)
             UNION ALL
@@ -1964,6 +2334,7 @@ public struct ContributionStore {
                        AND (captured_at, id COLLATE NOCASE)
                            < (COALESCE(:cursorAt, char(0x10FFFF)), COALESCE(:cursorID, char(0x10FFFF)))
                        AND \(Self.notAnonymized("e"))
+                       AND \(withdrawnClause("e"))
                      ORDER BY captured_at DESC, id COLLATE NOCASE DESC
                      LIMIT :limit)
             UNION ALL
@@ -1975,12 +2346,25 @@ public struct ContributionStore {
                        AND (captured_at, id COLLATE NOCASE)
                            < (COALESCE(:cursorAt, char(0x10FFFF)), COALESCE(:cursorID, char(0x10FFFF)))
                        AND \(Self.notAnonymized("e"))
+                       AND \(withdrawnClause("e"))
                      ORDER BY captured_at DESC, id COLLATE NOCASE DESC
                      LIMIT :limit)
+            UNION ALL
+            SELECT id, 'pinMoved', tree_id, occurred_at, ''
+              FROM tree_locations
+             WHERE id <> tree_id COLLATE NOCASE
+               AND (device_id = :device COLLATE NOCASE
+                    OR set_on_device = :device COLLATE NOCASE
+                    OR (:user IS NOT NULL AND user_id = :user COLLATE NOCASE))
+               AND (occurred_at, id COLLATE NOCASE)
+                   < (COALESCE(:cursorAt, char(0x10FFFF)), COALESCE(:cursorID, char(0x10FFFF)))
+               AND \(pinMoveWithdrawnClause)
+               AND \(Self.notAnonymized("tree_locations"))
         )
         ORDER BY captured_at DESC, id COLLATE NOCASE DESC
         LIMIT :limit
         """
+    }
 
     /// `POST /devices/claim` — attributes this device's anonymous contributions to a user (D9).
     ///
@@ -2044,6 +2428,28 @@ public struct ContributionStore {
         _ = try photos.bind([":user": userID, ":now": date, ":device": deviceUUID.uuidString])
         try photos.run()
         _ = try photos.reset()
+
+        // The community trees this phone added signed out, and every pin position it set on them
+        // (`AppSchema` v23), adopted on the photograph's terms: at most one owner per row, so the
+        // account gains it and the device link goes in the same statement. The service does the
+        // same at `POST /devices/claim` — after it, the device's own credential is a stranger to
+        // these trees (`TestAClaimedDevicesOwnCredentialNoLongerActsOnItsTrees`) — and adopting here
+        // is what keeps the phone from offering a signed-out move the service would refuse.
+        // `user_id IS NULL` leaves an anonymized row alone, for the photograph's reason: it has no
+        // `device_id` either, so it matches nothing and the next person to sign in here cannot
+        // adopt a tree somebody else left behind.
+        // `species_assertions` rides the same loop (`ROADMAP` chip 71): a tree adopted without the claims
+        // on it would leave the account unable to correct its own species, because
+        // `SpeciesAssertion.isSupersedable(by:)` reads the claim's owner, not the tree's.
+        for table in ["community_trees", "tree_locations", "species_assertions"] {
+            let adopt = try connection.cachedStatement("""
+                UPDATE main.\(table) SET user_id = :user, device_id = NULL, updated_at = :now
+                 WHERE device_id = :device COLLATE NOCASE AND user_id IS NULL
+                """)
+            _ = try adopt.bind([":user": userID, ":now": date, ":device": deviceUUID.uuidString])
+            try adopt.run()
+            _ = try adopt.reset()
+        }
 
         try claimFavorites(deviceUUID: deviceUUID, userID: userID, at: date, connection: connection)
         try claimPhotoVotes(deviceUUID: deviceUUID, userID: userID, at: date, connection: connection)
@@ -2305,6 +2711,18 @@ public struct ContributionStore {
         """
         NOT EXISTS (SELECT 1 FROM anonymized_contributions tomb
                      WHERE tomb.client_uuid = \(qualifier).client_uuid)
+        """
+    }
+
+    /// A contribution row whose tree is not a community tree this phone withdrew (the owner's
+    /// answer of 2026-11-16: the rows stay saved, and the tree leaves the Journal, My Grove and the
+    /// Yours map). The pin-move arm's clause, in the same shape: `NOCASE`, so the probe seeks
+    /// `idx_community_trees_id`, and `NOT EXISTS` on a withdrawn row.
+    static func notOnAWithdrawnTree(_ qualifier: String) -> String {
+        """
+        NOT EXISTS (SELECT 1 FROM community_trees withdrawn
+                     WHERE withdrawn.id = \(qualifier).tree_uuid COLLATE NOCASE
+                       AND withdrawn.deleted_at IS NOT NULL)
         """
     }
 

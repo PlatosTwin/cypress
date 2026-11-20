@@ -54,16 +54,14 @@ struct GoldenWireFixtureTests {
     // MARK: Calibration
 
     /// **Calibrate the instrument before trusting the reading.** Three answers known before any
-    /// decode ran: both files exist where the contract says they do, they are not empty, and the
+    /// decode ran: the file exists where the contract says it does, it is not empty, and the
     /// decoder rejects a shape it should reject.
     ///
     /// Without the last of these, every gate below would pass on a decoder that accepted anything.
     @Test("the fixtures are on disk and the decoder is not permissive")
     func theFixturesAreOnDiskAndTheDecoderIsNotPermissive() throws {
         let grove = try Self.fixture("grove.json")
-        let conflict = try Self.fixture("proximity_conflict.json")
         #expect(grove.count > 0, "server/testdata/grove.json is empty — every gate below is vacuous")
-        #expect(conflict.count > 0, "server/testdata/proximity_conflict.json is empty")
 
         // The negative control, and it is the exact drift this contract exists to catch: the same
         // record written in snake_case must NOT decode, because a decoder that read it would be one
@@ -106,59 +104,125 @@ struct GoldenWireFixtureTests {
         #expect(record.careEvents == 0)
     }
 
-    // MARK: proximity_conflict.json
+    // MARK: tree_profile.json
 
-    /// `server/testdata/README.md`: "`proximity_conflict.json` | the whole error body;
-    /// `detail.candidates` is `[NearbyTree]`".
+    /// `GET /trees/{id}`, decoded by **the client's own read** — `RemoteAPI.treeCommunityHalf`, over
+    /// a transport that answers with this file's bytes — rather than by a model this test chose.
     ///
-    /// Two decodes of one file, because it carries two shapes that different code reads: the
-    /// envelope `APIError.Envelope` already knows, and the candidate list beside it — a sibling of
-    /// `error` rather than a child, because the envelope's nested container decodes exactly `code`,
-    /// `message` and `retryable`.
-    @Test("proximity_conflict.json decodes as an envelope and as candidates")
-    func proximityConflictDecodes() throws {
-        let data = try Self.fixture("proximity_conflict.json")
+    /// The file is written by `treeProfileBody` in `reads.go`, the function the handler itself calls
+    /// (`TestTreeProfileGolden`), so the bytes here are what the service emits. Report F30's link
+    /// between the halves is `client_uuid`, and it is the field a break would lose silently: it is
+    /// optional on the client, so a renamed key decodes as nil **without throwing**, and the
+    /// contributor's profile goes back to drawing every photograph they sent twice. So the key is
+    /// asserted by value, on the row that carries it and on the rows that must not.
+    @Test("tree_profile.json decodes through RemoteAPI, and the key reaches only the owner's rows")
+    func treeProfileJSONDecodesThroughTheClient() async throws {
+        let data = try Self.fixture("tree_profile.json")
+        #expect(data.count > 0, "server/testdata/tree_profile.json is empty")
 
-        let envelope = try Self.decoder.decode(APIError.Envelope.self, from: data)
-        #expect(envelope.error == .conflict)
-        #expect(!envelope.resolvedRetryable, "conflict must stay non-retryable — the user resolves it")
+        let tree = try #require(UUID(uuidString: "5a1e7c0d-0000-4000-8000-00000000f030"))
+        let transport = ScriptedTransport()
+        transport.answer("GET /trees/\(tree.uuidString)", with: String(decoding: data, as: UTF8.self))
+        let remote = RemoteAPI(
+            baseURL: URL(string: "https://service.invalid/api/v1")!,
+            transport: transport,
+            session: .shared
+        )
 
-        let detail = try Self.decoder.decode(ProximityConflictDetail.self, from: data)
-        let candidate = try #require(detail.detail.candidates.first)
+        let half = try await remote.treeCommunityHalf(id: tree)
 
-        // `distanceM`, in `NearbyTree`'s own synthesized key.
-        #expect(candidate.distanceM > 4.99 && candidate.distanceM < 5.0)
-        #expect(candidate.speciesScientificName == nil)
-        #expect(candidate.tell == nil)
+        let ownApproved = try #require(UUID(uuidString: "11111111-0000-4000-8000-0000000000a1"))
+        let ownPending = try #require(UUID(uuidString: "22222222-0000-4000-8000-0000000000b2"))
+        let strangers = try #require(UUID(uuidString: "33333333-0000-4000-8000-0000000000c3"))
 
-        // The nested `Tree`, and the two properties that are the whole reason this wire is
-        // camelCase: both are optional, so a key-strategy mismatch would leave them nil rather than
-        // throw, and the tree would arrive with no species while nothing reported it.
-        #expect(candidate.tree.speciesCurrentID == UUID(uuidString: "7f3c1d22-5e6a-4b90-8c11-2d3e4f5a6b7c"))
-        #expect(candidate.tree.neighborhoodID == nil)
+        #expect(half.treeID == tree)
+        #expect(Set(half.photos.map(\.id)) == [ownApproved, ownPending, strangers])
+        #expect(half.ownPhotoIDs == [ownApproved, ownPending])
 
-        // `placement` is non-optional on the client, so a value outside `TreePlacement`'s two raw
-        // values throws the whole `Tree`, the whole array and the whole conflict.
-        #expect(candidate.tree.placement == .contributorPlaced)
-        #expect(candidate.tree.source == .community)
-        #expect(candidate.tree.status == .alive)
-        #expect(candidate.tree.verificationState == .unverified)
-        #expect(candidate.tree.statedLandContext == .street)
-        #expect(candidate.tree.coordinate.latitude == 37.7601)
-        #expect(candidate.tree.coordinate.longitude == -122.505)
-        #expect(candidate.tree.deletedAt == nil)
+        // The link, by value, on the one row that carries it.
+        #expect(
+            half.clientUUIDs[ownApproved] == UUID(uuidString: "11111111-0000-4000-8000-00000000c1e1"),
+            "the contributor's own row lost its client_uuid in the decode: \(half.clientUUIDs)"
+        )
+        // `null` on an own row from a keyless begin, and absent on a stranger's: both decode to no
+        // entry, and the stranger's is the one that must never gain one.
+        #expect(half.clientUUIDs[ownPending] == nil)
+        #expect(half.clientUUIDs[strangers] == nil)
+        #expect(half.clientUUIDs.count == 1)
+
+        // The rest of the row, so a decode that dropped the photographs cannot pass on the key alone.
+        let approved = try #require(half.photos.first { $0.id == ownApproved })
+        #expect(approved.shotType == .fullTree)
+        #expect(approved.isPubliclyVisible)
+        let pending = try #require(half.photos.first { $0.id == ownPending })
+        #expect(pending.shotType == .leaf)
+        #expect(!pending.isPubliclyVisible)
     }
 
-    /// The candidates are what `ProximityConflict` is built from, so the last step of the contract
-    /// is that they fit it.
-    @Test("the candidates are a ProximityConflict")
-    func theCandidatesAreAProximityConflict() throws {
-        let detail = try Self.decoder.decode(
-            ProximityConflictDetail.self,
-            from: try Self.fixture("proximity_conflict.json")
+    // MARK: DELETE /me
+
+    static func deletingRemote(answering body: String) -> (RemoteAPI, ScriptedTransport) {
+        let transport = ScriptedTransport()
+        transport.answer("DELETE /me", with: body)
+        let remote = RemoteAPI(
+            baseURL: URL(string: "https://service.invalid/api/v1")!,
+            transport: transport,
+            session: .shared,
+            pendingOutboxKeys: { [] }
         )
-        let conflict = ProximityConflict(candidates: detail.detail.candidates)
-        #expect(conflict.candidates.count == 1)
-        #expect(conflict.candidates[0].id == conflict.candidates[0].tree.id)
+        return (remote, transport)
+    }
+
+    /// `delete_me.json` is `deletionBody`'s own output (`TestDeleteMeGolden`). The tree lists must
+    /// arrive by value, or the phone falls back to its own rule without a word (`ROADMAP` 104, 105).
+    ///
+    /// Red-proof: rename the `community_trees` coding key in `DeleteAccountResponse` — red on
+    /// "the service's tree answer did not decode".
+    @Test("delete_me.json decodes through RemoteAPI, tree lists and all")
+    func deleteMeJSONDecodesThroughTheClient() async throws {
+        let data = try Self.fixture("delete_me.json")
+        #expect(data.count > 0, "server/testdata/delete_me.json is empty")
+        let (remote, _) = Self.deletingRemote(answering: String(decoding: data, as: UTF8.self))
+
+        let answer = try await remote.deleteAccountOnService(.leaveRecords)
+
+        let deleted = try #require(UUID(uuidString: "d1e7e7ed-0104-4c2a-9b6e-000000000104"))
+        let anonymized = try #require(UUID(uuidString: "a0a0a0a0-0105-4c2a-9b6e-000000000105"))
+        let trees = try #require(answer.trees, "the service's tree answer did not decode")
+        #expect(trees.deleted == [deleted])
+        #expect(trees.anonymized == [anonymized])
+        // The counters, so a decode that kept only the new key cannot pass.
+        #expect(answer.outcome.anonymizedContributions == 4)
+        #expect(answer.outcome.anonymizedPhotos == 1)
+    }
+
+    /// The service as deployed today sends no `community_trees`. That must decode, and decode to
+    /// "no answer", so the phone keeps its own rule.
+    @Test("a DELETE /me answer with no community_trees decodes as no answer")
+    func anOlderServicesAnswerDecodesAsNoAnswer() async throws {
+        let (remote, _) = Self.deletingRemote(
+            answering: #"{"deleted":true,"choice":"eraseEverything","contributions":2,"photos":0,"tombstones":0}"#
+        )
+
+        let answer = try await remote.deleteAccountOnService(.eraseEverything)
+
+        #expect(answer.trees == nil)
+        #expect(answer.outcome.deletedContributions == 2, "the counters did not decode")
+    }
+
+    /// The answer is read after the service deleted the account, and a throw here would skip the
+    /// whole local half. So a `community_trees` this build cannot read costs only the better answer.
+    ///
+    /// Red-proof: decode `communityTrees` with `try` instead of `try?` — red on the throw.
+    @Test("a malformed community_trees costs the answer, never the deletion")
+    func aMalformedTreeAnswerDoesNotThrow() async throws {
+        let (remote, _) = Self.deletingRemote(
+            answering: #"{"deleted":true,"choice":"leaveRecords","contributions":1,"photos":0,"tombstones":0,"community_trees":{"deleted":null}}"#
+        )
+
+        let answer = try await remote.deleteAccountOnService(.leaveRecords)
+
+        #expect(answer.trees == nil)
+        #expect(answer.outcome.anonymizedContributions == 1)
     }
 }

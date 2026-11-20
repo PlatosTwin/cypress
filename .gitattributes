@@ -1,1 +1,7 @@
 graphify-out/graph.json merge=graphify
+
+# The web lockfile is source — `npm ci` installs it exactly and refuses when it disagrees with
+# package.json — but it is machine-written, and a dependency bump is thousands of lines of it.
+# `linguist-generated` collapses it in a pull request by default; it stays expandable, and it is
+# NOT marked `-diff`, because the one thing a reviewer of a lockfile bump needs is the diff.
+web/package-lock.json linguist-generated=true

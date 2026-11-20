@@ -66,7 +66,7 @@ struct GroveLocalFirstTests {
     static func localDouble() throws -> LocalDouble {
         var local = LocalDouble()
         local.speciesKnown = GroveSpecies(
-            neighborhood: GroveNeighborhood(area: .radius(meters: 500), species: Series(complete: [speciesID])),
+            neighborhood: GroveNeighborhood(area: .radius(meters: 500), species: Series(complete: [speciesID]), basis: .mostVisited),
             known: Series(complete: [
                 KnownSpecies(
                     speciesID: speciesID,
@@ -94,11 +94,10 @@ struct GroveLocalFirstTests {
                 isFavorite: false
             )
         ]
-        // **The nickname is load-bearing, not decoration** (PR #144 review, F1b). This row is a
-        // `.community` record, and D15 does not name one after a species somebody asserted about it
-        // — so with only the species it has no name the app will draw and *both* resolver arms drop
-        // it, which would make every merge assertion below about a row that never arrives. A
-        // nickname is what a contributor gives a tree they added, and it is what D15 names.
+        // **The nickname wins over the species** (PR #144 review, F1b). This row is a `.community`
+        // record with a species; since the owner's answer of 2026-11-16 ("Yes, use the species") it
+        // would be named "Coast Live Oak" without the nickname. The merge assertions below expect
+        // "The Corner Oak", which is the nickname-first half of the rule.
         local.profilesByID = [
             accountTreeID: TreeProfile(
                 tree: Tree(
@@ -122,7 +121,7 @@ struct GroveLocalFirstTests {
     /// repeat visit has to pick up.
     static func twoSpeciesLocally() throws -> GroveSpecies {
         GroveSpecies(
-            neighborhood: GroveNeighborhood(area: .radius(meters: 500), species: Series(complete: [speciesID])),
+            neighborhood: GroveNeighborhood(area: .radius(meters: 500), species: Series(complete: [speciesID]), basis: .mostVisited),
             known: Series(complete: [
                 KnownSpecies(
                     speciesID: speciesID,
@@ -204,9 +203,9 @@ struct GroveLocalFirstTests {
         let log = RemoteReadLog()
         let router = Self.router(try Self.localDouble(), transport, log: log)
 
-        #expect(try await router.groveSpecies().known.items.count == 1, "the phone's half is not one species")
+        #expect(try await router.groveSpecies(near: nil).known.items.count == 1, "the phone's half is not one species")
 
-        let merged = try await router.refreshedGroveSpecies()
+        let merged = try await router.refreshedGroveSpecies(near: nil)
 
         #expect(merged.known.items.count == 2, "the route did not decode, or the merge dropped a row")
         #expect(transport.calls.count == 1, "the refresh asked the service \(transport.calls.count) times")
@@ -231,7 +230,7 @@ struct GroveLocalFirstTests {
         let log = RemoteReadLog()
         let router = Self.router(try Self.localDouble(), transport, log: log)
 
-        let painted = try await router.groveSpecies()
+        let painted = try await router.groveSpecies(near: nil)
 
         #expect(painted.known.items.count == 1, "the paint did not answer with the phone's grove")
         #expect(painted.known.items.first?.speciesID == Self.speciesID)
@@ -277,7 +276,7 @@ struct GroveLocalFirstTests {
         let model = GroveModel(
             api: router,
             now: { GroveFirstClock.laterMet },
-            refreshSpecies: { try? await router.refreshedGroveSpecies() }
+            refreshSpecies: { _ in try? await router.refreshedGroveSpecies(near: nil) }
         )
 
         await model.load()
@@ -350,7 +349,7 @@ struct GroveLocalFirstTests {
             api: router,
             now: { GroveFirstClock.laterMet },
             // What `DataLayer.boot` builds: the throw is swallowed to nil.
-            refreshSpecies: { nil }
+            refreshSpecies: { _ in nil }
         )
 
         await model.load()
@@ -384,7 +383,7 @@ struct GroveLocalFirstTests {
     func aCancelledRefreshRecordsNothing() async throws {
         let cancelledLog = RemoteReadLog()
         let cancelledRouter = Self.router(try Self.localDouble(), ScriptedTransport(), log: cancelledLog)
-        let task = Task { _ = try? await cancelledRouter.refreshedGroveSpecies() }
+        let task = Task { _ = try? await cancelledRouter.refreshedGroveSpecies(near: nil) }
         task.cancel()
         await task.value
 
@@ -397,7 +396,7 @@ struct GroveLocalFirstTests {
         // Calibration: the same unreachable service, not cancelled, still marks the read.
         let refusedLog = RemoteReadLog()
         let refusedRouter = Self.router(try Self.localDouble(), ScriptedTransport(), log: refusedLog)
-        _ = try await refusedRouter.refreshedGroveSpecies()
+        _ = try await refusedRouter.refreshedGroveSpecies(near: nil)
         let refused = await refusedLog.outcome(of: .groveSpecies)
         #expect(
             refused == .fellBackToLocal,
@@ -487,7 +486,7 @@ struct GroveLocalFirstTests {
         let model = GroveModel(
             api: router,
             now: { GroveFirstClock.laterMet },
-            refreshSpecies: { try? await router.refreshedGroveSpecies() }
+            refreshSpecies: { _ in try? await router.refreshedGroveSpecies(near: nil) }
         )
 
         await model.load()
@@ -650,9 +649,10 @@ final class GroveReadProbe: @unchecked Sendable {
 /// third implementation that would have hidden the disagreement a second time. Comparing the real
 /// two is the distinction `GroveBatchReadTests` makes and this suite inherits.
 ///
-/// **The row they disagreed on is now in the fixture**: a community record carrying a self-asserted
-/// species and no nickname. D15 gives it no name — `LocalAPI.grove()` has always refused to name a
-/// tree after somebody's claim about it — and both arms now say so.
+/// **The row they disagreed on is in the fixture**: a community record carrying a species and no
+/// nickname. PR #144's fix made both arms refuse to name it. The owner's answer of 2026-11-16 ("Yes,
+/// use the species") changed the rule, and both arms now name it by its species. A tree with no
+/// species and no given name is named with an empty title, drawn as "Tree" (ROADMAP chip 206).
 @Suite("My Grove · the batched city-file resolver answers what the per-row loop answered")
 struct GroveCityFileBatchTests {
 
@@ -754,11 +754,10 @@ struct GroveCityFileBatchTests {
             )
         ).id
         // **The row PR #144's review proved the two arms disagreed on.** A community record with a
-        // *claimed* species and no nickname: `TreeDraft.speciesID` is the community-add screen's own
-        // optional species (BUILD-PLAN §6), so this is a shape a contributor produces. The loop used
-        // to name it after the claim, because `LocalAPI.treeProfile` fills `species` for a community
-        // row out of `tree.speciesCurrentID`; D15 says a self-assertion is not a name the app puts
-        // on a tree, and both arms now agree that it has none.
+        // species and no nickname: `TreeDraft.speciesID` is the community-add screen's own optional
+        // species (BUILD-PLAN §6), so this is a shape a contributor produces. Since the owner's
+        // answer of 2026-11-16 ("Yes, use the species") both arms name it by that species, as its
+        // profile title does.
         let seedSpecies = try #require(
             try await api.searchSpecies(query: "oak", limit: 1).first,
             "the seed carries no species matching 'oak' to claim"
@@ -800,17 +799,24 @@ struct GroveCityFileBatchTests {
             rows.named[communityNamed]?.coordinate == Coordinate(latitude: 37.7695, longitude: -122.4863),
             "a community tree's coordinate did not survive the batch"
         )
-        // D15, twice: a community tree with no nickname has no name the app will draw, whether or
-        // not somebody has claimed a species for it.
-        #expect(rows.named[communityBare] == nil)
-        #expect(rows.named[communityClaimed] == nil, "a community tree was named after a claimed species")
-
-        // **And the two are in `unnamed`, not merely absent** — the distinction that decides whether
-        // the caller calls the read degraded. The phantom is in neither, which is what "the service's
-        // answer lost a row" looks like.
+        // A community tree with no nickname and no species is named with an empty title, which My
+        // Grove draws as "Tree" (ROADMAP chip 206; the owner's answer of 2026-11-16 that such a tree
+        // "still reads "Tree""). One with a species is named by it ("Yes, use the species").
         #expect(
-            rows.unnamed == [communityBare, communityClaimed],
-            "the D15 refusals were reported as \(rows.unnamed), which is not the pair that has no name"
+            rows.named[communityBare]?.displayName == "",
+            "a held tree with no name and no species read '\(rows.named[communityBare]?.displayName ?? "<not named>")'"
+        )
+        #expect(
+            rows.named[communityClaimed]?.displayName == seedSpecies.commonName,
+            "a community tree with a species read '\(rows.named[communityClaimed]?.displayName ?? "<unnamed>")'"
+        )
+
+        // **Nothing held is in `unnamed` now**: that set is a withdrawn tree's
+        // (`TreeWithdrawalTests.theServicesGroveRowIsDropped`). The phantom is in neither, which is
+        // what "the service's answer lost a row" looks like.
+        #expect(
+            rows.unnamed.isEmpty,
+            "the trees left out were reported as \(rows.unnamed); no tree in this fixture is withdrawn"
         )
 
         // …and every id against the real loop arm, which is the comparison rather than a restatement.
@@ -844,9 +850,20 @@ struct GroveCityFileBatchTests {
     /// helper that built the routers passed no providers. So the batched resolver — the one that
     /// ships — was exercised only by comparing it against a lifted copy of the loop. This test wires
     /// `boot`'s two closures over a real `LocalAPI` and the real seed, and asserts both halves of the
-    /// join: a seed tree the account named reaches the screen, and the D15 refusal does **not** make
-    /// the read degraded.
-    @Test("the shipping router merges an account's tree and stays live through a D15 refusal")
+    /// join: a seed tree the account named reaches the screen; somebody else's cached tree with a
+    /// species reaches it named by that species (the owner's answer of 2026-11-16, "Yes, use the
+    /// species"); one with no species reaches it with an empty title, drawn as "Tree" (ROADMAP chip
+    /// 206); and neither makes the read degraded. The loop arm is held to the same answer over the
+    /// same ids, with one more cached tree the reader has claimed a species for, so the provider
+    /// arm's claim overlay is compared too.
+    ///
+    /// Red-proofs: in `LocalAPI.groveCityFileRows`, drop `?? speciesNames[treeID]` from the name —
+    /// red on "the cached tree with a species reached My Grove as …". In
+    /// `LocalAPI.communityShownSpecies`, skip the `treesWithAClaim` loop — red on "the provider arm
+    /// named the cached tree the reader claimed '', not 'Sycamore, London Plane'". In `LocalAPI.groveCityFileRows`, put a
+    /// tree with an empty name back in `unnamed` — red on "a cached tree with no name and no species,
+    /// reached only through the account's grove, came back as '<dropped>'".
+    @Test("the shipping router names a cached tree by its species, draws one with none as Tree, and stays live")
     func theShippingRouterMergesThroughTheBatchedResolver() async throws {
         let (api, store) = try await Self.openSeeded()
 
@@ -859,49 +876,165 @@ struct GroveCityFileBatchTests {
         )
         try await Self.name(seedTree.tree.id, "The Corner Elder", store: store)
 
-        // The account also names a tree this phone holds as a nickname-less community record with a
-        // claimed species — the shape D15 refuses. It is dropped, and the read is still live.
-        let attribution = await api.attribution
+        // Two trees somebody else added, as the tile refresher writes them: only the cache holds
+        // them, so this phone's own grove cannot answer for them.
         let seedSpecies = try #require(try await api.searchSpecies(query: "oak", limit: 1).first)
-        let refused = try await api.addTree(
-            TreeDraft(
-                coordinate: Coordinate(latitude: 37.7698, longitude: -122.4866),
-                speciesID: seedSpecies.id,
-                photoLocalPath: "/tmp/cypress-grove-shipping-a.jpg",
-                attribution: attribution
-            )
-        ).id
+        let cachedNamed = UUID(uuidString: "C0000000-0000-4000-8000-0000000009C1")!
+        let cachedBare = UUID(uuidString: "C0000000-0000-4000-8000-0000000009C2")!
+        let stamp = SQLiteTimestamp.string(from: Date())
+        try await store.queue.write { connection in
+            try connection.execute("""
+                INSERT INTO community_tree_cache
+                    (id, lat, lon, placement, status, verification_state, species_current,
+                     created_at, updated_at, tile, fetched_at)
+                VALUES ('\(cachedNamed.uuidString)', 37.7698, -122.4866, 'gps', 'alive', 'unverified',
+                        '\(seedSpecies.id.uuidString.lowercased())', '\(stamp)', '\(stamp)', 't', '\(stamp)'),
+                       ('\(cachedBare.uuidString)', 37.7699, -122.4867, 'gps', 'alive', 'unverified',
+                        NULL, '\(stamp)', '\(stamp)', 't', '\(stamp)');
+                """)
+        }
 
+        func entry(_ id: UUID) -> String {
+            """
+            {"tree_uuid":"\(id.uuidString)","last_visited_at":null,"is_favorite":true,
+             "record":null,"hero_photo_id":null}
+            """
+        }
         let transport = ScriptedTransport()
         transport.answer(
             "GET /me/grove",
             with: """
-            {"entries":[
-             {"tree_uuid":"\(seedTree.tree.id.uuidString)","last_visited_at":null,"is_favorite":true,
-              "record":null,"hero_photo_id":null},
-             {"tree_uuid":"\(refused.uuidString)","last_visited_at":null,"is_favorite":true,
-              "record":null,"hero_photo_id":null}],"total":2}
+            {"entries":[\(entry(seedTree.tree.id)),\(entry(cachedNamed)),\(entry(cachedBare))],"total":3}
             """
         )
 
         let log = RemoteReadLog()
         let entries = try await Self.shippingRouter(over: api, transport: transport, log: log).refreshedGrove()
 
-        // Calibration: the account's row really did have to be resolved through the city file — this
+        // Calibration: the account's rows really did have to be resolved through the city file — this
         // phone's own grove is empty, so nothing here could have come from `local.grove()`.
         #expect(try await api.grove().isEmpty, "the phone's own grove is not empty; this gate is not testing the join")
 
-        #expect(entries.count == 1, "the merge produced \(entries.map(\.displayName))")
-        #expect(entries.first?.treeID == seedTree.tree.id)
-        #expect(entries.first?.displayName == "The Corner Elder", "the batched resolver did not name the row")
-        #expect(entries.first?.coordinate == seedTree.tree.coordinate)
-        #expect(entries.contains { $0.treeID == refused } == false, "a community tree was named after a claim")
+        let byTree = Dictionary(uniqueKeysWithValues: entries.map { ($0.treeID, $0) })
+        #expect(entries.count == 3, "the merge produced \(entries.map(\.displayName))")
+        #expect(byTree[seedTree.tree.id]?.displayName == "The Corner Elder", "the batched resolver did not name the row")
+        #expect(byTree[seedTree.tree.id]?.coordinate == seedTree.tree.coordinate)
+        #expect(
+            byTree[cachedNamed]?.displayName == seedSpecies.commonName,
+            "the cached tree with a species reached My Grove as '\(byTree[cachedNamed]?.displayName ?? "<dropped>")'"
+        )
+        // **The owner's answer of 2026-11-16**: "An added tree with no name and no species still
+        // reads "Tree"". That holds for a tree reached only through the account's grove too
+        // (ROADMAP chip 206): the row arrives with an empty title, which the list draws as "Tree",
+        // as `grove()` names the same tree on the phone that holds it.
+        #expect(
+            byTree[cachedBare]?.displayName == "",
+            """
+            a cached tree with no name and no species, reached only through the account's grove, \
+            came back as '\(byTree[cachedBare]?.displayName ?? "<dropped>")', not an empty title
+            """
+        )
+        #expect(byTree[cachedBare]?.coordinate == Coordinate(latitude: 37.7699, longitude: -122.4867))
+        let drawn = GroveTreesPresentation(entries: entries).rows.first { $0.treeID == cachedBare }
+        #expect(
+            drawn?.title == TreeProfilePresentation.fallbackTitle,
+            "My Grove drew the bare tree as '\(drawn?.title ?? "<no row>")'"
+        )
 
         // **The point of the whole `CityFileRows` split.** The service answered completely and a
         // local rule dropped one of its rows; that is not a fallback, and saying so would offer a
         // §4.3 surface "showing what's on this phone" about a read where nothing was missing.
         let outcome = await log.outcome(of: .grove)
-        #expect(outcome == .live, "a D15 refusal was recorded as \(String(describing: outcome))")
+        #expect(outcome == .live, "a tree with no name was recorded as \(String(describing: outcome))")
+
+        // A third cached tree, with no species, which this reader (signed in and sharing) names a
+        // plane. The claim is queued, so only the profile's overlay (`localSpeciesAnswers`) gives
+        // it a species: the loop arm reads it off `treeProfile`, and the provider arm must reach the
+        // same name through `communitySpeciesNames`' claim loop.
+        try await api.linkAccount(
+            deviceUUID: Self.deviceID, userID: OthersTreeControlsTests.sharer,
+            provider: "apple", acceptsLicense: true
+        )
+        let plane = try await OthersTreeControlsTests.plane(api)
+        let cachedClaimed = UUID(uuidString: "C0000000-0000-4000-8000-0000000009C3")!
+        try await api.debugSeedCommunityCache(
+            Tree(id: cachedClaimed, source: .community,
+                 coordinate: Coordinate(latitude: 37.7700, longitude: -122.4868), speciesCurrentID: nil)
+        )
+        _ = try await api.claimSpecies(treeID: cachedClaimed, speciesID: plane.id)
+
+        // Both arms, over the same ids: every id is named (the bare one with an empty title), so
+        // neither leaves the page unresolved, and the two arms agree.
+        let ids = [seedTree.tree.id, cachedNamed, cachedBare, cachedClaimed]
+        let batched = await api.groveCityFileRows(for: ids)
+        let loop = await Self.loopArm(over: api).resolvedCityFileRows(for: ids)
+        for (arm, rows) in [("provider", batched), ("loop", loop)] {
+            #expect(
+                rows.named[cachedClaimed]?.displayName == plane.commonName,
+                """
+                the \(arm) arm named the cached tree the reader claimed \
+                '\(rows.named[cachedClaimed]?.displayName ?? "<unnamed>")', not '\(plane.commonName)'
+                """
+            )
+        }
+        for rows in [batched, loop] {
+            #expect(
+                ids.allSatisfy { rows.named[$0] != nil || rows.unnamed.contains($0) },
+                "an id the inventories hold was left unresolved: named \(rows.named.keys), unnamed \(rows.unnamed)"
+            )
+            #expect(rows.unnamed.isEmpty, "unnamed was \(rows.unnamed)")
+            #expect(rows.named[cachedBare]?.displayName == "", "the bare cached tree was not named with an empty title")
+        }
+        #expect(
+            batched.named == loop.named,
+            "batched \(batched.named.mapValues(\.displayName)) against loop \(loop.named.mapValues(\.displayName))"
+        )
+    }
+
+    /// **A city tree with no species and no given name, reached only through the account's grove,
+    /// reads "Tree" too** (ROADMAP chip 206). Before, both arms put it in `unnamed` and
+    /// `refreshedGrove` dropped it, while `grove()` on the phone that visited it drew "Tree". Both
+    /// arms now name it with an empty title, the read stays live, and the drawn row says "Tree".
+    ///
+    /// Red-proof: in `RoutedAPI.resolvedCityFileRows`' loop, skip a profile whose name is empty — red
+    /// on "the loop arm named the bare city tree …".
+    @Test("a city tree with no species and no name, reached through the account's grove, reads Tree")
+    func aBareCityTreeReachedThroughTheAccountReadsTree() async throws {
+        let (api, _) = try await Self.openSeeded()
+        let candidates = try await api.treesNear(
+            Coordinate(latitude: 37.7694, longitude: -122.4862), radiusM: 900, limit: 5000
+        )
+        let bare = try #require(
+            candidates.first { $0.tree.source != .community && $0.tree.speciesCurrentID == nil },
+            "no seed tree near the opening center has no species"
+        )
+        let transport = ScriptedTransport()
+        transport.answer(
+            "GET /me/grove",
+            with: """
+            {"entries":[{"tree_uuid":"\(bare.tree.id.uuidString)","last_visited_at":null,
+             "is_favorite":true,"record":null,"hero_photo_id":null}],"total":1}
+            """
+        )
+        let log = RemoteReadLog()
+        let entries = try await Self.shippingRouter(over: api, transport: transport, log: log).refreshedGrove()
+        #expect(try await api.grove().isEmpty, "the phone's own grove is not empty; this gate is not testing the join")
+
+        #expect(
+            entries.map(\.treeID) == [bare.tree.id] && entries.first?.displayName == "",
+            "the bare city tree came back as \(entries.map(\.displayName)), not one row with an empty title"
+        )
+        #expect(
+            GroveTreesPresentation(entries: entries).rows.first?.title == TreeProfilePresentation.fallbackTitle
+        )
+        let outcome = await log.outcome(of: .grove)
+        #expect(outcome == .live, "a tree with no name was recorded as \(String(describing: outcome))")
+
+        let loop = await Self.loopArm(over: api).resolvedCityFileRows(for: [bare.tree.id])
+        #expect(
+            loop.named[bare.tree.id]?.displayName == "",
+            "the loop arm named the bare city tree '\(loop.named[bare.tree.id]?.displayName ?? "<not named>")'"
+        )
     }
 
     /// **…and a row the inventories genuinely do not carry still marks the read degraded**, which is

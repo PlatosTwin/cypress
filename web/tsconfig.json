@@ -1,0 +1,22 @@
+{
+  "extends": "astro/tsconfigs/strictest",
+  "include": [".astro/types.d.ts", "src/**/*", "test/**/*", "scripts/**/*", "*.mjs"],
+  "exclude": ["dist", "node_modules"],
+  "compilerOptions": {
+    "noEmit": true,
+    "allowJs": true,
+    "checkJs": true,
+    "types": ["node"],
+    // Node strips types rather than compiling them (see test/README-less note in
+    // Tools/run_web_tests.sh): a `.ts` file is executed by rewriting types to whitespace, so
+    // anything that needs emit — enums, namespaces, parameter properties, `import x = require()`
+    // — cannot run. `erasableSyntaxOnly` makes tsc refuse those at typecheck time instead of at
+    // 3am in a container, and `verbatimModuleSyntax` keeps import elision out of it too.
+    "erasableSyntaxOnly": true,
+    "verbatimModuleSyntax": true,
+    // The test files import their neighbors by the specifier Node will actually resolve, which
+    // for an ESM `.ts` file includes the extension. Without this tsc rejects the only spelling
+    // that runs.
+    "allowImportingTsExtensions": true
+  }
+}

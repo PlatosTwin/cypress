@@ -69,6 +69,13 @@ func run(log *slog.Logger) error {
 	if err != nil {
 		return err
 	}
+	// The community tile's cursor key, derived from the same required secret under its own HKDF
+	// info string (`api.DeriveCursorKey`), so no second secret has to be provisioned and the service
+	// cannot boot without it.
+	cursorKey, err := api.DeriveCursorKey([]byte(signingKey))
+	if err != nil {
+		return err
+	}
 
 	appleConfig := apple.Config{
 		TeamID: os.Getenv("APPLE_TEAM_ID"),
@@ -132,6 +139,7 @@ func run(log *slog.Logger) error {
 		Log:           log,
 		GitSHA:        envOr("GIT_SHA", "unknown"),
 		OperatorToken: operatorToken,
+		CursorKey:     cursorKey,
 	}
 
 	httpServer := &http.Server{

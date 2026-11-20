@@ -1,0 +1,15 @@
+{
+  "choice": "leaveRecords",
+  "community_trees": {
+    "anonymized": [
+      "a0a0a0a0-0105-4c2a-9b6e-000000000105"
+    ],
+    "deleted": [
+      "d1e7e7ed-0104-4c2a-9b6e-000000000104"
+    ]
+  },
+  "contributions": 4,
+  "deleted": true,
+  "photos": 1,
+  "tombstones": 2
+}

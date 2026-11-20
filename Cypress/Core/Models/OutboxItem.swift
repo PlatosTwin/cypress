@@ -15,8 +15,13 @@ public struct OutboxPhoto: Codable, Hashable, Sendable {
     /// **E264**'s reason a send path could not simply retry. A key the client already holds before
     /// the first attempt is what makes the retry land on the row it created.
     ///
-    /// Distinct from `photos.id`, deliberately. That one names the *local* row the apply wrote and
-    /// is not known until the apply has run; this one exists from the moment the shutter closes.
+    /// **It is also the `photos.id` the apply writes**, since report F30's fix: the apply passes it
+    /// as `PhotoUploadRequest.idempotencyKey` and `LocalAPI.beginPhotoUpload` mints the local row
+    /// under it. It exists from the moment the shutter closes, so the local row can take it; and
+    /// making the two one value is what lets the contributor's phone recognise its own photograph
+    /// when `GET /trees/{id}` echoes this key back under the service's own `photo_id`. A photograph
+    /// applied by an earlier build has a local id unrelated to this one, and
+    /// `RoutedAPI.refreshedTreeProfile` says how those are matched instead.
     public let id: UUID
     /// Where the binary is staged on device. See `VisitPhotoStaging`.
     public let path: String
@@ -120,6 +125,190 @@ public struct OutboxItem: CoreEntity {
         case photoWithdrawal = "photo_withdrawal"
         /// The hazard sheet that sent somebody to 311 (`logHazardRedirect`, BUILD-PLAN §6).
         case hazardRedirect = "hazard_redirect"
+
+        // ── The eleventh, and the reason it is not a payload flag ──────────────────────────────
+
+        /// A reading withdrawn (`withdrawMeasurement`). See `MeasurementWithdrawal`.
+        ///
+        /// **Its own kind, not a `measurement` carrying a discriminator.** The payload column is
+        /// `json_valid` only, so a flag inside it would have needed no migration — and it would put
+        /// the distinction inside a payload field where `outbox.kind` cannot see it, which is the
+        /// reason the review-dismissal pair above is two cases and not one with a boolean.
+        /// `outbox.kind` is what screen 17 groups by and what a server dispatches on. A withdrawal
+        /// arriving as a `measurement` would also be a false statement on an append-only record: it
+        /// would read as a reading somebody took. `AppSchema` v21 widens the stored vocabulary.
+        ///
+        /// Like the ten above it this carries no photo binary — a withdrawal is a deletion.
+        case measurementWithdrawal = "measurement_withdrawal"
+
+        // ── R79's two, and why they are two ────────────────────────────────────────────────────
+
+        /// A dispute against a record's own data (`raiseDataDispute`). See `DataDisputeReport`.
+        ///
+        /// **The whole record travels, not a pointer to one.** Every other report here names a row
+        /// the service already holds; a dispute is created by the act, and this round's ruling is
+        /// that the service records it without materializing anything. `AppSchema` v22 widens the
+        /// stored vocabulary.
+        ///
+        /// Carries no photo binary. A dispute is text and numbers.
+        case dataDispute = "data_dispute"
+
+        /// A dispute its author took back (`withdrawDataDispute`). See `DataDisputeWithdrawal`.
+        ///
+        /// **Its own kind and not a flag inside `data_dispute`'s payload**, for the reason
+        /// `measurementWithdrawal` above gives at length: the payload column is `json_valid` only, so
+        /// a discriminator inside it would have needed no migration — and it would put the
+        /// distinction somewhere `outbox.kind` cannot see it, which is what screen 17 groups by and
+        /// what a server dispatches on. A retraction arriving as a `data_dispute` would read as a
+        /// second objection to the same record.
+        ///
+        /// It ships in the same round as the raise deliberately. The owner's standing complaint
+        /// about the community flagging flow is that a flag cannot be retracted by the person who
+        /// raised it; a new dispute surface with the same gap would repeat that defect on new ground,
+        /// and the `CHECK` above is one statement whether it admits one value or two.
+        case dataDisputeWithdrawal = "data_dispute_withdrawal"
+
+        // ── The community-trees round's one, and the one it reserves ──────────────────────────
+
+        /// The adder moving a community tree's pin (`correctLocation`, `AppSchema` v23). See
+        /// `TreeLocationCorrection`.
+        ///
+        /// **Its own kind and not an `add_tree` carrying a new coordinate**, for the reason
+        /// `measurementWithdrawal` above gives: `outbox.kind` is what screen 17 groups by and what
+        /// the service dispatches on, and a move arriving as an add would be a second tree.
+        ///
+        /// Carries no photo binary. A position is two numbers.
+        case locationCorrection = "location_correction"
+
+        /// The adder withdrawing a community tree for everyone (`withdrawTree`, the owner's
+        /// decision 8). v23's `CHECK` admitted the value ahead of this case, so no migration came
+        /// with it. See `TreeWithdrawal`.
+        ///
+        /// **Its own kind**, for `measurementWithdrawal`'s reason: `outbox.kind` is what screen 17
+        /// groups by and what the service dispatches on. Carries no photo binary.
+        case treeWithdrawal = "tree_withdrawal"
+
+        /// What a deletion of the account that queued a row of this kind has to do to it (R3).
+        ///
+        /// **This exists because the enumeration below used to be typed out in SQL, and went stale
+        /// twice.** `OutboxStore.forgetAccount` named six kinds when there were sixteen — a
+        /// signed-in contributor's queued species correction survived their own account deletion
+        /// still naming the account — and after that was repaired by hand it went stale again the
+        /// moment `measurementWithdrawal` was added, in the same shape: the row was matched by
+        /// neither statement, so `.leaveRecords` left the account id in the payload and
+        /// `.eraseEverything` left the row standing. Both were measured, not read.
+        ///
+        /// A hand-written list cannot fail loudly, because a kind that is missing from it simply
+        /// matches nothing. A `switch` with no `default` can: adding a case to this enum without
+        /// answering this question stops the app compiling, which is the only guard that runs
+        /// before the omission is shipped.
+        public var accountDeletionTreatment: AccountDeletionTreatment {
+            switch self {
+            // The two exclusively-owned kinds. There is no anonymized form of "this account's
+            // favorite" or "this account's reminder" — the record *is* the ownership — so both
+            // doors discard them.
+            case .favoriteToggle, .privateReminder:
+                return .discardedOutright
+            // Everything else is an append-only contribution: anonymized by the leaving door,
+            // discarded by the erasing one. See `OutboxStore.forgetAccount` for the two payload
+            // shapes the account id can sit in.
+            //
+            // **The two dispute kinds are contributions and not exclusively-owned rows**, which is
+            // the arm worth arguing rather than pattern-matching. A dispute looks personal — it is
+            // one person's objection — but so is a species report, and the record it produces is
+            // append-only and about the *tree*: it stands after its author is gone, exactly as a
+            // `wrong_species_report` does, and the leaving door's promise is that the work stays and
+            // the name goes. `discardedOutright` is for mutations that have no meaning without the
+            // account, and "this record's data is wrong" keeps every bit of its meaning.
+            //
+            // **The queue row is half of that promise and `tree_data_disputes` is the other half**,
+            // which this comment asserted before either door could see the table. Both halves are
+            // named now — `AccountDeletion.anonymizeContributions` tombstones the `client_uuid` and
+            // nulls `raised_by`, `eraseContributions` deletes the row — and `AccountDeletionTests`'
+            // `theLeavingDoorAnonymizesADispute` and `theErasingDoorRemovesADispute` are what keep
+            // the two halves of one act agreeing. What the leaving door's NULL then means is
+            // `TreeDataDispute.isAuthored(by:)`: the name goes and the objection stays, withdrawable
+            // by nobody, because the service already answers it that way and cannot answer
+            // otherwise.
+            case .visit, .observation, .measurement, .careEvent,
+                 .addTree, .speciesClaim, .speciesCorrection, .wrongSpeciesReport,
+                 .neverExistedReport, .speciesReviewDismissal, .recordReviewDismissal,
+                 .photoVote, .photoWithdrawal, .hazardRedirect, .measurementWithdrawal,
+                 .dataDispute, .dataDisputeWithdrawal,
+                 // A moved pin is the adder's contribution to a public object, like the add it
+                 // follows: the leaving door keeps it and takes the name off, and the erasing door
+                 // discards it with the tree it would have moved (`AccountDeletion`).
+                 .locationCorrection,
+                 // A withdrawal is the adder's act on a public object, like the move above. The
+                 // leaving door sends it without the name. The erasing door discards it, and first
+                 // puts back the tree it hid on this phone (`OutboxStore.forgetAccount`): the
+                 // service may keep that tree, if another identity built on it.
+                 .treeWithdrawal:
+                return .contribution
+            }
+        }
+
+        /// The two answers `accountDeletionTreatment` gives. See it for why this is a type rather
+        /// than two lists.
+        public enum AccountDeletionTreatment: Sendable, Hashable, CaseIterable {
+            /// Deleted by either door: the mutation has no meaning without the account.
+            case discardedOutright
+            /// Anonymized on `.leaveRecords`, discarded on `.eraseEverything`.
+            case contribution
+        }
+
+        /// The kinds a deletion treats one way, for the two statements that need them as a list.
+        ///
+        /// Derived rather than written down, so the list a query runs against and the `switch`
+        /// above cannot disagree.
+        public static func kinds(treatedAs treatment: AccountDeletionTreatment) -> [Kind] {
+            allCases.filter { $0.accountDeletionTreatment == treatment }
+        }
+
+        /// Whether a row of this kind waits while the same tree's `add_tree` has not reached the
+        /// service (`OutboxStore.dueItems`; review of #209, F2; ROADMAP 115).
+        ///
+        /// True for the kinds whose effect on the service needs the tree to be there already. A
+        /// `switch` with no `default`, for `accountDeletionTreatment`'s reason: a new kind cannot
+        /// compile until somebody answers this question for it.
+        public var waitsForItsTreeAdd: Bool {
+            switch self {
+            // The service refuses a move on a tree it does not hold with `not_found`, which is
+            // terminal (`store.applyLocationCorrection`).
+            case .locationCorrection:
+                return true
+            // Held for the person's order: add, then any move, then the withdrawal. The service
+            // would answer a withdrawal that arrives first with `applied` and make the later add
+            // arrive withdrawn (`treeWasWithdrawnBy`), but a move held behind that add would then
+            // fail `not_found` on a tree that was born withdrawn.
+            case .treeWithdrawal:
+                return true
+            // The service never refuses these, but it applies the species to the tree only when
+            // it holds the tree (`store.materializeSpecies`). One that arrives first is recorded
+            // and changes nothing, so the adder's species never reaches the service's tree.
+            case .speciesClaim, .speciesCorrection:
+                return true
+            // The tree itself.
+            case .addTree:
+                return false
+            // These six are applied on this phone by the drain itself (they are born
+            // `local_applied = 0`). Holding one behind an add that waits for a network would keep
+            // a visit off its own tree on this phone until then. The service records each one
+            // against the tree's id and never looks the tree up, so arriving first loses nothing.
+            case .visit, .observation, .measurement, .careEvent, .favoriteToggle, .privateReminder:
+                return false
+            // Recorded by the service against the tree's id. None looks the tree up, none is
+            // refused when it is absent, and none changes the tree, so the order does not matter.
+            case .wrongSpeciesReport, .neverExistedReport, .speciesReviewDismissal,
+                 .recordReviewDismissal, .photoVote, .hazardRedirect, .dataDispute,
+                 .dataDisputeWithdrawal:
+                return false
+            // Keyed on the photograph and the reading, not the tree. The service handles either
+            // arrival order for both (`withdrawPhoto`, `measurementWasWithdrawn`).
+            case .photoWithdrawal, .measurementWithdrawal:
+                return false
+            }
+        }
     }
 
     /// `outbox.state` (BUILD-PLAN §4), verbatim. Screen 17 shows per-item state and retry.
@@ -212,6 +401,18 @@ public enum OutboxRetryPolicy {
         if let error, !error.retryable { return .failed }
         if hasExpired(createdAt: item.createdAt, now: now) { return .failed }
         return .pending
+    }
+
+    /// Whether a person may retry a `failed` item, by its kind and the code it failed with.
+    ///
+    /// Every failed item may be retried except one: a `tree_withdrawal` the service refused with
+    /// `conflict`, because other people have added to the tree. The owner's answers of 2026-11-16
+    /// ("Remove Retry there", then "Row stays, reason only"): the row stays in the Outbox with its
+    /// reason and no button, and it is also what keeps the reason line on the tree's profile
+    /// (`CommunityTreeStore.othersHaveAddedTo` reads it). `OutboxStore.retry` and `retryAllFailed`
+    /// apply the same rule in SQL; `OutboxRetryEligibilityTests` holds the two together.
+    public static func acceptsRetry(kind: OutboxItem.Kind, errorCode: APIError?) -> Bool {
+        !(kind == .treeWithdrawal && errorCode == .conflict)
     }
 
     /// When the next attempt is due, or nil once the item is terminal.

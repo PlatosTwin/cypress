@@ -132,6 +132,9 @@ struct JournalPresentation: Equatable {
         /// The photograph this row draws instead of the accent tile, when this tree has one
         /// (#176). See `JournalEntry.heroPhotoID` for the rule.
         let heroPhotoID: UUID?
+        /// Whether the row's square is the community tree mark rather than the accent tile or the
+        /// tree's photograph. True for a pin move only (`JournalCopy.drawsCommunityTreeMark`).
+        let drawsCommunityTreeMark: Bool
     }
 
     /// One day's worth of rows, under the day.
@@ -205,14 +208,13 @@ struct JournalPresentation: Equatable {
                 id: entry.id,
                 title: JournalCopy.rowTitle(
                     kind: entry.kind,
-                    treeName: entry.treeDisplayName.isEmpty
-                        ? TreeProfilePresentation.fallbackTitle
-                        : entry.treeDisplayName
+                    treeName: entry.treeDisplayName.isEmpty ? nil : entry.treeDisplayName
                 ),
                 subtitle: entry.summary.trimmingCharacters(in: .whitespacesAndNewlines),
                 accent: JournalCopy.accent(for: entry.kind),
                 treeID: entry.treeID,
-                heroPhotoID: entry.heroPhotoID
+                heroPhotoID: entry.heroPhotoID,
+                drawsCommunityTreeMark: JournalCopy.drawsCommunityTreeMark(for: entry.kind)
             )
         }
         self.hasOlder = nextCursor != nil
@@ -403,10 +405,22 @@ enum JournalCopy {
         case .observation: return .newGrowth
         case .measurement: return .record
         case .careEvent: return .water
+        // Never drawn: a pin-move row draws the community tree mark in its square instead
+        // (`drawsCommunityTreeMark`). The switch needs an answer, and `elder` is the plain one.
+        case .pinMoved: return .elder
         }
     }
 
-    /// `Visited`, `Observed`, `Measured`, `Cared for`.
+    /// Whether a row draws the community tree mark in its square: the map's dashed green ring on
+    /// its pale fill, drawn small. The app owner chose it on 2026-11-15 for the Journal's pin-move
+    /// row ("The community tree mark"). It replaces both the accent tile and the tree's photograph,
+    /// because the row is about where the pin is, not about the tree's appearance. No other kind
+    /// draws it.
+    static func drawsCommunityTreeMark(for kind: JournalEntry.Kind) -> Bool {
+        kind == .pinMoved
+    }
+
+    /// `Visited`, `Observed`, `Measured`, `Cared for`, `Moved the pin of`.
     ///
     /// Past tense throughout, because every row is a thing that has already happened. The words are
     /// the acts as the app's own controls name them — screen 05 is a check-in, screen 09 is `Care`,
@@ -417,6 +431,9 @@ enum JournalCopy {
         case .observation: return "Observed"
         case .measurement: return "Measured"
         case .careEvent: return "Cared for"
+        // The app owner's words, chosen on 2026-11-14 from "Moved the pin of X", "Moved X", and no
+        // Journal row: `rowTitle` makes it "Moved the pin of Grandmother Cypress".
+        case .pinMoved: return "Moved the pin of"
         }
     }
 
@@ -435,9 +452,23 @@ enum JournalCopy {
     /// The tree's name is still here, because a journal entry with no tree in it is not a journal
     /// entry this app can have — every row opens a profile — and it is still what its own page calls
     /// it, fallback included.
-    static func rowTitle(kind: JournalEntry.Kind, treeName: String) -> String {
-        "\(verb(for: kind)) \(treeName)"
+    ///
+    /// `treeName` is nil when no name was resolved for the tree: no given name and no species
+    /// (`LocalAPI.displayNames`, which names an added tree by its species since the owner's answer
+    /// of 2026-11-16, "Use the species").
+    /// Every kind then reads the fallback title, except a pin move, which reads `unnamedPinMove`.
+    static func rowTitle(kind: JournalEntry.Kind, treeName: String?) -> String {
+        guard let treeName else {
+            if kind == .pinMoved { return unnamedPinMove }
+            return "\(verb(for: kind)) \(TreeProfilePresentation.fallbackTitle)"
+        }
+        return "\(verb(for: kind)) \(treeName)"
     }
+
+    /// A pin move on a tree with no name: the app owner's words, chosen on 2026-11-16 over "Moved the
+    /// pin of Tree". The apostrophe is the typographic one the app's other strings use
+    /// (`TreeProfileCopy.dataDisputeAction`, "the city’s record").
+    static let unnamedPinMove = "Moved a tree’s pin"
 
     /// `Jul 12` inside this year, `Jul 12, 2025` outside it. **A section header now, not a clause.**
     ///

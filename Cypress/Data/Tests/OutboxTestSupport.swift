@@ -152,8 +152,11 @@ public enum OutboxTestSupport {
         public func uploadPhoto(_ photo: OutboxPhoto, for item: OutboxItem) async throws -> AppliedPhoto {
             if script == .photosFail { throw URLError(.networkConnectionLost) }
             uploadedPhotos.append(photo)
-            // A distinct id per call, because `LocalAPI.beginPhotoUpload` mints one per call.
-            // Returning a single constant would let a test pass while the drain filed every binary
+            // A fresh id per call, deliberately **not** the binary's own. The real apply mints the
+            // row under the binary's id since report F30's fix (`PhotoUploadRequest
+            // .idempotencyKey`), but a double that did the same would make `appliedPhotoIDs` below
+            // equal to the staged ids, and a drain that filed the staged id where the applied one
+            // belongs would pass unseen. Returning a single constant would let a test pass while the drain filed every binary
             // against one `photos` row — the duplicate `AppSchema` v18 exists to prevent, hidden by
             // the double rather than caught by it.
             //
@@ -347,5 +350,58 @@ public enum OutboxTestSupport {
             }
         }
         return result
+    }
+}
+
+extension OutboxTestSupport {
+
+    /// A connection a test can move between metered and unmetered (F35).
+    ///
+    /// Built on `NetworkPathState`, the same state the real `SystemNetworkPath` uses, so it follows
+    /// the same rules: a change is heard only when the answer changes, and the first reading of a
+    /// source that started unknown counts as a change.
+    public final class ManualNetworkPath: NetworkPathSource, @unchecked Sendable {
+        private let state: NetworkPathState
+        private let connection: NetworkPathState
+
+        /// - Parameter connected: whether any path is satisfied. Nil is a source that has not read
+        ///   the path yet. Independent of `unmetered` so a test can set each reading on its own.
+        public init(unmetered: Bool, connected: Bool? = true) {
+            state = NetworkPathState(initial: unmetered)
+            connection = NetworkPathState(initial: connected)
+        }
+
+        /// Moves the phone onto (or off) an unmetered connection, as `NWPathMonitor` would report.
+        public func set(unmetered: Bool) {
+            state.publish(unmetered)
+        }
+
+        /// Gives the phone a satisfied path, or takes every path away, as `NWPathMonitor` would
+        /// report.
+        public func set(connected: Bool) {
+            connection.publish(connected)
+        }
+
+        public func isUnmetered() async -> Bool {
+            await state.value(waitingUpTo: .seconds(1))
+        }
+
+        public func unmeteredChanges() -> AsyncStream<Bool> {
+            state.changes()
+        }
+
+        public func connectedNow() -> Bool? {
+            connection.latest
+        }
+
+        public func connectedChanges() -> AsyncStream<Bool> {
+            connection.changes()
+        }
+
+        /// How many listeners follow `connectedChanges()`. A test reads it to know a follower has
+        /// subscribed, and so has also read `connectedNow()`.
+        public var connectedListenerCount: Int {
+            connection.listenerCount
+        }
     }
 }

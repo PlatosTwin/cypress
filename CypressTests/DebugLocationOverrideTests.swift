@@ -18,7 +18,7 @@ import Testing
 struct DebugLocationOverrideTests {
 
     private func pinned(_ raw: String) -> MapLocationProvider.Availability? {
-        if case let .pinned(availability) = DebugLocationOverride.parse(raw) { return availability }
+        if case let .pinned(availability, _) = DebugLocationOverride.parse(raw) { return availability }
         return nil
     }
 
@@ -101,6 +101,42 @@ struct DebugLocationOverrideTests {
         #expect(invalidReason("91,-122.4215") != nil)
         #expect(invalidReason("37.78485,-181") != nil)
         #expect(pinned("-90,180") != nil)
+    }
+
+    /// PR #185, orchestrator rulings 6 and 9: the data-dispute screen says a different sentence for
+    /// Precise Location off and for a fix whose radius CoreLocation never stated, and a simulator
+    /// cannot be made to produce either. The seam pins both, and refuses anything else in their slots.
+    @Test("a fix can be pinned with its radius unstated, and with Precise Location off")
+    func precisionIsPinnable() {
+        guard case let .pinned(unknown, unknownPrecision) = DebugLocationOverride.parse(
+            "37.78485,-122.4215,unknown"
+        ) else {
+            Issue.record("an unstated radius was not pinned")
+            return
+        }
+        // What the real delegate publishes for a negative horizontalAccuracy: the substitute, marked.
+        #expect(unknown.accuracyM == VisitShortlist.assumedAccuracyM)
+        #expect(unknownPrecision == .init(isReduced: false, accuracyIsKnown: false))
+
+        guard case let .pinned(reduced, reducedPrecision) = DebugLocationOverride.parse(
+            "37.78485,-122.4215,40,reduced"
+        ) else {
+            Issue.record("a reduced-accuracy fix was not pinned")
+            return
+        }
+        #expect(reduced.accuracyM == 40)
+        #expect(reducedPrecision == .init(isReduced: true, accuracyIsKnown: true))
+
+        // An ordinary fix is still ordinary.
+        guard case let .pinned(_, ordinary) = DebugLocationOverride.parse("37.78485,-122.4215,6") else {
+            Issue.record("an ordinary fix was not pinned")
+            return
+        }
+        #expect(ordinary == .ordinary)
+
+        #expect(invalidReason("37.78485,-122.4215,40,precise") != nil)
+        #expect(invalidReason("37.78485,-122.4215,unknwon") != nil)
+        #expect(invalidReason("37.78485,-122.4215,40,reduced,x") != nil)
     }
 
     @Test("a non-positive accuracy is refused")

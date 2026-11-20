@@ -46,6 +46,11 @@ struct RootView: View {
     /// A failure costs the reader the two buttons and not the page, so it is swallowed to `.none`.
     @State private var areaChoices: AreaChoices = .none
 
+    /// Read for one reason: the outbox drains when the app comes to the front (F35). A photograph
+    /// held back on cellular goes as soon as the app is opened on wi-fi, even if the connection
+    /// changed while the app was suspended and the path watcher could not run.
+    @Environment(\.scenePhase) private var scenePhase
+
     /// Screen 17's model, owned here because **two screens now show the same preference**.
     ///
     /// The You tab draws the wi-fi toggle beside the outbox row, and screen 17 draws it in its own
@@ -166,18 +171,32 @@ struct RootView: View {
             wrappedValue: AccountModel(api: data.local, session: data.session, router: data.api)
         )
         _photoImages = State(wrappedValue: PhotoImageStore(api: data.api))
+        // The location provider is built here rather than as the property's default so that the
+        // grove model can ask it where the reader is at each read (F38: the Species ring follows
+        // the reader's location). `@State` keeps the first value, exactly as the default did, and
+        // the closure captures that same instance.
+        let location = RootView.launchLocationProvider()
+        _location = State(wrappedValue: location)
         _grove = State(
             wrappedValue: GroveModel(
                 api: data.api,
                 refreshSpecies: data.refreshGroveSpecies,
-                refreshTrees: data.refreshGrove
+                refreshTrees: data.refreshGrove,
+                currentFix: {
+                    GroveModel.RingFix(availability: location.availability, timing: location.fixTiming)
+                }
             )
         )
         _map = State(
             wrappedValue: MapModel(
                 api: data.api,
                 refreshProfile: data.refreshTreeProfile,
-                refreshMembership: data.refreshMapMembership
+                refreshMembership: data.refreshMapMembership,
+                refreshCommunity: data.refreshCommunityTrees,
+                // Which body the empty-inventory card draws. Over the phone's own cache, with the
+                // gate open or shut: a shut gate leaves no fetched tiles, so the answer is "not
+                // asked" there.
+                communityAsked: CommunityTreeCacheStore.askedReader(queue: data.store.queue)
             )
         )
     }
@@ -205,7 +224,7 @@ struct RootView: View {
     /// *detect* the simulator's ambient state and skip when it is not the one they need. See
     /// `DebugLocationOverride`. On every ordinary launch, and in every Release build, this is the
     /// real provider and the expression below is one dictionary lookup that finds nothing.
-    @State private var location = RootView.launchLocationProvider()
+    @State private var location: MapLocationProvider
 
     /// The provider this process should use. See `location`.
     ///
@@ -227,10 +246,10 @@ struct RootView: View {
         NavigationStack(path: $router.path) {
             tabRoot
                 .navigationDestination(for: Route.self) { route in
-                    destination(for: route)
+                    destination(for: route, in: router)
                 }
         }
-        .modifier(sharedEnvironment)
+        .modifier(sharedEnvironment(for: router))
         // **One** cover, switching on `router.sheet`, not one modifier per route. Stacking several
         // `fullScreenCover`s on the same view is not a supported arrangement — SwiftUI keeps the
         // last one and the others become dead code, which is exactly the kind of wiring bug that
@@ -242,6 +261,13 @@ struct RootView: View {
         // its own dimming and the live screen behind it — none of which is what the mocks draw.
         // `AppRouter.sheet` already distinguishes these from `path` for exactly this reason.
         .task { areaChoices = (try? await data.api.areaChoices()) ?? .none }
+        // The one foreground drain (F35). `drain()` decides about photographs itself, and returns at
+        // once when another drain is running, so this cannot double-send.
+        .onChange(of: scenePhase) { _, phase in
+            guard phase == .active else { return }
+            let outbox = data.outbox
+            Task { _ = try? await outbox.drain() }
+        }
         .fullScreenCover(isPresented: presentingSheet) {
             // ══════════════════════════════════════════════════════════════════════════════════
             // **The environment is handed over explicitly, and it has to be.**
@@ -265,8 +291,8 @@ struct RootView: View {
             // and silently not reach any sheet — the identical defect, one environment value later,
             // and just as invisible. `sharedEnvironment` is the one list. See it for the rest.
             // ══════════════════════════════════════════════════════════════════════════════════
-            presentedSheet
-                .modifier(sharedEnvironment)
+            presentedSheet(in: router)
+                .modifier(sharedEnvironment(for: router))
         }
         #if DEBUG
         // The UI test target's door into the screens behind the map (ERRATA E117). `#if DEBUG` here
@@ -306,9 +332,9 @@ struct RootView: View {
     /// Set once `CYPRESS_CLEAR_STATUS_OVERRIDES` has actually run (ERRATA E217 "Still open"). See
     /// `openDebugDeepLink` and the overlay above.
     @State private var overridesCleared = false
-    /// A screen the harness asked for that lives on no router — today only the community add's pin
-    /// step, which is a phase of `VisitAddTreeModel` rather than a `Route`. See
-    /// `DebugDeepLink.Standalone`.
+    /// A screen the harness asked for that lives on no router — the community add and its pin step,
+    /// which are a step of `VisitFlowView` and a phase of `VisitAddTreeModel` rather than `Route`s.
+    /// See `DebugDeepLink.Standalone`.
     @State private var debugStandalone: DebugDeepLink.Standalone? = nil
 
     @ViewBuilder
@@ -323,6 +349,29 @@ struct RootView: View {
                 accuracyM: accuracyM,
                 onConfirm: { _ in debugStandalone = nil },
                 onCancel: { debugStandalone = nil }
+            )
+        case let .addTree(fix, accuracyM):
+            // The shipping screen on the shipping boundary, with the fix pinned and a photograph
+            // already chosen. Both outcomes open a tree the way `VisitFlowView` does: the one just
+            // added replaces this screen, and one the "ALREADY ON RECORD" note lists opens over it.
+            VisitAddTreeView(
+                api: data.api,
+                location: VisitLocationProvider(pinnedFix: .located(fix, accuracyM: accuracyM)),
+                // `VisitFlowView`'s own attribution: this device, with no user, which is what the
+                // flow the composition root presents passes today.
+                attribution: Attribution(userID: nil, deviceID: data.deviceID),
+                // The shipping read, so the harness shows the note for the account this phone
+                // really has: signed out on a fresh install.
+                sharing: contributionSharing(),
+                debugPhoto: LocalAPI.debugTreePhoto,
+                onAdded: { id in
+                    debugStandalone = nil
+                    router.push(.treeProfile(id))
+                },
+                // The shipping builder, so the harness opens a listed tree the way the flow does:
+                // over the add screen, with the draft kept.
+                openExisting: existingTreeScreen,
+                onBack: { debugStandalone = nil }
             )
         }
     }
@@ -340,6 +389,12 @@ struct RootView: View {
         // surfacing a failure banner, because a harness `setUp` that cannot clear the table is not
         // a state a screenshot helps with — it belongs in the run's own log, and `debugClearStatus
         // Overrides` is a single `DELETE` with nothing conditional in it to fail on in practice.
+        // Chip 142: a launch that asks for it starts with no community trees, then goes on to its
+        // screen. `try?` for the reason below: a harness that cannot withdraw has nothing a banner
+        // would help with, and the test that asked will say what it saw.
+        if ProcessInfo.processInfo.environment[DebugDeepLink.withdrawCommunityTreesEnvironmentKey] != nil {
+            _ = try? await data.local.debugWithdrawAllCommunityTrees()
+        }
         if ProcessInfo.processInfo.environment[DebugDeepLink.clearStatusOverridesEnvironmentKey] != nil {
             deepLinkAttempted = true
             try? await data.local.debugClearStatusOverrides()
@@ -411,8 +466,14 @@ struct RootView: View {
     }
     #endif
 
+    /// What the cover draws for `router.sheet`.
+    ///
+    /// Takes the router rather than reading `self.router`, so `ExistingTreeHost` can draw the same
+    /// sheets for its own router: a care log opened from a profile that sits over the add screen
+    /// closes back onto that profile, not onto the app's stack under the whole visit flow. The
+    /// parameter shadows the property on purpose, so every `router` below is the one passed in.
     @ViewBuilder
-    private var presentedSheet: some View {
+    private func presentedSheet(in router: AppRouter) -> some View {
         switch router.sheet {
         case let .journalAreaPicker(kind):
             // The Journal's area picker (`AreaPickerSheet`), presented the way 09, 10 and 15 are.
@@ -550,7 +611,16 @@ struct RootView: View {
                 // and moves the bottom bar rather than pushing, because the grove is a tab root —
                 // and it has to clear the stack to do it, or the grove arrives underneath whatever
                 // is pushed and nothing appears to happen (`AppRouter.goToTab`).
-                onOpenGrove: { router.goToTab(.grove) }
+                onOpenGrove: { router.goToTab(.grove) },
+                // A tree the add screen's note lists opens over the add screen, so the draft
+                // survives (the owner's decision of 2026-11-15). See `existingTreeScreen`.
+                openExisting: existingTreeScreen,
+                // The note under the add screen's button. See `contributionSharing`.
+                contributionSharing: contributionSharing(),
+                // The empty shortlist's message: the new text where this phone has asked for added
+                // trees around the reader, the old one where it has not (the owner's answer of
+                // 2026-11-15). The map card reads the same function.
+                communityAsked: CommunityTreeCacheStore.askedReader(queue: data.store.queue)
             )
 
         case let .photoViewer(id, caption, treeID):
@@ -628,8 +698,13 @@ struct RootView: View {
             // The model is `RootView`'s, not this view's — see the `grove` property. A `switch`
             // rebuilds the arm it selects, so a model built here would be built again on every
             // return to the tab.
+            //
+            // `fix` is read here, inside this arm, so `RootView` observes the provider only while
+            // My Grove is the tab showing; the view follows it from there (ROADMAP 114).
             GroveView(
                 model: grove,
+                fix: location.availability,
+                fixIsReplayed: location.fixIsReplayed,
                 onOpenSpecies: { id in router.push(.species(id)) },
                 onOpenTree: { id in router.push(.treeProfile(id)) }
             )
@@ -698,7 +773,10 @@ struct RootView: View {
     /// The environment is for **shared, long-lived services** (ARCHITECTURE §3). Everything else a
     /// screen needs is still handed to it as an argument, which is why most of the sheets in
     /// `presentedSheet` would work with no environment at all.
-    private var sharedEnvironment: SharedEnvironment {
+    ///
+    /// It takes the router, because `ExistingTreeHost` puts its own router in place of the app's.
+    /// Everything else on the list is the same object everywhere.
+    private func sharedEnvironment(for router: AppRouter) -> SharedEnvironment {
         SharedEnvironment(router: router, photoImages: photoImages)
     }
 
@@ -720,10 +798,98 @@ struct RootView: View {
     /// re-present on the next state change, which is the latent bug PROTOTYPE-FLOW §1.3 records
     /// in `reset`.
     private var presentingSheet: Binding<Bool> {
+        Self.presenting(router)
+    }
+
+    /// `presentingSheet` for any router, so `ExistingTreeHost` dismisses its cover the same way.
+    private static func presenting(_ router: AppRouter) -> Binding<Bool> {
         Binding(
             get: { router.sheet != nil },
             set: { if !$0 { router.sheet = nil } }
         )
+    }
+
+    /// The profile of a tree the add screen's "ALREADY ON RECORD" note lists, for the add screen to
+    /// present over itself (the owner's decision of 2026-11-15, "Keep the draft").
+    ///
+    /// It used to be `onOpenTree`, which sets `router.sheet = nil`: the cover that holds the whole
+    /// visit flow closed, the profile was pushed onto the app's stack under it, and Back landed on
+    /// the map with the photograph, the pin and the species gone. Now the profile opens in an
+    /// `ExistingTreeHost` over the add screen, and the add screen stays alive under it.
+    private func existingTreeScreen(_ treeID: UUID, close: @escaping () -> Void) -> AnyView {
+        AnyView(
+            ExistingTreeHost(
+                treeID: treeID,
+                close: close,
+                destination: { route, router in AnyView(destination(for: route, in: router)) },
+                sheet: { router in AnyView(presentedSheet(in: router)) },
+                environment: { router in sharedEnvironment(for: router) }
+            )
+        )
+    }
+
+    /// A tree's profile, over the screen that opened it, with **its own `AppRouter`**.
+    ///
+    /// ── Why a router of its own ────────────────────────────────────────────────────────────────
+    /// The profile navigates only through the `AppRouter` it finds in the environment: it pushes
+    /// `.movePin`, `.pinSet`, `.photos` and the rest, and it presents the care log and the share card
+    /// through `sheet`. With the app's router, every push would land on the stack hidden under the
+    /// visit flow's cover, and every sheet would replace that cover and tear the flow down. Its own
+    /// router keeps all of it inside this host: pushes go onto this stack, built by the same
+    /// `destination(for:in:)` the app's stack uses, and sheets are drawn by the same
+    /// `presentedSheet(in:)`, in a cover of this host's own.
+    ///
+    /// ── How it closes ──────────────────────────────────────────────────────────────────────────
+    /// The profile is the stack's first pushed screen, and its Back is `router.pop()`. On this router
+    /// that pop closes the host (`AppRouter.closesInsteadOfPoppingLast`), so the add screen comes
+    /// back in one move. An edge swipe that empties the stack closes it too.
+    ///
+    /// ── What it cannot do ──────────────────────────────────────────────────────────────────────
+    /// This router has no tab bar. A `goToMap()` or `goToTab(_:)` from inside it, which only screen
+    /// 18 calls (a visit started from this profile), empties its stack and so closes the host: the
+    /// reader lands back on the add screen with the draft, not on the map or the grove.
+    private struct ExistingTreeHost: View {
+        @State private var router: AppRouter
+        let close: () -> Void
+        let destination: (Route, AppRouter) -> AnyView
+        let sheet: (AppRouter) -> AnyView
+        let environment: (AppRouter) -> SharedEnvironment
+
+        init(
+            treeID: UUID,
+            close: @escaping () -> Void,
+            destination: @escaping (Route, AppRouter) -> AnyView,
+            sheet: @escaping (AppRouter) -> AnyView,
+            environment: @escaping (AppRouter) -> SharedEnvironment
+        ) {
+            let router = AppRouter()
+            router.path = [.treeProfile(treeID)]
+            router.closesInsteadOfPoppingLast = close
+            _router = State(initialValue: router)
+            self.close = close
+            self.destination = destination
+            self.sheet = sheet
+            self.environment = environment
+        }
+
+        var body: some View {
+            @Bindable var router = router
+            NavigationStack(path: $router.path) {
+                CypressColor.surfaceScreen
+                    .ignoresSafeArea()
+                    .navigationDestination(for: Route.self) { route in
+                        destination(route, router)
+                    }
+            }
+            .modifier(environment(router))
+            .fullScreenCover(isPresented: RootView.presenting(router)) {
+                sheet(router)
+                    .modifier(environment(router))
+            }
+            .onChange(of: router.path.isEmpty) { _, isEmpty in
+                if isEmpty { close() }
+            }
+        }
     }
 
     /// Screen 03's heart, as this app performs it (RULINGS R2, ERRATA E112).
@@ -747,6 +913,15 @@ struct RootView: View {
         guard data.reconcileFavorite != nil else { return nil }
         let writer = favoriteWriter
         return { treeID in await writer.reconciledState(treeID: treeID) }
+    }
+
+    /// Whether this phone's account shares its tree records, for the note under the add screen's
+    /// button (`VisitAddTreeCopy.footnote(for:)`). See `ContributionSharing.reader(local:)`.
+    ///
+    /// `nonisolated` for `accountLink()`'s reason: the `@Sendable` closure captures one actor and
+    /// nothing of this view.
+    nonisolated func contributionSharing() -> ContributionSharingReader {
+        ContributionSharing.reader(local: data.local)
     }
 
     /// Screen 15's sign-in: the real Sign in with Apple exchange (spec §5.2 and §10 step 5,
@@ -888,8 +1063,13 @@ struct RootView: View {
         }
     }
 
+    /// The screen for a pushed route.
+    ///
+    /// Takes the router for `presentedSheet(in:)`'s reason: `ExistingTreeHost` pushes these same
+    /// screens onto its own stack, and a Move pin saved there must pop that stack, not the app's.
+    /// The parameter shadows the property on purpose.
     @ViewBuilder
-    private func destination(for route: Route) -> some View {
+    private func destination(for route: Route, in router: AppRouter) -> some View {
         switch route {
         case .treeProfile(let id):
             TreeProfileView(
@@ -972,6 +1152,34 @@ struct RootView: View {
                         outbox: data.outbox
                     )
                 }
+            )
+
+        case let .movePin(id, coordinate):
+            // The owner's Move pin control (2026-11-12). The move is local first and queued, through
+            // `RoutedAPI.correctLocation`; both exits pop back to the profile, which re-reads itself
+            // on reappearing (ERRATA E127) and so draws the tree where it now is.
+            MovePinView(
+                treeID: id,
+                coordinate: coordinate,
+                api: data.api,
+                onSaved: { router.pop() },
+                onCancel: { router.pop() }
+            )
+
+        case .dataDispute(let id):
+            // The data-dispute screen (RULINGS R79, part 2). It gets the provider itself rather than a
+            // coordinate, because "use my current location" is a question asked at the tap: a value
+            // captured at the push would be the E158 freeze again, on the one screen where the fix
+            // *is* the contribution. The provider is the app's one location stack — screen 01's —
+            // so this screen adds no second one.
+            //
+            // A successful raise pops back to the profile, which re-reads itself on reappearing
+            // (ERRATA E127) and draws the reporter's own standing dispute from the store.
+            DataDisputeView(
+                treeID: id,
+                api: data.api,
+                location: location,
+                onRaised: { router.pop() }
             )
 
         case .species(let id):
@@ -1329,6 +1537,21 @@ struct ProfileFavoriteWriter: Sendable {
         guard let reconcile else { return nil }
         if (try? await outbox.pendingFavoriteState(treeID: treeID)) != nil { return nil }
         return await reconcile(treeID)
+    }
+}
+
+extension ContributionSharing {
+    /// The read the add screen makes each time it appears: who is signed in (`LocalAPI.userID`) and
+    /// what that account agreed to (`LocalAPI.accountLink()`), both from the phone's own database.
+    /// Neither is a `CypressAPI` requirement, so the composition root reads them, as it does for
+    /// `AccountModel`. A link that cannot be read counts as no answer, which `init(userID:link:)`
+    /// turns into `.unknown` for a signed-in account and `.signedOut` otherwise.
+    static func reader(local: LocalAPI) -> ContributionSharingReader {
+        return {
+            let userID = await local.userID
+            let link = try? await local.accountLink()
+            return ContributionSharing(userID: userID, link: link)
+        }
     }
 }
 

@@ -331,7 +331,51 @@
 # 393.4s — the same ordering, the same ~2s spread, and the same warning that a 2s margin built from
 # three machines' numbers is not a measurement.
 
-DeepLinkVoiceOverTests MapCenteredStateUITests FrameFinitenessGateTests IdentifyFABReachabilityTests AppleSignInUITests SeeAllOnMapUITests
-MapFilterAccessibilityTests AnonymizedPhotoNoticeUITests MapRecenterUITests PhotoBrowserReachabilityTests CityDisclaimerUITests AddReadingReachabilityTests
-DeepLinkSweepTests PrimaryCTAReachabilityTests SheetHeightUITests AlmanacGroupTapTests StrandedPhotoHeroUITests CityCardContainmentUITests AreaPickerUITests
-SheetExitUITests MapSearchUITests MapSuggestionUITests MapPanTabSwitchUITests PhotoDeletionReachabilityTests AccessibilityTreeTests ReadingOrderAccessibilityTests RemoteGateComplaintUITests
+# `DataDisputeUITests` (RULINGS R79 part 2) was added afterwards and has never been on CI. Two tests,
+# each one launch onto a city tree's profile and a push into the data-dispute screen. Measured alone
+# on the iPhone 16 Pro simulator (EA0AD796-3052-4EE5-A7A8-A1DE807A3653, 402 pt):
+#
+#   VERIFY-OK: Executed 2 tests, with 0 failures (0 unexpected) in 52.588 (52.592) seconds
+#
+# and at 97.9s inside a four-class run on the same device, which is the spread this file keeps
+# warning about. PLACED ON SHARD 4 by line count rather than by arithmetic: every total above is a
+# one-run snapshot from different machines, and the standing instruction to re-measure on one
+# machine before balancing is unchanged by this entry.
+#
+# PR #185's fix round grew it from two tests to five (the no-tree chips, a pending fix holding Send,
+# and a coarse fix with Precise Location off beside the one with it on). Measured alone on the same
+# iPhone 16 Pro, light then dark:
+#
+#   VERIFY-OK: Executed 5 tests, with 0 failures (0 unexpected) in 186.054 (186.063) seconds
+#   VERIFY-OK: Executed 5 tests, with 0 failures (0 unexpected) in 181.740 (181.749) seconds
+#
+# **+~130s on Shard 4 over the 52.6s above.** Left on Shard 4 for the same reason it was placed
+# there: no one machine has measured all four shards in one sitting, so a rebalance would be
+# arithmetic on numbers from different devices. That re-measure is owed (ROADMAP).
+
+# `MovePinUITests` (community trees C1, the owner's Move pin control of 2026-11-12): four tests since
+# C3 added the Journal and Outbox check; three are one launch each and that one is three. PLACED ON
+# SHARD 2 by line count, for the reason the entry above gives.
+
+# `DialogCancelUITests` (ROADMAP 77) and `ProfileLinkColumnUITests` (ROADMAP 119), both added on
+# 2026-11-14: NEVER MEASURED. No test could run on the machine that wrote them (ROADMAP 112), so
+# neither has a time from anywhere, and their first CI run is the first number either will have.
+# `DialogCancelUITests` is six tests, each one launch: PLACED ON SHARD 1. `ProfileLinkColumnUITests`
+# is two tests, each one launch: PLACED ON SHARD 3. Both by line count, for the reason the
+# `MovePinUITests` entry above gives.
+
+# `AddTreeNearbyUITests` (ROADMAP 140, the owner's ruling of 2026-11-14 that a tree within 10 m of
+# another is noted, not refused): four tests, one launch each. PLACED ON SHARD 2 by line count, for the
+# reason the `MovePinUITests` entry above gives.
+
+# `OthersTreeUITests` (round C3: other people's community trees, and the only-you line): NEVER
+# MEASURED on CI. PLACED ON SHARD 1, the only line no other branch of the round edits.
+
+# `WithdrawTreeUITests` (the adder withdraws a community tree, the owner's answers of 2026-11-16):
+# six tests, one launch each. NEVER MEASURED on CI. PLACED ON SHARD 3 by line count, for the reason
+# the `MovePinUITests` entry above gives.
+
+DeepLinkVoiceOverTests MapCenteredStateUITests FrameFinitenessGateTests IdentifyFABReachabilityTests AppleSignInUITests SeeAllOnMapUITests DialogCancelUITests OthersTreeUITests
+MapFilterAccessibilityTests AnonymizedPhotoNoticeUITests MapRecenterUITests PhotoBrowserReachabilityTests CityDisclaimerUITests AddReadingReachabilityTests MovePinUITests AddTreeNearbyUITests
+DeepLinkSweepTests PrimaryCTAReachabilityTests SheetHeightUITests AlmanacGroupTapTests StrandedPhotoHeroUITests CityCardContainmentUITests AreaPickerUITests ProfileLinkColumnUITests WithdrawTreeUITests
+SheetExitUITests MapSearchUITests MapSuggestionUITests MapPanTabSwitchUITests PhotoDeletionReachabilityTests AccessibilityTreeTests ReadingOrderAccessibilityTests RemoteGateComplaintUITests DataDisputeUITests

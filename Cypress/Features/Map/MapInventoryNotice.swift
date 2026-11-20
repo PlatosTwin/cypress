@@ -93,7 +93,11 @@ enum MapInventoryCopy {
     /// Park has upwards of a hundred thousand trees in it and the app knows about none of them.
     static let title = "No trees on record here"
 
-    /// **Three things, in the order a reader needs them.**
+    /// **The two bodies.** The numbered points and the next two paragraphs argued for the first
+    /// body, `notOnTheCityInventory`, which named only the city inventory and is still drawn where
+    /// the phone has not asked for added trees. What they say about promises, the subject and the
+    /// AX5 budget holds for both. The paragraphs after them are about `neitherHasATree`.
+    /// The first body made three points, in the order a reader needs them.
     ///
     /// 1. *What the map is drawing* — a city street-tree inventory. That is the inventory's own
     ///    published name rather than a characterization invented here: all three inventories the
@@ -126,20 +130,46 @@ enum MapInventoryCopy {
     /// the *top* of the display. `MapEmptyInventoryTests.theNoticeFitsTheSlotAtAX5` holds the
     /// budget, so a copy edit that spends the line back fails rather than ships.
     ///
-    /// **The hedge is load-bearing and is not to be tidied away.** The trigger fires wherever the
-    /// record is empty, which includes the Pacific and the ground outside a downloaded city's
-    /// window. `Trees stand here` would be a stronger sentence and a false one in those places;
-    /// `may` is true in all of them and still refuses the reading the ticket is about — that the
-    /// park has no trees.
+    /// **Since the community trees are drawn for everyone, the map draws two things, and the body
+    /// names both** (the owner's ruling of 2026-11-15 on places with no city inventory, "name both
+    /// kinds"). It replaces the first body wherever this phone has asked for added trees. Its
+    /// subject is still the record, never the ground: "Neither has a tree here" says
+    /// what the two sources hold, and leaves the reader free to see the trees in front of them.
     ///
-    /// The copy audit of 2026-08-23 (R25) replaced `Trees may well stand here, unlisted.`:
-    /// `may well` leans toward asserting the trees, which is the half of the hedge the sentence
-    /// cannot carry, and the trailing `unlisted` made a fact about the record read as an adjective
-    /// on the trees. The clause the rewrite spends on `without being listed` is measured, not
-    /// assumed — see the AX5 budget above.
+    /// **"Neither has a tree here" is about the trees this phone holds.** `isOwed` reads
+    /// `MapContent.markerCount`, and `LocalAPI.mapContent` merges the community layer (this phone's
+    /// own trees and other people's trees in its cache) into the same content as the city's. So the
+    /// card draws only where none of those has a pin or a cluster in view, unnarrowed. Other
+    /// people's trees are in the cache only where this phone asked the service for them, so this
+    /// body is drawn only there. See `message(communityAsked:)`.
     ///
-    /// No spaces around em dashes (ARCHITECTURE §5.7) — there are none to space.
-    static let message =
+    /// The same AX5 budget holds both bodies.
+    static let neitherHasATree =
+        "Cypress draws a city street-tree inventory and trees people have added. "
+        + "Neither has a tree here."
+
+    /// The first body, kept for the ground where this phone has not asked the service for added
+    /// trees (the owner's answer of 2026-11-15: "Show the old text there"). It names only the city
+    /// inventory, and its hedge, "Trees may stand here", stays true when the phone cannot know
+    /// about trees other people added. The words are the body as it shipped before round C3.
+    static let notOnTheCityInventory =
         "Cypress draws a city street-tree inventory, and this ground is not on it. "
         + "Trees may stand here without being listed."
+
+    /// The body for a settled viewport, from whether this phone has asked the service for the
+    /// community trees over it (`CommunityTreeCacheStore.hasAsked(covering:maxTiles:connection:)`).
+    ///
+    /// The phone has not asked, and gets `notOnTheCityInventory`, when:
+    /// - the viewport touches more than `CommunityTileRefresher.Policy.maxTiles` (16) zoom-14
+    ///   tiles, a zoomed-out map the refresher never asks about (`.tooManyTiles`);
+    /// - a tile in view was never fetched to its last page: the phone is offline, a fetch failed
+    ///   (on the first page or a later one), a pass stopped at its page limit, a refused cursor
+    ///   dropped the tile and its snapshot has not arrived, or the first fetch has not answered;
+    /// - the remote gate is shut (`DataLayer.refreshCommunityTrees` is nil unless
+    ///   `RemoteAccess.allowsNetwork`; a DEBUG build is shut unless `CYPRESS_REMOTE` opens it).
+    ///
+    /// A tile fetched earlier and not refreshed since still counts as asked.
+    static func message(communityAsked: Bool) -> String {
+        communityAsked ? neitherHasATree : notOnTheCityInventory
+    }
 }

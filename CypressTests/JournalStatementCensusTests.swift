@@ -169,6 +169,82 @@ struct JournalStatementCensusTests {
         #expect(Set(census.statements) == Set(expected))
     }
 
+    /// **A page that holds a tree this phone added, with a species and no nickname, costs two more
+    /// statements, once each** (the owner's answer of 2026-11-16, "Use the species"). The name
+    /// resolver reads the community record (`CommunityLayer.treesSQL`) and the species' common name
+    /// (`SpeciesQueries.commonNamesSQL()`) once for the page. `displayNames(for:)` over the same
+    /// ids is one hop and four statements: the seed trees, the nicknames, and those two. The
+    /// claim check (`SpeciesAssertionStore.treesWithAClaimSQL`) does not run, because no tree on
+    /// the page is somebody else's cached tree.
+    ///
+    /// Red-proof: resolve each community tree by its own `commonNames(ids: [species])` call in
+    /// `LocalAPI.communitySpeciesNames`, with a second added tree on the page — red on the count.
+    @Test("a page with added species trees runs seven statements, and its names four")
+    func aPageWithAnAddedTreeCostsTwoMore() async throws {
+        let (api, store, trees) = try await Self.seeded()
+        let schema = try #require(store.seed, "the store opened without a seed attached")
+        let speciesQueries = SpeciesQueries(schema: schema)
+        let nameStatements = [
+            TreeQueries(schema: schema, seedHasSoftDeletedTrees: store.seedHasSoftDeletedTrees).treesSQL(),
+            ContributionStore.activeNamesSQL,
+            CommunityLayer.treesSQL,
+            speciesQueries.commonNamesSQL()
+        ]
+        let expected = try Self.expected(store) + [CommunityLayer.treesSQL, speciesQueries.commonNamesSQL()]
+
+        let candidates = try await api.treesNear(
+            Coordinate(latitude: 37.7694, longitude: -122.4862), radiusM: 900, limit: 200
+        )
+        let speciesID = try #require(
+            candidates.compactMap(\.tree.speciesCurrentID).first,
+            "no seed tree near the opening center carries a species id"
+        )
+        let attribution = await api.attribution
+        var added: [UUID] = []
+        for index in 0..<2 {
+            added.append(try await api.addTree(
+                TreeDraft(
+                    coordinate: Coordinate(latitude: 37.7700 + Double(index) * 0.0001, longitude: -122.4870),
+                    speciesID: speciesID,
+                    photoLocalPath: "/tmp/cypress-journal-census-species-\(index).jpg",
+                    attribution: attribution
+                )
+            ).id)
+        }
+        for id in added {
+            try await store.queue.write { connection in
+                try ContributionStore().insert(
+                    Visit(treeID: id, attribution: attribution, capturedAt: Self.moment.addingTimeInterval(60)),
+                    connection: connection
+                )
+            }
+        }
+
+        let census = StatementCensus()
+        await store.queue.installCensus(census)
+        let page = try await api.journal(cursor: nil, limit: JournalLimits.pageSize)
+        await store.queue.installCensus(nil)
+        let named = page.items.filter { added.contains($0.treeID) && !$0.treeDisplayName.isEmpty }
+        try #require(named.count == added.count, "the page named \(named.count) of the \(added.count) added trees")
+        #expect(census.readCount == 2, "the page made \(census.readCount) hops, not 2")
+        #expect(
+            census.statements.count == expected.count,
+            "the page ran \(census.statements.count) statements, not \(expected.count): \(Self.histogram(census.statements))"
+        )
+        #expect(Set(census.statements) == Set(expected), "unexplained: \(Self.label(Set(census.statements).subtracting(expected)))")
+
+        census.reset()
+        await store.queue.installCensus(census)
+        let names = await api.displayNames(for: trees + added)
+        await store.queue.installCensus(nil)
+        try #require(added.allSatisfy { names[$0] != nil }, "displayNames did not name the added trees")
+        #expect(census.readCount == 1, "displayNames made \(census.readCount) hops, not 1")
+        #expect(
+            census.statements.count == 4 && Set(census.statements) == Set(nameStatements),
+            "displayNames ran \(census.statements.count) statements, not 4: \(Self.histogram(census.statements))"
+        )
+    }
+
     /// **The calibration: the census can see an N+1, and reports the shape of one.**
     ///
     /// Without this the two tests above could both be passing because the census records nothing.

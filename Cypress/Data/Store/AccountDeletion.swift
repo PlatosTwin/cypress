@@ -87,8 +87,8 @@ public struct AccountDeletion {
         /// Visits, check-ins, measurements and care events whose `user_id` was nulled. They stay on
         /// their trees.
         public var anonymizedContributions: Int = 0
-        /// Tree names (D15), review flags and status overrides that carried the account as their
-        /// author.
+        /// Tree names (D15), review flags, data disputes (v22) and status overrides that carried the
+        /// account as their author.
         public var anonymizedAttributions: Int = 0
         /// Photo votes whose owner was nulled and which still count toward their photograph's hero
         /// (`AppSchema` v9).
@@ -113,8 +113,9 @@ public struct AccountDeletion {
 
         /// Visits, check-ins, measurements and care events deleted outright.
         public var deletedContributions: Int = 0
-        /// Tree names and review flags deleted outright. Status overrides are not counted here; a
-        /// moderation decision is anonymized under both doors (see `delete`).
+        /// Tree names, review flags and data disputes deleted outright — a dispute's two child
+        /// tables cascade with it (v22). Status overrides are not counted here; a moderation
+        /// decision is anonymized under both doors (see `delete`).
         public var deletedAttributions: Int = 0
         /// Photograph rows deleted. Their bytes are removed by the caller, before this runs.
         public var deletedPhotos: Int = 0
@@ -148,7 +149,45 @@ public struct AccountDeletion {
         /// `eraseEverything`, which keeps none of them.
         public var anonymizedOutboxItems: Int = 0
 
+        // --- the community trees the account added (`AppSchema` v23)
+        //
+        // **These two break the one-group-is-zero shape on purpose**, because the owner's decision
+        // 6 of 2026-09-28 does: under `eraseEverything` a tree somebody else has built on stays,
+        // anonymized, and one nobody has is deleted — so one erasure can do both. `forgetCommunityTrees`
+        // carries the rule.
+
+        /// Community trees the account added that stay, with no adder. Under `leaveRecords`, every
+        /// one the service did not report deleted; under `eraseEverything`, the ones the service
+        /// reported kept, or, for a tree it did not name, the ones another identity has built on here.
+        public var anonymizedCommunityTrees: Int = 0
+        /// Community trees the account added that are gone, with every position their pin held.
+        /// Under `leaveRecords` these are only the trees the service reported deleted (decision 12's
+        /// unpublished trees); with no such report it is zero. See `forgetCommunityTrees`.
+        public var deletedCommunityTrees: Int = 0
+        /// Pin positions the account set that stay on their tree with no mover, under either door.
+        /// A position on a tree the erasing door deleted is not counted here: it went with its tree.
+        public var anonymizedTreeLocations: Int = 0
+
         public init() {}
+    }
+
+    /// The service's answer about the community trees the account added: which it deleted and which
+    /// it kept, anonymized (`DELETE /me`'s `community_trees`, `ROADMAP` 104 and 105).
+    ///
+    /// The phone acts on this answer instead of its own rule wherever the answer names a tree,
+    /// because the service holds two facts the phone does not: whether a tree was ever published
+    /// (decision 12 deletes an unpublished tree under both doors), and every row anybody else has
+    /// put on the tree (decision 6). See `forgetCommunityTrees`.
+    public struct ServiceTreeVerdicts: Sendable, Equatable {
+        /// Trees the service removed and tombstoned.
+        public var deleted: Set<UUID>
+        /// Trees the service kept with no adder.
+        public var anonymized: Set<UUID>
+
+        public init(deleted: Set<UUID> = [], anonymized: Set<UUID> = []) {
+            self.deleted = deleted
+            self.anonymized = anonymized
+        }
     }
 
     // MARK: - The bytes
@@ -158,7 +197,7 @@ public struct AccountDeletion {
     /// **A photograph says whose it is** since `AppSchema` v12, and this read is the reason the
     /// column exists. Before it, the only tie between a photograph and a person was `visit_id` and
     /// from there `visits.user_id` — which meant `LocalAPI.addTree`'s photograph, written with no
-    /// visit for a tree whose row records no author, was attributable to nobody and reachable by
+    /// visit for a tree whose row then recorded no author, was attributable to nobody and reachable by
     /// neither door. "Erase everything I contributed" left that JPEG on the disk. ERRATA E136
     /// recorded it as a broken promise; ERRATA E147 is the column that closes it, and this predicate
     /// is now `photos.user_id` rather than a join through the visits.
@@ -245,11 +284,16 @@ public struct AccountDeletion {
     /// person's. The column is nullable, so both doors take the name off and leave the decision. This
     /// was residue before the two doors existed: the id stayed in that column after a deletion, and
     /// nothing noticed.
+    ///
+    /// `serviceTrees` is the service's answer about the trees the account added, when the deletion
+    /// went through `DELETE /me` and the answer carried one. Nil keeps the phone's own rule for every
+    /// tree, which is what a signed-out deletion and an older service get.
     @discardableResult
     public func delete(
         userID: UUID,
         choice: AccountDeletionChoice,
         at date: Date,
+        serviceTrees: ServiceTreeVerdicts? = nil,
         connection: SQLiteConnection
     ) throws -> Outcome {
         try connection.transaction {
@@ -307,6 +351,14 @@ public struct AccountDeletion {
             case .eraseEverything:
                 try eraseContributions(userID: userID, into: &outcome, on: connection)
             }
+
+            // After the contributions, and the order is the rule: under the erasing door "has
+            // anybody else built on this tree" is asked of what is left once the account's own
+            // visits and photographs are gone — the service's order too (`deleteAccountTrees`).
+            try forgetCommunityTrees(
+                userID: userID, choice: choice, at: date, serviceTrees: serviceTrees,
+                into: &outcome, on: connection
+            )
 
             // A moderation decision keeps its effect and loses its author, whichever door was taken.
             outcome.anonymizedAttributions += try run(
@@ -428,6 +480,72 @@ public struct AccountDeletion {
             userAndNow, on: connection
         )
 
+        // A data dispute is the same shape as a review flag and is anonymized on the same argument
+        // (`AppSchema` v22, `RULINGS R79`). It was missed when the table was added, which is what
+        // `ROADMAP`'s entry about enumerating the user-bearing tables is for: a hand-kept list
+        // cannot fail loudly, and this one did not.
+        //
+        // **What `raised_by IS NULL` then means, said out loud rather than inherited, because the
+        // table's own NULL cannot say it.** A NULL in `raised_by` is also D9's ordinary case — a
+        // dispute raised on this phone before it had an account — so the column alone cannot tell an
+        // un-named row from an unsigned-in one. `review_flags` never had to: a flag has no
+        // author-only verb. This table does, and the answer to "whose is it now" is **nobody's**.
+        //
+        // That is not this half's ruling to make. `server/internal/store/disputes.go`'s
+        // `disputeIsThisIdentitys` counts a dispute as the caller's on a `user_id` or a `device_id`
+        // match against its own `contributions` row, and `AccountDeletionChoice.leaveRecords` clears
+        // both of those there; a comparison against two NULLs then falls out of its `FILTER` — "a
+        // record owned by nobody is not withdrawable by anybody", measured there by
+        // `TestAnAnonymizedDisputeIsWithdrawableByNobody`. **This door clears one**, because this
+        // table has one: `tree_data_disputes` carries `raised_by` and no device column at all
+        // (`AppSchema` v22), which is why the fact that the row is nobody's has to be read off the
+        // tombstone rather than off a second NULL. The service cannot adopt the other answer even in
+        // principle, because `ClaimDevice` has already folded the row's `device_id` into its
+        // `user_id` and there is no installation identity left to match. A phone that offered the
+        // withdrawal anyway would apply it locally, queue a `data_dispute_withdrawal` and be
+        // answered `forbidden` — a dispute shown as withdrawn while the service goes on holding it,
+        // which is the shape ERRATA **E280** records for `photo_withdrawal`, reached here through a
+        // third verb.
+        //
+        // So the tombstone goes down first, exactly as it does for the four tables above and for the
+        // reason `MeasurementForWithdrawal.isAnonymized` gives: the fact cannot be read off the
+        // owner column, the `client_uuid` is the key the row already carries, and the `UPDATE` below
+        // is what stops the predicate matching. `TreeDataDispute.isAuthored(by:)` refuses on it, and
+        // `DataDisputeStore`'s `WHERE` clauses carry the same refusal so the two gates cannot differ.
+        try run(
+            """
+            INSERT OR IGNORE INTO anonymized_contributions (client_uuid, anonymized_at)
+            SELECT client_uuid, :now FROM tree_data_disputes WHERE raised_by = :user COLLATE NOCASE
+            """,
+            userAndNow, on: connection
+        )
+        outcome.anonymizedAttributions += try run(
+            """
+            UPDATE tree_data_disputes SET raised_by = NULL, updated_at = :now
+             WHERE raised_by = :user COLLATE NOCASE
+            """,
+            userAndNow, on: connection
+        )
+
+        // A species statement is the same shape as a tree name, and is anonymized on the same
+        // argument: the chain is the tree's record, the author was a person. `ROADMAP` chip 79
+        // measured the gap (`AccountDeletionCoverageTests`, #186) and this closes it.
+        //
+        // **No tombstone, and the question chip 79 left open is answered by the schema.**
+        // `species_assertions` carries at most one owner (v14's CHECK), so a row the account owned
+        // has `device_id IS NULL`, and nulling `user_id` leaves a row owned by nobody — which
+        // `claimDevice` cannot adopt (it matches on `device_id`) and `SpeciesAssertion
+        // .isSupersedable(by:)` refuses to everybody (R45 arm 3). v13's tombstone exists for the
+        // four tables whose `device_id` is NOT NULL and survives; this one has nothing left to
+        // mistake for this phone's unclaimed work.
+        outcome.anonymizedAttributions += try run(
+            """
+            UPDATE main.species_assertions SET user_id = NULL, updated_at = :now
+             WHERE user_id = :user COLLATE NOCASE
+            """,
+            userAndNow, on: connection
+        )
+
         // The vote survives its voter (`AppSchema` v9), which is the concrete thing the owner asked
         // for when they said "up votes" among the things the default door leaves in place. Until v9
         // this was a `DELETE`, not because anybody had ruled that a vote should die with its voter —
@@ -494,7 +612,7 @@ public struct AccountDeletion {
         //
         // `photos.user_id` since v12, where this used to join through `visits`. The account's
         // photographs are now one predicate, so the tree a person *added* — whose photograph has no
-        // visit to join through and whose row records no author — is finally inside the door that
+        // visit to join through and whose row recorded no author until v23 — is finally inside the door that
         // promised to erase it (ERRATA E136, E147).
         //
         // Tombstones go too. A photograph the person deleted one at a time keeps a stripped row so
@@ -504,6 +622,21 @@ public struct AccountDeletion {
         outcome.deletedPhotos = try run(
             "DELETE FROM photos WHERE user_id = :user COLLATE NOCASE",
             user, on: connection
+        )
+
+        // The refusal keys of photographs that are now gone (`OutboxStore.recordRefusedPhoto`). Each
+        // names one photograph by id, in `app_state` rather than a column, so neither the statement
+        // above nor `AccountDeletionCoverage` reaches it. It goes with its photograph. A key whose
+        // photograph was already gone by some other road goes too: nothing reads it, and erasing is
+        // the door that promises no residue. A key whose photograph survives — another owner's, or
+        // this device's unclaimed work — stays, because it is still true.
+        try run(
+            """
+            DELETE FROM app_state
+             WHERE substr(key, 1, length(:prefix)) = :prefix
+               AND substr(key, length(:prefix) + 1) NOT IN (SELECT upper(id) FROM photos)
+            """,
+            [":prefix": OutboxStore.refusedPhotoKeyPrefix], on: connection
         )
 
         for table in ["visits", "observations", "measurements"] {
@@ -518,7 +651,255 @@ public struct AccountDeletion {
         outcome.deletedAttributions += try run(
             "DELETE FROM review_flags WHERE raised_by = :user COLLATE NOCASE", user, on: connection
         )
+        // The dispute goes whole, children and all: `tree_dispute_issues` and
+        // `tree_dispute_suggestions` are `ON DELETE CASCADE` against this parent (`AppSchema` v22),
+        // so the checked issues and the suggested values go with it in the same statement. They are
+        // the account's own words about a record — "erase everything I contributed" reaches them —
+        // and a child row surviving its parent is not reachable while foreign keys are ON, which
+        // `SQLiteConnection` and `DatabaseQueue` both set.
+        outcome.deletedAttributions += try run(
+            "DELETE FROM tree_data_disputes WHERE raised_by = :user COLLATE NOCASE", user, on: connection
+        )
+
+        outcome.deletedAttributions += try eraseSpeciesAssertions(userID: userID, on: connection)
     }
+
+    /// The account's species statements, gone, with each chain they sat in spliced shut (`ROADMAP`
+    /// chip 79).
+    ///
+    /// **Why a splice and not a `DELETE`.** `superseded_by` is a deferred foreign key into the same
+    /// table, so deleting a statement that an older one's `superseded_by` names fails at `COMMIT` —
+    /// the whole erasure rolls back, which is loud and correct and not the door the person asked
+    /// for. So every pointer at a deleted row is moved to the first surviving row after it, or to
+    /// NULL where nothing survives after it, which makes that older row the head again: the tree's
+    /// species goes back to what it was before the account spoke. A run of consecutive statements by
+    /// the account is followed to its end, which is why the successor is resolved in Swift rather
+    /// than one step at a time in SQL.
+    ///
+    /// **The deletes go first**, and the order is the one-head index's: it is not deferrable, so
+    /// making an older row the head while the deleted head still stands would be two heads for one
+    /// tree mid-statement. With the head deleted first, the dangling pointer is only a deferred
+    /// foreign key, which the splice has repaired by `COMMIT`.
+    ///
+    /// `community_trees.species_current` is the chain head's read cache (v14), so it is resynced for
+    /// every tree whose chain changed: to the new head's species, or to NULL where the account's
+    /// statements were the whole chain. A tree this phone added and the account named, with no
+    /// other statement, ends unnamed — "erase everything I contributed" includes the name.
+    private func eraseSpeciesAssertions(userID: UUID, on connection: SQLiteConnection) throws -> Int {
+        let doomedStatement = try connection.cachedStatement("""
+            SELECT id, tree_uuid, superseded_by FROM main.species_assertions
+             WHERE user_id = :user COLLATE NOCASE
+            """)
+        _ = try doomedStatement.bind([":user": userID.uuidString])
+        let doomed = try doomedStatement.fetchAll { row in
+            (
+                id: try row.string("id"),
+                tree: try row.string("tree_uuid"),
+                successor: try row.stringIfPresent("superseded_by")
+            )
+        }
+        _ = try doomedStatement.reset()
+        guard !doomed.isEmpty else { return 0 }
+
+        let successorOf = Dictionary(
+            doomed.map { ($0.id.uppercased(), $0.successor) }, uniquingKeysWith: { first, _ in first }
+        )
+        // The first surviving row after `id`, or nil for none. Bounded by the doomed set's size, so
+        // a cycle — which the schema's CHECK and the head index together make unstorable — could
+        // not spin here either.
+        func survivor(after id: String) -> String? {
+            var next = successorOf[id.uppercased()] ?? nil
+            var steps = 0
+            while let candidate = next, successorOf[candidate.uppercased()] != nil, steps <= doomed.count {
+                next = successorOf[candidate.uppercased()] ?? nil
+                steps += 1
+            }
+            return next
+        }
+
+        var deleted = 0
+        for row in doomed {
+            deleted += try run(
+                "DELETE FROM main.species_assertions WHERE id = :id", [":id": row.id], on: connection
+            )
+        }
+        for row in doomed {
+            try run(
+                """
+                UPDATE main.species_assertions SET superseded_by = :survivor
+                 WHERE superseded_by = :id COLLATE NOCASE
+                """,
+                [":survivor": survivor(after: row.id), ":id": row.id], on: connection
+            )
+        }
+        for tree in Set(doomed.map { $0.tree.uppercased() }) {
+            try run(
+                """
+                UPDATE main.community_trees
+                   SET species_current = (
+                       SELECT species_uuid FROM main.species_assertions
+                        WHERE tree_uuid = :tree COLLATE NOCASE AND superseded_by IS NULL
+                        LIMIT 1
+                   )
+                 WHERE id = :tree COLLATE NOCASE
+                """,
+                [":tree": tree], on: connection
+            )
+        }
+        return deleted
+    }
+
+    // MARK: - The community trees the account added
+
+    /// The owner's decisions 6 and 12 of 2026-09-28, over the trees this phone added and their pin
+    /// chains (`AppSchema` v23), mirroring the service's `deleteAccountTrees`.
+    ///
+    /// - **`leaveRecords`**: every tree the account added stays, with no adder. Nobody may move it
+    ///   afterwards — `ContributionOwner.nobody` is nobody's (`LocationCorrection.swift`) — and
+    ///   `claimDevice` cannot adopt it, because the account-owned row has no `device_id` (at most
+    ///   one owner, v23's CHECK).
+    /// - **`eraseEverything`**: a tree another identity has built on stays, anonymized; one nobody
+    ///   has is deleted with every position its pin held. "Built on" is the orchestrator's ruling on
+    ///   decision 6, as the service reads it: another identity's live visit, check-in, measurement
+    ///   or care event, or live photograph, on the tree — anonymized rows included, and favorites,
+    ///   votes, names, species statements and reports not. This runs after `eraseContributions`, so
+    ///   what remains on the tree is other people's.
+    /// - **Either door**: every pin position the account set on a tree that stays loses its mover —
+    ///   the service takes the account's name off every chain row too. The positions stay, because
+    ///   they are where the tree is.
+    ///
+    /// **The service's answer wins where it names a tree** (`ROADMAP` 104 and 105). The phone's own
+    /// rule above is a guess in two places. Decision 12 deletes an *unpublished* tree under both
+    /// doors, including `leaveRecords`, and publication is the service's fact (decisions 7 and 10).
+    /// And decision 6's "built on" is read here from this phone's rows only: somebody else's visit
+    /// that never reached this phone does not count, and this installation's own unclaimed row
+    /// counts as somebody else's. So when `DELETE /me` reports what it did (`serviceTrees`):
+    ///
+    /// - a tree the service **deleted** is deleted here with its chain, under either door;
+    /// - a tree the service **kept** is kept here, anonymized, under either door;
+    /// - a tree the answer does not name (the service never received it, for example an add still
+    ///   in the outbox) gets the phone's own rule above, as it did before the answer existed.
+    ///
+    /// With no answer at all (`serviceTrees == nil`: a signed-out deletion, or a service deployed
+    /// before the field) every tree gets the phone's own rule, exactly as before. The leaving door
+    /// then still keeps a pin the service has dropped, which is `ROADMAP` 104 on an older service.
+    ///
+    /// Only trees this account added are touched. An id the answer names that this phone holds as
+    /// somebody else's, or not at all, is ignored, for the reason `delete` gives about a device's own
+    /// rows.
+    ///
+    /// Nothing references `community_trees(id)` by foreign key: visits and photographs name a tree
+    /// by `tree_uuid`, which may be a city row. **Other rows on a deleted tree stay.** Under the
+    /// phone's own rule the erasing door deletes only a tree with no live row on it here, so nothing
+    /// is left behind. The service's answer can delete a tree that still has rows on this phone:
+    /// the account's anonymized visits and photographs on an unpublished tree under the leaving
+    /// door, this installation's own unclaimed visit in case 105(b), or a stranger's visit that
+    /// reached this phone. This method deletes none of them. They are not the account's rows to
+    /// delete (the argument `delete` makes about a device's own rows), and under the leaving door
+    /// the person asked for their records to stay. They remain on a `tree_uuid` that names no tree.
+    /// `theErasingDoorFollowsTheServicesDeletion` asserts this for the device's visit.
+    private func forgetCommunityTrees(
+        userID: UUID,
+        choice: AccountDeletionChoice,
+        at date: Date,
+        serviceTrees: ServiceTreeVerdicts?,
+        into outcome: inout Outcome,
+        on connection: SQLiteConnection
+    ) throws {
+        let userAndNow: [String: SQLiteBindable?] = [":user": userID.uuidString, ":now": date]
+
+        // The phone's own rule: under the erasing door, the trees nobody else has built on. A
+        // `LEFT JOIN`-free `NOT EXISTS` per table, each seeking its `idx_<table>_tree` index.
+        var ownRule: [String] = []
+        if choice == .eraseEverything {
+            let unbuilt = Self.builtOnTables.map { table in
+                """
+                NOT EXISTS (SELECT 1 FROM main.\(table) x
+                             WHERE x.tree_uuid = main.community_trees.id COLLATE NOCASE
+                               AND x.deleted_at IS NULL)
+                """
+            }.joined(separator: "\n   AND ")
+            let doomed = try connection.cachedStatement("""
+                SELECT id FROM main.community_trees
+                 WHERE user_id = :user COLLATE NOCASE
+                   AND \(unbuilt)
+                """)
+            _ = try doomed.bind([":user": userID.uuidString])
+            ownRule = try doomed.fetchAll { try $0.string("id") }
+            _ = try doomed.reset()
+        }
+
+        var ids = ownRule
+        if let serviceTrees {
+            // Every tree this account added, against the service's answer. The answer decides each
+            // tree it names; the own rule decides the rest.
+            let added = try connection.cachedStatement(
+                "SELECT id FROM main.community_trees WHERE user_id = :user COLLATE NOCASE"
+            )
+            _ = try added.bind([":user": userID.uuidString])
+            let all = try added.fetchAll { try $0.string("id") }
+            _ = try added.reset()
+            let unbuilt = Set(ownRule)
+            ids = all.filter { id in
+                guard let uuid = UUID(uuidString: id) else { return unbuilt.contains(id) }
+                // Kept before deleted: an id in both lists is kept. The service never sends that,
+                // and for a deletion that cannot be undone the safe reading of a contradiction is
+                // to keep the tree.
+                if serviceTrees.anonymized.contains(uuid) { return false }
+                if serviceTrees.deleted.contains(uuid) { return true }
+                return unbuilt.contains(id)
+            }
+        }
+
+        for id in ids {
+            // The chain first: its rows name the tree, not the other way round, and a deleted
+            // tree's positions are not the forest's to keep.
+            try run(
+                "DELETE FROM main.tree_locations WHERE tree_id = :tree COLLATE NOCASE",
+                [":tree": id], on: connection
+            )
+            outcome.deletedCommunityTrees += try run(
+                "DELETE FROM main.community_trees WHERE id = :tree", [":tree": id], on: connection
+            )
+        }
+
+        outcome.anonymizedCommunityTrees += try run(
+            """
+            UPDATE main.community_trees SET user_id = NULL, updated_at = :now
+             WHERE user_id = :user COLLATE NOCASE
+            """,
+            userAndNow, on: connection
+        )
+        // **`set_on_device` comes off in the same statement** (`AppSchema` v24), `photos
+        // .taken_on_device`'s reason. The Journal's pin-move arm reads it, and a row with no
+        // owner, no tombstone and this phone's provenance would put the deleted account's moves
+        // back in the Journal and the export of whoever holds the phone next.
+        outcome.anonymizedTreeLocations += try run(
+            """
+            UPDATE main.tree_locations SET user_id = NULL, set_on_device = NULL, updated_at = :now
+             WHERE user_id = :user COLLATE NOCASE
+            """,
+            userAndNow, on: connection
+        )
+
+        // The one-time-send keys of trees that are now gone (`CommunityTreeStore.queuedOnceKey`).
+        // Each names a tree by id, in `app_state` rather than a column, so neither statement above
+        // nor `AccountDeletionCoverage` reaches it. It goes with its tree, the refused-photo keys'
+        // rule. A key whose tree survives (anonymized, or somebody else's) stays: it is still true.
+        try run(
+            """
+            DELETE FROM app_state
+             WHERE substr(key, 1, length(:prefix)) = :prefix
+               AND substr(key, length(:prefix) + 1)
+                   NOT IN (SELECT upper(id) FROM main.community_trees)
+            """,
+            [":prefix": CommunityTreeStore.queuedOnceKeyPrefix], on: connection
+        )
+    }
+
+    /// The tables whose live rows mean somebody has met a tree (decision 6, as the orchestrator
+    /// ruled it: `MetSpeciesKinds`' four, plus photographs).
+    static let builtOnTables = ["visits", "observations", "measurements", "care_events", "photos"]
 
     // MARK: - Helpers
 

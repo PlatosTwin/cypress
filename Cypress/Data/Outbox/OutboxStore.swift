@@ -26,6 +26,31 @@ public struct OutboxStore {
         /// Start of the 48 h cap window. Equal to `createdAt` until the user taps retry.
         public let windowStartedAt: Date
         public let nextAttemptAt: Date?
+        /// Binaries this device has committed but no send sink has accepted yet: exactly the rows
+        /// `sendablePhotos(for:)` would offer, counted by the same predicate. Filled by every read
+        /// that attaches staged photos (`dueItems`, `allItems`, `item(id:)`), and zero wherever a
+        /// record is built without them.
+        ///
+        /// Counted apart from `item.photos`, which holds only the **staged** binaries an apply
+        /// still owes. A photograph applied on wi-fi whose send then waited for wi-fi has no staged
+        /// file, so `item.photos` says 0 while a photograph is still owed (F35 review, S1).
+        public var unsentPhotoCount: Int = 0
+
+        /// Every binary this row still owes: staged for the apply, plus applied and not yet sent.
+        public var owedPhotoCount: Int { item.photos.count + unsentPhotoCount }
+
+        /// This record with its 48 h window moved, for the pass that moved it in the database.
+        public func withWindowStarted(at window: Date) -> Record {
+            Record(
+                sequence: sequence,
+                item: item,
+                locallyApplied: locallyApplied,
+                remoteSent: remoteSent,
+                windowStartedAt: window,
+                nextAttemptAt: nextAttemptAt,
+                unsentPhotoCount: unsentPhotoCount
+            )
+        }
     }
 
     // MARK: - Writing
@@ -49,7 +74,7 @@ public struct OutboxStore {
     /// For the six original kinds the drain *is* the local commit: nothing has touched this device's
     /// tables when the row is written, `OutboxQueue`'s apply sink runs `LocalAPI.sync`, and that
     /// call is what puts the visit on the tree (ERRATA E261 §2). §3.4's nine are the other shape.
-    /// `LocalAPI.addTree` runs a proximity dedupe, strips a photograph's metadata, mints a tree and
+    /// `LocalAPI.addTree` requires a photograph, strips its metadata, mints a tree and
     /// returns it; `deletePhoto` tombstones a row behind two ownership gates and then removes files;
     /// `correctSpecies` supersedes an assertion chain. Each is performed **first**, because the
     /// caller needs the answer, and each writes its queue row inside its own transaction — so either
@@ -63,17 +88,19 @@ public struct OutboxStore {
     /// a second time is a second correction, a second flag, a second withdrawal —
     /// `LocalAPI.apply(_:)` refuses them outright for that reason.
     ///
-    /// **This is not a backfill and must never become one.** It writes one row for one mutation at
-    /// the moment that mutation happens. Nothing sweeps rows that already exist into the queue; see
-    /// `AppSchema` v17.
+    /// **One backfill uses it, and only for rows on a community tree.** The owner reversed R77 for
+    /// community trees on 2026-11-14: a tree the service never received is sent once, with every
+    /// visit, check-in, measurement and care event on it (`CommunityTreeBackfill`). Those rows are
+    /// already on this device, so they are queued here, applied, and never offered to the apply
+    /// sink. Rows on a city tree are still never swept into the queue (R77, `AppSchema` v17).
     ///
-    /// **The `Bool` says whether a row was written, and every caller today discards it, on an
-    /// invariant worth stating rather than assuming**: the `ON CONFLICT(client_uuid) DO NOTHING`
-    /// arm cannot fire for these ten. Nine mint a fresh `UUID()` at the call site, and `addTree`
-    /// reuses `TreeDraft.clientUUID`, which `community_trees.client_uuid TEXT NOT NULL UNIQUE` has
-    /// already refused in the same transaction if it is a repeat. A future kind that keys on
-    /// something a caller can hand in twice inherits a silent drop instead — so it reads this
-    /// result, or it does not use this method.
+    /// **The `Bool` says whether a row was written.** For the mutations of the moment the
+    /// `ON CONFLICT(client_uuid) DO NOTHING` arm cannot fire: nine mint a fresh `UUID()` at the call
+    /// site, and `addTree` reuses `TreeDraft.clientUUID`, which
+    /// `community_trees.client_uuid TEXT NOT NULL UNIQUE` has already refused in the same
+    /// transaction if it is a repeat. The backfill keys each row on the row's own `client_uuid`,
+    /// which can still be queued, so it reads this result and stages binaries only on a row it
+    /// wrote.
     @discardableResult
     public func enqueueLocallyApplied(_ item: OutboxItem, connection: SQLiteConnection) throws -> Bool {
         try enqueue(item, locallyApplied: true, connection: connection)
@@ -189,6 +216,9 @@ public struct OutboxStore {
     /// Bumps an item's `updated_at` without changing anything else, for the changes that now happen
     /// in `outbox_photos` and would otherwise leave the item looking untouched on screen 17.
     private func touch(_ id: UUID, at date: Date, connection: SQLiteConnection) throws {
+        // `updated_at` is when a wi-fi hold began; bumping it without banking the held time
+        // would erase it (F35 review). See `creditHold`.
+        try creditHold(id, at: date, connection: connection)
         let statement = try connection.cachedStatement(
             "UPDATE outbox SET updated_at = :now WHERE id = :id"
         )
@@ -384,18 +414,148 @@ public struct OutboxStore {
         _ = try statement.reset()
     }
 
+    /// Where a row's 48 h window moves to once the time it has spent held is left out.
+    ///
+    /// **The one formula, for the drain and for every other write.** A row is held when its reason
+    /// says it waits for wi-fi (`OutboxFailureReason.isAwaitingWifi`), or when it waits behind its
+    /// tree's add (`heldBehindAdd`, the `heldBehindAddSQL` predicate read at `now`). Its
+    /// `updated_at` says since when: the wi-fi hold's `reschedule` stamps it, and
+    /// `creditHeldBehindAdd` stamps it at the start of every pass for a row held behind an add.
+    /// The window moves forward by `now - updated_at`, once, whichever hold applies. Anything else
+    /// returns the window unchanged.
+    public static func window(
+        _ window: Date,
+        leavingOutHoldSince updatedAt: Date,
+        lastError: String?,
+        heldBehindAdd: Bool = false,
+        now: Date
+    ) -> Date {
+        guard heldBehindAdd || OutboxFailureReason.isAwaitingWifi(lastError) else { return window }
+        return window.addingTimeInterval(max(0, now.timeIntervalSince(updatedAt)))
+    }
+
+    /// True for a row that waits while the same tree's `add_tree` has not reached the service
+    /// (review of #209, F2; ROADMAP 115). Written against the table name `outbox`, so it can sit in
+    /// any statement over that table.
+    ///
+    /// The kinds are `OutboxItem.Kind.waitsForItsTreeAdd`, interpolated for `kindList`'s reason. The
+    /// add holds while it is still trying to reach the service (`pending` or `uploading`, and not
+    /// `remote_sent`). A `failed` add holds nothing: it is not sent again unless the volunteer
+    /// retries it, so holding behind it would leave the row pending forever with no reason shown.
+    /// A pruned add row holds nothing, because a pruned row was `done`. The tree is matched on the
+    /// payloads' `treeID`, which every kind carries.
+    static let heldBehindAddSQL = """
+        (outbox.kind IN (\(waitingKindList))
+         AND EXISTS (
+             SELECT 1 FROM outbox AS addition
+              WHERE addition.kind = 'add_tree'
+                AND addition.state IN ('pending', 'uploading')
+                AND addition.remote_sent = 0
+                AND upper(json_extract(addition.payload, '$.treeID'))
+                    = upper(json_extract(outbox.payload, '$.treeID'))
+         ))
+        """
+
+    /// `waitsForItsTreeAdd`'s kinds as SQL literals, for `heldBehindAddSQL`.
+    private static let waitingKindList = OutboxItem.Kind.allCases
+        .filter(\.waitsForItsTreeAdd)
+        .map { "'\($0.rawValue)'" }
+        .joined(separator: ",")
+
+    /// Leaves out of each held row's 48 h window the time it has waited behind its tree's add, and
+    /// restamps `updated_at` so the next pass counts from here (ROADMAP 116).
+    ///
+    /// The drain calls this at the start of every pass, before it reads the due rows. A held row is
+    /// never in a pass, so nothing else banks its wait: without this, an add in backoff for 47 h
+    /// released its move with about 1 h left, and one transient failure expired the move. The
+    /// add is still unsent when this runs, so the row was held for the whole span being credited.
+    ///
+    /// No reason is written on the row. Screen 17 draws a pending row's reason, and the hold has no
+    /// sentence of its own; the predicate says the row is held at the moment it is asked.
+    ///
+    /// - Returns: how many rows were credited.
+    @discardableResult
+    public func creditHeldBehindAdd(at date: Date, connection: SQLiteConnection) throws -> Int {
+        let held = try connection.cachedStatement(
+            "SELECT id FROM outbox WHERE state = 'pending' AND \(Self.heldBehindAddSQL)"
+        )
+        let ids = try held.fetchAll { try $0.uuid("id") }
+        _ = try held.reset()
+        let stamp = try connection.cachedStatement(
+            "UPDATE outbox SET updated_at = :now WHERE id = :id"
+        )
+        for id in ids {
+            try creditHold(id, at: date, connection: connection)
+            _ = try stamp.reset()
+            _ = try stamp.bind([":now": date, ":id": id])
+            try stamp.run()
+        }
+        _ = try stamp.reset()
+        return ids.count
+    }
+
+    /// Banks the held time of a **pending** row before a write outside the drain moves its
+    /// `updated_at`.
+    ///
+    /// `updated_at` is the only record of when a wi-fi hold began, and several writes bump it for
+    /// their own reasons: a photograph withdrawn (`discardPhoto`, `removePhoto`), a binary settled,
+    /// an account anonymized. Without this, withdrawing one of two held photographs two days into a
+    /// hold made the hold look one second old, and the next drain expired the row as "Tried for 48
+    /// hours" without its having tried at all (F35 review).
+    ///
+    /// Pending rows only: a row in a drain is `uploading`, and the drain has already banked its
+    /// hold at the start of the pass (`OutboxQueue.leavingOutWifiHold`). A row held behind its
+    /// tree's add is banked the same way (`creditHeldBehindAdd`).
+    func creditHold(_ id: UUID, at date: Date, connection: SQLiteConnection) throws {
+        let read = try connection.cachedStatement("""
+            SELECT last_error, updated_at, window_started_at, \(Self.heldBehindAddSQL) AS held
+              FROM outbox WHERE id = :id AND state = 'pending'
+            """)
+        _ = try read.bind(id, forName: ":id")
+        let row = try read.fetchOne { row in
+            (
+                try row.stringIfPresent("last_error"), try row.date("updated_at"),
+                try row.date("window_started_at"), try row.bool("held")
+            )
+        }
+        _ = try read.reset()
+        guard let row else { return }
+        let moved = Self.window(
+            row.2, leavingOutHoldSince: row.1, lastError: row.0, heldBehindAdd: row.3, now: date
+        )
+        guard moved != row.2 else { return }
+        try setWindowStart(id, to: moved, connection: connection)
+    }
+
+    /// Moves a row's 48 h window. `OutboxQueue.drain` uses it to leave out the time a row spent
+    /// held for wi-fi (F35): the cap measures time spent trying, and a hold is not trying.
+    public func setWindowStart(_ id: UUID, to window: Date, connection: SQLiteConnection) throws {
+        let statement = try connection.cachedStatement("""
+            UPDATE outbox SET window_started_at = :window WHERE id = :id
+            """)
+        _ = try statement.bind([":window": window, ":id": id])
+        try statement.run()
+        _ = try statement.reset()
+    }
+
     /// The visible retry affordance from screen 17.
     ///
     /// Restarts the 48 h cap window and clears the fail count. Without the window reset the item
     /// would move straight back to `failed` on its next attempt, and the button would do nothing —
     /// which is exactly the "silently stuck" behavior the outbox screen exists to prevent.
+    ///
+    /// **A row `OutboxRetryPolicy.acceptsRetry` refuses is left as it is** (`retryable`), and this
+    /// returns false for it, as for any row that is not `failed`. That row is a withdrawal the
+    /// service refused with `conflict`: the owner keeps it with its reason and no button, and its
+    /// `last_error_code` is what keeps the profile's reason line (`othersHaveAddedTo`), so a reset
+    /// here would take that line away while the row waited.
     @discardableResult
     public func retry(_ id: UUID, at date: Date, connection: SQLiteConnection) throws -> Bool {
         let statement = try connection.cachedStatement("""
             UPDATE outbox
                SET state = 'pending', fail_count = 0, last_error = NULL, last_error_code = NULL,
                    window_started_at = :now, next_attempt_at = NULL, updated_at = :now
-             WHERE id = :id AND state = 'failed'
+             WHERE id = :id AND state = 'failed' AND \(Self.retryable)
             """)
         _ = try statement.bind([":now": date, ":id": id])
         try statement.run()
@@ -404,13 +564,14 @@ public struct OutboxStore {
         return changed
     }
 
+    /// `retry` for every failed row it accepts. Returns how many rows it moved.
     @discardableResult
     public func retryAllFailed(at date: Date, connection: SQLiteConnection) throws -> Int {
         let statement = try connection.cachedStatement("""
             UPDATE outbox
                SET state = 'pending', fail_count = 0, last_error = NULL, last_error_code = NULL,
                    window_started_at = :now, next_attempt_at = NULL, updated_at = :now
-             WHERE state = 'failed'
+             WHERE state = 'failed' AND \(Self.retryable)
             """)
         _ = try statement.bind(date, forName: ":now")
         try statement.run()
@@ -418,6 +579,13 @@ public struct OutboxStore {
         _ = try statement.reset()
         return changed
     }
+
+    /// `OutboxRetryPolicy.acceptsRetry` in SQL: every row except a `tree_withdrawal` whose last
+    /// failure code is `conflict`. `last_error_code` holds `APIError.rawValue`.
+    static let retryable = """
+        NOT (kind = '\(OutboxItem.Kind.treeWithdrawal.rawValue)' \
+        AND last_error_code IS '\(APIError.conflict.rawValue)')
+        """
 
     /// Recovers rows left `uploading` by a process that died mid-drain.
     ///
@@ -444,15 +612,54 @@ public struct OutboxStore {
     /// item behind it for up to an hour, which loses nothing but delays everything; contributions
     /// are independent and the server dedupes on `client_uuid`, so ordering only has to be stable,
     /// not total. `ORDER BY seq` gives that.
-    public func dueItems(now: Date, limit: Int, connection: SQLiteConnection) throws -> [Record] {
-        let statement = try connection.cachedStatement("""
-            SELECT * FROM outbox
-             WHERE state = 'pending'
-               AND (next_attempt_at IS NULL OR next_attempt_at <= :now)
-             ORDER BY seq
-             LIMIT :limit
-            """)
-        _ = try statement.bind([":now": now, ":limit": limit])
+    ///
+    /// **One exception: a row about a tree waits for that tree's add** (review of #209, F2; ROADMAP
+    /// 115). A row of a kind in `OutboxItem.Kind.waitsForItsTreeAdd` (a pin move, a species claim
+    /// or correction) is held while the same tree's `add_tree` row is still trying to reach the
+    /// service (`heldBehindAddSQL`). Without the hold, an add in backoff lets the move go first,
+    /// the service answers `not_found` for a tree it has not received, and that answer is
+    /// terminal; a species claim that goes first is recorded and never applied to the tree. A
+    /// `failed` add holds nothing, so a released row goes: a move then fails out loud with
+    /// `not_found`, but a species claim or correction is recorded as `applied` and silently never
+    /// reaches the tree, even if the add is later retried and succeeds. The time a row waits is
+    /// left out of its 48 h window (`creditHeldBehindAdd`).
+    ///
+    /// - Parameter excludingHeldForWifi: leave out rows held for wi-fi. The drain passes `true`
+    ///   when photographs may not go. A held row's note is already applied, and sent when a sink is
+    ///   wired (a failure on the note writes a different reason), so such a pass has nothing to do
+    ///   for it. Taking it anyway let 25 held rows fill every batch on cellular, and a newer note
+    ///   behind them never synced: "notes and numbers sync on any connection" broke (F35 review).
+    public func dueItems(
+        now: Date,
+        limit: Int,
+        excludingHeldForWifi: Bool = false,
+        connection: SQLiteConnection
+    ) throws -> [Record] {
+        let statement: SQLiteStatement
+        if excludingHeldForWifi {
+            statement = try connection.cachedStatement("""
+                SELECT * FROM outbox
+                 WHERE state = 'pending'
+                   AND (next_attempt_at IS NULL OR next_attempt_at <= :now)
+                   AND (last_error IS NULL OR last_error NOT LIKE :held)
+                   AND NOT \(Self.heldBehindAddSQL)
+                 ORDER BY seq
+                 LIMIT :limit
+                """)
+            _ = try statement.bind([
+                ":now": now, ":limit": limit, ":held": OutboxFailureReason.awaitingWifiLikePattern
+            ])
+        } else {
+            statement = try connection.cachedStatement("""
+                SELECT * FROM outbox
+                 WHERE state = 'pending'
+                   AND (next_attempt_at IS NULL OR next_attempt_at <= :now)
+                   AND NOT \(Self.heldBehindAddSQL)
+                 ORDER BY seq
+                 LIMIT :limit
+                """)
+            _ = try statement.bind([":now": now, ":limit": limit])
+        }
         return try attachStagedPhotos(to: statement.fetchAll(Self.decode), connection: connection)
     }
 
@@ -488,6 +695,19 @@ public struct OutboxStore {
              WHERE outbox_id = :item AND state = 'pending'
              ORDER BY rowid
             """)
+        // Applied and not yet accepted by a send sink: `completePhoto` deletes a row once it is
+        // sent, so what is left in `applied` and `sendable` is still owed.
+        // The predicate is `sendablePhotos(for:)`'s, clause for clause, so the count a row reports
+        // is the number of binaries a send would actually be offered.
+        let unsent = try connection.cachedStatement("""
+            SELECT COUNT(*) AS n FROM outbox_photos
+             WHERE outbox_id = :item AND state = 'applied' AND sendable = 1
+               AND photo_id IS NOT NULL AND container_path IS NOT NULL
+               AND NOT EXISTS (
+                     SELECT 1 FROM photos
+                      WHERE photos.id = outbox_photos.photo_id AND photos.deleted_at IS NOT NULL
+                   )
+            """)
         return try records.map { record in
             _ = try statement.reset()
             _ = try statement.bind(record.id, forName: ":item")
@@ -500,13 +720,17 @@ public struct OutboxStore {
             }
             var item = record.item
             item.photos = photos
+            _ = try unsent.reset()
+            _ = try unsent.bind(record.id, forName: ":item")
+            let unsentCount = try unsent.fetchOne { try $0.int("n") } ?? 0
             return Record(
                 sequence: record.sequence,
                 item: item,
                 locallyApplied: record.locallyApplied,
                 remoteSent: record.remoteSent,
                 windowStartedAt: record.windowStartedAt,
-                nextAttemptAt: record.nextAttemptAt
+                nextAttemptAt: record.nextAttemptAt,
+                unsentPhotoCount: unsentCount
             )
         }
     }
@@ -536,6 +760,13 @@ public struct OutboxStore {
         /// RULINGS **R77**: false for every binary `AppSchema` v18 migrated, which stays on device.
         public var isSendable: Bool
         public var failCount: Int
+        /// `photos.captured_at` of the photograph this binary is, when the phone holds its row.
+        ///
+        /// The send dates the photograph by this. It used to date it by the queue row's own
+        /// `created_at`, which is seconds from the shutter for a new photograph and months from it
+        /// for one sent by `CommunityTreeBackfill`. Nil for a binary whose `photos` row is absent
+        /// (a test double's apply sink); the send then falls back to the row's time.
+        public var capturedAt: Date? = nil
     }
 
     /// The binaries whose local commit is done and whose send is still owed.
@@ -565,7 +796,10 @@ public struct OutboxStore {
     /// was.
     public func sendablePhotos(for id: UUID, connection: SQLiteConnection) throws -> [PhotoRow] {
         let statement = try connection.cachedStatement("""
-            SELECT * FROM outbox_photos
+            SELECT outbox_photos.*,
+                   (SELECT photos.captured_at FROM photos
+                     WHERE photos.id = outbox_photos.photo_id COLLATE NOCASE) AS photo_captured_at
+              FROM outbox_photos
              WHERE outbox_id = :item AND state = 'applied' AND sendable = 1
                AND photo_id IS NOT NULL AND container_path IS NOT NULL
                AND NOT EXISTS (
@@ -576,6 +810,108 @@ public struct OutboxStore {
             """)
         _ = try statement.bind(id, forName: ":item")
         return try statement.fetchAll(Self.decodePhotoRow)
+    }
+
+    /// The photographs this phone's **still-queued** withdrawals on one tree name, as each names it
+    /// — the phone's id, which is the begin's key, or the service's row (`PhotoWithdrawal.photoID`).
+    ///
+    /// `RoutedAPI.photoIdentityMatch` hides a service row named here from its contributor, because
+    /// the withdrawal that will take it down has not reached the service yet. Only while it is
+    /// queued (`pending`, or `uploading` mid-drain): once it has been answered — `done`, or
+    /// `failed` because the service refused it — a copy the service still serves is still public,
+    /// and showing it to its contributor is the only sign of that they get (orchestrator ruling on
+    /// #194's review, finding 3).
+    public func queuedPhotoWithdrawals(treeID: UUID, connection: SQLiteConnection) throws -> Set<UUID> {
+        let statement = try connection.cachedStatement("""
+            SELECT json_extract(payload, '$.photoID') AS photo FROM outbox
+             WHERE kind = 'photo_withdrawal'
+               AND state IN ('pending', 'uploading')
+               AND json_extract(payload, '$.treeID') = :tree COLLATE NOCASE
+            """)
+        _ = try statement.bind(treeID.uuidString, forName: ":tree")
+        return Set(try statement.fetchAll { try $0.uuidIfPresent("photo") }.compactMap { $0 })
+    }
+
+    /// One species act on a tree that is still queued: its kind, whose it is, and for a keep, the
+    /// report it names.
+    public struct QueuedSpeciesAct: Hashable, Sendable {
+        public let kind: OutboxItem.Kind
+        public let owner: ContributionOwner
+        /// The report a keep names (`ReviewDismissal.flagID`). Nil for every other kind.
+        public let flagID: UUID?
+    }
+
+    /// The species acts this phone still has to send for one tree (ROADMAP 144): a naming, a
+    /// correction, a report, or a keep, by anybody on this phone.
+    ///
+    /// Only while queued (`pending`, or `uploading` mid-drain), the window `queuedPhotoWithdrawals`
+    /// uses and for its reason: until the act has been answered, the service's view of the tree
+    /// does not include it, so the profile lays the act over the service's answer, and a species
+    /// the service sends must not overwrite the phone's own row. A `failed` act was answered.
+    public func queuedSpeciesActs(treeID: UUID, connection: SQLiteConnection) throws -> [QueuedSpeciesAct] {
+        let statement = try connection.cachedStatement("""
+            SELECT kind,
+                   json_extract(payload, '$.attribution.userID') AS user,
+                   json_extract(payload, '$.attribution.deviceID') AS device,
+                   CASE kind WHEN 'species_review_dismissal'
+                        THEN json_extract(payload, '$.flagID') END AS flag
+              FROM outbox
+             WHERE kind IN ('species_claim', 'species_correction',
+                            'wrong_species_report', 'species_review_dismissal')
+               AND state IN ('pending', 'uploading')
+               AND json_extract(payload, '$.treeID') = :tree COLLATE NOCASE
+             ORDER BY seq
+            """)
+        _ = try statement.bind(treeID.uuidString, forName: ":tree")
+        return try statement.fetchAll { row in
+            let owner: ContributionOwner
+            if let user = try row.uuidIfPresent("user") {
+                owner = .user(user)
+            } else if let device = try row.uuidIfPresent("device") {
+                owner = .device(device)
+            } else {
+                owner = .nobody
+            }
+            return QueuedSpeciesAct(
+                kind: try row.value("kind", OutboxItem.Kind.self),
+                owner: owner,
+                flagID: try row.uuidIfPresent("flag")
+            )
+        }
+    }
+
+    /// When the service accepted each species correction of one tree to one species: the outbox's
+    /// `updated_at` on a row with `remote_sent = 1`, and whose correction it was (ROADMAP 144).
+    ///
+    /// `LocalAPI.localSpeciesAnswers` compares it with the cache row's `fetched_at`. A row the
+    /// prune has already removed (`state = 'done'`, past its cutoff) is not here.
+    public func acceptedSpeciesCorrections(
+        treeID: UUID,
+        speciesID: UUID,
+        connection: SQLiteConnection
+    ) throws -> [(owner: ContributionOwner, acceptedAt: Date)] {
+        let statement = try connection.cachedStatement("""
+            SELECT updated_at,
+                   json_extract(payload, '$.attribution.userID') AS user,
+                   json_extract(payload, '$.attribution.deviceID') AS device
+              FROM outbox
+             WHERE kind = 'species_correction'
+               AND remote_sent = 1
+               AND json_extract(payload, '$.treeID') = :tree COLLATE NOCASE
+               AND json_extract(payload, '$.speciesID') = :species COLLATE NOCASE
+            """)
+        _ = try statement.bind([":tree": treeID.uuidString, ":species": speciesID.uuidString])
+        return try statement.fetchAll { row in
+            let owner: ContributionOwner
+            if let user = try row.uuidIfPresent("user") {
+                owner = .user(user)
+            } else if let device = try row.uuidIfPresent("device") {
+                owner = .device(device)
+            } else {
+                owner = .nobody
+            }
+            return (owner: owner, acceptedAt: try row.date("updated_at"))
+        }
     }
 
     /// Drops the queue rows of binaries whose photograph has been withdrawn.
@@ -632,8 +968,73 @@ public struct OutboxStore {
             containerPath: try row.stringIfPresent("container_path"),
             isApplied: (try row.string("state")) == "applied",
             isSendable: try row.bool("sendable"),
-            failCount: try row.int("fail_count")
+            failCount: try row.int("fail_count"),
+            capturedAt: try row.dateIfPresent("photo_captured_at")
         )
+    }
+
+    /// Stages a binary that **this device has already applied**: its `photos` row exists and its
+    /// bytes are at `containerPath`, so all that is owed is the send.
+    ///
+    /// The two binaries this covers are ones no apply sink ever touches. The photograph taken on the
+    /// Add this tree screen is ingested by `LocalAPI.addTree` itself and keeps its `local_path`, and
+    /// an old photograph `CommunityTreeBackfill` sends is already in the photo directory. Staging
+    /// either one `pending` would offer it to the apply sink, which would ingest it a second time.
+    ///
+    /// **The row's id is the photograph's id**, so the begin's idempotency key is `photos.id`: the
+    /// key the service echoes to the photograph's contributor (report F30), and the key that makes a
+    /// second send of the same photograph land on the row the first one made.
+    ///
+    /// - Returns: whether a row was written. `ON CONFLICT(id) DO NOTHING`, so a photograph already
+    ///   staged is not staged twice.
+    @discardableResult
+    public func stageAppliedPhoto(
+        photoID: UUID,
+        for item: UUID,
+        shotType: ShotType,
+        containerPath: String,
+        at date: Date,
+        connection: SQLiteConnection
+    ) throws -> Bool {
+        let statement = try connection.cachedStatement("""
+            INSERT INTO outbox_photos
+                (id, outbox_id, path, shot_type, photo_id, container_path, state, sendable,
+                 fail_count, created_at, updated_at)
+            VALUES
+                (:id, :item, NULL, :shot, :id, :container, 'applied', 1, 0, :now, :now)
+            ON CONFLICT(id) DO NOTHING
+            """)
+        _ = try statement.bind([
+            ":id": photoID,
+            ":item": item,
+            ":shot": shotType.rawValue,
+            ":container": containerPath,
+            ":now": date
+        ])
+        try statement.run()
+        let inserted = connection.changes > 0
+        _ = try statement.reset()
+        return inserted
+    }
+
+    /// Drops the applied binaries of one item when **no send sink is wired**, so the item can settle.
+    ///
+    /// `settleAppliedPhoto` already does this for a binary the drain applies. A binary staged
+    /// applied (`stageAppliedPhoto`) never passes through it, and with no sink nothing would ever
+    /// complete it: its item's `photos_outstanding` would stay above zero and the item would never
+    /// reach `done`. With no sink nothing is sent at all, so nothing more is owed for it.
+    ///
+    /// - Returns: how many rows were dropped.
+    @discardableResult
+    public func dropAppliedPhotosWithNoSink(for id: UUID, connection: SQLiteConnection) throws -> Int {
+        let statement = try connection.cachedStatement(
+            "DELETE FROM outbox_photos WHERE outbox_id = :item AND state = 'applied'"
+        )
+        _ = try statement.bind(id, forName: ":item")
+        try statement.run()
+        let dropped = connection.changes
+        _ = try statement.reset()
+        return dropped
     }
 
     /// Writes one row per staged binary, at the moment its mutation is queued.
@@ -742,6 +1143,13 @@ public struct OutboxStore {
     /// resolves the owner itself only while the row still exists; callers that already deleted the
     /// row pass the item id to `touch` instead.
     private func touchItem(forPhoto id: UUID, at date: Date, connection: SQLiteConnection) throws {
+        let owner = try connection.cachedStatement(
+            "SELECT outbox_id FROM outbox_photos WHERE id = :id"
+        )
+        _ = try owner.bind(id, forName: ":id")
+        let ownerID = try owner.fetchOne { try $0.uuid("outbox_id") }
+        _ = try owner.reset()
+        if let ownerID { try creditHold(ownerID, at: date, connection: connection) }
         let statement = try connection.cachedStatement(
             "UPDATE outbox SET updated_at = :now WHERE id = (SELECT outbox_id FROM outbox_photos WHERE id = :id)"
         )
@@ -761,6 +1169,49 @@ public struct OutboxStore {
         _ = try statement.bind(id, forName: ":id")
         try statement.run()
         _ = try statement.reset()
+    }
+
+    /// The `app_state` key prefix that marks a photograph whose send the service refused for good.
+    /// The full key is this followed by the local `photos.id`'s upper-case `uuidString`.
+    public static let refusedPhotoKeyPrefix = "photo_send_refused:"
+
+    /// Gives up one binary whose send the service refused in a way that will not change, and
+    /// **records that the service keeps no copy of it**.
+    ///
+    /// The row goes, as `completePhoto` removes it, and for the reason `OutboxQueue`'s phase B3
+    /// gives: holding it would wedge the item. But deleting it alone made the photograph look sent.
+    /// `ContributionStore.sentPhotoIDs` reads "no `outbox_photos` row" as "has left the phone", and
+    /// a photograph whose begin was refused is still only on the phone. That let photo identity's
+    /// inexact link pair it with the same account's other phone's photograph, which hid that one
+    /// and named it in this one's withdrawal (review of #194, finding 1, reached through a refusal
+    /// rather than a retryable failure).
+    ///
+    /// A refusal after the begin (the storage `PUT`, or the receipt) is recorded the same way. The
+    /// service's row for it is never marked received. Nothing on the service collects such a row
+    /// (the 72 h collection `RemoteAPI.uploadPhoto` and migration 001 describe has no code behind
+    /// it; `docs/ROADMAP.md` chip backlog 67), so it stays, listed to strangers. It carries this
+    /// photograph's own key, which photo identity's exact link matches without consulting this
+    /// record.
+    ///
+    /// **Why `app_state` and not a column.** Nothing on `photos` or `outbox_photos` can carry the
+    /// fact without a migration, and the row that could have carried it is the one being deleted.
+    /// `app_state` is the existing key/value table: one key per refused photograph, written in the
+    /// same transaction as the delete, so there is no moment at which the photograph reads as sent.
+    /// The key outlives the send, because a refused binary is never offered again, even after
+    /// retry. `sentPhotoIDs` reads live rows only, so a withdrawn photograph's key is inert. Account
+    /// deletion's erasing door removes the key with its photograph (`AccountDeletion`), because that
+    /// door promises no residue.
+    public func recordRefusedPhoto(_ photo: PhotoRow, code: APIError, connection: SQLiteConnection) throws {
+        if let photoID = photo.photoID {
+            let mark = try connection.cachedStatement("""
+                INSERT INTO app_state (key, value) VALUES (:key, :code)
+                ON CONFLICT(key) DO UPDATE SET value = excluded.value
+                """)
+            _ = try mark.bind([":key": Self.refusedPhotoKeyPrefix + photoID.uuidString, ":code": code.rawValue])
+            try mark.run()
+            _ = try mark.reset()
+        }
+        try completePhoto(id: photo.id, connection: connection)
     }
 
     /// Records a failed send attempt against one binary.
@@ -863,7 +1314,7 @@ public struct OutboxStore {
         // matches an account-owned mutation and cannot match a device-owned one.
         let discard = try connection.cachedStatement("""
             DELETE FROM outbox
-             WHERE kind IN ('favorite_toggle','private_reminder')
+             WHERE kind IN (\(Self.kindList(.discardedOutright)))
                AND json_extract(payload, '$.owner.user') = :user COLLATE NOCASE
             """)
         _ = try discard.bind([":user": userID.uuidString])
@@ -884,19 +1335,17 @@ public struct OutboxStore {
         // service afterwards. A single `$.userID` predicate matches none of them — the key is not
         // there — so the rows would be silently untouched, which is the shape of under-deletion that
         // reads as success at every layer.
-        let contributions = """
-            (kind IN ('visit','observation','measurement','care_event')
-             OR kind IN ('add_tree','species_claim','species_correction',
-                         'wrong_species_report','never_existed_report',
-                         'species_review_dismissal','record_review_dismissal',
-                         'photo_vote','photo_withdrawal','hazard_redirect'))
-            """
-        // Either shape. `json_extract` answers NULL for a path a payload does not have, so exactly
-        // one half of this can match any given row and neither can match a device-owned one.
-        let mine = """
-            (json_extract(payload, '$.userID') = :user COLLATE NOCASE
-             OR json_extract(payload, '$.attribution.userID') = :user COLLATE NOCASE)
-            """
+        //
+        // **The list is derived from `OutboxItem.Kind`, not typed out here**, and that is this
+        // round's repair rather than a tidy-up. Written by hand it went stale twice: once at six
+        // kinds of sixteen, and again the moment `measurement_withdrawal` was added — a queued
+        // withdrawal survived its own account's deletion still naming the account, through both
+        // doors, which is verbatim the failure the paragraph above describes. A missing kind cannot
+        // announce itself in SQL: it matches nothing, and matching nothing is what the statement
+        // looks like when it works. `accountDeletionTreatment` is a `switch` with no `default`, so
+        // the omission is now a build failure instead.
+        let contributions = Self.contributionKindsSQL
+        let mine = Self.namesTheAccountSQL
 
         // One statement or the other, chosen by the door, over exactly the same set of rows — so
         // there is no arrangement of the two in which a queued contribution is both anonymized and
@@ -922,6 +1371,15 @@ public struct OutboxStore {
             // Both keys, in one statement, because a row has one of them and `json_remove` is a
             // no-op on a path that is not there. Naming only the one a kind "should" have would put
             // the mapping from kind to payload shape in a second place, and the two would drift.
+            // The rows about to have `updated_at` bumped bank any wi-fi hold first (`creditHold`).
+            let held = try connection.cachedStatement(
+                "SELECT id FROM outbox WHERE \(contributions) AND \(mine)"
+            )
+            _ = try held.bind([":user": userID.uuidString])
+            let heldIDs = try held.fetchAll { try $0.uuid("id") }
+            _ = try held.reset()
+            for id in heldIDs { try creditHold(id, at: date, connection: connection) }
+
             let anonymize = try connection.cachedStatement("""
                 UPDATE outbox
                    SET payload = json_remove(json_remove(payload, '$.userID'), '$.attribution.userID'),
@@ -938,6 +1396,34 @@ public struct OutboxStore {
             // The staged JPEGs these rows point at are removed by `LocalAPI.deleteAccount` before
             // this transaction opens; `AccountDeletion.photoBytes` reads them from this same
             // `photo_paths` column, which is why that read has to happen first.
+            //
+            // **A withdrawal discarded here puts its tree back first.** The tree's tombstone was
+            // written on this phone when the withdrawal was queued, and the service never saw the
+            // withdrawal. If the service keeps the tree (another identity built on it, so the
+            // answer lists it as anonymized), `AccountDeletion.forgetCommunityTrees` keeps it here
+            // too, and without this step this phone alone would hide a tree everyone else sees.
+            // Only a row the service has not accepted (`remote_sent = 0`) counts: an accepted one
+            // took the tree off the service as well. A `failed` row already put its tree back
+            // (`OutboxQueue.settle`). The restore undoes only the tombstone this row wrote.
+            let unsentWithdrawals = try connection.cachedStatement("""
+                SELECT id, json_extract(payload, '$.treeID') AS tree
+                  FROM outbox
+                 WHERE kind = '\(OutboxItem.Kind.treeWithdrawal.rawValue)'
+                   AND \(mine)
+                   AND remote_sent = 0 AND state <> 'failed'
+                """)
+            _ = try unsentWithdrawals.bind([":user": userID.uuidString])
+            let withdrawals = try unsentWithdrawals.fetchAll { row in
+                (outbox: try row.uuid("id"), tree: try row.stringIfPresent("tree").flatMap(UUID.init(uuidString:)))
+            }
+            _ = try unsentWithdrawals.reset()
+            for withdrawal in withdrawals {
+                guard let tree = withdrawal.tree else { continue }
+                _ = try CommunityTreeStore().restoreAfterRefusedWithdrawal(
+                    treeID: tree, outboxID: withdrawal.outbox, at: date, connection: connection
+                )
+            }
+
             let erase = try connection.cachedStatement("""
                 DELETE FROM outbox WHERE \(contributions) AND \(mine)
                 """)
@@ -947,6 +1433,69 @@ public struct OutboxStore {
             _ = try erase.reset()
             return (discarded: discarded + erased, anonymized: 0)
         }
+    }
+
+    /// The contribution kinds (`OutboxItem.Kind.AccountDeletionTreatment.contribution`), as a
+    /// predicate on `outbox.kind`.
+    static var contributionKindsSQL: String { "(kind IN (\(kindList(.contribution))))" }
+
+    /// A row whose payload names the account bound to `:user`, in either payload shape.
+    /// `json_extract` answers NULL for a path a payload does not have, so exactly one half of this
+    /// can match any given row and neither can match a device-owned one.
+    static let namesTheAccountSQL = """
+        (json_extract(payload, '$.userID') = :user COLLATE NOCASE
+         OR json_extract(payload, '$.attribution.userID') = :user COLLATE NOCASE)
+        """
+
+    // MARK: - Before a keep-records deletion (ROADMAP 192)
+
+    /// Makes every row this account queued, that the service has not accepted, due now.
+    ///
+    /// For `OutboxQueue.sendBeforeAccountDeletion`: a row in backoff would otherwise sit out the
+    /// pass that runs just before `DELETE /me`, and once the account is gone a row that acts on the
+    /// account's own things (a withdrawal, a pin move) can no longer be accepted. Only
+    /// `next_attempt_at` changes; the 48 h window and the fail count stay, so a row that keeps
+    /// failing still expires on time.
+    @discardableResult
+    public func makeAccountRowsDueNow(userID: UUID, connection: SQLiteConnection) throws -> Int {
+        let statement = try connection.cachedStatement("""
+            UPDATE outbox SET next_attempt_at = NULL
+             WHERE state = 'pending' AND remote_sent = 0
+               AND next_attempt_at IS NOT NULL
+               AND \(Self.contributionKindsSQL) AND \(Self.namesTheAccountSQL)
+            """)
+        _ = try statement.bind([":user": userID.uuidString])
+        try statement.run()
+        let changed = connection.changes
+        _ = try statement.reset()
+        return changed
+    }
+
+    /// How many `tree_withdrawal` rows naming this account the service has not accepted and that
+    /// have not failed for good. The same rows the erasing door's restore reads in `forgetAccount`.
+    public func unsentTreeWithdrawals(userID: UUID, connection: SQLiteConnection) throws -> Int {
+        let statement = try connection.cachedStatement("""
+            SELECT count(*) AS n FROM outbox
+             WHERE kind = '\(OutboxItem.Kind.treeWithdrawal.rawValue)'
+               AND \(Self.namesTheAccountSQL)
+               AND remote_sent = 0 AND state <> 'failed'
+            """)
+        _ = try statement.bind([":user": userID.uuidString])
+        let count = try statement.fetchOne { try $0.int("n") } ?? 0
+        _ = try statement.reset()
+        return count
+    }
+
+    /// The `IN (…)` list of the kinds a deletion treats one way, as SQL literals.
+    ///
+    /// Interpolated into the statement rather than bound, because a bound parameter cannot be a
+    /// list. That is safe here for a reason worth stating rather than assuming: these are the
+    /// `rawValue`s of a closed `enum` compiled into the binary — `outbox.kind`'s own `CHECK`
+    /// vocabulary, `[a-z_]` throughout — and no caller supplies any part of them.
+    private static func kindList(_ treatment: OutboxItem.Kind.AccountDeletionTreatment) -> String {
+        OutboxItem.Kind.kinds(treatedAs: treatment)
+            .map { "'\($0.rawValue)'" }
+            .joined(separator: ",")
     }
 
     public func counts(connection: SQLiteConnection) throws -> [OutboxItem.State: Int] {

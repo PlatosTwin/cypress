@@ -154,6 +154,52 @@ struct TreeProfileView: View {
                     onBack: { model.cancelNamingSpecies() }
                 )
             }
+            // "Take back your report?" before a city-record dispute is withdrawn (owner, 2026-09-28).
+            //
+            // **An alert, not the `confirmationDialog` the app's other take-backs used then, and the
+            // reason is iOS 26.** (ROADMAP 77 later made those alerts too.) On CI's iPhone 17 Pro (iOS 26.2) the dialog's title was in the tree and its
+            // `.cancel` button, *Keep it*, was not — twice, in runs 36517992402 and 36530577356. iOS
+            // 26 presents a confirmation dialog as a popover that is dismissed by tapping outside it,
+            // and leaves the cancel action undrawn; on the 16 Pro's iOS 18.6 the same dialog draws
+            // *Keep it*. Nothing in this design relies on tapping outside: `GrowthHistoryCopy
+            // .withdrawCancel` is explicit that the button that does nothing should say what nothing
+            // means. An alert — the presentation `ReportView` already uses — keeps both buttons, and
+            // `DataDisputeUITests` taps *Keep it* on both runtimes. Same words: the action repeats the
+            // link, and *Keep it*.
+            .alert(
+                TreeProfileCopy.withdrawDataDisputeConfirmTitle,
+                isPresented: Binding(
+                    get: { model.pendingDataDisputeWithdrawal != nil },
+                    set: { if !$0 { model.pendingDataDisputeWithdrawal = nil } }
+                ),
+                presenting: model.pendingDataDisputeWithdrawal
+            ) { disputeID in
+                Button(TreeProfileCopy.withdrawDataDisputeCancel, role: .cancel) {
+                    model.pendingDataDisputeWithdrawal = nil
+                }
+                Button(TreeProfileCopy.withdrawDataDisputeAction, role: .destructive) {
+                    model.pendingDataDisputeWithdrawal = nil
+                    Task { await model.withdrawDataDispute(disputeID: disputeID) }
+                }
+            }
+            // "Withdraw this tree?" before the adder withdraws their tree for everyone (the owner's
+            // answers of 2026-11-16). An alert, for the reason the dispute take-back above gives:
+            // iOS 26 leaves a confirmation dialog's cancel button undrawn. The message is the
+            // shared one or the "only you" one (`TreeProfilePresentation.withdrawTreeMessage`).
+            .alert(
+                TreeProfileCopy.withdrawTreeConfirmTitle,
+                isPresented: $model.isConfirmingTreeWithdrawal
+            ) {
+                Button(TreeProfileCopy.withdrawTreeCancel, role: .cancel) {
+                    model.isConfirmingTreeWithdrawal = false
+                }
+                Button(TreeProfileCopy.withdrawTreeConfirmAction, role: .destructive) {
+                    model.isConfirmingTreeWithdrawal = false
+                    Task { await model.withdrawTree() }
+                }
+            } message: {
+                Text(model.presentation?.withdrawTreeMessage ?? TreeProfileCopy.withdrawTreeMessageShared)
+            }
     }
 
     @ViewBuilder
@@ -275,6 +321,10 @@ struct TreeProfileView: View {
 
                 if !presentation.isCold {
                     regularsRow(presentation)
+                }
+
+                // Behind `isCold` for city trees only (round C3); see `drawsActivityFeed`.
+                if presentation.drawsActivityFeed {
                     activityFeed(presentation)
                 }
 
@@ -512,7 +562,17 @@ struct TreeProfileView: View {
                     .padding(.top, TreeProfileMetrics.latinTop)
             }
 
+            // Round C3: the adder of a tree only they can see is told so. Under the subtitle,
+            // which already says the tree is community-added, and drawn like the note above it.
+            if let note = presentation.onlyYouCanSeeNote {
+                Text(note)
+                    .cypressBody135(color: CypressColor.textMuted)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.top, TreeProfileMetrics.latinTop)
+            }
+
             showWhere(presentation)
+            movePin(presentation)
             speciesClaim(presentation)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -535,6 +595,39 @@ struct TreeProfileView: View {
         ShowWhereButton { router?.push(.pinSet(presentation.locateSet)) }
     }
 
+    /// The owner's Move pin control (2026-11-12), under `showWhere`, which is the other control
+    /// about where the tree is. Drawn only for a tree the reader added (`offersMovePin`).
+    ///
+    /// Built like `showWhere`, and spaced like every other link in this column: the identity block's
+    /// own `latinTop` spacing and nothing more.
+    ///
+    /// **No extra space around it (the owner's ruling, 2026-11-14).** Build 87 padded it by 44 pt and
+    /// build 88 by 30 pt, to keep 44 pt between its center and a neighbor's so the hit areas could
+    /// not overlap. On the phone that read as a band of empty space in a column where the links
+    /// beside it sit about 18 pt apart, and the owner's TestFlight notes on both builds said so. The
+    /// owner chose to match the column.
+    ///
+    /// **Its tap area stops at the midpoint above it** (ROADMAP 119), like every link under it in
+    /// this column: see `columnLinkReachAbove`. The links sit closer than 44 pt center to center, so
+    /// a full 44 pt area would reach up over most of the label above. Which link such a tap reaches
+    /// was worked out from the geometry and from PR #139, not watched on this screen.
+    @ViewBuilder
+    private func movePin(_ presentation: TreeProfilePresentation) -> some View {
+        if presentation.offersMovePin {
+            Button {
+                router?.push(.movePin(model.treeID, presentation.profile.tree.coordinate))
+            } label: {
+                Text(MovePinCopy.action)
+                    .font(CypressFont.body13Bold)
+                    .foregroundStyle(CypressColor.ctaFill)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .cypressHitArea(reachingAbove: TreeProfileMetrics.columnLinkReachAbove)
+        }
+    }
+
     /// The "after" half of "add tree species after/at same time as adding a custom tree".
     ///
     /// **It lives in the identity block, directly under the line it would change.** Not in C8's quad
@@ -552,10 +645,12 @@ struct TreeProfileView: View {
                 Text(TreeProfileCopy.claimSpeciesAction)
                     .font(CypressFont.body13Bold)
                     .foregroundStyle(CypressColor.ctaFill)
+                    // Each line on the leading edge when it wraps, as in `recordLinkAction`.
+                    .multilineTextAlignment(.leading)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .contentShape(Rectangle())
             }
-            .cypressHitArea()
+            .cypressHitArea(reachingAbove: TreeProfileMetrics.columnLinkReachAbove)
         }
         speciesCorrection(presentation)
         if let failure = model.speciesClaimFailure {
@@ -564,6 +659,37 @@ struct TreeProfileView: View {
                 .fixedSize(horizontal: false, vertical: true)
         }
         recordDefect(presentation)
+        treeWithdrawal(presentation)
+    }
+
+    /// The adder's withdraw control (the owner's answers of 2026-11-16): in the record controls,
+    /// drawn the way its neighbors are. While it is drawn, "Report that there is no tree here" is
+    /// not (`TreeProfilePresentation.recordDefect`). Asks first: the alert on `body` is what
+    /// withdraws.
+    ///
+    /// Where this phone already knows the service would refuse, the owner's reason line is drawn in
+    /// the control's place, in the muted sentence style of the block's other notices. It sits
+    /// under the report link's caption, which is drawn in the same style, so it needs a gap above it
+    /// to read as its own line rather than as the caption's last line. The block's own note gap
+    /// (`latinTop`, 2 pt) was tried and did not separate it on screen, at the default size or at
+    /// AX5; the design system's row gap (`CypressSpacing.gapRows`) does.
+    @ViewBuilder
+    private func treeWithdrawal(_ presentation: TreeProfilePresentation) -> some View {
+        switch presentation.treeWithdrawal {
+        case .unavailable:
+            EmptyView()
+        case .available:
+            recordLinkAction(TreeProfileCopy.withdrawTreeAction) {
+                model.isConfirmingTreeWithdrawal = true
+            }
+            .accessibilityIdentifier("treeProfile.withdrawTree")
+        case .othersHaveAddedToIt:
+            Text(TreeProfileCopy.treeStaysOnTheMap)
+                .cypressBody135(color: CypressColor.textMuted)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.top, CypressSpacing.gapRows)
+                .accessibilityIdentifier("treeProfile.withdrawTree.staysOnTheMap")
+        }
     }
 
     /// The record-defect block (#125) — *is this record a tree at all?*
@@ -580,6 +706,16 @@ struct TreeProfileView: View {
         switch presentation.recordDefect {
         case .unavailable:
             EmptyView()
+        case let .dataDispute(offer):
+            // **R79's city surface, drawn here and only here** — the owner ruled the entry point on
+            // 2026-09-10: exactly where the community flag actions sit, replacing them for a city
+            // tree. Not under the City record block, and not through the quad row's `Report`, which
+            // stays the 311 / neighborly door (screen 06).
+            //
+            // The offer is read once, from this arm, and **one** control is drawn from it — never
+            // one here and another under `speciesCorrection`, which carries the identical value and
+            // draws nothing for it.
+            dataDispute(offer)
         case .reportable:
             recordLinkAction(TreeProfileCopy.reportNeverExistedAction) {
                 Task { await model.reportNeverExisted() }
@@ -594,13 +730,15 @@ struct TreeProfileView: View {
                 .cypressBody135(color: CypressColor.textMuted)
                 .fixedSize(horizontal: false, vertical: true)
             if canResolve {
-                recordLinkAction(TreeProfileCopy.withdrawRecordAction) {
+                // Both under a sentence, never under a link: `recordReported`, then
+                // `withdrawRecordNotice`.
+                recordLinkAction(TreeProfileCopy.withdrawRecordAction, belowALink: false) {
                     Task { await model.withdrawRecord(flagID: flagID) }
                 }
                 Text(TreeProfileCopy.withdrawRecordNotice)
                     .cypressBody135(color: CypressColor.textMuted)
                     .fixedSize(horizontal: false, vertical: true)
-                recordLinkAction(TreeProfileCopy.keepRecordAction) {
+                recordLinkAction(TreeProfileCopy.keepRecordAction, belowALink: false) {
                     Task { await model.keepRecord(flagID: flagID) }
                 }
             }
@@ -609,6 +747,39 @@ struct TreeProfileView: View {
             Text(failure)
                 .cypressBody135(color: CypressColor.textMuted)
                 .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    /// The city arm of the record-defect block (RULINGS R79, part 2).
+    ///
+    /// **Raisable** draws the action and, beneath it, where the report goes — the shape every other
+    /// arm of this block has. **Raised by you** draws the fact and the way to take it back, and that
+    /// second control is the point of the arm: the owner's standing complaint against the community
+    /// flagging flow is that a flag cannot be retracted by its author, and a new dispute surface that
+    /// repeated it would be the same defect on new ground. `DataDisputeOffer.raisedByYou` is drawn
+    /// only for the dispute's own author (`TreeDataDispute.isAuthored(by:)`), so there is no state in
+    /// which the take-back is offered to somebody the store would refuse.
+    @ViewBuilder
+    private func dataDispute(_ offer: DataDisputeOffer) -> some View {
+        switch offer {
+        case .unavailable:
+            EmptyView()
+        case .raisable:
+            recordLinkAction(TreeProfileCopy.dataDisputeAction) {
+                router?.push(.dataDispute(model.treeID))
+            }
+            Text(TreeProfileCopy.dataDisputeNotice)
+                .cypressBody135(color: CypressColor.textMuted)
+                .fixedSize(horizontal: false, vertical: true)
+        case let .raisedByYou(disputeID):
+            Text(TreeProfileCopy.dataDisputeRaised)
+                .cypressBody135(color: CypressColor.textMuted)
+                .fixedSize(horizontal: false, vertical: true)
+            // Asks first — the dialog on `body` is what withdraws. Under the `dataDisputeRaised`
+            // sentence, never under a link.
+            recordLinkAction(TreeProfileCopy.withdrawDataDisputeAction, belowALink: false) {
+                model.pendingDataDisputeWithdrawal = disputeID
+            }
         }
     }
 
@@ -623,7 +794,9 @@ struct TreeProfileView: View {
     @ViewBuilder
     private func speciesCorrection(_ presentation: TreeProfilePresentation) -> some View {
         switch presentation.speciesCorrection {
-        case .unavailable:
+        case .unavailable, .dataDispute:
+            // `.dataDispute` draws nothing here on purpose: R79's city surface is one action for the
+            // whole record, and `recordDefect`'s arm above is where it is drawn. See that arm.
             EmptyView()
         case .correctable:
             recordLinkAction(TreeProfileCopy.correctSpeciesAction) { model.beginCorrectingSpecies() }
@@ -631,9 +804,18 @@ struct TreeProfileView: View {
             recordLinkAction(TreeProfileCopy.reportSpeciesAction) {
                 Task { await model.reportSpeciesAsWrong() }
             }
-            Text(TreeProfileCopy.reportSpeciesNotice)
+            Text(presentation.reportSpeciesNote)
                 .cypressBody135(color: CypressColor.textMuted)
                 .fixedSize(horizontal: false, vertical: true)
+        case .reportedYoursToCorrect:
+            // The namer's own answer, reported (ROADMAP 144): the line, and the namer's correction.
+            // No "Keep the species", which only the adder's phone may send.
+            Text(TreeProfileCopy.speciesReported)
+                .cypressBody135(color: CypressColor.textMuted)
+                .fixedSize(horizontal: false, vertical: true)
+            recordLinkAction(TreeProfileCopy.correctSpeciesAction, belowALink: false) {
+                model.beginCorrectingSpecies()
+            }
         case let .underReview(flagID, canResolve):
             // Drawn to everybody, including the person who raised it: a species under dispute must
             // not render as though nobody had objected.
@@ -641,7 +823,10 @@ struct TreeProfileView: View {
                 .cypressBody135(color: CypressColor.textMuted)
                 .fixedSize(horizontal: false, vertical: true)
             if canResolve {
-                recordLinkAction(TreeProfileCopy.correctSpeciesAction) { model.beginCorrectingSpecies() }
+                // Under the `speciesReported` sentence, never under a link.
+                recordLinkAction(TreeProfileCopy.correctSpeciesAction, belowALink: false) {
+                    model.beginCorrectingSpecies()
+                }
                 recordLinkAction(TreeProfileCopy.keepSpeciesAction) {
                     Task { await model.keepSpecies(flagID: flagID) }
                 }
@@ -649,15 +834,34 @@ struct TreeProfileView: View {
         }
     }
 
-    private func recordLinkAction(_ label: String, _ act: @escaping () -> Void) -> some View {
-        Button(action: act) {
+    /// A text link in the identity block's column, under the species line.
+    ///
+    /// - Parameter belowALink: whether another link can sit directly above this one. Where one can,
+    ///   the tap area stops at the midpoint above it (`columnLinkReachAbove`, ROADMAP 119). Where the
+    ///   view above is always a sentence, the call site passes `false` and the link keeps the full
+    ///   `cypressHitArea()`, as it had before.
+    @ViewBuilder
+    private func recordLinkAction(
+        _ label: String,
+        belowALink: Bool = true,
+        _ act: @escaping () -> Void
+    ) -> some View {
+        let link = Button(action: act) {
             Text(label)
                 .font(CypressFont.body13Bold)
                 .foregroundStyle(CypressColor.ctaFill)
+                // The default button style centers a label's lines, so a link that wraps at a large
+                // text size drew its second line in the middle of the column (ROADMAP 183). The frame
+                // below puts the text block on the leading edge; this puts each line there.
+                .multilineTextAlignment(.leading)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .contentShape(Rectangle())
         }
-        .cypressHitArea()
+        if belowALink {
+            link.cypressHitArea(reachingAbove: TreeProfileMetrics.columnLinkReachAbove)
+        } else {
+            link.cypressHitArea()
+        }
     }
 
     // MARK: - 7 · Regulars row (C26, A8, D1)
@@ -774,6 +978,9 @@ struct TreeProfileView: View {
             return .photo(colorScheme == .dark ? CypressGradient.activityVisitDark : CypressGradient.activityVisit)
         case .care:
             return .care
+        case .history:
+            // The owner's choice of 2026-11-15: the community tree mark.
+            return .communityTree
         }
     }
 
@@ -1047,6 +1254,11 @@ enum TreeProfileMetrics {
     static let coldBlockGap: CGFloat = 14
     /// 03 §3: `margin-top:2px` on the latin line.
     static let latinTop: CGFloat = 2
+    /// Not a spec value, and nothing is drawn with it: how far above its own label the tap area of a
+    /// link in the identity block's column reaches. Half of `latinTop`, the column's spacing, so a
+    /// link's tap area starts at the midpoint between its label and the one above it (ROADMAP 119,
+    /// `cypressHitArea(_:reachingAbove:)`).
+    static let columnLinkReachAbove: CGFloat = latinTop / 2
     /// 14 §2: `margin:10px 16px 0`, `height:170px`.
     static let wellTop: CGFloat = 10
     static let emptyWellHeight: CGFloat = 170

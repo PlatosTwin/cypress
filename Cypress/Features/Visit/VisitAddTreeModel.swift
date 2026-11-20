@@ -8,8 +8,8 @@
 //  The button, at full opacity, wired to dismiss the flow and record nothing. PROTOTYPE-FLOW §1.5
 //  drew it inert and *said so* in the label — "None of these? Add this tree · not in this prototype",
 //  `opacity:.55` — and the build kept the button and dropped the honesty. Meanwhile
-//  `LocalAPI.addTree` has been complete and tested since the data layer landed, with the 10 m
-//  proximity dedupe in it and no caller anywhere in the app.
+//  `LocalAPI.addTree` has been complete and tested since the data layer landed, with what was then a
+//  10 m proximity refusal in it and no caller anywhere in the app.
 //
 //  ── Why this is not an invented screen ────────────────────────────────────────────────────
 //  BUILD-PLAN §9's M2 list names "**duplicate-proximity warning on add-a-tree**" as a required,
@@ -20,14 +20,22 @@
 //  layout follows the nearest specified thing rather than inventing a look: it is screen 02's frame
 //  and header, screen 14's dashed photo well, screen 04's two photo sources, and C24 for the warning.
 //
-//  ── The three gates, all of them the data layer's rules restated on screen ────────────────
+//  ── The two gates, both of them the data layer's rules restated on screen ─────────────────
 //  1. **A photo is required.** `addTree` throws `validationFailed` without one (BUILD-PLAN §6). The
 //     CTA is disabled until there is one, so the boundary and the button agree.
 //  2. **A fix is required.** A community tree *is* a coordinate; there is nothing to add without
 //     one, and D6 has no notion of a tree whose position is a guess.
-//  3. **The 10 m dedupe is the API's, not this screen's.** Nothing here pre-checks it. The screen
-//     calls `addTree` and renders `ProximityConflict`'s own candidate list, so the warning can never
-//     disagree with the refusal — which is the failure mode a client-side copy of the rule has.
+//
+//  ── The trees already on record nearby: a note, not a gate ────────────────────────────────
+//  Until 2026-11-14 a third gate was here: `addTree` refused a tree within 10 m of another and the
+//  screen drew the refusal's candidate list after the tap. The owner's ruling of that day removed
+//  the refusal ("sometimes they will be close together and that's fine") and kept the
+//  "ALREADY ON RECORD" card as a note that does not block. So the screen looks the trees up itself,
+//  before the tap: `nearby` is `treesNear` at `TreeDraft.proximityDedupeRadiusM` around
+//  `coordinate`, the same exact-meters circle the refusal used, read again whenever the pin's
+//  position changes. The CTA does not read it. Since the owner's decision of 2026-11-15 a tree the
+//  note already lists stays listed out to `TreeDraft.proximityNoteKeepRadiusM` (15 m), so a fix
+//  drifting across 10 m does not make the note appear and disappear; see `listed(_:keeping:)`.
 //
 //  ── The pin the reader places ─────────────────────────────────────────────────────────────
 //  The coordinate used to be `location.fix.coordinate` verbatim, and rule 2 was read as though it
@@ -73,6 +81,10 @@ import Foundation
 import Observation
 import UIKit
 
+/// Reads whether this phone's account shares its tree records. The composition root builds it from
+/// `LocalAPI.userID` and `LocalAPI.accountLink()`, which are not `CypressAPI` requirements.
+typealias ContributionSharingReader = @Sendable () async -> ContributionSharing
+
 @MainActor
 @Observable
 final class VisitAddTreeModel {
@@ -92,11 +104,7 @@ final class VisitAddTreeModel {
         case pickingSpecies
         /// `addTree` is running.
         case adding
-        /// BUILD-PLAN §9 M2's "duplicate-proximity warning on add-a-tree". The candidates are the
-        /// API's, and every one of them is inside 10 m of the spot — `LocalAPI.addTree` re-checks the
-        /// exact meters before it refuses (ERRATA E35).
-        case duplicate([NearbyTree])
-        /// The add failed for a reason that is not a duplicate.
+        /// The add failed.
         case failed(String)
     }
 
@@ -138,6 +146,14 @@ final class VisitAddTreeModel {
 
     /// Where this tree is going down. `.gps` until the reader says otherwise.
     private(set) var placement: Placement = .gps
+
+    /// The trees on record near `coordinate`, nearest first: the list under the "ALREADY ON RECORD"
+    /// note. Empty draws no note. A tree joins it within `TreeDraft.proximityDedupeRadiusM` and
+    /// leaves it past `TreeDraft.proximityNoteKeepRadiusM`; see `listed(_:keeping:)`.
+    ///
+    /// A note and never a gate (the owner's ruling of 2026-11-14): `canAdd` does not read it, so a
+    /// reader who knows the tree in front of them is a different one adds it with one tap.
+    private(set) var nearby: [NearbyTree] = []
 
     /// What the contributor says this tree is, or nil because nobody has said.
     ///
@@ -212,10 +228,31 @@ final class VisitAddTreeModel {
     /// this list is only input.
     static let offered: [LandContext] = [.street, .cityPark, .privateProperty]
 
-    init(api: any CypressAPI, location: VisitLocationProvider, attribution: Attribution) {
+    /// Whether this phone's account shares its tree records, as read the last time the screen
+    /// appeared: the note under the button (`VisitAddTreeCopy.footnote(for:)`). Nil until the first
+    /// read answers, and the note draws nothing until then.
+    private(set) var sharing: ContributionSharing?
+
+    /// Where `sharing` comes from: the composition root's read of the user id and the account link.
+    /// Nil in tests that do not look at the note, and then the phone is treated as not knowing
+    /// (`.unknown`), which keeps the note this screen always had.
+    private let readSharing: ContributionSharingReader?
+
+    init(
+        api: any CypressAPI,
+        location: VisitLocationProvider,
+        attribution: Attribution,
+        readSharing: ContributionSharingReader? = nil
+    ) {
         self.api = api
         self.location = location
         self.attribution = attribution
+        self.readSharing = readSharing
+    }
+
+    /// Reads `sharing` again. Called from `load()`, which runs each time the screen appears.
+    func refreshSharing() async {
+        sharing = await readSharing?() ?? .unknown
     }
 
     // MARK: - Derived
@@ -234,6 +271,11 @@ final class VisitAddTreeModel {
     }
 
     var hasPhoto: Bool { photoPath != nil }
+
+    /// Whether the well is a viewfinder rather than a still: there is no photograph yet, so a pinch
+    /// has a lens to aim (F33, `VisitCameraZoomPinch`). Screen 04's `!hasSnapped`, for the one
+    /// framing this screen has.
+    var isAimingCamera: Bool { !hasPhoto }
 
     /// Whether the reader has moved the pin.
     var isReaderPlaced: Bool {
@@ -305,8 +347,44 @@ final class VisitAddTreeModel {
     // MARK: - Lifecycle
 
     func load() async {
+        // Nothing starts under a listed tree's profile: the cover leaves this screen in place, so a
+        // `load` from anywhere while it is up would run a capture session nobody can see.
+        guard !isShowingListedTree else { return }
+        // First, and on every appearance: a reader who signed in, or agreed to share, since the
+        // screen last appeared must see the note that says so (the owner's ruling of 2026-11-15).
+        // Also after a listed tree's profile closes, because `closeListedTree` calls this.
+        await refreshSharing()
         location.start()
         await camera.start()
+    }
+
+    // MARK: - A listed tree, opened over this screen
+
+    /// Whether a tree the note lists is open over this screen (the owner's decision of 2026-11-15,
+    /// "Keep the draft").
+    ///
+    /// The model rather than the view, because the view cannot rely on its own lifecycle here. A
+    /// `fullScreenCover` leaves the screen under it in place: `onDisappear` does not fire when the
+    /// profile opens, and `.task` does not run again when it closes. The second review of
+    /// 2026-11-15 logged exactly that, and the note kept saying "4 m" for a tree the reader had just
+    /// moved 15 m north from its profile. So the view calls these two at the edges of the cover.
+    private(set) var isShowingListedTree = false
+
+    /// The note's row was tapped, and the tree's profile is about to cover this screen. Stops the
+    /// camera first, so the profile's own Visit cannot start a second capture session over this
+    /// one. Two sessions at once were never observed on a phone; this closes the path to it.
+    func openListedTree() {
+        isShowingListedTree = true
+        camera.stop()
+    }
+
+    /// The profile closed. Reads the note again, because the reader may have moved that tree from
+    /// its profile, then starts again what `load()` starts. The draft (photo, pin, ground, species)
+    /// is untouched. `camera.start()` leaves a running session alone, so this cannot start a second.
+    func closeListedTree() async {
+        isShowingListedTree = false
+        await refreshNearby()
+        await load()
     }
 
     func stop() {
@@ -395,6 +473,64 @@ final class VisitAddTreeModel {
         phase = .composing
     }
 
+    // MARK: - The trees nearby
+
+    /// Reads `nearby` again for the pin's current position. The view calls it whenever
+    /// `coordinate` changes: the first fix, a fix that moves while the pin is `.gps`, and a pin the
+    /// reader placed.
+    ///
+    /// The same query `addTree` used to refuse with — `treesNear`, `TreeDraft.proximityDedupeRadiusM`,
+    /// ten rows — so the note lists exactly the trees the refusal would have named: every one is
+    /// inside the circle, not only inside the box searched (ERRATA E35).
+    ///
+    /// A failed read keeps the list as it is rather than showing an error, so one failed read does
+    /// not take a note down that is showing (second review, 2026-11-15). The note is advice about
+    /// trees already on record, and the add does not depend on it.
+    ///
+    /// The answer is dropped when a newer read has started, or the position moved while it was read,
+    /// so a slow read never overwrites the list a later one wrote: a read started before a listed
+    /// tree's profile opened cannot land after the read `closeListedTree` makes. It is dropped too once an add is under
+    /// way: the screen is leaving, and the tree being added must not appear in its own note.
+    ///
+    /// The read reaches out to `TreeDraft.proximityNoteKeepRadiusM`, not to the 10 m, because a tree
+    /// already listed stays listed out to that distance (the owner's decision of 2026-11-15). Which
+    /// rows are listed is `listed(_:keeping:)`. A pin placed by hand gets the same rule from its new
+    /// position: the list it keeps from is whatever the note showed before the pin moved.
+    func refreshNearby() async {
+        nearbyReads += 1
+        let read = nearbyReads
+        guard let asked = coordinate else {
+            nearby = []
+            return
+        }
+        let found: [NearbyTree]
+        do {
+            found = try await api.treesNear(asked, radiusM: TreeDraft.proximityNoteKeepRadiusM, limit: 10)
+        } catch {
+            return
+        }
+        guard read == nearbyReads, coordinate == asked, phase != .adding else { return }
+        nearby = Self.listed(found, keeping: nearby)
+    }
+
+    /// Counts the note's reads, so an answer can tell whether a newer read has started since.
+    @ObservationIgnored private var nearbyReads = 0
+
+    /// The rows the note lists, from a fresh read and the rows it listed before.
+    ///
+    /// A tree within `TreeDraft.proximityDedupeRadiusM` is listed. A tree that was already listed
+    /// stays listed out to `TreeDraft.proximityNoteKeepRadiusM`. Nothing else is listed, so a tree
+    /// first seen at 12 m does not bring the note up, and a listed tree at 12 m does not take it
+    /// down. The distances are the fresh read's, so the row shows where the tree is now. Order is the
+    /// read's: nearest first.
+    nonisolated static func listed(_ found: [NearbyTree], keeping shown: [NearbyTree]) -> [NearbyTree] {
+        let wasListed = Set(shown.map(\.id))
+        return found.filter { row in
+            row.distanceM <= TreeDraft.proximityDedupeRadiusM
+                || (wasListed.contains(row.id) && row.distanceM <= TreeDraft.proximityNoteKeepRadiusM)
+        }
+    }
+
     // MARK: - The species
 
     /// Opens the catalog. Unlike `beginPlacingPin` there is no gate: naming a species needs neither
@@ -450,28 +586,19 @@ final class VisitAddTreeModel {
 
     /// Calls `POST /trees` and reports what came back.
     ///
-    /// - Returns: the new tree's id, or nil. Nil is not always a failure the reader must fix —
-    ///   `.duplicate` is the API doing its job, and the screen offers the tree it found instead.
+    /// - Returns: the new tree's id, or nil when the add failed and the phase says why.
     ///
-    /// **No outbox.** Every other mutation in this app is enqueued first (ARCHITECTURE §4), and this
-    /// one cannot be: `outbox.kind` has no `tree` value, the caller needs the new tree's id to be
-    /// able to open it, and the dedupe answer is a *conversation* — a refusal the reader has to
-    /// resolve by looking at the candidates — which is the one thing a fire-and-forget queue cannot
-    /// carry. The API is local, so there is no round trip to survive; when a server exists this is
-    /// the call that grows an outbox kind, and the shape of that work is the dedupe conflict arriving
-    /// late rather than immediately.
+    /// The API is local: `addTree` writes the tree on this phone and queues it as `add_tree`, so
+    /// the caller has the new tree's id at once and can open it.
     ///
     /// A success leaves the phase at `.adding`, which is not an oversight: the screen is on its way
     /// out — the flow opens the tree it just created — and `canAdd` staying false for those frames is
-    /// what stops a second tap from writing a second tree 0 m from the first. The 10 m dedupe would
-    /// refuse that one, so the consequence would be a duplicate warning naming the tree the reader
-    /// had themselves just added, which is the most confusing sentence this screen could produce.
+    /// what stops a second tap from writing a second tree 0 m from the first. Since the owner's
+    /// ruling of 2026-11-14 nothing else would stop it: `addTree` no longer refuses a tree within
+    /// 10 m of another.
     ///
-    /// The coordinate is `coordinate`, which is the fix unless the reader placed a pin — and the 10 m
-    /// dedupe therefore runs against wherever the pin ended up, not against the phone. That is the
-    /// behavior the row-of-trees case needs in both directions: five trees photographed from one spot
-    /// no longer collide with each other, and a pin dragged onto a tree that is already on record is
-    /// still refused, by the same rule, with the same candidate list.
+    /// The coordinate is `coordinate`, which is the fix unless the reader placed a pin, and the
+    /// `nearby` note is read for that same coordinate.
     func add() async -> UUID? {
         guard canAdd, let coordinate, let photoPath else { return nil }
         phase = .adding
@@ -515,9 +642,6 @@ final class VisitAddTreeModel {
                 )
             )
             return tree.id
-        } catch let conflict as ProximityConflict {
-            phase = .duplicate(conflict.candidates)
-            return nil
         } catch {
             phase = .failed(VisitAddTreeCopy.addFailed)
             return nil

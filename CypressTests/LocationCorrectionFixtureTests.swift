@@ -1,0 +1,317 @@
+//
+//  LocationCorrectionFixtureTests.swift
+//  CypressTests
+//
+//  The Swift half of two request goldens the community-trees server rounds pinned:
+//  `server/testdata/sync_location_correction.json` (a `POST /sync` body carrying one
+//  `location_correction`) and `server/testdata/photos_begin.json` (a `POST /photos/begin` body with
+//  `captured_on`, decision 14a).
+//
+//  `GoldenWireFixtureTests` decodes what the service *sends*; these encode what the phone *sends*
+//  and compare it with the file the Go tests decode. Both are read off disk, never pasted, for that
+//  file's reason. Both are encoded through the path the app ships — `RemoteAPI.syncItemBody(for:)`
+//  and `RemoteAPI.beginPhotoBody(for:timeZone:)` with `RemoteCoding.encoder` — rather than through a
+//  copy of it.
+//
+//  The comparison is structural (parsed JSON, not bytes): key order is not part of the contract,
+//  and the Go side decodes rather than byte-compares these two. One normalization, stated: a JSON
+//  `null` in a fixture is dropped before comparing, because Swift's synthesized encoder omits a nil
+//  optional and the service reads an absent key and a `null` alike for every field involved.
+//
+
+import Foundation
+import Testing
+@testable import Cypress
+
+@Suite("Community trees · request goldens (server/testdata)")
+struct LocationCorrectionFixtureTests {
+
+    private static func fixture(_ name: String) throws -> Data {
+        try Data(contentsOf: AppSourceLiterals.repositoryRoot()
+            .appendingPathComponent("server/testdata")
+            .appendingPathComponent(name))
+    }
+
+    /// Parsed, with `null` members removed at every depth.
+    private static func object(_ data: Data) throws -> NSObject {
+        let parsed = try JSONSerialization.jsonObject(with: data)
+        return stripNulls(parsed) as! NSObject
+    }
+
+    private static func stripNulls(_ value: Any) -> Any {
+        if let dictionary = value as? [String: Any] {
+            var kept: [String: Any] = [:]
+            for (key, member) in dictionary where !(member is NSNull) {
+                kept[key] = stripNulls(member)
+            }
+            return kept as NSDictionary
+        }
+        if let array = value as? [Any] { return array.map(stripNulls) as NSArray }
+        return value
+    }
+
+    private static func instant(_ text: String) throws -> Date {
+        try #require(ISO8601DateFormatter().date(from: text), "\(text) is not an instant")
+    }
+
+    // MARK: - The values the goldens hold
+
+    private static let treeID = UUID(uuidString: "C3A1F7E2-5D4B-4E8A-9B6C-2F1E0D9C8B7A")!
+    private static let correctionKey = UUID(uuidString: "6F0D0C2E-3B1A-4C47-9E0B-7C9A5D2B1E01")!
+    private static let correctionID = UUID(uuidString: "8B2E4D6F-1A3C-4E5B-9D7F-0C2A4B6D8E10")!
+    private static let deviceID = UUID(uuidString: "D1E2F3A4-B5C6-4D7E-8F90-A1B2C3D4E5F6")!
+    private static let binaryKey = UUID(uuidString: "0A1B2C3D-4E5F-4A6B-8C7D-9E0F1A2B3C4D")!
+
+    private static func syncBody(id: UUID = correctionID) throws -> Data {
+        let payload = OutboxPayload.locationCorrection(
+            TreeLocationCorrection(
+                id: id,
+                clientUUID: correctionKey,
+                treeID: treeID,
+                coordinate: Coordinate(latitude: 37.76015, longitude: -122.50505),
+                placement: .contributorPlaced,
+                locationAccuracyM: 4.5,
+                attribution: Attribution(userID: nil, deviceID: deviceID),
+                occurredAt: try instant("2026-09-28T17:05:00Z")
+            )
+        )
+        let item = try payload.makeItem(createdAt: try instant("2026-09-28T17:05:00Z"))
+        return try RemoteCoding.encoder.encode(
+            SyncRequestBody(items: [try RemoteAPI.syncItemBody(for: item)])
+        )
+    }
+
+    private static func beginRequest() throws -> PhotoUploadRequest {
+        PhotoUploadRequest(
+            treeID: treeID,
+            visitID: nil,
+            shotType: .fullTree,
+            localPath: "/staged/fixture.jpg",
+            capturedAt: try instant("2026-09-28T23:30:00Z"),
+            width: 3024,
+            height: 4032,
+            publicCoordinate: Coordinate(latitude: 37.76, longitude: -122.505),
+            idempotencyKey: binaryKey
+        )
+    }
+
+    // MARK: - Calibration
+
+    /// The instrument, against answers known before it ran: both files are on disk and parse, and
+    /// the comparison is sensitive to exactly the drift it is here for — the correction's `id`
+    /// spelled some other way (the server's `payload.ID == payload.TreeID` refusal exists because
+    /// that drift is easy), and the tree pointer spelled `id`.
+    ///
+    /// Without this, every gate below could be green on a comparison that ignored the payload.
+    @Test("the goldens are on disk, and the comparison sees a renamed key")
+    func theComparisonIsCalibrated() throws {
+        let golden = try Self.object(try Self.fixture("sync_location_correction.json"))
+        let begin = try Self.object(try Self.fixture("photos_begin.json"))
+        #expect(golden.isEqual(NSDictionary()) == false, "sync_location_correction.json parsed as nothing")
+        #expect(begin.isEqual(NSDictionary()) == false, "photos_begin.json parsed as nothing")
+
+        // The ours-side, then broken on purpose: `id` renamed, and the tree's id sent as `id`.
+        var mutated = try #require(
+            try JSONSerialization.jsonObject(with: try Self.syncBody()) as? [String: Any]
+        )
+        var items = try #require(mutated["items"] as? [[String: Any]])
+        var payload = try #require(items[0]["payload"] as? [String: Any])
+        payload["correctionID"] = payload.removeValue(forKey: "id")
+        items[0]["payload"] = payload
+        mutated["items"] = items
+        let renamed = Self.stripNulls(mutated) as! NSObject
+        #expect(!renamed.isEqual(golden), "a renamed `id` compared equal — the comparison ignores the payload")
+
+        let treeAsID = try Self.object(try Self.syncBody(id: Self.treeID))
+        #expect(!treeAsID.isEqual(golden), "the tree's id sent as the correction's compared equal")
+    }
+
+    // MARK: - sync_location_correction.json
+
+    /// Red-proof: rename `TreeLocationCorrection.locationAccuracyM` to `accuracyM` — red here, and
+    /// on the service the field arrives as nil.
+    @Test("a queued location correction is sent exactly as the service's golden holds it")
+    func theCorrectionMatchesTheGolden() throws {
+        let oursData = try Self.syncBody()
+        let goldenData = try Self.fixture("sync_location_correction.json")
+        let ours = try Self.object(oursData)
+        let golden = try Self.object(goldenData)
+        #expect(
+            ours.isEqual(golden),
+            """
+            the phone's POST /sync body is not the golden.
+            ours:   \(String(decoding: oursData, as: UTF8.self))
+            golden: \(String(decoding: goldenData, as: UTF8.self))
+            """
+        )
+    }
+
+    // MARK: - photos_begin.json
+
+    /// The golden pins the case where the phone's date and the UTC date differ: 23:30 UTC on the
+    /// 28th is the 29th east of UTC. Read in Berlin (UTC+2 on that date).
+    ///
+    /// Red-proof: compute `captured_on` with `TimeZone(identifier: "UTC")` inside
+    /// `beginPhotoBody` — red on the whole-body comparison and on the value ("2026-09-28").
+    @Test("a begin sends captured_on as the phone's own date, exactly as the golden holds it")
+    func theBeginMatchesTheGolden() throws {
+        let berlin = try #require(TimeZone(identifier: "Europe/Berlin"))
+        let body = RemoteAPI.beginPhotoBody(for: try Self.beginRequest(), timeZone: berlin)
+        #expect(body.capturedOn == "2026-09-29", "captured_on is \(body.capturedOn ?? "nil") in Berlin")
+
+        let encoded = try RemoteCoding.encoder.encode(body)
+        let goldenData = try Self.fixture("photos_begin.json")
+        let ours = try Self.object(encoded)
+        let golden = try Self.object(goldenData)
+        #expect(
+            ours.isEqual(golden),
+            """
+            the phone's POST /photos/begin body is not the golden.
+            ours:   \(String(decoding: encoded, as: UTF8.self))
+            golden: \(String(decoding: goldenData, as: UTF8.self))
+            """
+        )
+    }
+
+    /// The same instant west of UTC is still the 28th — the date is the zone's, not a constant
+    /// offset — and a phone on a non-Gregorian calendar still sends a Gregorian year.
+    @Test("captured_on is the date in the phone's zone, in the Gregorian calendar")
+    func capturedOnFollowsTheZone() throws {
+        let instant = try Self.instant("2026-09-28T23:30:00Z")
+        let losAngeles = try #require(TimeZone(identifier: "America/Los_Angeles"))
+        let tokyo = try #require(TimeZone(identifier: "Asia/Tokyo"))
+        #expect(RemoteAPI.localDate(of: instant, in: losAngeles) == "2026-09-28")
+        #expect(RemoteAPI.localDate(of: instant, in: tokyo) == "2026-09-29")
+        #expect(RemoteAPI.localDate(of: instant, in: TimeZone(secondsFromGMT: 0)!) == "2026-09-28")
+    }
+
+    // MARK: - sync_add_tree.json (ROADMAP 139)
+
+    private static let addKey = UUID(uuidString: "4C9E2B7A-6D1F-4A3E-8B5C-0F2D9E1A7B30")!
+    private static let addedTreeID = UUID(uuidString: "A7D3F1C9-2E4B-4C6D-9A8F-1B3C5D7E9F20")!
+
+    /// A queued `add_tree`, built as `LocalAPI.addTree` and `CommunityTreeBackfill` build it: the
+    /// add's instant, and `addedOn` read from that instant in the phone's zone.
+    private static func addBody(in zone: TimeZone, rename: (from: String, to: String)? = nil) throws -> Data {
+        let occurred = try instant("2026-10-15T06:30:00Z")
+        let addition = TreeAddition(
+            clientUUID: addKey,
+            treeID: addedTreeID,
+            attribution: Attribution(userID: nil, deviceID: deviceID),
+            coordinate: Coordinate(latitude: 37.76015, longitude: -122.50505),
+            placement: .contributorPlaced,
+            occurredAt: occurred,
+            addedOn: TreeAddition.addedDay(of: occurred, in: zone)
+        )
+        let item = try OutboxPayload.addTree(addition).makeItem(createdAt: try instant("2026-11-15T12:00:00Z"))
+        let encoded = try RemoteCoding.encoder.encode(
+            SyncRequestBody(items: [try RemoteAPI.syncItemBody(for: item)])
+        )
+        guard let rename else { return encoded }
+        var mutated = try #require(try JSONSerialization.jsonObject(with: encoded) as? [String: Any])
+        var items = try #require(mutated["items"] as? [[String: Any]])
+        var payload = try #require(items[0]["payload"] as? [String: Any])
+        payload[rename.to] = payload.removeValue(forKey: rename.from)
+        items[0]["payload"] = payload
+        mutated["items"] = items
+        return try JSONSerialization.data(withJSONObject: mutated)
+    }
+
+    /// The instrument against an answer known before it ran: `addedOn` spelled any other way, or the
+    /// day read in UTC, compares unequal.
+    @Test("the add golden is on disk, and the comparison sees addedOn renamed or read in UTC")
+    func theAddComparisonIsCalibrated() throws {
+        let losAngeles = try #require(TimeZone(identifier: "America/Los_Angeles"))
+        let golden = try Self.object(try Self.fixture("sync_add_tree.json"))
+        #expect(golden.isEqual(NSDictionary()) == false, "sync_add_tree.json parsed as nothing")
+        let renamed = try Self.object(try Self.addBody(in: losAngeles, rename: (from: "addedOn", to: "addedDay")))
+        #expect(!renamed.isEqual(golden), "a renamed addedOn compared equal; the comparison ignores it")
+        let utc = try Self.object(try Self.addBody(in: TimeZone(secondsFromGMT: 0)!))
+        #expect(!utc.isEqual(golden), "addedOn read in UTC compared equal; the comparison ignores its value")
+    }
+
+    /// 23:30 on the 14th in San Francisco is 06:30 UTC on the 15th. The phone sends the 14th and the
+    /// add's own instant, and the service's golden holds both.
+    ///
+    /// Red-proof: read `TreeAddition.addedDay` in UTC — red here on the value, "2026-10-15".
+    @Test("a queued add is sent with its local added day, exactly as the service's golden holds it")
+    func theAddMatchesTheGolden() throws {
+        let losAngeles = try #require(TimeZone(identifier: "America/Los_Angeles"))
+        let occurred = try Self.instant("2026-10-15T06:30:00Z")
+        #expect(TreeAddition.addedDay(of: occurred, in: losAngeles) == "2026-10-14",
+                "addedOn for 23:30 Pacific is \(TreeAddition.addedDay(of: occurred, in: losAngeles))")
+
+        let oursData = try Self.addBody(in: losAngeles)
+        let goldenData = try Self.fixture("sync_add_tree.json")
+        #expect(
+            try Self.object(oursData).isEqual(try Self.object(goldenData)),
+            """
+            the phone's add_tree body is not the golden.
+            ours:   \(String(decoding: oursData, as: UTF8.self))
+            golden: \(String(decoding: goldenData, as: UTF8.self))
+            """
+        )
+    }
+
+    // MARK: - sync_wrong_species_report.json (ROADMAP 144)
+
+    /// A queued report on a community tree, with the species it disputes. The account id is the
+    /// fixture's placeholder, which the Go test replaces with a real account; here it is the value.
+    private static func reportBody(disputed: UUID?) throws -> Data {
+        let occurred = try instant("2026-11-20T18:30:00Z")
+        let report = ReviewReport(
+            clientUUID: UUID(uuidString: "2D4F6A8C-0E1B-4C3D-9E5F-7A9B1C3D5E01")!,
+            flagID: UUID(uuidString: "4E7A2C10-9B3D-4F5E-8A6C-1D2E3F4A5B02")!,
+            treeID: UUID(uuidString: "C3A1F7E2-5D4B-4E8A-9B6C-2F1E0D9C8B7B")!,
+            kind: .wrongSpecies,
+            attribution: Attribution(
+                userID: UUID(uuidString: "A0B1C2D3-E4F5-4A6B-8C7D-9E0F1A2B3C4D")!,
+                deviceID: UUID(uuidString: "D1E2F3A4-B5C6-4D7E-8F90-A1B2C3D4E5F7")!
+            ),
+            occurredAt: occurred,
+            disputedSpeciesID: disputed
+        )
+        let item = try OutboxPayload.wrongSpeciesReport(report).makeItem(createdAt: occurred)
+        return try RemoteCoding.encoder.encode(SyncRequestBody(items: [try RemoteAPI.syncItemBody(for: item)]))
+    }
+
+    /// Red-proof: rename `ReviewReport.disputedSpeciesID` to `disputedSpecies` — red here, and on
+    /// the service the report would dispute whatever species is in force when it arrives.
+    @Test("a queued species report is sent with its disputed species, exactly as the service's golden holds it")
+    func theReportMatchesTheGolden() throws {
+        let disputed = UUID(uuidString: "7F3C1D22-5E6A-4B90-8C11-2D3E4F5A6B7C")!
+        let goldenData = try Self.fixture("sync_wrong_species_report.json")
+        let golden = try Self.object(goldenData)
+        #expect(golden.isEqual(NSDictionary()) == false, "sync_wrong_species_report.json parsed as nothing")
+        // Calibration: the same report without the disputed species is not the golden.
+        #expect(!(try Self.object(try Self.reportBody(disputed: nil))).isEqual(golden),
+                "a report with no disputedSpeciesID compared equal; the comparison ignores it")
+
+        let oursData = try Self.reportBody(disputed: disputed)
+        #expect(
+            try Self.object(oursData).isEqual(golden),
+            """
+            the phone's wrong_species_report body is not the golden.
+            ours:   \(String(decoding: oursData, as: UTF8.self))
+            golden: \(String(decoding: goldenData, as: UTF8.self))
+            """
+        )
+    }
+
+    /// A report queued by an older build has no `disputedSpeciesID`, and still decodes.
+    @Test("a queued report from an older build decodes, with no disputed species")
+    func anOlderReportStillDecodes() throws {
+        let older = """
+            {"clientUUID":"2D4F6A8C-0E1B-4C3D-9E5F-7A9B1C3D5E01","flagID":"4E7A2C10-9B3D-4F5E-8A6C-1D2E3F4A5B02",
+             "treeID":"C3A1F7E2-5D4B-4E8A-9B6C-2F1E0D9C8B7B","kind":"wrong_species",
+             "attribution":{"deviceID":"D1E2F3A4-B5C6-4D7E-8F90-A1B2C3D4E5F7"},"occurredAt":"2026-11-20T18:30:00Z"}
+            """
+        let payload = try OutboxPayload.decode(kind: .wrongSpeciesReport, from: Data(older.utf8))
+        guard case let .wrongSpeciesReport(report) = payload else {
+            Issue.record("decoded as \(payload)")
+            return
+        }
+        #expect(report.disputedSpeciesID == nil)
+        #expect(report.kind == .wrongSpecies)
+    }
+}

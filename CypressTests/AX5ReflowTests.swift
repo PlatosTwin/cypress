@@ -136,7 +136,9 @@ struct AX5ReflowTests {
         of content: some View,
         width: CGFloat = phoneWidth,
         settleIterations: Int = 8,
-        size: DynamicTypeSize = .accessibility5
+        size: DynamicTypeSize = .accessibility5,
+        settleFloor: Duration = RenderSettle.defaultFloor,
+        ready: () -> Bool = { true }
     ) async -> CGSize {
         let host = UIHostingController(
             rootView: AnyView(content.environment(\.dynamicTypeSize, size))
@@ -150,11 +152,14 @@ struct AX5ReflowTests {
             window.isHidden = true
             window.rootViewController = nil
         }
-        for _ in 0..<settleIterations {
-            try? await Task.sleep(for: .milliseconds(120))
-            host.view.setNeedsLayout()
-            host.view.layoutIfNeeded()
-        }
+        // The budget is what the old loop slept: `settleIterations` × 120 ms.
+        await RenderSettle.settle(
+            host.view,
+            label: "ax5Size \(type(of: content))",
+            floor: settleFloor,
+            budget: .milliseconds(120 * settleIterations),
+            ready: ready
+        )
         let insets = host.view.safeAreaInsets
         let measured = host.sizeThatFits(in: CGSize(width: width, height: .greatestFiniteMagnitude))
         return CGSize(
@@ -170,7 +175,25 @@ struct AX5ReflowTests {
     /// footer drew clipped at both edges. The screen must report the width it is offered.
     @Test("screen 02 (identify, populated) stays inside the phone's width at AX5")
     func identifyFitsThePhoneWidthAtAX5() async {
-        let measured = await Self.ax5Size(of: VisitPreviewFixtures.identify())
+        // Screen 02 shows a "Finding you" notice, with no spinner, until its shortlist query
+        // answers, and that notice fits the phone with or without the E196 defect. So the measure
+        // waits for the answer and the test checks that it came.
+        let api = AnsweredShortlistAPI()
+        let measured = await Self.ax5Size(
+            of: VisitIdentifyView(
+                api: api,
+                location: VisitLocationProvider(
+                    pinnedFix: .located(VisitPreviewFixtures.origin, accuracyM: 9)
+                ),
+                communityAsked: nil,
+                onPick: { _ in },
+                onAddTree: {},
+                onBack: {}
+            ),
+            settleFloor: RenderSettle.legacyBudget,
+            ready: { api.answered }
+        )
+        #expect(api.answered, "the shortlist query never answered, so this measured the 'Finding you' notice")
         #expect(
             measured.width <= Self.phoneWidth,
             "screen 02 measured \(measured.width) pt wide on a \(Self.phoneWidth) pt phone"
@@ -307,6 +330,48 @@ struct AX5ReflowTests {
         #expect(
             QuadActionRow.rows(of: all, isAccessibilitySize: true).flatMap(\.self) == all
         )
+    }
+
+    // MARK: - ROADMAP chip 153 · the timeline row's label kept breaking inside words
+
+    /// The timestamp moves under the row at the accessibility sizes, and stays beside the label
+    /// at every other size, where §2 draws it.
+    @Test("the activity row's timestamp is beside the label drawn, under it at accessibility sizes")
+    func activityRowStacksItsTimestamp() {
+        #expect(ActivityRow.stacksTimestamp(isAccessibilitySize: false) == false)
+        #expect(ActivityRow.stacksTimestamp(isAccessibilitySize: true) == true)
+    }
+
+    /// Chip 153: at AX5 the row's `.fixedSize()` timestamp took its whole width beside the label,
+    /// and the label column was left narrower than one word. The renders showed "Specie / s",
+    /// "drippi / ng", "watere / d" and "Firs / t".
+    ///
+    /// **How a word break is measured.** A row whose label is one word is one line tall when the
+    /// word fits its column, and two or more when the word breaks. So the row with the word must
+    /// measure the same height as the row with one letter in its place, at every phone width. Each
+    /// word is one the timeline draws, and the timestamp is the widest one it draws (screen 19's
+    /// `May 2026`). The row is offered the phone's width less the screen's gutters, as 03, 13 and
+    /// 19 place it.
+    @Test("an activity row's label keeps every word whole at AX5, on every phone width")
+    func activityRowKeepsWordsWholeAtAX5() async {
+        func height(_ label: String, width: CGFloat) async -> CGFloat {
+            await Self.ax5Size(
+                of: ActivityRow(leading: .sync, label: label, detail: "", timestamp: "May 2026"),
+                width: width,
+                settleIterations: 2
+            ).height
+        }
+        for phone in Self.heightBoundWidths {
+            let width = phone - 2 * CypressSpacing.gutter
+            let oneLetter = await height("S", width: width)
+            for word in ["Species", "dripping", "watered", "First", "corrected"] {
+                let measured = await height(word, width: width)
+                #expect(
+                    measured == oneLetter,
+                    "at \(phone) pt the row with \"\(word)\" is \(measured) pt tall and the row with one letter \(oneLetter) pt: the word broke across lines"
+                )
+            }
+        }
     }
 
     // MARK: - Task #14 item 2 · screen 10's link releases its clamp at AX5 (E60)
@@ -1409,7 +1474,7 @@ struct AX5ReflowTests {
             let host = UIHostingController(rootView: AnyView(
                 MapLocationNotice(
                     title: MapInventoryCopy.title,
-                    message: MapInventoryCopy.message,
+                    message: MapInventoryCopy.notOnTheCityInventory,
                     maxHeight: maxHeight
                 )
                 .environment(\.dynamicTypeSize, .accessibility5)
@@ -1440,7 +1505,7 @@ struct AX5ReflowTests {
             let host = UIHostingController(
                 rootView: MapLocationNotice(
                     title: MapInventoryCopy.title,
-                    message: MapInventoryCopy.message,
+                    message: MapInventoryCopy.notOnTheCityInventory,
                     maxHeight: maxHeight
                 )
             )
@@ -1457,6 +1522,53 @@ struct AX5ReflowTests {
             """
         )
     }
+}
+
+/// `VisitPreviewAPI` with one fact added: whether the shortlist query has answered. It is how
+/// `identifyFitsThePhoneWidthAtAX5` knows it measured the shortlist and not the notice before it.
+final class AnsweredShortlistAPI: CypressAPI, @unchecked Sendable {
+    private let inner = VisitPreviewAPI()
+    private let lock = NSLock()
+    private var answeredFlag = false
+
+    var answered: Bool { lock.withLock { answeredFlag } }
+
+    func treesNear(_ coordinate: Coordinate, radiusM: Double, limit: Int) async throws -> [NearbyTree] {
+        let rows = try await inner.treesNear(coordinate, radiusM: radiusM, limit: limit)
+        lock.withLock { answeredFlag = true }
+        return rows
+    }
+
+    func treeProfile(id: UUID) async throws -> TreeProfile { try await inner.treeProfile(id: id) }
+    func mapContent(in viewport: MapViewport) async throws -> Cypress.MapContent {
+        try await inner.mapContent(in: viewport)
+    }
+    func addTree(_ draft: TreeDraft) async throws -> Tree { try await inner.addTree(draft) }
+    func species(id: UUID) async throws -> Species { try await inner.species(id: id) }
+    func searchSpecies(query: String, limit: Int) async throws -> [Species] {
+        try await inner.searchSpecies(query: query, limit: limit)
+    }
+    func sync(_ items: [OutboxItem]) async throws -> [SyncResult] { try await inner.sync(items) }
+    func beginPhotoUpload(_ request: PhotoUploadRequest) async throws -> PhotoUploadTicket {
+        try await inner.beginPhotoUpload(request)
+    }
+    func uploadPhoto(at localPath: String, ticket: PhotoUploadTicket) async throws {
+        try await inner.uploadPhoto(at: localPath, ticket: ticket)
+    }
+    func grove() async throws -> [GroveEntry] { try await inner.grove() }
+    func journal(cursor: String?, limit: Int) async throws -> Page<JournalEntry> {
+        try await inner.journal(cursor: cursor, limit: limit)
+    }
+    func claimDevice(deviceUUID: UUID, userID: UUID) async throws {
+        try await inner.claimDevice(deviceUUID: deviceUUID, userID: userID)
+    }
+    func deleteAccount(_ choice: AccountDeletionChoice) async throws -> AccountDeletion.Outcome {
+        try await inner.deleteAccount(choice)
+    }
+    func logHazardRedirect(_ event: HazardRedirectEvent) async throws {
+        try await inner.logHazardRedirect(event)
+    }
+    func exportLatest(_ format: ExportFormat) async throws -> Data { try await inner.exportLatest(format) }
 }
 #endif
 

@@ -1,0 +1,512 @@
+import Foundation
+import Testing
+@testable import Cypress
+
+/// A community tree's pin move, and the adder it depends on (`AppSchema` v23, the community-trees
+/// round C1).
+///
+/// The sentences the round has to make true, one group of tests each:
+///
+/// 1. **`addTree` records who added the tree and where** — the adder on the row and the root of the
+///    location chain, whose id is the tree's.
+/// 2. **The adder moves the pin, and nobody else does.** A move appends a head, stamps the old one,
+///    moves the tree's read cache and queues a `location_correction`, in one transaction; somebody
+///    else, nobody, a signed-out phone on its account's tree, a cached tree and an unknown id are
+///    each refused with the answer the service would give.
+/// 3. **A move may land within 10 m of another tree**, a cached one included (the owner's ruling of
+///    2026-11-14, which removed the 10 m refusal).
+/// 4. **`claimDevice` adopts the tree and its chain**, so the account moves it and the signed-out
+///    phone no longer can.
+///
+/// The deletion doors over the same rows are `CommunityTreeDeletionTests`.
+@Suite("Community trees · location corrections")
+struct LocationCorrectionTests {
+
+    static let deviceID = UUID(uuidString: "D0000000-0000-4000-8000-0000000C1001")!
+    static let otherDeviceID = UUID(uuidString: "D0000000-0000-4000-8000-0000000C1002")!
+    static let userID = UUID(uuidString: "0E000000-0000-4000-8000-0000000C1003")!
+
+    /// West of Ocean Beach, where the street-tree inventory has nothing within 10 m
+    /// (`CommunityOutboxKindTests.offshore`'s argument). These tests run without a seed anyway.
+    static let offshore = Coordinate(latitude: 37.7600, longitude: -122.5400)
+
+    /// A staged capture `addTree` can strip. A real file, because the strip reads it.
+    static func capture(_ name: String) -> String {
+        let path = NSTemporaryDirectory() + "cypress-c1-\(name)-\(UUID().uuidString).jpg"
+        FileManager.default.createFile(atPath: path, contents: Data([0xFF, 0xD8, 0xFF, 0xD9]))
+        return path
+    }
+
+    static func add(
+        _ api: LocalAPI,
+        at coordinate: Coordinate = offshore,
+        clientUUID: UUID = UUID()
+    ) async throws -> Tree {
+        try await api.addTree(
+            TreeDraft(
+                clientUUID: clientUUID,
+                coordinate: coordinate,
+                photoLocalPath: capture("add"),
+                attribution: .anonymous(deviceID: deviceID)
+            )
+        )
+    }
+
+    static func chain(_ store: CypressStore, _ treeID: UUID) async throws -> [TreeLocation] {
+        try await store.queue.read { try TreeLocationStore().chain(treeID: treeID, connection: $0) }
+    }
+
+    static func adder(_ store: CypressStore, _ treeID: UUID) async throws -> ContributionOwner? {
+        try await store.queue.read { try CommunityTreeStore().adder(treeID: treeID, connection: $0) }
+    }
+
+    static func corrections(_ store: CypressStore) async throws -> [OutboxStore.Record] {
+        try await store.queue.read { try OutboxStore().allItems(connection: $0) }
+            .filter { $0.item.kind == .locationCorrection }
+    }
+
+    static func profileCoordinate(_ api: LocalAPI, _ id: UUID) async throws -> Coordinate {
+        try await api.treeProfile(id: id).tree.coordinate
+    }
+
+    // MARK: - 1. The add
+
+    /// Red-proof: pass `.nobody` as `adder:` in `LocalAPI.addTree` — red on the adder, with
+    /// "the add recorded nobody".
+    @Test("adding a tree records its adder and the root of its location chain")
+    func addingATreeRecordsItsAdderAndRoot() async throws {
+        let store = try await CypressStore.inMemory()
+        let api = LocalAPI(store: store, deviceID: Self.deviceID, userID: Self.userID)
+        let key = UUID()
+        let tree = try await Self.add(api, clientUUID: key)
+
+        let adder = try await Self.adder(store, tree.id)
+        #expect(adder == .user(Self.userID), "the add recorded \(String(describing: adder)), not the account")
+
+        let chain = try await Self.chain(store, tree.id)
+        #expect(chain.count == 1, "a new tree has \(chain.count) positions, not its root alone")
+        let root = try #require(chain.first)
+        #expect(root.id == tree.id, "the root's id is not the tree's")
+        #expect(root.isRoot && root.isCurrent)
+        #expect(root.clientUUID == key, "the root is not keyed on the add")
+        #expect(root.coordinate == Self.offshore)
+        #expect(root.placement == tree.placement)
+        #expect(root.owner == .user(Self.userID))
+    }
+
+    // MARK: - 2. The adder moves the pin
+
+    /// The whole happy path, and every place the move has to land.
+    ///
+    /// Red-proofs, each read by its message: drop `communityTrees.move` from `correctLocation` and
+    /// this goes red on "the profile still shows the old position"; drop `locations.supersede` and
+    /// the insert is refused by the one-head index (a `SQLiteError`, the test fails on the throw);
+    /// drop `queueAppliedMutation` and it goes red on "queued 0 corrections".
+    @Test("the adder moves the pin: the chain gains a head, the tree follows, and the move is queued")
+    func theAdderMovesThePin() async throws {
+        let store = try await CypressStore.inMemory()
+        let api = LocalAPI(store: store, deviceID: Self.deviceID)
+        let tree = try await Self.add(api)
+        let destination = ProximityDedupeTests.diagonal(from: Self.offshore, meters: 30)
+
+        let moved = try await api.correctLocation(
+            treeID: tree.id, to: destination, placement: .contributorPlaced, locationAccuracyM: 4.5
+        )
+        #expect(moved.id == tree.id)
+        #expect(moved.coordinate == destination, "the returned tree is not where it was moved to")
+        #expect(moved.placement == .contributorPlaced)
+
+        let shown = try await Self.profileCoordinate(api, tree.id)
+        #expect(shown == destination, "the profile still shows the old position: \(shown)")
+        let near = try await api.treesNear(destination, radiusM: 2, limit: 5)
+        #expect(near.map(\.tree.id) == [tree.id], "the shortlist does not find the tree where it now is")
+
+        let chain = try await Self.chain(store, tree.id)
+        #expect(chain.count == 2, "the chain holds \(chain.count) positions after one move")
+        let root = try #require(chain.first), head = try #require(chain.last)
+        #expect(root.isRoot && root.coordinate == Self.offshore, "the root moved; history was overwritten")
+        #expect(root.supersededBy == head.id, "the root is not stamped with its successor")
+        #expect(head.isCurrent && !head.isRoot)
+        #expect(head.id != tree.id, "the correction took the tree's id, which the service refuses")
+        #expect(head.coordinate == destination)
+        #expect(head.placement == .contributorPlaced)
+        #expect(head.locationAccuracyM == 4.5)
+        #expect(head.owner == .device(Self.deviceID))
+
+        let queued = try await Self.corrections(store)
+        #expect(queued.count == 1, "the move queued \(queued.count) corrections")
+        let record = try #require(queued.first)
+        #expect(record.locallyApplied, "the correction was queued unapplied; a drain would apply it twice")
+        guard case let .locationCorrection(correction) = try OutboxPayload.decode(
+            kind: record.item.kind, from: record.item.payload
+        ) else {
+            Issue.record("the queued row did not decode as a location correction")
+            return
+        }
+        // The two ids the wire carries, and which row each names.
+        #expect(correction.id == head.id, "the payload's id is not the chain row's")
+        #expect(correction.clientUUID == record.item.clientUUID, "the payload's key is not the row's")
+        #expect(correction.clientUUID == head.clientUUID, "the chain row is not keyed on the act")
+        #expect(correction.id != correction.clientUUID)
+        #expect(correction.treeID == tree.id)
+        #expect(correction.coordinate == destination)
+        #expect(correction.placement == .contributorPlaced)
+        #expect(correction.locationAccuracyM == 4.5)
+        #expect(correction.attribution.deviceID == Self.deviceID)
+        #expect(correction.attribution.userID == nil)
+    }
+
+    /// **The chain's order is its links, not its clock.** Every act here happens at one frozen
+    /// moment, so `occurred_at` and `created_at` tie on every row and only the `superseded_by`
+    /// links can say which position came first. That is the state `theAdderMovesThePin` reached
+    /// on main (CI run 43543728441) when an add and a move landed inside one millisecond: the chain
+    /// read back head first.
+    ///
+    /// Six trees, each moved twice, so the old tie-break on random ids would have to guess all six
+    /// three-row orders right by chance (1 in 6 each) to pass.
+    ///
+    /// Red-proof: return the fetched rows from `TreeLocationStore.chain` without
+    /// `orderedByLinks` (the old `ORDER BY occurred_at, created_at, id`) — red on "read back as".
+    @Test("a chain whose rows share one timestamp reads root first, in the order of its links")
+    func aChainWithTiedTimestampsFollowsItsLinks() async throws {
+        let frozen = Date(timeIntervalSince1970: 1_790_000_000)
+        let store = try await CypressStore.inMemory()
+        let api = LocalAPI(store: store, deviceID: Self.deviceID, now: { frozen })
+
+        for index in 0..<6 {
+            let origin = ProximityDedupeTests.diagonal(from: Self.offshore, meters: 200 * Double(index))
+            let tree = try await Self.add(api, at: origin)
+            let first = ProximityDedupeTests.diagonal(from: origin, meters: 30)
+            let second = ProximityDedupeTests.diagonal(from: origin, meters: 60)
+            _ = try await api.correctLocation(
+                treeID: tree.id, to: first, placement: .contributorPlaced, locationAccuracyM: nil
+            )
+            _ = try await api.correctLocation(
+                treeID: tree.id, to: second, placement: .contributorPlaced, locationAccuracyM: nil
+            )
+
+            let chain = try await Self.chain(store, tree.id)
+            #expect(
+                chain.allSatisfy { $0.occurredAt == frozen && $0.createdAt == frozen },
+                "fixture: tree \(index)'s rows do not share one timestamp, so this proves nothing"
+            )
+            #expect(
+                chain.map(\.coordinate) == [origin, first, second],
+                """
+                tree \(index) was added and then moved twice, and its chain read back as \
+                \(chain.map(\.coordinate)) where the acts were \([origin, first, second])
+                """
+            )
+            #expect(chain.first?.id == tree.id, "tree \(index)'s chain does not start at its root")
+            let links = zip(chain, chain.dropFirst()).allSatisfy { $0.supersededBy == $1.id }
+            #expect(links, "tree \(index)'s chain is not in the order of its superseded_by links")
+            #expect(chain.last?.isCurrent == true, "tree \(index)'s chain does not end at its head")
+        }
+    }
+
+    /// The ordering helper on chains the links cannot fully place. Pure, so the ids can be chosen:
+    /// every id here sorts against the chain, which is the case the old tie-break got wrong.
+    @Test("rows the links cannot place keep their place after the walked chain")
+    func orderingByLinksKeepsWhatItCannotPlace() {
+        let moment = Date(timeIntervalSince1970: 1_790_000_000)
+        func row(_ id: String, next: String? = nil) -> TreeLocation {
+            TreeLocation(
+                id: UUID(uuidString: id)!,
+                treeID: UUID(uuidString: "FFFFFFFF-0000-4000-8000-000000000000")!,
+                clientUUID: UUID(),
+                coordinate: Self.offshore,
+                placement: .gps,
+                owner: .nobody,
+                supersededBy: next.flatMap(UUID.init(uuidString:)),
+                occurredAt: moment,
+                createdAt: moment,
+                updatedAt: moment
+            )
+        }
+        let root = "FFFFFFFF-0000-4000-8000-000000000000"
+        let middle = "00000000-0000-4000-8000-000000000002"
+        let head = "00000000-0000-4000-8000-000000000001"
+        let stray = "00000000-0000-4000-8000-000000000000"
+
+        // Arrives in id order, as the old ORDER BY would hand it over on a tie: head first.
+        let linked = [row(head), row(middle, next: head), row(root, next: middle)]
+        #expect(
+            TreeLocationStore.orderedByLinks(linked).map(\.id.uuidString) == [root, middle, head],
+            "a three-row chain arriving in id order was not put back in the order of its links"
+        )
+
+        // A second row with no predecessor: the walk starts at the first one in time order (the
+        // stray here), and the rows it does not reach follow in the order they arrived, kept
+        // rather than dropped.
+        let damaged = [row(stray), row(root, next: head), row(head)]
+        #expect(
+            TreeLocationStore.orderedByLinks(damaged).map(\.id.uuidString) == [stray, root, head],
+            "a chain with two roots did not keep every row in time order after the walk"
+        )
+
+        // A link that loops back ends the walk instead of spinning.
+        let loop = [row(root, next: head), row(head, next: root)]
+        #expect(TreeLocationStore.orderedByLinks(loop).count == 2, "a looped chain did not come back whole")
+    }
+
+    /// Red-proof: make `correctLocation` skip the `isOwned(by:)` guard — red here on "a tree nobody
+    /// added was moved".
+    @Test("a tree whose adder is nobody cannot be moved by anybody")
+    func nobodysTreeCannotBeMoved() async throws {
+        let store = try await CypressStore.inMemory()
+        let api = LocalAPI(store: store, deviceID: Self.deviceID)
+        // Written the way an anonymized tree reads: through the store, with no adder.
+        let tree = Tree(source: .community, coordinate: Self.offshore)
+        try await store.queue.write { connection in
+            try CommunityTreeStore().insert(tree, clientUUID: UUID(), connection: connection)
+        }
+        let adder = try await Self.adder(store, tree.id)
+        #expect(adder == .nobody, "fixture: the tree has an adder, \(String(describing: adder))")
+        let root = try #require(try await Self.chain(store, tree.id).first)
+        #expect(root.owner == .nobody, "fixture: the root has a mover")
+
+        await #expect(throws: APIError.forbidden, "a tree nobody added was moved") {
+            _ = try await api.correctLocation(
+                treeID: tree.id,
+                to: ProximityDedupeTests.diagonal(from: Self.offshore, meters: 30),
+                placement: .gps,
+                locationAccuracyM: nil
+            )
+        }
+        #expect(try await Self.corrections(store).isEmpty)
+        #expect(try await Self.chain(store, tree.id).count == 1)
+    }
+
+    @Test("somebody else's tree cannot be moved, and the refusal changes nothing")
+    func somebodyElsesTreeCannotBeMoved() async throws {
+        let store = try await CypressStore.inMemory()
+        let adder = LocalAPI(store: store, deviceID: Self.deviceID)
+        let stranger = LocalAPI(store: store, deviceID: Self.otherDeviceID)
+        let tree = try await Self.add(adder)
+
+        await #expect(throws: APIError.forbidden) {
+            _ = try await stranger.correctLocation(
+                treeID: tree.id,
+                to: ProximityDedupeTests.diagonal(from: Self.offshore, meters: 30),
+                placement: .gps,
+                locationAccuracyM: nil
+            )
+        }
+        #expect(try await Self.corrections(store).isEmpty)
+        #expect(try await Self.chain(store, tree.id).count == 1)
+        #expect(try await Self.profileCoordinate(adder, tree.id) == Self.offshore)
+    }
+
+    /// The service's rule after `POST /devices/claim` (`TestAClaimedDevicesOwnCredentialNoLongerActsOnItsTrees`):
+    /// the phone signed out is a stranger to the account's trees. And the claim is what makes the
+    /// signed-out add the account's.
+    ///
+    /// Red-proof: remove `community_trees` from `claimDevice`'s adoption loop — red on "the claim did
+    /// not adopt the tree" and on the account's move being refused.
+    @Test("a claim adopts the tree and its chain, and the signed-out phone cannot move it afterwards")
+    func aClaimAdoptsTheTree() async throws {
+        let store = try await CypressStore.inMemory()
+        let signedOut = LocalAPI(store: store, deviceID: Self.deviceID)
+        let tree = try await Self.add(signedOut)
+        #expect(try await Self.adder(store, tree.id) == .device(Self.deviceID), "fixture: the add was not the device's")
+
+        // A species claim this installation made on it, signed out (chip 71).
+        let claim = SpeciesAssertion(
+            treeID: tree.id, speciesID: UUID(), source: .community, owner: .device(Self.deviceID)
+        )
+        try await store.queue.write { try SpeciesAssertionStore().insert(claim, connection: $0) }
+
+        let account = LocalAPI(store: store, deviceID: Self.deviceID)
+        try await account.claimDevice(deviceUUID: Self.deviceID, userID: Self.userID)
+
+        let claims = try await store.queue.read {
+            try SpeciesAssertionStore().chain(treeID: tree.id, connection: $0)
+        }
+        #expect(claims.first?.owner == .user(Self.userID), "the claim did not adopt the species claim: \(claims.map(\.owner))")
+
+        let adopted = try await Self.adder(store, tree.id)
+        #expect(adopted == .user(Self.userID), "the claim did not adopt the tree: \(String(describing: adopted))")
+        let root = try #require(try await Self.chain(store, tree.id).first)
+        #expect(root.owner == .user(Self.userID), "the claim did not adopt the root position")
+
+        // A fresh signed-out handle on the same installation: the stranger the service now sees.
+        let afterwards = LocalAPI(store: store, deviceID: Self.deviceID)
+        await #expect(throws: APIError.forbidden, "the signed-out phone moved its account's tree") {
+            _ = try await afterwards.correctLocation(
+                treeID: tree.id,
+                to: ProximityDedupeTests.diagonal(from: Self.offshore, meters: 30),
+                placement: .gps,
+                locationAccuracyM: nil
+            )
+        }
+        // And the account can.
+        let moved = try await account.correctLocation(
+            treeID: tree.id,
+            to: ProximityDedupeTests.diagonal(from: Self.offshore, meters: 30),
+            placement: .gps,
+            locationAccuracyM: nil
+        )
+        #expect(moved.coordinate != Self.offshore)
+        let queued = try #require(try await Self.corrections(store).first)
+        guard case let .locationCorrection(correction) = try OutboxPayload.decode(
+            kind: queued.item.kind, from: queued.item.payload
+        ) else {
+            Issue.record("the queued row did not decode as a location correction")
+            return
+        }
+        #expect(correction.attribution.userID == Self.userID)
+    }
+
+    @Test("a cached tree is forbidden, an unknown id is not found, and a withdrawn tree is not found")
+    func theOtherRefusals() async throws {
+        let store = try await CypressStore.inMemory()
+        let api = LocalAPI(store: store, deviceID: Self.deviceID)
+        let destination = ProximityDedupeTests.diagonal(from: Self.offshore, meters: 300)
+
+        // Somebody else's published tree, as the service sent it.
+        let cached = Tree(source: .community, coordinate: Self.offshore)
+        let page = try await store.queue.write { connection in
+            try CommunityTreeCacheStore().apply(
+                tile: "t", trees: [cached], withdrawnTreeIDs: [], nextCursor: "c",
+                at: Date(), connection: connection
+            )
+        }
+        #expect(page.stored == 1, "fixture: the cached tree was not stored")
+        await #expect(throws: APIError.forbidden, "somebody else's cached tree was moved") {
+            _ = try await api.correctLocation(
+                treeID: cached.id, to: destination, placement: .gps, locationAccuracyM: nil
+            )
+        }
+
+        await #expect(throws: APIError.notFound) {
+            _ = try await api.correctLocation(
+                treeID: UUID(), to: destination, placement: .gps, locationAccuracyM: nil
+            )
+        }
+
+        let withdrawn = try await Self.add(api, at: ProximityDedupeTests.diagonal(from: Self.offshore, meters: -300))
+        _ = try await store.queue.write { connection in
+            try CommunityTreeStore().withdraw(treeID: withdrawn.id, at: Date(), connection: connection)
+        }
+        await #expect(throws: APIError.notFound, "a withdrawn tree was moved") {
+            _ = try await api.correctLocation(
+                treeID: withdrawn.id, to: destination, placement: .gps, locationAccuracyM: nil
+            )
+        }
+        #expect(try await Self.corrections(store).isEmpty)
+    }
+
+    /// Red-proof: `-90.0...90.0` widened to `-91.0...91.0` goes red on the 91° case only; the NaN
+    /// case goes red if `!(accuracy >= 0)` is rewritten as `accuracy < 0`.
+    @Test("a position off the map or an accuracy that is not a distance is refused")
+    func invalidPositionsAreRefused() async throws {
+        let store = try await CypressStore.inMemory()
+        let api = LocalAPI(store: store, deviceID: Self.deviceID)
+        let tree = try await Self.add(api)
+        let near = ProximityDedupeTests.diagonal(from: Self.offshore, meters: 30)
+
+        for (coordinate, accuracy) in [
+            (Coordinate(latitude: 91, longitude: near.longitude), nil),
+            (Coordinate(latitude: near.latitude, longitude: -181), nil),
+            (near, -1.0),
+            (near, Double.nan)
+        ] as [(Coordinate, Double?)] {
+            await #expect(throws: APIError.validationFailed, "\(coordinate) ± \(String(describing: accuracy)) was accepted") {
+                _ = try await api.correctLocation(
+                    treeID: tree.id, to: coordinate, placement: .gps, locationAccuracyM: accuracy
+                )
+            }
+        }
+        #expect(try await Self.corrections(store).isEmpty)
+    }
+
+    // MARK: - 3. No 10 m rule
+
+    /// Red-proof: put back a refusal in `correctLocation` when `treesNear` at
+    /// `TreeDraft.proximityDedupeRadiusM`, less the tree itself, is not empty. The move 5 m from the
+    /// neighbor throws, and the test fails on that error.
+    @Test("a move within 10 m of another tree lands, a cached tree included")
+    func aMoveMayLandNearAnotherTree() async throws {
+        let store = try await CypressStore.inMemory()
+        let api = LocalAPI(store: store, deviceID: Self.deviceID)
+        let tree = try await Self.add(api)
+        let neighbor = try await Self.add(api, at: ProximityDedupeTests.diagonal(from: Self.offshore, meters: 60))
+        let cachedSpot = ProximityDedupeTests.diagonal(from: Self.offshore, meters: -60)
+        let cached = Tree(source: .community, coordinate: cachedSpot)
+        _ = try await store.queue.write { connection in
+            try CommunityTreeCacheStore().apply(
+                tile: "t", trees: [cached], withdrawnTreeIDs: [], nextCursor: "c",
+                at: Date(), connection: connection
+            )
+        }
+
+        // Three meters from where it stands: inside 10 m of nothing but itself.
+        let nudged = try await api.correctLocation(
+            treeID: tree.id,
+            to: ProximityDedupeTests.diagonal(from: Self.offshore, meters: 3),
+            placement: .contributorPlaced,
+            locationAccuracyM: nil
+        )
+        #expect(nudged.coordinate != Self.offshore)
+
+        for (target, other) in [
+            (ProximityDedupeTests.diagonal(from: neighbor.coordinate, meters: 5), neighbor.id),
+            (ProximityDedupeTests.diagonal(from: cachedSpot, meters: 5), cached.id)
+        ] {
+            let moved = try await api.correctLocation(
+                treeID: tree.id, to: target, placement: .contributorPlaced, locationAccuracyM: nil
+            )
+            #expect(moved.coordinate == target, "the move 5 m from \(other) did not land where it was put")
+            // The other tree is still there and still within 10 m: the move went next to it.
+            let near = try await api.treesNear(target, radiusM: TreeDraft.proximityDedupeRadiusM, limit: 10)
+            #expect(near.map(\.tree.id).contains(other), "\(near.map(\.tree.id))")
+        }
+        #expect(try await Self.corrections(store).count == 3, "a move near another tree was not queued")
+        #expect(try await Self.chain(store, tree.id).count == 4)
+    }
+
+    // MARK: - The transaction
+
+    /// **The control is load-bearing**, for `CommunityOutboxKindTests.aFailedEnqueueRollsTheMutationBack`'s
+    /// reason: the same move runs first with the queue healthy and is asserted to land.
+    @Test("an enqueue that fails rolls the move back with it")
+    func aFailedEnqueueRollsTheMoveBack() async throws {
+        let store = try await CypressStore.inMemory()
+        let api = LocalAPI(store: store, deviceID: Self.deviceID)
+        let control = try await Self.add(api)
+        let subject = try await Self.add(api, at: ProximityDedupeTests.diagonal(from: Self.offshore, meters: 200))
+
+        let controlTarget = ProximityDedupeTests.diagonal(from: control.coordinate, meters: 30)
+        _ = try await api.correctLocation(
+            treeID: control.id, to: controlTarget, placement: .gps, locationAccuracyM: nil
+        )
+        #expect(try await Self.chain(store, control.id).count == 2, "fixture: the healthy move did not land")
+
+        let refusal = "the queue refused this location correction"
+        try await store.queue.write { connection in
+            try connection.execute("""
+                CREATE TRIGGER cypress_test_refuse_outbox BEFORE INSERT ON outbox
+                BEGIN SELECT RAISE(ABORT, '\(refusal)'); END;
+                """)
+        }
+
+        var thrown: (any Error)?
+        do {
+            _ = try await api.correctLocation(
+                treeID: subject.id,
+                to: ProximityDedupeTests.diagonal(from: subject.coordinate, meters: 30),
+                placement: .gps,
+                locationAccuracyM: nil
+            )
+        } catch {
+            thrown = error
+        }
+        let sqlite = try #require(thrown as? SQLiteError, "the move did not fail at the enqueue: \(String(describing: thrown))")
+        #expect(sqlite.message.contains(refusal), "something else refused: \(sqlite.message)")
+
+        let chain = try await Self.chain(store, subject.id)
+        #expect(chain.count == 1, "\(chain.count) positions survived an enqueue that failed")
+        #expect(chain.first?.isCurrent == true, "the root was left stamped by a move that rolled back")
+        #expect(try await Self.profileCoordinate(api, subject.id) == subject.coordinate)
+    }
+}

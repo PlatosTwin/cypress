@@ -130,7 +130,7 @@ struct VisitPinAdjustView: View {
     /// annotation has to fight it for the touch.
     ///
     /// **No pins and no clusters.** The trees already on record nearby would genuinely help — they
-    /// are what the 10 m dedupe is about to refuse against — but a pin on this screen would be a
+    /// are what the add screen's "ALREADY ON RECORD" note will list — but a pin on this screen would be a
     /// labeled button with nowhere to go: opening a tree profile from inside a placement would
     /// abandon a photograph, and a button that does nothing is worse than no button (ERRATA E125's
     /// lesson, from the other direction). Left out on purpose; see the round's report for the shape

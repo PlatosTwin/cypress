@@ -24,9 +24,13 @@ conflicts with convenience, the rule wins.
   `Tools/verify_test_log.sh <log>`. Never conclude from an exit code: `nohup … &` returns the
   shell's success, a killed build leaves a truncated log under a wrapper claiming success, and a
   trailing `echo` in an `&&` chain lies.
-- The only meaningful unit-test line is **`Test run with N tests passed`** (Swift Testing).
+- The only meaningful unit-test line is **`Test run with N tests in M suites passed`** (or
+  `in 1 suite`) (Swift Testing). Let `Tools/verify_test_log.sh` judge it, or find it with
+  `grep -aE 'Test run with'`; a grep for `tests passed` matches nothing on a green log.
   `Executed 0 tests / All tests passed` is XCTest reporting on a suite it cannot see. UI tests
-  (XCTest) need `** TEST SUCCEEDED **` **and** a nonzero executed count.
+  (XCTest) need `** TEST SUCCEEDED **` **and** a nonzero executed count. CI's UI shards run
+  `test-without-building`, which ends `** TEST EXECUTE SUCCEEDED **` instead; the verifier reads
+  both. `** TEST BUILD SUCCEEDED **` (build-for-testing) is not a test result: nothing ran.
 - **Never trust an artifact you did not watch being produced.** Before reading a log, screenshot,
   or build as evidence, check its mtime, its provenance (which build, worktree, simulator), and
   its content. Stale DerivedData, stale logs at a reused path, an uncommitted asset, an empty
@@ -55,11 +59,18 @@ conflicts with convenience, the rule wins.
     rather than the run.
   - `git stash pop` with no argument popped a stash from a deleted agent worktree, nine days old.
     A `pop` acts on whatever it finds.
+  - `log show …` in zsh runs the shell's own `log` builtin, which prints `too many arguments` to
+    stderr and exits 1. With stderr discarded (`2>/dev/null`, a pipe into `wc -l`, a command
+    substitution) that reads as "the daemon logged nothing" (2026-09-29). Call `/usr/bin/log`, and
+    check that `/usr/bin/log show --last 1m | wc -l` is nonzero before believing a zero.
   This project's tooling is gated — `run_tests.sh`, `verify_test_log.sh`,
   `UITestShardCoverageTests`, `DragGestureGateTests`. **The commands you type to make claims about
   that tooling are not.** They are the least guarded thing you touch and the easiest to believe.
-- Prove every new test can fail: break the code, watch red, restore. Assert presence, not
-  absence; assert facts, not phrasing.
+- Prove every new test can fail: break the code, watch red, restore. Restore by copying back the
+  copy of the file that you saved in your scratchpad before you broke it (never save it inside the
+  worktree: a copy under a synchronized folder gets compiled, and any copy there can be committed).
+  Never restore with `git checkout -- <file>` or `git restore <file>`: either one throws away any
+  uncommitted change in that file. Assert presence, not absence; assert facts, not phrasing.
 - **A red-proof must go red for the reason you expect — read the failure message, not just the
   colour.** Tests here have gone red on the wrong assertion, exempted the thing they were guarding
   as its own wrapper, and run their specimens before their rule under
@@ -75,16 +86,49 @@ conflicts with convenience, the rule wins.
   it is guarded (`gate` reads `plan` first, so a crashed `plan` cannot masquerade as a prose-only
   run), but it changes what the badge means: **a green check is now evidence about the diff, not
   evidence about the code.** Before citing CI as proof that a change is safe, read `plan`'s
-  decision — the run's own log says `the suite runs — these are not prose:` or `only prose
-  changed`. A one-minute run did not test anything, and it does not claim to.
+  decision. **There are now FIVE decisions and the run's own log says which**, so look for one of
+  these five strings and treat anything else as a sixth case nobody told you about:
+  - `the suite runs — these are not prose:` — the suite ran; the green means what you think.
+  - `only prose changed` — nothing was tested, because there was nothing here to test.
+  - `this diff is web-only` — added by the web round. **Not prose and not untested**: `web/` and
+    the two `Tools/*web*` scripts are tested by `.github/workflows/web.yml` on ubuntu, and this
+    workflow skipped its suite because nothing under `web/` is an input to the iOS app or its
+    tests. A green `gate` here says nothing about the web — `web` is not a required check yet, so
+    **go and read the `web` workflow's run for that commit**, and if it did not run, nothing did.
+  - `this diff is server-only` — added by the owner's ruling of 2026-09-28. **Not prose and not
+    untested**: `server/` outside `server/testdata/` (adding or editing, never removing — a removal
+    runs the suite, because docs cite `server/README.md`) is tested by the Go suite against
+    Postgres. It says nothing about the iOS app, which was not built. What to open depends on
+    where you are reading, because the Go suite runs in a different place on each:
+    - **on a pull request** there is no separate Server run: the Go suite is the
+      **`server / server` job inside that TestFlight run**, and `gate` refuses to pass without it,
+      so here a green `gate` does say the Go suite passed. Open that job to read its
+      `VERIFY-SERVER-` verdict.
+    - **on main's push commit** TestFlight does not run the Go suite at all and its `gate` says
+      nothing about Go: **go and read the `Server` workflow's run for that commit**, which
+      `server.yml` starts by itself on the push, and if it did not run, nothing did.
+
+    `server/testdata/` and any server-plus-app mix still get `the suite runs`, as does a diff with
+    both web and server paths, or a path git could print only in quotes.
+  - `this tree already passed the suite on its pull request` — added by #201, **on a push to main
+    only**. Not untested: the pull request's own TestFlight run passed the whole suite on the
+    merge commit it tested, and that commit's tree is byte-for-byte this push's tree (the
+    ruleset requires an up-to-date branch, and a squash merge or a merge commit keeps that tree). So `unit`,
+    `ui-build` and `ui` are skipped, `release` still runs if the push ships, and the notice names
+    the run: **go and read that pull request run** for the test results. The proof is a record
+    `gate` writes only after every test job succeeded; `.github/scripts/pr_tested_tree.py` reads
+    it and answers "run the suite" on any doubt. A pull request can never get this decision.
+
+  A one-minute run did not test anything, and it does not claim to.
 
 ## Simulators
-- **The plain iPhone 16 is the owner's — keep it free.** Its UDID is deliberately not written
-  here. You do not need it: never run against a device you were not assigned, and the four below
-  are the whole set an agent may use.
-  Agents use: 16 Pro `EA0AD796-3052-4EE5-A7A8-A1DE807A3653`, 16 Pro Max
-  `DE8E11AE-4375-4C3B-A296-9B60A7DF1DB3`, 16e `3A1F212D-8F3A-41F1-AF72-EC95E155A4C9`,
-  16 Plus `24D1629F-9FA8-4E3D-812E-F6BC85C9E668`.
+- **The plain iPhone 17 is the owner's — keep it free**, on every iOS version. Its UDIDs are
+  deliberately not written here. You do not need them: never run against a device you were not
+  assigned, and the four below are the whole set an agent may use. All four run iOS 26.5 and
+  differ in width (Xcode 27.2, set on 2026-11-14 after the iPhone 16 devices were gone).
+  Agents use: 17 Pro `F3892388-1BAB-4DE9-9139-6C93351F9F08` (402 pt), 17 Pro Max
+  `F12CE19E-BE9A-4DC6-8731-5EAAA9FEF54E` (440 pt), 17e `D7D2D20A-F829-448C-AEF2-06D1628CAA34`
+  (390 pt), Air `43240F18-EC20-4E7E-852B-EB8F4E2F0002` (420 pt).
 - One simulator per agent, explicitly assigned. Cap **three** concurrent `xcodebuild`s
   machine-wide — orchestrator verification runs count against the cap.
 - **A dead agent's `xcodebuild` keeps running**, and **the UI suite inherits the device's state**
@@ -118,6 +162,20 @@ conflicts with convenience, the rule wins.
   timer — `grant` kills the running app mid-test.
 - To make a device fixless, revoke the location privacy grant; `simctl location clear` does NOT
   unfix a device.
+- **A booted simulator plays through the owner's speakers, and that is what crackles their
+  audio.** Every booted device opens an `iOSSimulatorAudioDevice` stream on the Mac's real output
+  device, from threads that run unboosted; under build load they miss the I/O deadline and
+  coreaudiod overloads (0/min before a boot on 2026-09-29, 789/min the minute it booted), which the
+  owner hears in every app. Restarting coreaudiod with simulators still attached preceded a hard
+  freeze and a forced power-off the same morning. So:
+  - **Shut your simulator down when your verification is done** (`xcrun simctl shutdown <udid>`),
+    not only at round teardown. `run_tests.sh` boots it again when it needs it.
+  - **Never restart coreaudiod, and never suggest it to the owner, while any simulator is booted.**
+    The owner's fix is `xcrun simctl shutdown all` first; that alone usually stops the crackling.
+  - **Build only through `Tools/run_tests.sh`.** It clamps xcodebuild and every compiler under it to
+    utility QoS on local runs (`CYPRESS-RUN: qos-clamp utility`), so audio keeps its deadline. A bare
+    `xcodebuild` skips the clamp. A timing measurement opts out with `CYPRESS_RUN_TESTS_QOS=default`
+    and says so; CI is never clamped.
 - `SQLITE_IOERR_VNODE` / fd-storm failures on the slowest test mean simulator contention, not
   your change — check `ps aux | grep xcodebuild` before theorizing.
 
@@ -214,6 +272,9 @@ conflicts with convenience, the rule wins.
   whose `info.plist` `WorkspacePath` no longer exists) and shuts down the round's simulators
   (`xcrun simctl shutdown <udid>`). 45 GB of DerivedData from deleted worktrees and four
   booted-idle simulators accumulated by 2026-08-31 because the rule above named only the worktree.
+  **Erase an agent simulator when its round is done** (`xcrun simctl erase <udid>`, after the
+  shutdown): on 2026-11-16 the four agent devices held about 5 GB of test data each and the disk
+  fell to 19 GB free. `Tools/run_tests.sh` boots an erased device and grants camera access again.
   Never touch the one DerivedData directory whose `WorkspacePath` is the owner's live checkout.
 - Set up with `Tools/setup_worktree.sh <worktree-path>` — it copies the git-ignored ~103 MB seed
   into `Cypress/Resources/` and `Fixtures/seed/`; without it 13 tests fail on `seedURL → nil`
@@ -231,11 +292,19 @@ conflicts with convenience, the rule wins.
 - Use a private DerivedData directory named for yourself (`<scratchpad>/dd-<your-suffix>/`).
   The scratchpad is shared by every agent: never `rm -rf` at its root, and never reuse another
   run's log path — `rm -f` your own log before each run.
-- **Run `Tools/run_tests.sh` in the foreground and wait for it.** Do not background it, and never
-  end your turn "waiting for a monitor" — a monitor is not a process, nothing will wake you, and
-  an agent that stops waiting for one has simply stopped. If you must wait on a pid you already
-  have, use a bounded foreground watcher (`for i in $(seq 1 40)`, not `until`), print a line each
-  iteration, and kill the previous watcher before starting a new build.
+- **Do not end your turn while a test run is pending.** Never end it "waiting for a monitor" — a
+  monitor is not a process, nothing will wake you, and an agent that stops waiting for one has
+  simply stopped. A foreground shell command times out after 2 minutes by default and after at
+  most 10 minutes; pass the 10-minute timeout for any foreground run. A full run can take longer.
+  If a run can exceed the shell's time limit, start `Tools/run_tests.sh` in the background with its
+  stdout **and** stderr sent to a file next to your log (`VERIFY-OK` goes to stdout, `VERIFY-FAIL`
+  and `VERIFY-ENV-REFUSED` to stderr), and record its pid. Poll with a bounded loop
+  (`for i in $(seq 1 40)`, not `until`) that checks whether that pid is alive and prints a line on
+  each pass. When the pid is gone, judge the run only from the `VERIFY-` line in that file and from
+  `Tools/verify_test_log.sh <log>`, never from an exit status. If the log has not grown for 10
+  minutes, treat the run as hung (see **Known hangs**): stop your own pid, never another agent's,
+  and report the hang. Do not start a second run while the first one's pid is alive. Stop your
+  previous watcher before you start a new build.
 - Never edit `Cypress.xcodeproj/project.pbxproj` — the tree is a
   `PBXFileSystemSynchronizedRootGroup`.
 - **Facts in your brief may be wrong.** Agents have correctly refuted brief premises many times.

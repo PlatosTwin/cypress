@@ -75,8 +75,8 @@ public struct DataLayer: Sendable {
     /// ── Why the composition root hands this over as a closure ──────────────────────────────────
     ///
     /// The owner ruled on 2026-09-01 that My Grove paints from the phone and merges the account's
-    /// half when it arrives. `RoutedAPI.groveSpecies()` is therefore the paint and
-    /// `RoutedAPI.refreshedGroveSpecies()` is the merge — and the merge is not on `CypressAPI`,
+    /// half when it arrives. `RoutedAPI.groveSpecies(near:)` is therefore the paint and
+    /// `RoutedAPI.refreshedGroveSpecies(near:)` is the merge — and the merge is not on `CypressAPI`,
     /// because a second read of the same question is a property of *this router*, not of the
     /// protocol every preview double implements. `GroveModel` is handed the one operation it needs
     /// rather than the router, which is the same shape `makeOutboxViewState`'s `treeNameResolver`
@@ -96,7 +96,10 @@ public struct DataLayer: Sendable {
     /// painted answer standing: there is a whole grove on the glass, and replacing it with a failure
     /// state because the second read did not land is drawing an empty claim over data this phone
     /// has (R72 ruling 1).
-    public let refreshGroveSpecies: (@Sendable () async -> GroveSpecies?)?
+    ///
+    /// It takes the reader's fix (or nil) because the paint does: the merge must be about the same
+    /// area as the ring it repaints (F38).
+    public let refreshGroveSpecies: (@Sendable (Coordinate?) async -> GroveSpecies?)?
 
     /// The Trees pill's read again, on `refreshGroveSpecies`' terms exactly.
     public let refreshGrove: (@Sendable () async -> [GroveEntry]?)?
@@ -121,6 +124,30 @@ public struct DataLayer: Sendable {
     /// The membership chip's id set, unioned with the account's — or nil with the gate shut.
     /// `RoutedAPI.refreshedMapMembership(_:)`, on the same terms as the two above.
     public let refreshMapMembership: (@Sendable (MapMembership) async -> Set<UUID>?)?
+
+    /// Fills the community cache for the tiles a map viewport touches, and says whether the cache
+    /// changed — or nil when there is no service to fetch from (round C2).
+    ///
+    /// `refreshGroveSpecies`' terms exactly: nil when the gate is shut, so a `.disabled` build (every
+    /// DEBUG build, and the whole UI suite) fetches nothing and the map draws what the phone holds.
+    /// `MapModel` runs it behind each settled read of the map and reads the map again when it
+    /// answers true. The rules it runs by are `CommunityTileRefresher`'s.
+    ///
+    /// A `var` with a default for `outboxWifiWatcher`'s reason: the two suites that assemble a
+    /// layer by hand still compile. `boot` always sets it.
+    public internal(set) var refreshCommunityTrees: (@Sendable (BoundingBox) async -> Bool)? = nil
+
+    /// Drains the outbox when wi-fi returns and a photograph is waiting for it (F35). The layer
+    /// owns it so that a replaced layer stops listening; see `OutboxWifiWatcher`.
+    ///
+    /// A `var` with a default only so that the two suites which assemble a layer by hand
+    /// (`AccountSurfaceTests`, `AccountLinkTests`) still compile. `boot` always sets it.
+    var outboxWifiWatcher: OutboxWifiWatcher? = nil
+
+    /// The connection source `boot` was given, kept for screen 17's `offline` clause
+    /// (`makeOutboxViewState`). A `var` with a default for the same two hand-built layers as
+    /// `outboxWifiWatcher`; a layer without one never says offline.
+    var networkPath: (any NetworkPathSource)? = nil
 
     /// Opens the store, runs migrations, attaches the seed, and wires the router and both outbox
     /// sinks.
@@ -167,6 +194,10 @@ public struct DataLayer: Sendable {
     ///     §1.1 step 4), so it is the one call in the send path that does not go through
     ///     `transport` — and a test of the photo send that could not supply this would be reaching
     ///     the real network for every `PUT`, from the suite, on whoever's machine ran it.
+    ///   - networkPath: whether the connection is unmetered, for screen 17's "Sync photos on wifi
+    ///     only" (F35). Defaults to the process's one `NWPathMonitor`, which is what ships. The
+    ///     outbox reads it on every drain, and the layer's `OutboxWifiWatcher` drains when it turns
+    ///     unmetered. A parameter so a test can say which connection the phone is on.
     public static func boot(
         databaseURL: URL? = nil,
         seedURL: URL? = SeedDatabase.urlInBundle(),
@@ -176,7 +207,8 @@ public struct DataLayer: Sendable {
         authHTTP: (any AuthHTTP)? = nil,
         remoteAccess: RemoteAccess = .resolved,
         credentials: any CredentialStore = KeychainCredentialStore(),
-        storageSession: URLSession = .shared
+        storageSession: URLSession = .shared,
+        networkPath: any NetworkPathSource = SystemNetworkPath.shared
     ) async throws -> DataLayer {
         // **`inventories` wins when it is given**, and `seedURL` remains the one-file spelling
         // every caller that predates the union still uses. They are separate parameters rather than
@@ -286,14 +318,15 @@ public struct DataLayer: Sendable {
         // **A restore does not raise it, and that is deliberate**: no route on this service reports a
         // role, so a restored install reads back `.member`. A role is authority, and the direction to
         // fail in is the one that does not grant it. `LocalAPI.restoreAccount` is where that is
-        // enforced rather than here, because it is enforced for the provider and the consent in the
-        // same breath.
+        // enforced rather than here, because it clears the provider and the consent in the same
+        // breath, and then writes back only the license answer the service stored with the session.
         let role = (try await store.appState(.currentUserRole)).flatMap(UserRole.init(rawValue:)) ?? .member
         let local = LocalAPI(store: store, deviceID: deviceID, userID: storedUserID, role: role)
 
         // Applied through `LocalAPI`'s own verbs rather than by writing `app_state` here. A restore is
         // the local half of a sign-in: `restoreAccount` sweeps this installation's unattributed rows
-        // onto the account and writes the id, and clears the three facts a restore cannot know.
+        // onto the account and writes the id, clears the three facts the phone cannot know, and then
+        // adopts the license answer the service stored with the session.
         // Ending signed out is `signOut()`, which keeps every row and remembers the id. Re-
         // implementing either as a bare `setAppState` would be a second statement of a rule that
         // already has one.
@@ -301,11 +334,21 @@ public struct DataLayer: Sendable {
         // Both are idempotent, which is what makes a launch killed part-way through recoverable: the
         // next launch reads all three inputs again and reaches the same verdict. See `SessionRestore`
         // for why there is no "restore in progress" flag to be left behind.
+        // The license answer the service sent with the stored session (ROADMAP chip 148). Read from
+        // the Keychain, so it reaches no network either.
+        let storedLicenseAnswer = await session.storedSession?.licenseVersion ?? .unstated
         switch reconciliation {
         case .unchanged:
-            break
+            // A phone still signed in adopts the stored answer too, so an agreement made on another
+            // phone and carried by a refresh shows here. `adoptLicenseAnswer` writes nothing unless
+            // the stored session names the account signed in here.
+            if let account = await session.signedInUserID {
+                try await local.adoptLicenseAnswer(storedLicenseAnswer, for: account)
+            }
         case let .restore(userID):
-            try await local.restoreAccount(deviceUUID: deviceID, userID: userID)
+            try await local.restoreAccount(
+                deviceUUID: deviceID, userID: userID, licenseAnswer: storedLicenseAnswer
+            )
         case .endSignedOut:
             // **Both halves.** One of the two states that reach here is a live session beside a
             // deliberate sign-out (F1), and leaving that session standing would leave the bearer as
@@ -324,6 +367,12 @@ public struct DataLayer: Sendable {
         // local sign-out could report to — the next launch's reconciliation reaches the same verdict
         // from `app_state` and the now-empty Keychain.
         await session.onSessionEnded { [local] _ in try? await local.signOut() }
+        // The same rule for the license answer: each refresh carries the service's answer, and the
+        // phone adopts it in the same run (ROADMAP chip 148). `try?` for the reason above; the next
+        // launch adopts the answer the refresh stored.
+        await session.onLicenseAnswer { [local] account, answer in
+            try? await local.adoptLicenseAnswer(answer, for: account)
+        }
 
         // ── One decision, not two ──────────────────────────────────────────────────────────────
         //
@@ -381,36 +430,6 @@ public struct DataLayer: Sendable {
             signedInUserID = { await session.signedInUserID }
         }
 
-        // The two batched resolvers the router cannot reach through `CypressAPI` (see
-        // `RoutedAPI.resolveGroveRows`). They are asked only about rows the *service* named that
-        // this phone's own grove did not, so on a single-device installation neither is ever called.
-        let api = RoutedAPI(
-            local: local,
-            remote: remote,
-            log: readLog,
-            signedInUserID: signedInUserID,
-            resolveGroveRows: { ids in await local.groveCityFileRows(for: ids) },
-            resolveSpecies: { ids in await local.species(ids: ids) }
-        )
-
-        // ── The background half of the grove's two reads (the owner's ruling of 2026-09-01) ─────
-        //
-        // Nil when the gate is shut, for the reason on the properties: a refresh with no service
-        // behind it re-reads the phone and republishes what is already drawn. `GroveModel` starts no
-        // task when they are nil.
-        var refreshGroveSpecies: (@Sendable () async -> GroveSpecies?)?
-        var refreshGrove: (@Sendable () async -> [GroveEntry]?)?
-        var refreshTreeProfile: (@Sendable (UUID) async -> TreeProfile?)?
-        var reconcileFavorite: (@Sendable (UUID) async -> Bool?)?
-        var refreshMapMembership: (@Sendable (MapMembership) async -> Set<UUID>?)?
-        if access.allowsNetwork {
-            refreshGroveSpecies = { try? await api.refreshedGroveSpecies() }
-            refreshGrove = { try? await api.refreshedGrove() }
-            refreshTreeProfile = { id in try? await api.refreshedTreeProfile(id: id) }
-            reconcileFavorite = { id in try? await api.reconciledIsFavorite(treeID: id) }
-            refreshMapMembership = { kind in try? await api.refreshedMapMembership(kind) }
-        }
-
         // ── Two sinks, and this is the round that wires the second (RULINGS R72 §1) ─────────────
         //
         // `apply` is the local commit: a contribution is on its tree the moment the drain runs,
@@ -429,17 +448,139 @@ public struct DataLayer: Sendable {
         // backoff and put reasons on screen 17 — observable behavior a UI test would then be
         // asserting against a network that is not there. Omitting it restores exactly the wiring
         // every build before #158 shipped, which is the one the UI suite was green on.
+        //
+        // Built before the router, because the router's keep-records deletion sends this queue
+        // first (ROADMAP 192). It needs only `local`, `remote` and the store, never `api`.
         let outbox = OutboxQueue(
             queue: store.queue,
             apply: APIOutboxTransport(api: local),
-            send: access.allowsNetwork ? APIOutboxSendSink(remote: remote) : nil
+            send: access.allowsNetwork ? APIOutboxSendSink(remote: remote) : nil,
+            // The wi-fi toggle's other half (F35). Without it the queue cannot call a connection
+            // metered, and every photograph goes on whatever connection there is.
+            networkPath: networkPath
         )
+
+        // Only with the gate open, for `signedInUserID`'s reason: with it shut the deletion stays
+        // local and no send sink is wired, so there is nothing to send first.
+        var sendQueueBeforeDeletion: (@Sendable (UUID) async throws -> Int)?
+        if access.allowsNetwork {
+            sendQueueBeforeDeletion = { userID in try await outbox.sendBeforeAccountDeletion(userID: userID) }
+        }
+
+        // The two batched resolvers the router cannot reach through `CypressAPI` (see
+        // `RoutedAPI.resolveGroveRows`). They are asked only about rows the *service* named that
+        // this phone's own grove did not, so on a single-device installation neither is ever called.
+        let api = RoutedAPI(
+            local: local,
+            remote: remote,
+            log: readLog,
+            signedInUserID: signedInUserID,
+            resolveGroveRows: { ids in await local.groveCityFileRows(for: ids) },
+            resolveSpecies: { ids in await local.species(ids: ids) },
+            // Which photographs were sent, and which a queued withdrawal names, so a service copy
+            // folds into its phone row and nothing else (report F30; review of #194).
+            resolvePhotoEvidence: { id in await local.photoIdentityEvidence(treeID: id) },
+            // So a withdrawal of a photograph sent by an earlier build names the row the service
+            // holds, which is the only id it can withdraw that photograph by (report F30).
+            deletePhotoNamingServiceRow: { id, serviceID in
+                try await local.deletePhoto(id: id, servicePhotoID: serviceID)
+            },
+            // So an own service row the phone holds nothing for can be withdrawn from the profile
+            // that draws it (review of #194, finding 3).
+            withdrawServicePhoto: { id, treeID in
+                try await local.withdrawServicePhoto(id: id, treeID: treeID)
+            },
+            // ROADMAP 144: the reader's queued species acts, the adder's phone taking a species
+            // somebody else gave its tree, and the adder's keep of a report raised elsewhere.
+            speciesSeam: CommunitySpeciesSeam(
+                state: { id in await local.speciesAnswerState(treeID: id) },
+                adopt: { id, observed, served in
+                    await local.adoptServedSpecies(treeID: id, observed: observed, served: served)
+                },
+                keep: { treeID, flagID in try await local.keepServedSpeciesReport(treeID: treeID, flagID: flagID) }
+            ),
+            sendQueueBeforeDeletion: sendQueueBeforeDeletion
+        )
+
+        // ── The background half of the grove's two reads (the owner's ruling of 2026-09-01) ─────
+        //
+        // Nil when the gate is shut, for the reason on the properties: a refresh with no service
+        // behind it re-reads the phone and republishes what is already drawn. `GroveModel` starts no
+        // task when they are nil.
+        var refreshGroveSpecies: (@Sendable (Coordinate?) async -> GroveSpecies?)?
+        var refreshGrove: (@Sendable () async -> [GroveEntry]?)?
+        var refreshTreeProfile: (@Sendable (UUID) async -> TreeProfile?)?
+        var reconcileFavorite: (@Sendable (UUID) async -> Bool?)?
+        var refreshMapMembership: (@Sendable (MapMembership) async -> Set<UUID>?)?
+        if access.allowsNetwork {
+            refreshGroveSpecies = { coordinate in try? await api.refreshedGroveSpecies(near: coordinate) }
+            refreshGrove = { try? await api.refreshedGrove() }
+            refreshTreeProfile = { id in try? await api.refreshedTreeProfile(id: id) }
+            reconcileFavorite = { id in try? await api.reconciledIsFavorite(treeID: id) }
+            refreshMapMembership = { kind in try? await api.refreshedMapMembership(kind) }
+        }
+
+        // ── Other people's trees, down into the cache (round C2) ───────────────────────────────
+        //
+        // Nil with the gate shut, for the four closures above's reason. The tile route takes the
+        // device credential, so this runs signed in and signed out alike: a phone that has never
+        // signed in still draws everybody's published trees (§3C). Its first request is what
+        // registers the device, which `AppSession.bootstrap()` keeps lazy; this request is behind a
+        // painted map and nothing waits for it.
+        var refreshCommunityTrees: (@Sendable (BoundingBox) async -> Bool)?
+        if access.allowsNetwork {
+            let refresher = CommunityTileRefresher(queue: store.queue) { tile, cursor in
+                let page = try await remote.communityTile(tile, cursor: cursor)
+                // ROADMAP 144: a tree this phone added and has not named takes a species somebody
+                // else gave it. The cache never holds such a tree, so this is the adder's map's way in.
+                await local.adoptServedSpeciesOnUnnamedTrees(page.trees)
+                return page
+            }
+            refreshCommunityTrees = { bounds in await refresher.refresh(covering: bounds).changedCache }
+        }
 
         // Anything left `uploading` belongs to a previous launch that was killed mid-drain. It is
         // recovered on the first drain; doing it here as well means the outbox screen shows the
         // truth before any sync is attempted.
         try await store.queue.write { connection in
             _ = try OutboxStore().recoverInterrupted(at: Date(), connection: connection)
+        }
+
+        // ── Finished rows older than a day, once per launch (ROADMAP 184) ──────────────────────
+        //
+        // `OutboxQueue.pruneCompleted` deletes `done` rows whose `updated_at` is more than
+        // `completedRetention` ago, and nothing else: pending, uploading and failed rows of any age
+        // stay. No build before this one called it, so every receipt stayed on the phone.
+        //
+        // Here and not in the drain, for three reasons. The drain is the hot path, and a test or
+        // gate that moves the queue's clock past a day would see its receipts go in the middle of
+        // the case. Screen 17 keeps one set of receipts for the whole session instead of losing a
+        // row while it is open. And it runs before the backfill below, which looks again at a
+        // tree only once its `done` add row is gone (`CommunityTreeBackfill`), so that pass sees
+        // the swept queue. The cost is that a receipt can outlive its day until the next launch.
+        //
+        // `try?`: a failed sweep leaves the receipts for the next launch, and must not stop this one.
+        _ = try? await outbox.pruneCompleted()
+
+        // ── The community trees this phone never sent, once (ROADMAP 139) ───────────────────────
+        //
+        // Only with the send sink wired: with none, a queued row settles `done` without being sent,
+        // and the record the backfill writes would claim a send that never happened. It runs here,
+        // after the identity is reconciled and before the first drain, and again after every claim,
+        // so an account's trees that waited while it was signed out go when it signs in.
+        // `try?`: a failed pass leaves each tree it did not finish unrecorded, and the next launch
+        // or sign-in starts those trees again (`CommunityTreeBackfill`).
+        if access.allowsNetwork {
+            let backfill = local.communityTreeBackfill()
+            let current = await local.attribution.userID
+            _ = try? await backfill.run(
+                identity: .init(userID: current, deviceID: deviceID), queue: queue
+            )
+            await local.onClaimed { userID in
+                _ = try? await backfill.run(
+                    identity: .init(userID: userID, deviceID: deviceID), queue: queue
+                )
+            }
         }
 
         return DataLayer(
@@ -455,7 +596,10 @@ public struct DataLayer: Sendable {
             refreshGrove: refreshGrove,
             refreshTreeProfile: refreshTreeProfile,
             reconcileFavorite: reconcileFavorite,
-            refreshMapMembership: refreshMapMembership
+            refreshMapMembership: refreshMapMembership,
+            refreshCommunityTrees: refreshCommunityTrees,
+            outboxWifiWatcher: OutboxWifiWatcher(queue: outbox, networkPath: networkPath),
+            networkPath: networkPath
         )
     }
 
@@ -484,7 +628,8 @@ public struct DataLayer: Sendable {
     /// tree's union-wide id equal to the id it has always had.
     public static func bootOverInstalledCities(
         databaseURL: URL? = nil,
-        library: CityLibrary
+        library: CityLibrary,
+        networkPath: any NetworkPathSource = SystemNetworkPath.shared
     ) async throws -> DataLayer {
         // A device upgrading from a build that recorded an active choice still carries the marker.
         // Nothing reads it any more, and this is the one place that runs on every launch.
@@ -493,7 +638,8 @@ public struct DataLayer: Sendable {
         let bundled = SeedDatabase.urlInBundle().map { [InventoryFile.bundled(url: $0)] } ?? []
         return try await boot(
             databaseURL: databaseURL,
-            inventories: bundled + library.installedInventoryFiles()
+            inventories: bundled + library.installedInventoryFiles(),
+            networkPath: networkPath
         )
     }
 
@@ -514,6 +660,7 @@ public struct DataLayer: Sendable {
             queue: outbox,
             store: store,
             syncPhotosOnWifiOnly: true,
+            networkPath: networkPath,
             // `displayNames` asks for a name and nothing else. Reading a whole profile per queued
             // tree would pull photo, visit and care series across for a row that renders one string.
             treeNameResolver: { ids in await api.displayNames(for: ids) }

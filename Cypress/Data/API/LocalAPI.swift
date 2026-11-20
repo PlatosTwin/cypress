@@ -14,8 +14,17 @@ public actor LocalAPI: CypressAPI {
     private let treeQueries: TreeQueries?
     private let speciesQueries: SpeciesQueries?
     private let communityTrees = CommunityTreeStore()
+    /// The merge helper over `community_trees` and `community_tree_cache` (`AppSchema` v23): every
+    /// read that asks "what community trees are there" goes through it, and every write that acts
+    /// on the record itself goes through `communityTrees` alone. `CommunityLayer`'s header lists
+    /// which is which.
+    private let layer = CommunityLayer()
+    /// A community tree's pin, as a chain (`AppSchema` v23).
+    private let locations = TreeLocationStore()
     private let contributions = ContributionStore()
     private let assertions = SpeciesAssertionStore()
+    /// `tree_data_disputes` and its two children (`AppSchema` v22, `RULINGS R79`).
+    private let disputes = DataDisputeStore()
     private let groveQueries: GroveQueries?
     private let almanacQueries: AlmanacQueries?
     private let cityQueries: CityQueries?
@@ -34,6 +43,10 @@ public actor LocalAPI: CypressAPI {
     /// Where photo binaries live once "uploaded". `LocalAPI`'s upload is a move into this
     /// directory, which is what makes the outbox's photo phase exercisable with no network.
     private let photoDirectory: URL
+    /// This container's Application Support folder, as it is now. A stored photograph path that an
+    /// app update left pointing at an old container is re-rooted onto it (report F36; see
+    /// `StoredPhotoPath`). Injected so a test can stand in a container of its own.
+    private let applicationSupportDirectory: URL
 
     /// `tree_status_overrides`, held between the writes that can change it.
     ///
@@ -55,8 +68,11 @@ public actor LocalAPI: CypressAPI {
         userID: UUID? = nil,
         role: UserRole = .member,
         photoDirectory: URL? = nil,
+        applicationSupportDirectory: URL? = nil,
         now: @escaping @Sendable () -> Date = { Date() }
     ) {
+        self.applicationSupportDirectory = applicationSupportDirectory
+            ?? FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
         self.store = store
         self.deviceID = deviceID
         self.userID = userID
@@ -70,8 +86,12 @@ public actor LocalAPI: CypressAPI {
         self.almanacQueries = store.seed.map { AlmanacQueries(schema: $0) }
         self.cityQueries = store.seed.map { CityQueries(schema: $0) }
         self.areaQueries = store.seed.map { AreaQueries(schema: $0) }
-        self.photoDirectory = photoDirectory
-            ?? store.databaseURL.deletingLastPathComponent().appendingPathComponent("Photos", isDirectory: true)
+        self.photoDirectory = photoDirectory ?? Self.defaultPhotoDirectory(besideDatabaseAt: store.databaseURL)
+    }
+
+    /// Where photographs live when the caller names no folder: `Photos`, beside the database.
+    static func defaultPhotoDirectory(besideDatabaseAt databaseURL: URL) -> URL {
+        databaseURL.deletingLastPathComponent().appendingPathComponent("Photos", isDirectory: true)
     }
 
     public func setUserID(_ id: UUID?) {
@@ -103,75 +123,68 @@ public actor LocalAPI: CypressAPI {
     /// connection instead of queueing behind each other three times.
     public func mapContent(in viewport: MapViewport) async throws -> MapContent {
         let overrideCache = self.overrideCache
-        let (seedContent, added, overrides) = try await store.queue.read {
-            connection -> (MapContent, [Tree], [UUID: TreeStatus]) in
+        let (seedContent, community, overrides) = try await store.queue.read {
+            connection -> (MapContent, CommunityRead, [UUID: TreeStatus]) in
             let seedContent: MapContent = try treeQueries.map {
                 try $0.mapContent(in: viewport, connection: connection)
             } ?? (viewport.shouldCluster ? .clusters([]) : .pins([]))
 
-            // Community-added trees live in `main` and are merged here rather than unioned in SQL.
-            // See `CommunityTreeStore` for why.
+            // Community trees live in `main` and are merged here rather than unioned in SQL with
+            // the seed. See `CommunityTreeStore` for why. Since `AppSchema` v23 they are two
+            // tables — the trees this phone added and other people's from the service — and
+            // `CommunityLayer` reads them as one, the phone's own row winning.
             //
-            // **The narrowing has to be applied to them too, in Swift, or "only" leaks.** The seed
-            // half of a narrowed viewport is filtered in SQL; this half is a separate table that
-            // knows nothing about it, so a search for London Planes would have drawn every community
-            // tree in the box on top of the matches — and drawn them *dashed*, which reads as "the
-            // community found you these", the most convincing possible way to be wrong. Filtering
-            // here rather than in `CommunityTreeStore.inBounds` keeps the narrowing in one place per
-            // layer and costs nothing: the table holds one row per tree this device added.
-            let allAdded = try communityTrees.inBounds(
-                viewport.bounds,
-                limit: viewport.pinLimit,
-                connection: connection
-            )
+            // **The narrowing has to be applied to them too, or "only" leaks.** The seed half of a
+            // narrowed viewport is filtered in SQL; this half is a separate table that knows nothing
+            // about it, so a search for London Planes would have drawn every community tree in the
+            // box on top of the matches — and drawn them *dashed*, which reads as "the community
+            // found you these", the most convincing possible way to be wrong.
             //
             // **Every narrowing, not just the species one (#116).** Each is the same leak in a
             // different color: a `Favorites` map that drew every community tree in the box would
             // be claiming the reader had hearted them, and a `2010s` map that drew a community tree
             // with no planting year would be claiming the city planted it in a decade nobody
-            // recorded. The year clause is deliberately `false` for a nil year, matching the SQL's
-            // `planted_year IS NOT NULL` on the seed side exactly — see ERRATA E175.
+            // recorded. A nil year never matches a year range, matching the seed side's
+            // `planted_year IS NOT NULL` exactly — see ERRATA E175.
             //
-            // **The two `siteKind` clauses mirror `TreeQueries.Narrowing.predicate` term for term**
-            // (tasks #178, #179), and they have to: a narrowing that reached the seed's SQL but not
-            // this filter would draw community vacant sites under a year while the city's own were
-            // correctly excluded — one filter telling two stories depending on who added the row.
-            // `MapSiteKind.of` is the single definition both sides call.
+            // **The `siteKind` and year statuses mirror `TreeQueries.Narrowing.predicate` term for
+            // term** (tasks #178, #179): a planting date on a site with no tree is the date of a
+            // tree that is gone, so a year admits only `hasTree` statuses. `MapSiteKind.of` is the
+            // single definition both sides call.
             //
             // **The two condition chips are here for the same reason** (task #240). `In bloom` is a
             // species narrowing, so it is resolved to the same uuid set the seed's SQL resolves —
             // through `TreeQueries.bloomingSpeciesIDs`, the one definition — and intersected with
-            // any typed or tapped species exactly as `TreeQueries.narrowing` intersects them. A
-            // community tree drawn under `Needs care` while the city's own were correctly excluded
-            // would be the dashed layer claiming *the community found you a tree that needs
-            // something*, which is the most convincing possible way to be wrong.
+            // any typed or tapped species exactly as `TreeQueries.narrowing` intersects them.
             // `?? []` rather than `flatMap`: with no seed attached there is no bloom calendar, and
             // the honest answer to "which species bloom this month" is then *none*. Letting it
             // collapse to nil would read as "no narrowing" and draw the whole community layer under
             // a chip that admitted nothing — the `[]` versus `nil` distinction R23 spends three
             // paragraphs on, one layer down.
+            //
+            // **Narrowed in the engine, then cut** (round C2's two reviews). The narrowing is
+            // resolved here to sets and applied in the statement's `WHERE`, so the pin read can cut
+            // to `pinLimit` after it (the phone's own trees first, then by id) and still never cut
+            // a match for a non-match, and the cluster read counts every match per cell without
+            // building a `Tree`. Narrowing in Swift after a whole read cost about 430 ms at 5,000
+            // cached trees in the box and 3.8 s at 50,000.
             let bloomingSpecies: Set<UUID>? = try viewport.bloomMonth.map { month in
                 try treeQueries?.bloomingSpeciesIDs(month: month, connection: connection) ?? []
             }
-            let added = allAdded.filter { tree in
-                if let wanted = viewport.speciesIDs {
-                    guard let id = tree.speciesCurrentID, wanted.contains(id) else { return false }
-                }
-                if let blooming = bloomingSpecies {
-                    guard let id = tree.speciesCurrentID, blooming.contains(id) else { return false }
-                }
-                if viewport.needsCare, !tree.status.needsCare { return false }
-                if let wanted = viewport.treeIDs, !wanted.contains(tree.id) { return false }
-                if let years = viewport.plantedYears {
-                    guard let planted = tree.plantedYear, years.contains(planted) else { return false }
-                    // Task #178: a planting date on a site with no tree is the date of a tree that
-                    // is gone, so it never answers "planted in the 2010s".
-                    guard MapSiteKind.of(tree.status) == .hasTree else { return false }
-                }
-                if let wanted = viewport.siteKind, MapSiteKind.of(tree.status) != wanted {
-                    return false
-                }
-                return true
+            let narrowing = Self.communityNarrowing(for: viewport, bloomingSpecies: bloomingSpecies)
+            let community: CommunityRead
+            if viewport.shouldCluster {
+                let centerLatitude = (viewport.bounds.minLatitude + viewport.bounds.maxLatitude) / 2
+                let cell = TreeQueries.cellSize(zoom: viewport.zoom, centerLatitude: centerLatitude)
+                community = .cells(try layer.cells(
+                    in: viewport.bounds, narrowing: narrowing,
+                    cellLatitude: cell.latitude, cellLongitude: cell.longitude,
+                    connection: connection
+                ))
+            } else {
+                community = .pins(try layer.pins(
+                    in: viewport.bounds, narrowing: narrowing, limit: viewport.pinLimit, connection: connection
+                ))
             }
 
             // Local status overrides (ERRATA E124-B): a lead-confirmed removal makes a tree a
@@ -184,7 +197,7 @@ public actor LocalAPI: CypressAPI {
             // and not fine to run on every camera change for the life of the app. `overrideCache`
             // holds the answer between the writes that can change it.
             let overrides = try overrideCache ?? contributions.statusOverrides(connection: connection)
-            return (seedContent, added, overrides)
+            return (seedContent, community, overrides)
         }
         self.overrideCache = overrides
         func applyingOverrides(_ content: MapContent) -> MapContent {
@@ -204,10 +217,9 @@ public actor LocalAPI: CypressAPI {
             }))
         }
 
-        guard !added.isEmpty else { return applyingOverrides(seedContent) }
-
-        switch seedContent {
-        case let .pins(answer):
+        switch (seedContent, community) {
+        case let (.pins(answer), .pins(read)):
+            guard !read.trees.isEmpty else { return applyingOverrides(seedContent) }
             // The community layer gets its own share of the budget rather than the tail of the
             // seed's.
             //
@@ -222,7 +234,7 @@ public actor LocalAPI: CypressAPI {
             // layer DECISIONS §3.16 requires to be visually distinct. What it spends is seed pins,
             // one for each community tree — and the 260th seed pin in a viewport of 264 is worth
             // less than the tree somebody stood in front of and added.
-            let communityPins = added.map {
+            let communityPins = read.trees.map {
                 TreePin(
                     id: $0.id,
                     coordinate: $0.coordinate,
@@ -232,67 +244,154 @@ public actor LocalAPI: CypressAPI {
                     speciesID: $0.speciesCurrentID
                 )
             }
-            let seedBudget = max(viewport.pinLimit - communityPins.count, 0)
-            let kept = Array(answer.items.prefix(seedBudget)) + communityPins
+            //
+            // **And the community share is capped** (round C2). Since the cache holds other
+            // people's trees, the layer can be dense, and a reservation with no ceiling let it take
+            // the whole budget: 400 community pins in a box drew no city tree at all. The layer now
+            // takes at most half the budget when the city layer could use the rest, and any part
+            // of the budget the city layer leaves unused (`communityPinShare`). The phone's own
+            // trees come first inside the share (`CommunityLayer.pinsSQL`).
+            //
+            // `read.matches` is every narrowed community tree in the box, counted before the
+            // statement's cut, so `matchesInView` below counts all of them.
+            let communityShare = Self.communityPinShare(
+                pinLimit: viewport.pinLimit,
+                cityPins: answer.items.count,
+                communityPins: communityPins.count
+            )
+            let keptCommunity = Array(communityPins.prefix(communityShare))
+            let seedBudget = max(viewport.pinLimit - keptCommunity.count, 0)
+            let kept = Array(answer.items.prefix(seedBudget)) + keptCommunity
             // Reserving the community layer's space spends seed pins, and on a narrowed map those
             // are matches — so if this cut anything, the answer is a sample whether or not the grid
-            // already made it one. `PinAnswer` collapses a "sample" that dropped nothing, so an
-            // untouched answer still reports itself complete.
+            // already made it one. The cap cuts community pins the same way. `PinAnswer` collapses
+            // a "sample" that dropped nothing, so an untouched answer still reports itself complete.
             let dropped = answer.items.count - min(answer.items.count, seedBudget)
+                + read.matches - keptCommunity.count
             return applyingOverrides(.pins(PinAnswer(
                 kept,
-                matchesInView: answer.matchesInView.map { $0 + communityPins.count }
-                    ?? (dropped > 0 ? answer.items.count + communityPins.count : nil)
+                matchesInView: answer.matchesInView.map { $0 + read.matches }
+                    ?? (dropped > 0 ? answer.items.count + read.matches : nil)
             )))
 
-        case var .clusters(clusters):
-            let centerLatitude = (viewport.bounds.minLatitude + viewport.bounds.maxLatitude) / 2
-            let cell = TreeQueries.cellSize(zoom: viewport.zoom, centerLatitude: centerLatitude)
+        case let (.clusters(clusters), .cells(cells)):
+            guard !cells.isEmpty else { return seedContent }
             var byCell = Dictionary(uniqueKeysWithValues: clusters.map { ($0.id, $0) })
-            for tree in added {
-                let cellY = Int((tree.coordinate.latitude + 90.0) / cell.latitude)
-                let cellX = Int((tree.coordinate.longitude + 180.0) / cell.longitude)
-                let id = "z\(viewport.zoom):\(cellY):\(cellX)"
+            for cell in cells {
+                let id = "z\(viewport.zoom):\(cell.cellY):\(cell.cellX)"
                 if let existing = byCell[id] {
-                    // Weighted mean, so adding one community tree to a cell of 2,000 does not move
-                    // the badge.
-                    let total = existing.count + 1
+                    // Weighted mean, so adding community trees to a cell of 2,000 does not move the
+                    // badge further than their share.
+                    let total = existing.count + cell.count
                     byCell[id] = TreeCluster(
                         id: id,
                         coordinate: Coordinate(
-                            latitude: (existing.coordinate.latitude * Double(existing.count) + tree.coordinate.latitude) / Double(total),
-                            longitude: (existing.coordinate.longitude * Double(existing.count) + tree.coordinate.longitude) / Double(total)
+                            latitude: (existing.coordinate.latitude * Double(existing.count)
+                                + cell.coordinate.latitude * Double(cell.count)) / Double(total),
+                            longitude: (existing.coordinate.longitude * Double(existing.count)
+                                + cell.coordinate.longitude * Double(cell.count)) / Double(total)
                         ),
                         count: total
                     )
                 } else {
-                    byCell[id] = TreeCluster(id: id, coordinate: tree.coordinate, count: 1)
+                    byCell[id] = TreeCluster(id: id, coordinate: cell.coordinate, count: cell.count)
                 }
             }
-            clusters = Array(byCell.values)
-            return .clusters(clusters)
+            return .clusters(Array(byCell.values))
+
+        default:
+            // The two reads take their shape from the same `viewport.shouldCluster`, so they
+            // always agree; a mismatch would mean a reader changed, and the seed's answer stands.
+            return applyingOverrides(seedContent)
         }
     }
 
+    /// What the community layer is narrowed to on this viewport, as `CommunityLayer.Narrowing`
+    /// sets. `bloomingSpecies` is the month's blooming species, resolved by the caller.
+    static func communityNarrowing(for viewport: MapViewport, bloomingSpecies: Set<UUID>?) -> CommunityLayer.Narrowing {
+        var species = viewport.speciesIDs
+        if let blooming = bloomingSpecies { species = species.map { $0.intersection(blooming) } ?? blooming }
+        var statuses: Set<TreeStatus>?
+        func admit(_ allowed: Set<TreeStatus>) {
+            statuses = statuses.map { $0.intersection(allowed) } ?? allowed
+        }
+        if viewport.needsCare { admit(Set(TreeStatus.allCases.filter(\.needsCare))) }
+        if let kind = viewport.siteKind { admit(Set(TreeStatus.allCases.filter { MapSiteKind.of($0) == kind })) }
+        if viewport.plantedYears != nil { admit(Set(TreeStatus.allCases.filter { MapSiteKind.of($0) == .hasTree })) }
+        return CommunityLayer.Narrowing(
+            speciesIDs: species,
+            statuses: statuses,
+            treeIDs: viewport.treeIDs,
+            plantedYears: viewport.plantedYears
+        )
+    }
+
+    /// The community half of one map read: pins for a pin answer, per-cell counts for a cluster one.
+    enum CommunityRead {
+        case pins(CommunityLayer.PinRead)
+        case cells([CommunityLayer.Cell])
+    }
+
+    /// How many community pins a pin answer keeps (round C2): at most half of `pinLimit` when the
+    /// city layer could use the other half, plus whatever the city layer leaves unused.
+    ///
+    /// Half is the ROADMAP's proposal. **The half is rounded down**, so an odd budget gives the
+    /// odd pin to the city layer. A budget the city layer does not fill is not withheld: a map
+    /// over a park with 30 city trees and 300 added ones draws all 330 under a budget of 400.
+    /// `cityPins` is the city layer's answer, which `TreeQueries` has already capped at
+    /// `pinLimit`.
+    static func communityPinShare(pinLimit: Int, cityPins: Int, communityPins: Int) -> Int {
+        let ceiling = max(pinLimit / 2, pinLimit - cityPins)
+        return max(0, min(communityPins, ceiling))
+    }
+
+    /// The trees near a point, city and community alike: the "What tree is this?" shortlist, the
+    /// Add this tree "ALREADY ON RECORD" note, a site's neighbor line and the saved screen's next
+    /// tree all read it.
+    ///
+    /// **Statements.** Two always, one per queue read: `TreeQueries.nearest` and
+    /// `CommunityLayer.inBoundsSQL`. Up to two more, once per call, only when a community tree is
+    /// in range: `SpeciesAssertionStore.treesWithAClaim(among:)`, when one of them is somebody
+    /// else's cached tree; and `SpeciesQueries.commonNamesSQL()`, when one has a species. Then
+    /// `localSpeciesAnswers` **per tree**, only for a cached tree the reader named or corrected, for
+    /// `resolvedDisplayNames`' reason: the list and the profile read one overlay.
+    /// `NearbyStatementCensusTests` pins the counts.
     public func treesNear(_ coordinate: Coordinate, radiusM: Double, limit: Int) async throws -> [NearbyTree] {
         let fromSeed = try await store.queue.read { connection -> [NearbyTree] in
             guard let treeQueries else { return [] }
             return try treeQueries.nearest(to: coordinate, radiusM: radiusM, limit: limit, connection: connection)
         }
-        let added = try await store.queue.read { connection in
-            try communityTrees.near(coordinate, radiusM: radiusM, limit: limit, connection: connection)
-        }
-        guard !added.isEmpty else { return Array(fromSeed.prefix(limit)) }
-
-        let addedRows = added.map {
-            NearbyTree(
-                tree: $0,
-                distanceM: coordinate.distance(to: $0.coordinate),
-                speciesScientificName: nil,
-                speciesCommonName: nil,
-                tell: nil
+        let addedRows = try await store.queue.read { connection -> [NearbyTree] in
+            // The whole community layer, other people's cached trees included: this is the list the
+            // Add this tree screen's "ALREADY ON RECORD" note draws, and a tree somebody else
+            // published 5 m away is as much on record as one this phone added (`AppSchema` v23).
+            let rows = try layer.nearRows(coordinate, radiusM: radiusM, limit: limit, connection: connection)
+            guard !rows.isEmpty else { return [] }
+            // **The species its profile title shows** (the owner's answer of 2026-11-16, "Yes,
+            // show the species"): the row's species, with the reader's own naming or correction
+            // laid over a cached tree while it is in force (`communityShownSpecies`, the overlay the
+            // row names use). Species only: these lists never show a given name.
+            let shown = try communityShownSpecies(
+                rows: Dictionary(rows.map { ($0.tree.id, $0) }, uniquingKeysWith: { first, _ in first }),
+                connection: connection
             )
+            let names = try speciesQueries?.names(ids: Array(Set(shown.values)), connection: connection) ?? [:]
+            return rows.map { row in
+                let species = shown[row.tree.id].flatMap { names[$0] }
+                return NearbyTree(
+                    tree: row.tree,
+                    distanceM: coordinate.distance(to: row.tree.coordinate),
+                    speciesScientificName: species?.scientific,
+                    speciesCommonName: species?.common,
+                    // No curated tell: the seed carries `id_tips` for some species (40 of 731 on
+                    // 2026-11-16), but the owner's answers of that day put an added tree's species
+                    // in the title and the species banner, not its curated tips. Before this
+                    // change an added tree carried no tell either.
+                    tell: nil
+                )
+            }
         }
+        guard !addedRows.isEmpty else { return Array(fromSeed.prefix(limit)) }
         return (fromSeed + addedRows).sorted { $0.distanceM < $1.distanceM }.prefix(limit).map { $0 }
     }
 
@@ -300,10 +399,23 @@ public actor LocalAPI: CypressAPI {
 
     public func treeProfile(id: UUID) async throws -> TreeProfile {
         let moment = now()
+        // Who can see the reader's trees (round C3): the profile tells the adder of a tree that is
+        // not public yet. Two `app_state` reads, taken before the tree's own read because
+        // `accountLink()` is its own read; the account cannot change between them except by a
+        // sign-in, which reloads the profile anyway.
+        let sharing = ContributionSharing(userID: userID, link: try await accountLink())
         return try await store.queue.readConsistently { connection -> TreeProfile in
             let record = try treeQueries?.tree(id: id, connection: connection)
-            let inventoryTree = try record?.tree ?? communityTrees.tree(id: id, connection: connection)
-            guard var tree = inventoryTree else { throw APIError.notFound }
+            // A community tree is either one this phone added or one the service sent down
+            // (`CommunityLayer`). Which of the two it is decides which controls the record offers:
+            // somebody else's tree gets no record control, because that verb acts only on a tree
+            // this phone added (the round's orchestrator ruling: "Others' trees: no
+            // species/report/dispute controls this round"). Its species controls came back with
+            // ROADMAP 144, for a reader who shares (`speciesCorrectionOffer`).
+            let cityTree = record?.tree
+            let community = try cityTree == nil ? layer.row(id: id, connection: connection) : nil
+            let addedHere = community?.isAddedHere ?? false
+            guard var tree = record?.tree ?? community?.tree else { throw APIError.notFound }
 
             // A withdrawn community record is not a tree (task **#125**). `CommunityTreeStore.tree`
             // is the one read in that file which does *not* filter `deleted_at`, deliberately, so a
@@ -344,6 +456,32 @@ public actor LocalAPI: CypressAPI {
             // agree is a way for them to stop agreeing.
             let observations = try contributions.observations(treeID: id, connection: connection)
 
+            let adder = addedHere ? try communityTrees.adder(treeID: id, connection: connection) : nil
+            // The adder test, and ROADMAP 107's: a tree the service never received (R77) is
+            // answered `not_found`, so its move is not offered. C2 carries the service's
+            // `added_by_you` on `TreeProfile.addedByYou` and leaves this gate as it is: the move is
+            // a write to this phone's own row, which a tree held only in the cache does not have.
+            let isAdder = adder?.isOwned(by: attribution) ?? false
+            let canMovePin = isAdder
+                ? try communityTrees.mayHaveReachedService(treeID: id, connection: connection)
+                : false
+            // `withdrawTree`'s own test, the adder's (a withdrawn tree threw above), narrowed by
+            // what this phone already knows (`TreeWithdrawalOffer`). The service's photographs
+            // narrow it further in `RoutedAPI.refreshedTreeProfile(id:)`.
+            let treeWithdrawal: TreeWithdrawalOffer = !isAdder
+                ? .unavailable
+                : try communityTrees.othersHaveAddedTo(
+                    treeID: id, readerUserID: attribution.userID, deviceID: deviceID,
+                    connection: connection
+                ) ? .othersHaveAddedToIt : .available
+
+            // ROADMAP 144: on a tree in the community cache, the reader's own naming or correction
+            // is laid over the cache's species while it is in force. The cache keeps its one writer.
+            let speciesAnswers = try tree.source == .community
+                ? localSpeciesAnswers(tree: tree, addedHere: addedHere, isAdder: isAdder, connection: connection)
+                : nil
+            if let speciesAnswers { tree.speciesCurrentID = speciesAnswers.shownSpeciesID }
+
             return TreeProfile(
                 tree: tree,
                 activeName: try contributions.activeName(treeID: id, connection: connection),
@@ -373,6 +511,13 @@ public actor LocalAPI: CypressAPI {
                 // Read in the same transaction as the photographs so a control cannot be drawn on a
                 // row that has since gone.
                 deletablePhotoIDs: try contributions.deletablePhotoIDs(
+                    treeID: id, attribution: attribution, connection: connection
+                ),
+                // The same narrowing on the measurement side (report F27): every reading in
+                // `main.measurements` is drawn, and the ones an account deletion unlinked are
+                // nobody's to take back. Read in the same transaction as the readings themselves,
+                // so a withdraw control cannot be drawn beside a row that has since gone.
+                withdrawableMeasurementIDs: try contributions.withdrawableMeasurementIDs(
                     treeID: id, attribution: attribution, connection: connection
                 ),
                 // *Why* a row is in the first set and not the second, read off the row itself
@@ -405,13 +550,32 @@ public actor LocalAPI: CypressAPI {
                 // about the chain's head and the reports against it, and a control drawn from one
                 // moment's answer against another moment's species is a control that offers to
                 // correct something that has already been corrected.
-                speciesCorrection: try speciesCorrectionOffer(tree: tree, connection: connection),
+                speciesCorrection: try speciesCorrectionOffer(
+                    tree: tree, isAdder: isAdder, sharing: sharing, answers: speciesAnswers,
+                    connection: connection
+                ),
                 // Same transaction, same reason (task #125): the offer is a statement about the
                 // open reports against this record, and a control drawn from one moment's answer
                 // over another moment's record offers to withdraw something already withdrawn.
-                recordDefect: try recordDefectOffer(tree: tree, connection: connection),
+                recordDefect: try recordDefectOffer(
+                    tree: tree, addedHere: addedHere, connection: connection
+                ),
                 // Set above, beside the overwrite it describes, so the two cannot be changed apart.
-                statusProvenance: statusProvenance
+                statusProvenance: statusProvenance,
+                // `correctLocation`'s adder test plus ROADMAP 107's, read in the same transaction
+                // as the tree: a tree this phone added (a cached or city row is never movable from
+                // here), an adder who is the reader, and a tree the service may hold
+                // (`mayHaveReachedService`, which `correctLocation` does not apply). A withdrawn
+                // tree never reaches this line (it threw above).
+                canMovePin: canMovePin,
+                treeWithdrawal: treeWithdrawal,
+                // The phone's half of `added_by_you`: this phone's own record says the reader added
+                // it. `RoutedAPI.refreshedTreeProfile(id:)` adopts the service's yes on top.
+                addedByYou: isAdder,
+                isAddedHere: addedHere,
+                // A fact about the reader, carried only on a community tree, which is the one kind
+                // of tree whose visibility depends on it.
+                readerSharing: tree.source == .community ? sharing : nil
             )
         }
     }
@@ -439,26 +603,16 @@ public actor LocalAPI: CypressAPI {
         return try queries.species(id: speciesID, connection: connection)
     }
 
-    /// `POST /trees`. Requires a photo; runs the 10 m proximity dedupe against any species.
+    /// `POST /trees`. Requires a photo.
+    ///
+    /// A tree within 10 m of another is added like any other. The owner's ruling of 2026-11-14
+    /// removed the proximity refusal ("sometimes they will be close together and that's fine"); the
+    /// Add this tree screen shows the trees on record within `TreeDraft.proximityDedupeRadiusM` as a
+    /// note before the tap, through `treesNear`, and never refuses. Two sends of one add are still
+    /// one tree: the queue and the service match them on `client_uuid` (constraint 8), not on
+    /// distance.
     public func addTree(_ draft: TreeDraft) async throws -> Tree {
         guard !draft.photoLocalPath.isEmpty else { throw APIError.validationFailed }
-
-        let candidates = try await treesNear(
-            draft.coordinate,
-            radiusM: TreeDraft.proximityDedupeRadiusM,
-            limit: 10
-        )
-        if !candidates.isEmpty {
-            // Every candidate here is inside the circle, not merely inside the box `treesNear`
-            // searched: both halves re-check the exact meters (`TreeQueries.nearest`,
-            // `CommunityTreeStore.near`). That is load-bearing — this line turns a candidate into a
-            // permanent refusal, and it used to fire out to 14.1 m on the diagonal (ERRATA E35).
-            //
-            // §6 returns `conflict` with the candidate list. `ProximityConflict` carries the list;
-            // the taxonomy code is what the outbox and the error banner read, and `conflict` is not
-            // retryable, so the item will not burn 48 h on an answer the user has to give.
-            throw ProximityConflict(candidates: candidates)
-        }
 
         // ── The one ingest this method *is* ────────────────────────────────────────────────────────
         // Every other photograph in the app becomes a record by being uploaded, and `uploadPhoto`
@@ -468,9 +622,6 @@ public actor LocalAPI: CypressAPI {
         // now, which makes this a header read that finds nothing — and it is here anyway,
         // because the column belongs to this layer and a privacy invariant that lives only in the
         // screen that happens to fill the field in is one the next screen will not know about.
-        //
-        // Deliberately after the dedupe: a photograph whose tree is a duplicate is not being ingested
-        // at all, and rewriting a file for a record that is about to be refused is work for nothing.
         try PhotoBinary.stripMetadataInPlace(atPath: draft.photoLocalPath)
 
         let moment = now()
@@ -488,7 +639,17 @@ public actor LocalAPI: CypressAPI {
         )
 
         try await store.queue.write { connection in
-            try communityTrees.insert(tree, clientUUID: draft.clientUUID, connection: connection)
+            // The adder goes on the tree, and the root of its location chain with it
+            // (`AppSchema` v23): whoever adds a tree is who may move its pin (decision 5).
+            try communityTrees.insert(
+                tree,
+                clientUUID: draft.clientUUID,
+                adder: ContributionOwner(attribution),
+                // Which phone put the pin there (`AppSchema` v24). The adder may be the account,
+                // which sign-in and deletion change; this does not follow them.
+                setOnDevice: attribution.deviceID,
+                connection: connection
+            )
             // The "at the same time" half of the species request opens the chain, exactly as
             // `claimSpecies` does for the "after" half (AppSchema v14). A tree added *with* a species
             // and a tree named afterwards must end in the same state, or one of the two would be
@@ -521,19 +682,134 @@ public actor LocalAPI: CypressAPI {
                 connection: connection
             )
             // Spec §3.4: the mutation is queued in the transaction that performed it, so the tree
-            // and the row that will send it land together or not at all. The photograph is *not*
-            // attached to the row — it is ingested above, and `OutboxSendSink` carries no binary.
+            // and the row that will send it land together or not at all. The photograph ingested
+            // above rides on the row as an already-applied binary, and the drain sends it once the
+            // service holds the tree (the owner's answer of 2026-11-15, "Every tree, new and old").
+            try CommunityTreeBackfill.queueAddition(
+                TreeAddition(
+                    clientUUID: draft.clientUUID,
+                    treeID: tree.id,
+                    attribution: attribution,
+                    coordinate: draft.coordinate,
+                    address: draft.address,
+                    placement: draft.placement,
+                    speciesID: draft.speciesID,
+                    landContext: draft.landContext,
+                    occurredAt: moment,
+                    addedOn: TreeAddition.addedDay(of: moment, in: .current)
+                ),
+                addPhoto: (id: photo.id, path: draft.photoLocalPath),
+                applicationSupport: applicationSupportDirectory,
+                at: moment,
+                connection: connection
+            )
+        }
+        return tree
+    }
+
+    /// Moves a community tree's pin. `LocationCorrection.swift` states who may, and why.
+    ///
+    /// The order is the service's (`store.applyLocationCorrection`), so the phone refuses what the
+    /// service would and nothing it would not: the position's shape first, then whose the tree is.
+    /// A move may land within 10 m of another tree (the owner's ruling of 2026-11-14), so nothing
+    /// here measures the distance to other trees.
+    public func correctLocation(
+        treeID: UUID,
+        to coordinate: Coordinate,
+        placement: TreePlacement,
+        locationAccuracyM: Double?
+    ) async throws -> Tree {
+        // The service's `validation_failed` checks, verbatim in meaning (`api/sync.go`): a position
+        // off the map, or an accuracy that is not a distance. `!(x >= 0)` and not `x < 0`, so a NaN
+        // is refused as well — the comparison the service makes.
+        guard (-90.0...90.0).contains(coordinate.latitude),
+              (-180.0...180.0).contains(coordinate.longitude)
+        else { throw APIError.validationFailed }
+        if let locationAccuracyM, !(locationAccuracyM >= 0) { throw APIError.validationFailed }
+
+        let mine = attribution
+        let (subject, adder) = try await store.queue.read {
+            connection -> (Tree?, ContributionOwner?) in
+            (
+                try communityTrees.tree(id: treeID, connection: connection),
+                try communityTrees.adder(treeID: treeID, connection: connection)
+            )
+        }
+        guard let subject else {
+            // Not a tree this phone added. A city row or somebody else's cached tree is real and
+            // not this person's to move — `.forbidden`, `claimSpecies`' distinction between "not
+            // allowed" and "no such tree", which the screen says differently.
+            let isSomebodyElses = try await store.queue.read { connection -> Bool in
+                // `flatMap` on the optional store, for `raiseDataDispute`'s reason: a chained
+                // `treeQueries?.tree(…) != nil` is true whenever a seed is attached at all.
+                let city = try treeQueries.flatMap { try $0.tree(id: treeID, connection: connection) }
+                if city != nil { return true }
+                return try layer.exists(id: treeID, connection: connection)
+            }
+            throw isSomebodyElses ? APIError.forbidden : APIError.notFound
+        }
+        // A tree this phone withdrew is gone, here as on the service (`tree.DeletedAt != nil`).
+        guard subject.deletedAt == nil else { throw APIError.notFound }
+        guard let adder, adder.isOwned(by: mine) else { throw APIError.forbidden }
+
+        let moment = now()
+        // Two ids, as the wire has two (`server/testdata/sync_location_correction.json`): the chain
+        // row's own, sent as the payload's `id`, and the act's, which keys the queue row. Neither is
+        // the tree's — the root row already holds that one, and the service refuses a correction
+        // spelled with it.
+        let correctionID = UUID()
+        let clientUUID = UUID()
+        try await store.queue.write { connection in
+            guard let head = try locations.head(treeID: treeID, connection: connection) else {
+                // Every tree has a root: v23's backfill wrote one for every tree before it and
+                // `CommunityTreeStore.insert` writes one for every tree after. A chain with no head
+                // is damage, and papering over it with a new root would erase where the tree was.
+                throw APIError.conflict
+            }
+            // The old head stops being one before the new row exists: the head index is not
+            // deferrable, the foreign key is (`AppSchema` v23 — and the service's order too).
+            guard try locations.supersede(
+                id: head.id, with: correctionID, at: moment, connection: connection
+            ) else { throw APIError.conflict }
+            try locations.insert(
+                TreeLocation(
+                    id: correctionID,
+                    treeID: treeID,
+                    clientUUID: clientUUID,
+                    coordinate: coordinate,
+                    placement: placement,
+                    locationAccuracyM: locationAccuracyM,
+                    owner: ContributionOwner(mine),
+                    // Provenance, so the Journal still reads this move as this phone's after the
+                    // person signs out (`AppSchema` v24). Not sent: the payload below is built
+                    // from its own fields.
+                    setOnDevice: mine.deviceID,
+                    occurredAt: moment,
+                    createdAt: moment,
+                    updatedAt: moment
+                ),
+                connection: connection
+            )
+            // The read cache follows its chain's head, in the same transaction — `claimSpecies`'
+            // rule for `species_current`, applied to the position.
+            guard try communityTrees.move(
+                treeID: treeID, to: coordinate, placement: placement, at: moment,
+                connection: connection
+            ) else {
+                // Withdrawn between the read above and this write.
+                throw APIError.notFound
+            }
+            // Spec §3.4, in the same transaction as the move — see `addTree`.
             try Self.queueAppliedMutation(
-                .addTree(
-                    TreeAddition(
-                        clientUUID: draft.clientUUID,
-                        treeID: tree.id,
-                        attribution: attribution,
-                        coordinate: draft.coordinate,
-                        address: draft.address,
-                        placement: draft.placement,
-                        speciesID: draft.speciesID,
-                        landContext: draft.landContext,
+                .locationCorrection(
+                    TreeLocationCorrection(
+                        id: correctionID,
+                        clientUUID: clientUUID,
+                        treeID: treeID,
+                        coordinate: coordinate,
+                        placement: placement,
+                        locationAccuracyM: locationAccuracyM,
+                        attribution: mine,
                         occurredAt: moment
                     )
                 ),
@@ -541,7 +817,61 @@ public actor LocalAPI: CypressAPI {
                 connection: connection
             )
         }
-        return tree
+        return try await treeProfile(id: treeID).tree
+    }
+
+    /// The adder withdraws a community tree for everyone (the owner's decision 8). `TreeWithdrawal`
+    /// carries the rule.
+    ///
+    /// `correctLocation`'s checks in `correctLocation`'s order, then one write: the tombstone, which
+    /// must match, and the queue row, born `local_applied = 1`. The tombstone and the row's
+    /// `created_at` are the same instant, which is what lets a refusal undo this tombstone and no
+    /// other (`CommunityTreeStore.restoreAfterRefusedWithdrawal`).
+    ///
+    /// **Not gated on `mayHaveReachedService`.** The service answers `applied` for a tree it never
+    /// received, and that tree's add then arrives already withdrawn (`treeWasWithdrawnBy`).
+    ///
+    /// The adder's own visits, photographs and favorite stay saved; the service keeps them too. The
+    /// reads that list trees drop a withdrawn one (the owner's answer of 2026-11-16).
+    public func withdrawTree(treeID: UUID) async throws {
+        let mine = attribution
+        let (subject, adder) = try await store.queue.read {
+            connection -> (Tree?, ContributionOwner?) in
+            (
+                try communityTrees.tree(id: treeID, connection: connection),
+                try communityTrees.adder(treeID: treeID, connection: connection)
+            )
+        }
+        guard let subject else {
+            // Not a tree this phone added: `correctLocation`'s distinction between "not yours"
+            // and "no such tree".
+            let isSomebodyElses = try await store.queue.read { connection -> Bool in
+                let city = try treeQueries.flatMap { try $0.tree(id: treeID, connection: connection) }
+                if city != nil { return true }
+                return try layer.exists(id: treeID, connection: connection)
+            }
+            throw isSomebodyElses ? APIError.forbidden : APIError.notFound
+        }
+        guard subject.deletedAt == nil else { throw APIError.notFound }
+        guard let adder, adder.isOwned(by: mine) else { throw APIError.forbidden }
+
+        let moment = now()
+        try await store.queue.write { connection in
+            guard try communityTrees.withdraw(treeID: treeID, at: moment, connection: connection) else {
+                // Withdrawn between the read above and this write.
+                throw APIError.notFound
+            }
+            // Spec §3.4, in the same transaction as the tombstone, and at the same instant.
+            try Self.queueAppliedMutation(
+                .treeWithdrawal(
+                    TreeWithdrawal(
+                        clientUUID: UUID(), treeID: treeID, attribution: mine, occurredAt: moment
+                    )
+                ),
+                at: moment,
+                connection: connection
+            )
+        }
     }
 
     /// Names the species on a community tree that has none. `SpeciesClaim` carries the argument for
@@ -556,22 +886,33 @@ public actor LocalAPI: CypressAPI {
         _ = try await species(id: speciesID)
         let moment = now()
 
-        let subject = try await store.queue.read { connection -> Tree? in
-            try communityTrees.tree(id: treeID, connection: connection)
+        // Not in `main` and not in the cache: if the seed has it then it is a city row, and the
+        // refusal is `.forbidden` rather than `.notFound` — the tree is real and this is not
+        // allowed, which is a different sentence from "there is no such tree" and the screen says
+        // both.
+        let target = try await store.queue.read { connection -> SpeciesTarget in
+            try speciesTarget(treeID: treeID, connection: connection)
         }
-        guard let subject else {
-            // Not in `main`. If the seed has it then it is a city row, and the refusal is
-            // `.forbidden` rather than `.notFound` — the tree is real and this is not allowed, which
-            // is a different sentence from "there is no such tree" and the screen says both.
-            let isCityRow = try await store.queue.read { connection -> Bool in
-                let record = try treeQueries?.tree(id: treeID, connection: connection)
-                return record.flatMap { $0 } != nil
-            }
-            throw isCityRow ? APIError.forbidden : APIError.notFound
+        let subject: Tree
+        switch target {
+        case let .cached(cached):
+            try await claimCachedSpecies(cached, speciesID: speciesID, at: moment)
+            return try await treeProfile(id: treeID).tree
+        case let .own(own):
+            subject = own
+        }
+        let mine = attribution
+        // A tree somebody else added on this phone follows the cached tree's rule (ROADMAP 144):
+        // the service applies a stranger's first answer only from an account that shares. The
+        // adder names their own tree whatever they agreed.
+        let isAdder = try await store.queue.read { connection in
+            try communityTrees.adder(treeID: treeID, connection: connection)?.isOwned(by: mine) ?? false
+        }
+        if !isAdder, ContributionSharing(userID: userID, link: try await accountLink()) != .sharing {
+            throw APIError.forbidden
         }
         guard subject.speciesCurrentID == nil else { throw APIError.conflict }
 
-        let mine = attribution
         let owner = ContributionOwner(mine)
         try await store.queue.write { connection in
             guard try communityTrees.claimSpecies(
@@ -625,27 +966,28 @@ public actor LocalAPI: CypressAPI {
     /// without its source is a cache that can disagree with it.
     ///
     /// ── Who may do it ───────────────────────────────────────────────────────────────────────────
-    /// `RULINGS R45` carries the argument; the rule is two arms:
+    /// The service's rule (ROADMAP 144), so the phone never makes a correction the service would
+    /// record and apply to nobody. It replaces `RULINGS R45`'s two arms ("the author of the claim
+    /// in force" and "a lead, in answer to a report"), which the service never honored on a
+    /// community tree:
     ///
-    /// 1. **The author of the claim in force, always.** D15's "first namer wins" exists to stop one
-    ///    contributor discarding another's statement; where the two are the same person there is no
-    ///    statement to protect, and refusing is only a refusal to admit a mistake. Identity is
-    ///    `Attribution` — the account when signed in, this device otherwise (D9) — through
-    ///    `ContributionOwner.isOwned(by:)`.
-    /// 2. **A lead, but only in answer to a report.** `canConfirmReviewFlag` is not a license to
-    ///    rewrite anybody's species at will: it is the authority to resolve a `wrong_species` flag
-    ///    somebody actually raised, which is why the second arm requires one to be open. A lead with
-    ///    an opinion and no report in front of them is a contributor, and takes arm 1's route.
+    /// 1. **The tree's adder, always**, whoever named it: a contributor, an older build, or nobody
+    ///    on record (a claim made before v14, or a species this phone took from the service).
+    /// 2. **The namer, for their own answer**, while it is in force: the reader is not the adder,
+    ///    the claim in force is theirs, and they share tree records (the owner's answers of
+    ///    2026-11-16, "Only people who share" and "Yes, until the adder corrects it"). On a tree
+    ///    in the community cache, "in force" is `localSpeciesAnswers`' answer.
     ///
-    /// Everybody else gets `.forbidden` and the `flagWrongSpecies` route. An assertion owned by
-    /// **nobody** — every claim made before v14, whose author the database never recorded — is
-    /// nobody's to overwrite either, and takes the same route.
+    /// Everybody else gets `.forbidden` and the `flagWrongSpecies` route.
     ///
-    /// Resolving the report *is* the correction, so an open `wrong_species` flag on this tree moves
-    /// to `confirmed` here rather than through a second verb somebody could forget. **No status is
-    /// written**, by either arm: a wrong species is not a statement about whether the tree is alive,
-    /// and `ReviewFlag.Kind.Resolution` keeps the two seams apart so this cannot drift into the one
-    /// that moves `trees.status` (ERRATA E170).
+    /// The adder's correction **is** the answer to every report, so an open `wrong_species` flag on
+    /// this tree moves to `confirmed` here; the service clears the reports on it too. The namer's
+    /// correction does not, on either side. **No status is written**: a wrong species is not a
+    /// statement about whether the tree is alive, and `ReviewFlag.Kind.Resolution` keeps the two
+    /// seams apart so this cannot drift into the one that moves `trees.status` (ERRATA E170).
+    ///
+    /// On a tree in the cache the correction is appended to this phone's chain and queued, and the
+    /// cache is not written: it keeps its one writer, the tile refresher.
     public func correctSpecies(treeID: UUID, speciesID: UUID) async throws -> Tree {
         // The catalog check first, for `claimSpecies`' reason: `species_current` and
         // `species_uuid` are bare TEXT with no foreign key available to them, so nothing but this
@@ -654,29 +996,39 @@ public actor LocalAPI: CypressAPI {
         _ = try await species(id: speciesID)
         let moment = now()
         let mine = attribution
-        let isLead = userRole.canConfirmReviewFlag
+        let shares = ContributionSharing(userID: userID, link: try await accountLink()) == .sharing
 
-        let (head, openFlags) = try await store.queue.read {
-            connection -> (SpeciesAssertion?, [ReviewFlag]) in
-            guard try communityTrees.tree(id: treeID, connection: connection) != nil else {
-                // Same two-armed refusal `claimSpecies` makes, and for the same reason: a city row is
-                // real and this is not allowed, which is a different sentence from "no such tree".
-                let record = try treeQueries?.tree(id: treeID, connection: connection)
-                throw record.flatMap { $0 } != nil ? APIError.forbidden : APIError.notFound
+        let (target, head, openFlags, isAdder, isNamer, shown) = try await store.queue.read {
+            connection -> (SpeciesTarget, SpeciesAssertion?, [ReviewFlag], Bool, Bool, UUID?) in
+            // Same two-armed refusal `claimSpecies` makes, and for the same reason: a city row is
+            // real and this is not allowed, which is a different sentence from "no such tree".
+            let target = try speciesTarget(treeID: treeID, connection: connection)
+            let isAdder: Bool
+            let answers: LocalSpeciesAnswers
+            switch target {
+            case let .own(tree):
+                isAdder = try communityTrees.adder(treeID: treeID, connection: connection)?
+                    .isOwned(by: mine) ?? false
+                answers = try localSpeciesAnswers(tree: tree, addedHere: true, isAdder: isAdder, connection: connection)
+            case let .cached(tree):
+                isAdder = false
+                answers = try localSpeciesAnswers(tree: tree, addedHere: false, isAdder: false, connection: connection)
             }
             return (
+                target,
                 try assertions.current(treeID: treeID, connection: connection),
-                try Self.openSpeciesReviews(treeID: treeID, store: contributions, connection: connection)
+                try Self.openSpeciesReviews(treeID: treeID, store: contributions, connection: connection),
+                isAdder,
+                answers.isNamer,
+                answers.shownSpeciesID
             )
         }
 
-        // No head is not "nothing to correct by accident": it is a tree nobody has named, and naming
-        // one is `claimSpecies`. Saying so is better than appending a first assertion here and
-        // letting two verbs write the same row for different reasons.
-        guard let head else { throw APIError.validationFailed }
-        guard head.isSupersedable(by: mine) || (isLead && !openFlags.isEmpty) else {
-            throw APIError.forbidden
-        }
+        // No species is not "nothing to correct by accident": it is a tree nobody has named, and
+        // naming one is `claimSpecies`. Saying so is better than appending a first assertion here
+        // and letting two verbs write the same row for different reasons.
+        guard shown != nil else { throw APIError.validationFailed }
+        guard isAdder || (isNamer && shares) else { throw APIError.forbidden }
 
         let successor = SpeciesAssertion(
             treeID: treeID,
@@ -689,22 +1041,29 @@ public actor LocalAPI: CypressAPI {
         try await store.queue.write { connection in
             // Stamp before insert, never after. The partial unique index allows one unsuperseded row
             // per tree, so inserting first would be refused by the engine — which is the index doing
-            // its job, and is also why the order is not a matter of taste.
-            guard try assertions.supersede(
-                id: head.id, with: successor.id, at: moment, connection: connection
-            ) else {
-                // Somebody superseded this head between the read and the write. Their correction
-                // stands; this one is not silently layered on top of it.
-                throw APIError.conflict
+            // its job, and is also why the order is not a matter of taste. A tree whose species has
+            // no assertion behind it has no head to stamp; only its adder reaches this with one.
+            if let head {
+                guard try assertions.supersede(
+                    id: head.id, with: successor.id, at: moment, connection: connection
+                ) else {
+                    // Somebody superseded this head between the read and the write. Their correction
+                    // stands; this one is not silently layered on top of it.
+                    throw APIError.conflict
+                }
             }
             try assertions.insert(successor, connection: connection)
-            guard try communityTrees.setSpecies(
-                treeID: treeID, speciesID: speciesID, at: moment, connection: connection
-            ) else {
-                throw APIError.conflict
+            if case .own = target {
+                guard try communityTrees.setSpecies(
+                    treeID: treeID, speciesID: speciesID, at: moment, connection: connection
+                ) else {
+                    throw APIError.conflict
+                }
             }
-            for flag in openFlags {
-                try contributions.confirmReviewFlag(id: flag.id, at: moment, connection: connection)
+            if isAdder {
+                for flag in openFlags {
+                    try contributions.confirmReviewFlag(id: flag.id, at: moment, connection: connection)
+                }
             }
             // Spec §3.4, in the same transaction as the supersession — see `addTree`. A separate
             // kind from `speciesClaim` because the two acts mean different things; see
@@ -743,24 +1102,44 @@ public actor LocalAPI: CypressAPI {
     /// merge* — two devices that could not see each other — and this write is neither. Here the
     /// person can see the open report on the screen they are tapping from, and a second one says
     /// nothing the first did not.
+    ///
+    /// **On a tree in the community cache (ROADMAP 144)** the reader must share tree records
+    /// (`.forbidden` otherwise, the owner's "Only people who share"), and "already open" means a
+    /// report of the reader's that has not been sent yet. A sent report has been answered or is
+    /// waiting for the adder, and the service decides whether it still counts; the adder's "Keep
+    /// the species" makes room for a new one ("A later report brings it back").
+    ///
+    /// The adder is refused too (`.validationFailed`): the adder corrects, and the service does not
+    /// count the adder's own report. Every report names the species it disputes
+    /// (`ReviewReport.disputedSpeciesID`).
     public func flagWrongSpecies(treeID: UUID) async throws {
         let moment = now()
         let mine = attribution
         let raiser = userID
+        let shares = ContributionSharing(userID: userID, link: try await accountLink()) == .sharing
 
-        let head = try await store.queue.read { connection -> SpeciesAssertion? in
-            guard try communityTrees.tree(id: treeID, connection: connection) != nil else {
-                let record = try treeQueries?.tree(id: treeID, connection: connection)
-                throw record.flatMap { $0 } != nil ? APIError.forbidden : APIError.notFound
+        let disputed = try await store.queue.read { connection -> UUID in
+            let target = try speciesTarget(treeID: treeID, connection: connection)
+            let answers: LocalSpeciesAnswers
+            switch target {
+            case let .own(tree):
+                let isAdder = try communityTrees.adder(treeID: treeID, connection: connection)?
+                    .isOwned(by: mine) ?? false
+                // A tree somebody else added on this phone: the cached tree's rule, sharers only.
+                guard isAdder || shares else { throw APIError.forbidden }
+                answers = try localSpeciesAnswers(tree: tree, addedHere: true, isAdder: isAdder, connection: connection)
+                guard answers.openFlag == nil else { throw APIError.conflict }
+                // The adder and the namer correct; neither reports.
+                guard !isAdder, !answers.isNamer else { throw APIError.validationFailed }
+            case let .cached(tree):
+                guard shares else { throw APIError.forbidden }
+                answers = try localSpeciesAnswers(tree: tree, addedHere: false, isAdder: false, connection: connection)
+                guard !answers.isQueued(.wrongSpeciesReport, by: mine) else { throw APIError.conflict }
+                guard !answers.isNamer else { throw APIError.validationFailed }
             }
-            guard try Self.openSpeciesReviews(
-                treeID: treeID, store: contributions, connection: connection
-            ).isEmpty else { throw APIError.conflict }
-            return try assertions.current(treeID: treeID, connection: connection)
+            guard let shown = answers.shownSpeciesID else { throw APIError.validationFailed }
+            return shown
         }
-
-        guard let head else { throw APIError.validationFailed }
-        guard !head.isSupersedable(by: mine) else { throw APIError.validationFailed }
 
         let flag = ReviewFlag(
             treeID: treeID,
@@ -780,7 +1159,8 @@ public actor LocalAPI: CypressAPI {
                         treeID: treeID,
                         kind: flag.kind,
                         attribution: mine,
-                        occurredAt: moment
+                        occurredAt: moment,
+                        disputedSpeciesID: disputed
                     )
                 ),
                 at: moment,
@@ -795,32 +1175,30 @@ public actor LocalAPI: CypressAPI {
     /// Nothing is appended and no status is written: dismissing says the species on record is right
     /// after all, and it already says what it says. The flag row records that somebody looked.
     ///
-    /// Same two arms as `correctSpecies`, minus the report requirement on the second: a lead may
-    /// dismiss any species report, and the author of the disputed claim may answer one raised against
-    /// their own statement. The author's arm is what keeps this loop closed on a phone with no lead
-    /// on it — the alternative is a report nobody present can resolve, which is precisely the state
-    /// E170 exists about.
+    /// **Only the tree's adder** (ROADMAP 144): it is the existing "Keep the species", and the
+    /// owner's answer of 2026-11-16 ("Yes, with "Keep the species"") lets the adder clear the
+    /// reported line for everyone. The service acts on nobody else's keep, so the two older arms
+    /// (a lead, and the author of the disputed claim) are gone: each drew a control the service
+    /// would record and apply to nobody.
     public func dismissSpeciesReview(flagID: UUID) async throws {
         let moment = now()
         let mine = attribution
-        let isLead = userRole.canConfirmReviewFlag
 
-        let (flag, head) = try await store.queue.read {
-            connection -> (ReviewFlag, SpeciesAssertion?) in
+        let (flag, isAdder) = try await store.queue.read {
+            connection -> (ReviewFlag, Bool) in
             guard let flag = try contributions.reviewFlag(id: flagID, connection: connection),
                   flag.deletedAt == nil else { throw APIError.notFound }
-            return (flag, try assertions.current(treeID: flag.treeID, connection: connection))
+            let adder = try communityTrees.adder(treeID: flag.treeID, connection: connection)
+            return (flag, adder?.isOwned(by: mine) ?? false)
         }
         guard flag.kind.resolution == .speciesAssertion else { throw APIError.validationFailed }
         guard flag.status == .open else { throw APIError.conflict }
-        guard isLead || (head?.isSupersedable(by: mine) ?? false) else { throw APIError.forbidden }
+        guard isAdder else { throw APIError.forbidden }
 
         try await store.queue.write { connection in
             try contributions.dismissReviewFlag(id: flagID, at: moment, connection: connection)
-            // Spec §3.4, in the same transaction as the dismissal — see `addTree`. Which arm of the
-            // gate above allowed it (a lead, or the author of the disputed claim) is decided here
-            // and not restated on the wire: the service holds no assertion chain and no role, so it
-            // could not re-derive the answer and must not appear to.
+            // Spec §3.4, in the same transaction as the dismissal — see `addTree`. The service
+            // checks for itself that the sender is the tree's adder.
             try Self.queueAppliedMutation(
                 .speciesReviewDismissal(
                     ReviewDismissal(
@@ -851,24 +1229,319 @@ public actor LocalAPI: CypressAPI {
 
     /// What this viewer may do about the species on this tree, decided where the identity and the
     /// role live rather than in a view (`SpeciesCorrectionOffer`).
+    ///
+    /// On a community tree, `SpeciesAnswerFacts` decides (ROADMAP 144): the adder corrects and
+    /// keeps, the namer corrects their own answer, anybody else who shares reports. A reader who
+    /// does not share gets no control on a tree somebody else added (the owner's "Only people who
+    /// share"), and everybody sees the reported line.
     private func speciesCorrectionOffer(
         tree: Tree,
+        isAdder: Bool,
+        sharing: ContributionSharing,
+        answers: LocalSpeciesAnswers?,
         connection: SQLiteConnection
     ) throws -> SpeciesCorrectionOffer {
-        guard tree.source == .community, tree.speciesCurrentID != nil else { return .unavailable }
+        // **A city row answers R79's surface, not this one.** It answered `.unavailable` until
+        // `AppSchema` v22, and that answer stopped being true the day city data became disputable.
+        // The species is still not correctable here and `correctSpecies` still refuses one — what
+        // changed is that there is now somewhere for the disagreement to go.
+        guard tree.source == .community, let answers else {
+            return .dataDispute(try dataDisputeOffer(tree: tree, connection: connection))
+        }
+        return SpeciesAnswerFacts(
+            hasSpecies: answers.shownSpeciesID != nil,
+            isAdder: isAdder,
+            isNamer: answers.isNamer,
+            readerShares: sharing == .sharing,
+            isReported: answers.openFlag != nil,
+            reportFlagID: answers.openFlag?.id
+        ).offer(placeholderFlagID: tree.id)
+    }
+
+    // MARK: - Species on a tree somebody else added (ROADMAP 144)
+
+    /// Where a species verb acts: this phone's own row, or a tree in the community cache.
+    private enum SpeciesTarget {
+        case own(Tree)
+        case cached(Tree)
+    }
+
+    /// The tree a species verb names, or the refusal: `.forbidden` for a city row (the tree is real
+    /// and this is not allowed) and `.notFound` for anything else.
+    private func speciesTarget(treeID: UUID, connection: SQLiteConnection) throws -> SpeciesTarget {
+        if let own = try communityTrees.tree(id: treeID, connection: connection) { return .own(own) }
+        if let row = try layer.row(id: treeID, connection: connection), !row.isAddedHere {
+            return .cached(row.tree)
+        }
+        let record = try treeQueries?.tree(id: treeID, connection: connection)
+        throw record.flatMap { $0 } != nil ? APIError.forbidden : APIError.notFound
+    }
+
+    /// What this phone knows about the species answers on one community tree.
+    struct LocalSpeciesAnswers {
+        /// The species the profile shows. On a cached tree it is the reader's own answer while that
+        /// answer is in force (`isNamer`), and the cache's species otherwise.
+        var shownSpeciesID: UUID?
+        /// The species in force is the reader's own naming, on a tree the reader did not add.
+        var isNamer: Bool
+        /// An open species report on this tree, raised on this phone.
+        var openFlag: ReviewFlag?
+        /// The species acts still queued for this tree, by anybody on this phone.
+        var queued: [OutboxStore.QueuedSpeciesAct]
+
+        func isQueued(_ kind: OutboxItem.Kind, by attribution: Attribution) -> Bool {
+            queued.contains { $0.kind == kind && $0.owner.isOwned(by: attribution) }
+        }
+    }
+
+    /// The reader's species answers on one community tree, read in the caller's transaction.
+    ///
+    /// **When the reader's own answer is in force on a cached tree.** The cache is written only by
+    /// the tile refresher, so it learns the reader's naming or correction a refresh after the
+    /// service applied it. Until then, and for as long as the cache agrees, the answer is the
+    /// reader's: the answer is still queued, or the cache has no species, or the cache holds the
+    /// reader's species, or it still holds the species the reader's correction replaced **and the
+    /// cache row was served no later than the service accepted that correction** (outbox
+    /// `remote_sent`, against the cache's `fetched_at`). Without that last bound, an adder who set
+    /// the replaced species back would leave the namer's phone showing the namer's correction for
+    /// good. Any other species in the cache is somebody else's later act (the adder's, or the
+    /// operator's), or the first naming that won a race, and the cache wins. A correction whose
+    /// outbox row the prune removed counts as not in force, and the cache wins then too.
+    /// `RoutedAPI` checks this against the service's own answer (`species_named_by_you`) whenever
+    /// it has one.
+    func localSpeciesAnswers(
+        tree: Tree,
+        addedHere: Bool,
+        isAdder: Bool,
+        connection: SQLiteConnection
+    ) throws -> LocalSpeciesAnswers {
+        let mine = attribution
         let head = try assertions.current(treeID: tree.id, connection: connection)
-        let isMine = head?.isSupersedable(by: attribution) ?? false
-        let reported = try Self.openSpeciesReviews(
-            treeID: tree.id, store: contributions, connection: connection
-        ).first
-        if let reported {
-            return .underReview(
-                flagID: reported.id,
-                canResolve: isMine || userRole.canConfirmReviewFlag
+        let queued = try OutboxStore().queuedSpeciesActs(treeID: tree.id, connection: connection)
+        var answers = LocalSpeciesAnswers(
+            shownSpeciesID: tree.speciesCurrentID,
+            isNamer: false,
+            openFlag: try Self.openSpeciesReviews(
+                treeID: tree.id, store: contributions, connection: connection
+            ).first,
+            queued: queued
+        )
+        guard !isAdder, let head, head.isSupersedable(by: mine), let named = head.speciesID else {
+            return answers
+        }
+        if addedHere {
+            // This phone's own row is the chain's read cache, so a head of the reader's is in force.
+            answers.isNamer = true
+            return answers
+        }
+        let cached = tree.speciesCurrentID
+        let answerQueued = answers.isQueued(.speciesClaim, by: mine)
+            || answers.isQueued(.speciesCorrection, by: mine)
+        var inForce = answerQueued || cached == nil || cached == named
+        if !inForce {
+            // The cache still holds the species the reader's correction replaced. That means "the
+            // correction is in force" only while the cache has not been served since the service
+            // accepted the correction. A row served after that is the service's word: somebody
+            // (the adder, or the operator) set that species back, and the cache wins.
+            let replaced = try assertions.chain(treeID: tree.id, connection: connection)
+                .first { $0.supersededBy == head.id }?.speciesID
+            if let replaced, cached == replaced,
+               let fetched = try CommunityTreeCacheStore().fetchedAt(id: tree.id, connection: connection) {
+                inForce = try OutboxStore().acceptedSpeciesCorrections(
+                    treeID: tree.id, speciesID: named, connection: connection
+                ).contains { $0.owner.isOwned(by: mine) && fetched <= $0.acceptedAt }
+            }
+        }
+        if inForce {
+            answers.isNamer = true
+            answers.shownSpeciesID = named
+        }
+        return answers
+    }
+
+    /// Names a tree in the community cache: the first answer on an unnamed tree, which the service
+    /// applies for everyone (the owner's "It names the tree for everyone").
+    ///
+    /// The cache is not written; it keeps its one writer. The answer goes into this phone's chain,
+    /// owned by the reader, and is queued; `localSpeciesAnswers` lays it over the profile until
+    /// the cache has a species of its own. Two first answers race on the service, and the one it
+    /// commits first wins (the orchestrator's choice of 2026-11-16); the loser is told nothing, and
+    /// the next tile refresh shows the winner here.
+    private func claimCachedSpecies(_ tree: Tree, speciesID: UUID, at moment: Date) async throws {
+        let mine = attribution
+        guard ContributionSharing(userID: userID, link: try await accountLink()) == .sharing else {
+            throw APIError.forbidden
+        }
+        guard tree.speciesCurrentID == nil else { throw APIError.conflict }
+        try await store.queue.write { connection in
+            // Somebody on this phone already named it, and the cache has not caught up.
+            guard try assertions.current(treeID: tree.id, connection: connection) == nil else {
+                throw APIError.conflict
+            }
+            try assertions.insert(
+                SpeciesAssertion(
+                    treeID: tree.id,
+                    speciesID: speciesID,
+                    source: .community,
+                    owner: ContributionOwner(mine),
+                    createdAt: moment,
+                    updatedAt: moment
+                ),
+                connection: connection
+            )
+            try Self.queueAppliedMutation(
+                .speciesClaim(
+                    SpeciesStatement(
+                        clientUUID: UUID(),
+                        treeID: tree.id,
+                        speciesID: speciesID,
+                        attribution: mine,
+                        occurredAt: moment
+                    )
+                ),
+                at: moment,
+                connection: connection
             )
         }
-        guard head != nil else { return .unavailable }
-        return isMine ? .correctable : .reportable
+    }
+
+    /// The adder's "Keep the species" for a report this phone does not hold: one the service
+    /// reported (`species_report_flag_id`), raised on somebody else's phone. `RoutedAPI` calls it
+    /// when `dismissSpeciesReview` finds no such flag here.
+    ///
+    /// Only the tree's adder, on a tree this phone added (`.forbidden` and `.notFound` otherwise).
+    /// It queues the keep the service expects and changes nothing on this phone, which holds no
+    /// row for the report; a flag this phone does hold with that id is closed too.
+    public func keepServedSpeciesReport(treeID: UUID, flagID: UUID) async throws {
+        let moment = now()
+        let mine = attribution
+        try await store.queue.write { connection in
+            guard try communityTrees.tree(id: treeID, connection: connection) != nil else {
+                throw APIError.notFound
+            }
+            guard try communityTrees.adder(treeID: treeID, connection: connection)?
+                .isOwned(by: mine) ?? false else { throw APIError.forbidden }
+            // A keep of this report is already queued: a second tap, or a read that ran before the
+            // first keep left the queue. It says nothing new, so nothing more is queued.
+            let alreadyKept = try OutboxStore().queuedSpeciesActs(treeID: treeID, connection: connection)
+                .contains { $0.kind == .speciesReviewDismissal && $0.flagID == flagID }
+            if alreadyKept { return }
+            if let local = try contributions.reviewFlag(id: flagID, connection: connection),
+               local.status == .open, local.deletedAt == nil {
+                try contributions.dismissReviewFlag(id: flagID, at: moment, connection: connection)
+            }
+            try Self.queueAppliedMutation(
+                .speciesReviewDismissal(
+                    ReviewDismissal(
+                        clientUUID: UUID(),
+                        flagID: flagID,
+                        treeID: treeID,
+                        attribution: mine,
+                        occurredAt: moment
+                    )
+                ),
+                at: moment,
+                connection: connection
+            )
+        }
+    }
+
+    /// What `RoutedAPI` needs from this phone to lay its own species acts over the service's
+    /// answer, or nil for a tree that is not a community tree here or a read that failed.
+    public func speciesAnswerState(treeID: UUID) async -> SpeciesAnswerState? {
+        let mine = attribution
+        return try? await store.queue.read { connection -> SpeciesAnswerState? in
+            guard let row = try layer.row(id: treeID, connection: connection) else { return nil }
+            var isAdder = false
+            if row.isAddedHere {
+                isAdder = try communityTrees.adder(treeID: treeID, connection: connection)?.isOwned(by: mine) ?? false
+            }
+            let answers = try localSpeciesAnswers(
+                tree: row.tree, addedHere: row.isAddedHere, isAdder: isAdder, connection: connection
+            )
+            return SpeciesAnswerState(
+                answerQueued: answers.isQueued(.speciesClaim, by: mine)
+                    || answers.isQueued(.speciesCorrection, by: mine),
+                reportQueued: answers.isQueued(.wrongSpeciesReport, by: mine),
+                keptFlagIDs: Set(answers.queued.compactMap { act in
+                    act.kind == .speciesReviewDismissal && act.owner.isOwned(by: mine) ? act.flagID : nil
+                }),
+                anyActQueued: !answers.queued.isEmpty,
+                openFlagID: answers.openFlag?.id
+            )
+        }
+    }
+
+    /// Takes the service's species onto a tree this phone added (ROADMAP 144): a contributor's
+    /// naming, the namer's correction, or the operator's. The adder's phone learns a species no
+    /// other way, because the cache never holds a tree this phone added.
+    ///
+    /// Written only when all of these hold, so the service's answer never overwrites an answer of
+    /// this phone's that it does not include yet:
+    /// - the species is in this phone's catalog (the operator's id is not checked on the service);
+    /// - no species act on this tree is queued, by anybody on this phone;
+    /// - the row still holds `observed`, the species read before the service was asked.
+    ///
+    /// The species becomes the head of this phone's chain, owned by **nobody**: the phone does not
+    /// know who named it, and the adder may correct any species (`correctSpecies`).
+    ///
+    /// - Returns: whether the row changed.
+    @discardableResult
+    public func adoptServedSpecies(treeID: UUID, observed: UUID?, served: UUID) async -> Bool {
+        let moment = now()
+        let known = try? await store.queue.read { connection in
+            try speciesQueries?.species(id: served, connection: connection)
+        }
+        guard known != nil else { return false }
+        let adopted = try? await store.queue.write { connection -> Bool in
+            guard try OutboxStore().queuedSpeciesActs(treeID: treeID, connection: connection).isEmpty,
+                  try communityTrees.adoptSpecies(
+                    treeID: treeID, observed: observed, served: served, connection: connection
+                  ) else { return false }
+            let successor = SpeciesAssertion(
+                treeID: treeID,
+                speciesID: served,
+                source: .community,
+                owner: .nobody,
+                createdAt: moment,
+                updatedAt: moment
+            )
+            if let head = try assertions.current(treeID: treeID, connection: connection) {
+                guard try assertions.supersede(
+                    id: head.id, with: successor.id, at: moment, connection: connection
+                ) else { throw APIError.conflict }
+            }
+            try assertions.insert(successor, connection: connection)
+            return true
+        }
+        return adopted ?? false
+    }
+
+    /// `adoptServedSpecies` for the trees of one tile page that this phone added and has not named.
+    ///
+    /// The tile serves the adder's own trees too, and the cache drops them (the phone's own row
+    /// wins), so this is how the adder's map learns a contributor's naming without opening the
+    /// profile. **Only an unnamed row** (`observed` nil): a page is not ordered against this
+    /// phone's own species acts, and a row that has a species may hold one the page does not
+    /// include yet. The profile read, which knows what was queued before it asked, takes every
+    /// other change.
+    public func adoptServedSpeciesOnUnnamedTrees(_ trees: [Tree]) async {
+        let named = trees.filter { $0.speciesCurrentID != nil }
+        guard !named.isEmpty else { return }
+        let unnamedHere = (try? await store.queue.read { connection -> Set<UUID> in
+            var ids: Set<UUID> = []
+            for tree in named {
+                if let own = try communityTrees.tree(id: tree.id, connection: connection),
+                   own.speciesCurrentID == nil, own.deletedAt == nil {
+                    ids.insert(tree.id)
+                }
+            }
+            return ids
+        }) ?? []
+        for tree in named where unnamedHere.contains(tree.id) {
+            guard let served = tree.speciesCurrentID else { continue }
+            await adoptServedSpecies(treeID: tree.id, observed: nil, served: served)
+        }
     }
 
     // MARK: - The record itself (task #125)
@@ -951,9 +1624,11 @@ public actor LocalAPI: CypressAPI {
     /// this flag never enters `openReviews`, and no status can be written by accident.
     ///
     /// Gated on `userRole.canConfirmReviewFlag` (DECISIONS §3.7), and the gate is on the write, so a
-    /// surface drawn in error cannot withdraw a record. There is no author's arm the way the species
-    /// seam has one: `community_trees` records no author at all (R45's finding, unchanged), so there
-    /// is nobody whose own record this is to take back.
+    /// surface drawn in error cannot withdraw a record. There is no author's arm here the way the
+    /// species seam has one. The adder's own withdrawal is a different act, `withdrawTree`: the
+    /// owner's decision 8, a withdrawal *for everyone*, refused by the service once anybody else
+    /// has visited or photographed the tree, and sent as `tree_withdrawal`. This verb is the lead's
+    /// answer to a report, queues nothing, and stays one.
     public func withdrawRecord(flagID: UUID) async throws {
         guard userRole.canConfirmReviewFlag else { throw APIError.forbidden }
         let moment = now()
@@ -1028,24 +1703,235 @@ public actor LocalAPI: CypressAPI {
     /// A city row is `.unavailable` rather than `.reportable`, matching what `flagNeverExisted`
     /// would do with the tap: a control that exists only to be refused is worse than no control.
     ///
-    /// **RULINGS R79 reverses that for city rows, and the round that builds it changes this
-    /// function.** City-inventory data became disputable on 2026-08-21 — stored app-side, the
-    /// attached file still read-only — and "a recorded tree whose plot is empty" is named in the
-    /// ruling as one of the issue kinds. So a city row stops answering `.unavailable` here; it does
-    /// not simply become `.reportable`, because R79's city surface is a checkbox set with suggested
-    /// values and notes rather than this boolean. Unchanged until that round lands, deliberately —
-    /// see `SpeciesClaim.swift`'s header for the same note on the species half.
+    /// **RULINGS R79 reversed that for city rows and this is what it did**, built in `AppSchema`
+    /// v22's round. City-inventory data is disputable — stored app-side, the attached file still
+    /// read-only — and "a recorded tree whose plot is empty" is one of the ruling's three issue
+    /// kinds. So a city row does not answer `.unavailable` here, and it does **not** answer
+    /// `.reportable` either: `flagNeverExisted` still refuses one, because nothing on this device
+    /// can withdraw a city record and a report nothing can resolve is the E170 defect. It answers
+    /// `.dataDispute`, whose surface is a checkbox set with suggested values and notes rather than
+    /// this boolean. `SpeciesClaim.swift`'s header carries the same note for the species half.
     private func recordDefectOffer(
         tree: Tree,
+        addedHere: Bool,
         connection: SQLiteConnection
     ) throws -> RecordDefectOffer {
-        guard tree.source == .community, tree.deletedAt == nil else { return .unavailable }
+        guard tree.source == .community else {
+            return .dataDispute(try dataDisputeOffer(tree: tree, connection: connection))
+        }
+        // Somebody else's tree: `flagNeverExisted` reads only the trees this phone added, so a
+        // `.reportable` here would draw a control the tap is refused behind.
+        guard addedHere else { return .unavailable }
+        guard tree.deletedAt == nil else { return .unavailable }
         if let reported = try Self.openRecordReviews(
             treeID: tree.id, store: contributions, connection: connection
         ).first {
             return .underReview(flagID: reported.id, canResolve: userRole.canConfirmReviewFlag)
         }
         return .reportable
+    }
+
+    // MARK: - Disputing a city record's data (RULINGS R79, `AppSchema` v22)
+
+    /// What this viewer may do about the data on a **city** record, decided where the identity lives
+    /// rather than in a view (`DataDisputeOffer`).
+    ///
+    /// Read inside the profile's own transaction, like the two offers that call it and for the same
+    /// reason: a control drawn from one moment's answer over another moment's record offers to raise
+    /// a dispute that already stands, or to take back one that has already gone.
+    ///
+    /// `.raisable` even when somebody else's dispute is open on this record, because the conflict
+    /// rule is per raiser — see `DataDisputeStore.openDispute`.
+    private func dataDisputeOffer(
+        tree: Tree,
+        connection: SQLiteConnection
+    ) throws -> DataDisputeOffer {
+        // City rows only this round (R-b of the round's contract). A community row reaching here
+        // would be a caller that stopped checking `tree.source`, and `.unavailable` is the safe
+        // answer for it: no control, rather than a control `raiseDataDispute` would refuse.
+        //
+        // **`deletedAt` is deliberately not checked, and the gap is unreachable rather than
+        // overlooked.** The community arms of both callers check it because a community row can be
+        // withdrawn on this device; a *city* row's `deleted_at` would have to arrive in the seed,
+        // and the shipped seed holds none — `select count(*), sum(deleted_at is not null) from
+        // trees` answers `198625|0`, and nothing on the device may write that table (it is
+        // ATTACHed read-only). So there is no state in which this returns `.raisable` for a
+        // withdrawn city record. If a future pack or a downloaded city ever ships one, this is the
+        // clause that has to grow, and `raiseDataDispute` needs the same one — it does not check
+        // `deletedAt` on the city arm either, for exactly this reason. Building the machinery now
+        // would be a branch no test could reach and no seed could produce.
+        guard tree.source == .cityImport else { return .unavailable }
+        if let open = try disputes.openDispute(
+            treeID: tree.id, raisedBy: userID, connection: connection
+        ) {
+            return .raisedByYou(disputeID: open.id)
+        }
+        return .raisable
+    }
+
+    /// Raises a dispute against a city record's data (`RULINGS R79`).
+    ///
+    /// ── One transaction, and the gates in it are ordered ──────────────────────────────────────
+    ///
+    /// The pure rules first, before the store is touched at all: an empty checkbox set, a suggestion
+    /// for an issue the dispute does not raise, a fix too coarse to pick out the tree it corrects, a
+    /// status part 1 does not write. `DataDisputeLimits.refusal` is all four and it takes no
+    /// database, which is what lets the sheet in a later round pre-check exactly what this enforces
+    /// rather than a paraphrase of it.
+    ///
+    /// Then **one write block**, and the existence check, the conflict check and the insert are all
+    /// inside it. `flagNeverExisted` splits its read from its write and leaves a window in which the
+    /// record changes underneath; this does not, because the conflict rule is "one open dispute per
+    /// raiser per record" and a window between reading that and writing is a window in which two
+    /// taps become two disputes. The queue row goes in from inside the same transaction, so a queued
+    /// dispute exists only for a dispute that was allowed and committed.
+    ///
+    /// ── The three refusals, and why a community row is `.forbidden` and not `.notFound` ───────
+    ///
+    /// `.notFound` when no half of the inventory holds the id. `.forbidden` for a community row:
+    /// the record is there and this verb will not serve it *this round* — R79 gives community trees
+    /// location and species disputes and the community round is where the two surfaces converge, so
+    /// `.notFound` would be a false statement about a tree the caller can see on screen.
+    /// `.conflict` when this raiser's own dispute is already standing, on `flagWrongSpecies`'
+    /// reasoning: BUILD-PLAN §6's "two offline users flagging the same tree produce two flags on one
+    /// thread" governs the sync merge between devices that could not see each other, and this is a
+    /// local write by somebody looking at their own open dispute on their own screen.
+    ///
+    /// ── Nothing in the inventory moves ────────────────────────────────────────────────────────
+    ///
+    /// No `trees` write, no `tree_status_overrides` write, no `species_assertions` write, and none
+    /// may be added here. The city's rows are in an ATTACHed read-only database and R79 defers
+    /// whether a dispute ever reaches a city's own dataset; a device that acted on an unadjudicated
+    /// dispute would be moving city data on a say-so nobody weighed (ARCHITECTURE §8).
+    public func raiseDataDispute(
+        treeID: UUID,
+        issues: Set<TreeDataDispute.IssueKind>,
+        suggestions: TreeDataDispute.Suggestions,
+        notes: String?
+    ) async throws -> TreeDataDispute {
+        // The reason is dropped here and kept on the pure function: `CypressAPI` throws
+        // BUILD-PLAN §6's closed taxonomy, and a screen that wants to say *which* rule refused
+        // calls `DataDisputeLimits.refusal` — the same function, with `Refusal` attached — before
+        // it calls this. See `DataDisputeLimits.Refusal`.
+        if let refusal = DataDisputeLimits.refusal(issues: issues, suggestions: suggestions) {
+            throw refusal.apiError
+        }
+        let moment = now()
+        let mine = attribution
+        let raiser = userID
+
+        return try await store.queue.write { connection -> TreeDataDispute in
+            // `flatMap` on the optional *store* rather than optional-chaining the call: a `try
+            // treeQueries?.tree(…)` is a `TreeRecord??`, and `!= nil` on one of those is true
+            // whenever a seed is attached at all — the same double-optional trap `flagNeverExisted`
+            // spells out beside its own read.
+            let city = try treeQueries.flatMap { try $0.tree(id: treeID, connection: connection) }
+            guard city != nil else {
+                // `let` and then the `deletedAt` check, not one optional-chained comparison: a
+                // missing row makes `tree(id:)?.deletedAt` nil, and `nil == nil` would read a record
+                // that is not there as a live one. `flagNeverExisted` spells out the same trap.
+                let community = try communityTrees.tree(id: treeID, connection: connection)
+                if let community, community.deletedAt == nil { throw APIError.forbidden }
+                // Either there is no such record at all, or the community row has been withdrawn.
+                // Neither is a tree to dispute.
+                throw APIError.notFound
+            }
+
+            guard try disputes.openDispute(
+                treeID: treeID, raisedBy: raiser, connection: connection
+            ) == nil else { throw APIError.conflict }
+
+            let dispute = TreeDataDispute(
+                treeID: treeID,
+                treeSource: .cityImport,
+                raisedBy: raiser,
+                issues: issues,
+                suggestions: suggestions,
+                notes: notes,
+                createdAt: moment,
+                updatedAt: moment
+            )
+            // `.duplicate` here is a `client_uuid` collision on a key minted three lines up, not a
+            // retry: this method has no idempotency key from a caller. It is refused rather than
+            // ignored, because returning a dispute this call did not write would be the same
+            // silent-success shape every default in `DataDispute.swift` exists to avoid.
+            guard try disputes.insert(dispute, connection: connection) == .inserted else {
+                throw APIError.conflict
+            }
+
+            // From inside the transaction that wrote the row, so the queue cannot hold a dispute the
+            // store does not (`OutboxPayload.isAppliedBeforeItIsQueued`).
+            try Self.queueAppliedMutation(
+                .dataDispute(
+                    DataDisputeReport(
+                        clientUUID: dispute.clientUUID,
+                        id: dispute.id,
+                        treeID: treeID,
+                        treeSource: dispute.treeSource,
+                        issues: issues,
+                        suggestions: suggestions,
+                        notes: notes,
+                        attribution: mine,
+                        occurredAt: moment
+                    )
+                ),
+                at: moment,
+                connection: connection
+            )
+            return dispute
+        }
+    }
+
+    /// Takes back a dispute this person raised (`RULINGS R79`, the round's ruling R-a).
+    ///
+    /// **It ships beside the raise deliberately.** The owner's standing complaint about the
+    /// community flagging flow is that a flag cannot be retracted by its author; a new dispute
+    /// surface with the same gap would repeat that defect on new ground.
+    ///
+    /// The authorship rule is `TreeDataDispute.isAuthored(by:)`, checked in Swift so the refusal can
+    /// be the right one and **carried again in the `UPDATE`'s own predicate** so the write cannot
+    /// outlive the check — `deletePhoto`'s ordering, kept because it was paid for.
+    ///
+    /// Nothing is deleted. `withdrawn_at` is stamped, the issues and suggestions stay where they
+    /// are, and the queue row names the dispute id the raise already sent — a service that received
+    /// the objection has to be able to match the retraction to it.
+    ///
+    /// - Throws: `.notFound` when there is no such dispute, or it is already withdrawn — "there is
+    ///   no open dispute with that id" is exactly true of both. `.forbidden` when it is another
+    ///   account's, which is reachable: two accounts can sign in on one phone.
+    public func withdrawDataDispute(disputeID: UUID) async throws {
+        let moment = now()
+        let mine = attribution
+        let raiser = userID
+
+        try await store.queue.write { connection in
+            guard let dispute = try disputes.dispute(id: disputeID, connection: connection) else {
+                throw APIError.notFound
+            }
+            guard dispute.isAuthored(by: raiser) else { throw APIError.forbidden }
+            guard dispute.isOpen else { throw APIError.notFound }
+
+            let withdrawn = try disputes.withdraw(
+                id: disputeID, raisedBy: raiser, at: moment, connection: connection
+            )
+            // The predicate in the UPDATE matched nothing although the read said it would. A success
+            // here would be this call claiming to have done something it did not do.
+            guard withdrawn == 1 else { throw APIError.notFound }
+
+            try Self.queueAppliedMutation(
+                .dataDisputeWithdrawal(
+                    DataDisputeWithdrawal(
+                        clientUUID: UUID(),
+                        disputeID: disputeID,
+                        treeID: dispute.treeID,
+                        attribution: mine,
+                        occurredAt: moment
+                    )
+                ),
+                at: moment,
+                connection: connection
+            )
+        }
     }
 
     // MARK: - Species
@@ -1735,10 +2621,22 @@ public actor LocalAPI: CypressAPI {
 
             // Refused above, before the transaction is opened. The arm is written closed rather
             // than as a `default:` so that the eleventh kind cannot inherit a silent answer here —
-            // ERRATA E125 is what an inherited silent answer costs.
+            // ERRATA E125 is what an inherited silent answer costs. `measurementWithdrawal` is that
+            // eleventh kind, and it is here because the compiler made it be: re-applying it would
+            // tombstone a reading that is already withdrawn and queue a second withdrawal for it.
             case .addTree, .speciesClaim, .speciesCorrection, .wrongSpeciesReport,
                  .neverExistedReport, .speciesReviewDismissal, .recordReviewDismissal,
-                 .photoVote, .photoWithdrawal, .hazardRedirect:
+                 .photoVote, .photoWithdrawal, .hazardRedirect, .measurementWithdrawal,
+                 // R79's two, here because the compiler made them be. Re-applying a
+                 // `data_dispute` would file a second objection against a record that already
+                 // carries this person's; re-applying a withdrawal would re-stamp a
+                 // `withdrawn_at` that is already a fact.
+                 .dataDispute, .dataDisputeWithdrawal,
+                 // Re-applying a moved pin would append a second head to a chain that has already
+                 // moved.
+                 .locationCorrection,
+                 // Re-applying a withdrawal would queue a second one for a tree already gone.
+                 .treeWithdrawal:
                 throw APIError.validationFailed
             }
         }
@@ -1751,7 +2649,9 @@ public actor LocalAPI: CypressAPI {
     private func requireTree(_ id: UUID, connection: SQLiteConnection) throws {
         let inSeed = (try? treeQueries?.exists(id: id, connection: connection)) ?? false
         if inSeed == true { return }
-        if try communityTrees.exists(id: id, connection: connection) { return }
+        // Either community table: a visit to somebody else's published tree is a visit to a tree
+        // (`CommunityLayer`).
+        if try layer.exists(id: id, connection: connection) { return }
         throw APIError.notFound
     }
 
@@ -1761,6 +2661,11 @@ public actor LocalAPI: CypressAPI {
     public func beginPhotoUpload(_ request: PhotoUploadRequest) async throws -> PhotoUploadTicket {
         let moment = now()
         let photo = Photo(
+            // The binary's own id, when it has one — so this row, the begin's `client_uuid` and the
+            // key the service echoes to its contributor are one value (report F30; see
+            // `PhotoUploadRequest.idempotencyKey`). The insert is `ON CONFLICT(id) DO NOTHING`, so an
+            // apply replayed after a crash lands on the row it already wrote.
+            id: request.idempotencyKey ?? UUID(),
             treeID: request.treeID,
             visitID: request.visitID,
             shotType: request.shotType,
@@ -1787,8 +2692,16 @@ public actor LocalAPI: CypressAPI {
         return PhotoUploadTicket(photoID: photo.id, destination: destination)
     }
 
+    /// Where a stored photograph path names a file today, for a caller outside this actor that reads
+    /// the file itself (the apply sink's size read). See `StoredPhotoPath` and report F36.
+    nonisolated func resolvedPhotoPath(_ stored: String) -> String {
+        StoredPhotoPath.resolve(stored, applicationSupport: applicationSupportDirectory).path
+    }
+
     public func uploadPhoto(at localPath: String, ticket: PhotoUploadTicket) async throws {
-        let source = URL(fileURLWithPath: localPath)
+        // Resolved rather than trusted: a photo queued before an app update holds the old
+        // container's path, and the file has moved with the container (report F36).
+        let source = StoredPhotoPath.resolve(localPath, applicationSupport: applicationSupportDirectory)
         let manager = FileManager.default
         guard manager.fileExists(atPath: source.path) else {
             // The binary is gone. Not retryable: no amount of waiting brings a deleted file back.
@@ -1852,7 +2765,8 @@ public actor LocalAPI: CypressAPI {
 
         let candidates = [
             location.storageKey.map { photoDirectory.appendingPathComponent(($0 as NSString).lastPathComponent) },
-            location.localPath.map { URL(fileURLWithPath: $0) }
+            // A path stored before an app update can name the old container (report F36).
+            location.localPath.map { StoredPhotoPath.resolve($0, applicationSupport: applicationSupportDirectory) }
         ].compactMap { $0 }
 
         for url in candidates {
@@ -1951,6 +2865,16 @@ public actor LocalAPI: CypressAPI {
     /// has it taken out of its list, or the next drain would upload a photograph that had been
     /// deleted.
     public func deletePhoto(id: UUID) async throws -> PhotoDeletion {
+        try await deletePhoto(id: id, servicePhotoID: nil)
+    }
+
+    /// `deletePhoto(id:)`, with the queued withdrawal naming `servicePhotoID` — the service's own id
+    /// for this photograph — when the caller knows it.
+    ///
+    /// Everything on the phone is keyed on `id` exactly as before; only the id the withdrawal
+    /// carries to the service changes. `RoutedAPI.deletePhoto(id:)` is the caller, for a photograph
+    /// sent by build 77 or earlier, whose local id the service has never heard of (report F30).
+    public func deletePhoto(id: UUID, servicePhotoID: UUID?) async throws -> PhotoDeletion {
         let moment = now()
         let who = attribution
 
@@ -1980,7 +2904,9 @@ public actor LocalAPI: CypressAPI {
         let manager = FileManager.default
         let files = [
             subject.storageKey.map { photoDirectory.appendingPathComponent(($0 as NSString).lastPathComponent) },
-            subject.localPath.map { URL(fileURLWithPath: $0) }
+            // Resolved as `photoData` resolves it, or a delete after an app update would miss the
+            // moved file and leave the deleted picture on the device (report F36).
+            subject.localPath.map { StoredPhotoPath.resolve($0, applicationSupport: applicationSupportDirectory) }
         ].compactMap { $0 }
 
         // 4. The rows, then the bytes, in one transaction. The order inside it is the point: the
@@ -2014,7 +2940,7 @@ public actor LocalAPI: CypressAPI {
                 .photoWithdrawal(
                     PhotoWithdrawal(
                         clientUUID: UUID(),
-                        photoID: id,
+                        photoID: servicePhotoID ?? id,
                         treeID: subject.treeID,
                         attribution: who,
                         occurredAt: moment
@@ -2048,6 +2974,140 @@ public actor LocalAPI: CypressAPI {
             dequeuedBinaries: counts.stagedBinaries,
             leftACommunityTreeWithoutAPhotograph: lastOnACommunityAdd
         )
+    }
+
+    /// Queues a withdrawal of a photograph the **service** holds and this phone has no row for.
+    ///
+    /// `RoutedAPI.deletePhoto(id:)` calls it for a row the profile drew from the service and the
+    /// service itself listed as this caller's to delete (`deletable_photo_ids`) — which, since the
+    /// ruling on #194's review (finding 3), includes a photograph whose earlier withdrawal the service
+    /// applied as a no-op and which is therefore still public. The service decides ownership on the
+    /// way in (`withdrawPhoto`); nothing on the phone is tombstoned, because nothing on the phone is
+    /// this photograph.
+    ///
+    /// Nothing here uploads or re-enqueues a binary (RULINGS R77): the one queued row is a
+    /// withdrawal.
+    public func withdrawServicePhoto(id: UUID, treeID: UUID) async throws -> PhotoDeletion {
+        let moment = now()
+        let who = attribution
+        try await store.queue.write { connection in
+            try Self.queueAppliedMutation(
+                .photoWithdrawal(
+                    PhotoWithdrawal(
+                        clientUUID: UUID(),
+                        photoID: id,
+                        treeID: treeID,
+                        attribution: who,
+                        occurredAt: moment
+                    )
+                ),
+                at: moment,
+                connection: connection
+            )
+        }
+        return PhotoDeletion(
+            photoID: id,
+            treeID: treeID,
+            removedFiles: 0,
+            deletedVotes: 0,
+            dequeuedBinaries: 0,
+            leftACommunityTreeWithoutAPhotograph: false
+        )
+    }
+
+    /// Withdraws one reading this person contributed (report F27, `AppSchema` v21).
+    ///
+    /// ── One transaction, and the order inside it is the design ────────────────────────────────
+    ///
+    /// `deletePhoto`'s ordering, kept beat for beat because it was paid for: the ownership gate is
+    /// checked in Swift, then the tombstone `UPDATE` **carries the same predicate** and has to match
+    /// before this method has any claim on the reading, and only then is the withdrawal queued —
+    /// from inside the same transaction, so a queued row exists only for a withdrawal that was
+    /// allowed and committed. A refusal by the SQL gate that the Swift rule permitted costs the
+    /// caller a `notFound` and costs the record nothing.
+    ///
+    /// There is no file phase here, which is the one beat of `deletePhoto` this does not have. That
+    /// is also why this is the simpler method: E136's whole argument is about `FileManager` not being
+    /// able to join a SQLite transaction, and a reading has no bytes.
+    ///
+    /// ── What is refused, and why the refusals are two ─────────────────────────────────────────
+    ///
+    /// `notFound` for a reading that is not there or is already withdrawn — the second is not an
+    /// error worth its own case, because "there is no live reading with that id" is exactly true of
+    /// it. `forbidden` for one that is somebody else's, **and for one that is nobody's**: a reading
+    /// whose contributor left through the door that keeps their work in place stays in the log
+    /// because that is what the leaving door promised, and it is no longer anybody's to unmake (R3,
+    /// `AppSchema` v13). `ContributionStore.withdrawableMeasurementIDs` says why that case is a
+    /// tombstone lookup on this table rather than a null owner.
+    ///
+    /// ── Nothing else moves ────────────────────────────────────────────────────────────────────
+    ///
+    /// No cascade, and the absence is deliberate rather than unexamined. A photograph's deletion
+    /// takes its votes with it, because they were judgments about a thing that no longer exists.
+    /// Nothing anywhere judges a reading: `measurements` has no children, no `review_flags` arm, no
+    /// hero election, and the `visits` row beside it is a separate contribution about a separate
+    /// act. The chart, the log, the journal, the grove and the stat cards all narrow on
+    /// `deleted_at IS NULL` already, so the tombstone is the whole of the change.
+    public func withdrawMeasurement(id: UUID) async throws -> WithdrawnMeasurement {
+        let moment = now()
+        let who = attribution
+
+        // 1. Establish what this is and whose it is, before anything is written.
+        let subject = try await store.queue.read { connection in
+            try contributions.measurementForWithdrawal(id: id, connection: connection)
+        }
+        guard let subject else { throw APIError.notFound }
+        // R3 first, exactly as `PhotoOwner.permitsRemoval` refuses `.nobody` on its first line:
+        // a reading its author unlinked from themselves is not made theirs again by the device
+        // column it still carries.
+        guard !subject.isAnonymized else { throw APIError.forbidden }
+        // The two arms of `ContributionStore.withdrawalPredicate`, written the same way round so
+        // the Swift gate and the SQL gate cannot say different things. The account arm requires an
+        // account — `nil == nil` would make a signed-out reader the owner of every reading whose
+        // `user_id` is null, which the device arm below decides properly instead.
+        let ownedByThisAccount = who.userID != nil && subject.userID == who.userID
+        let ownedByThisInstallation = subject.deviceID == who.deviceID
+        guard ownedByThisAccount || ownedByThisInstallation else { throw APIError.forbidden }
+
+        return try await store.queue.write { connection -> WithdrawnMeasurement in
+            let tombstoned = try contributions.withdrawMeasurement(
+                id: id, attribution: who, at: moment, connection: connection
+            )
+            // The predicate in the UPDATE matched nothing although the read said it would: either
+            // another withdrawal won the race, or the SQL gate refused what the Swift rule
+            // permitted. `notFound` rather than a success, because a success would be this call
+            // claiming to have done something it did not do.
+            guard tombstoned == 1 else { throw APIError.notFound }
+
+            // Spec §3.4's shape, and **after** the tombstone has matched: until then this method
+            // has no claim on the reading, and queueing a withdrawal that might still be refused
+            // would be the row asserting something the gates had not yet allowed.
+            try Self.queueAppliedMutation(
+                .measurementWithdrawal(
+                    MeasurementWithdrawal(
+                        clientUUID: UUID(),
+                        measurementID: id,
+                        treeID: subject.treeID,
+                        kind: subject.kind,
+                        attribution: who,
+                        occurredAt: moment
+                    )
+                ),
+                at: moment,
+                connection: connection
+            )
+
+            return WithdrawnMeasurement(
+                measurementID: id,
+                treeID: subject.treeID,
+                kind: subject.kind,
+                // Asked after the tombstone and inside the same transaction, so it describes the
+                // record this withdrawal left rather than the one it found.
+                leftTheKindWithNoReading: try !contributions.hasLiveMeasurement(
+                    treeID: subject.treeID, kind: subject.kind, connection: connection
+                )
+            )
+        }
     }
 
     /// A thumb up or down on a photograph, or `nil` to take it back (ERRATA E125, `AppSchema` v8).
@@ -2163,15 +3223,25 @@ public actor LocalAPI: CypressAPI {
     /// above this loop. A hundred trees would have been half a minute. The *after* column has no
     /// such spread — 25.9 ms and 26.8 ms, measured independently.
     ///
-    /// Three statements now answer for the whole set, and the semantics are preserved one for one:
+    /// Three statements now answer for the whole set (two more when the page holds a community tree
+    /// with a species and no nickname), and the semantics are preserved one for one:
     ///
     /// - a tree the inventory holds, else one added on this device, else **skipped** — a row whose
     ///   tree resolves to neither is not a grove entry, exactly as `treeIfPresent` returning nil
     ///   dropped it;
-    /// - the display name is the tree's one active nickname, else the **seed** species' common
-    ///   name, else empty (D15). That second fallback deliberately does not consult the community
-    ///   row: `displayNameIfPresent` answers nil for a community tree with no nickname, because a
-    ///   self-asserted species is not a name the app puts on a tree.
+    /// - the display name is the row name rule the Journal and the Outbox use
+    ///   (`displayNameIfPresent`): the tree's one active nickname, else the seed species' common
+    ///   name, else, for a community tree, the common name of the species its profile title shows
+    ///   (`communitySpeciesNames`), else empty, which the screen draws as "Tree". The rule is the
+    ///   owner's answers of 2026-11-16: "Use the species" for the Journal and the Outbox, and "Yes,
+    ///   use the species" for My Grove. Its extra statements run once per page, only when the page
+    ///   holds such a tree: the species' common names, and the claim check when one of them is
+    ///   somebody else's cached tree. One step runs **per tree**: for each cached tree with a claim
+    ///   in force on this phone, `localSpeciesAnswers` adds three statements (`species_assertions`,
+    ///   the outbox `SELECT kind`, `review_flags`). The review of 2026-11-16 measured `grove()` at 2
+    ///   statements with no community trees, 8 with 2 added species trees, 8 with 50, and 158 in two
+    ///   queue reads with 50 cached trees each with a queued claim. `resolvedDisplayNames` says why
+    ///   that step stays per tree.
     ///
     /// `GroveBatchReadTests` holds this against the per-tree form over a grove carrying one of each
     /// case, because "preserved one for one" is exactly the kind of claim this project has been
@@ -2289,23 +3359,36 @@ public actor LocalAPI: CypressAPI {
             )
         }
         let treeIDs = rows.map(\.treeID)
-        let (seedRecords, community, activeNames) = try await store.queue.read { connection in
-            (
-                try treeQueries?.trees(ids: treeIDs, connection: connection) ?? [:],
-                try communityTrees.trees(ids: treeIDs, connection: connection),
-                try contributions.activeNames(treeIDs: treeIDs, connection: connection)
+        let (seedRecords, community, activeNames, speciesNames) = try await store.queue.read { connection in
+            let seedRecords = try treeQueries?.trees(ids: treeIDs, connection: connection) ?? [:]
+            let community = try layer.rows(ids: treeIDs, connection: connection)
+            let activeNames = try contributions.activeNames(treeIDs: treeIDs, connection: connection)
+            // The community arm of the row name rule, for the trees still unnamed: no given name,
+            // not in the inventory, not withdrawn (a withdrawn tree leaves My Grove below).
+            let needSpecies = community.filter { id, row in
+                activeNames[id] == nil && seedRecords[id] == nil
+                    && !Self.isWithdrawnCommunityTree(row.tree)
+            }
+            return (
+                seedRecords, community, activeNames,
+                try communitySpeciesNames(rows: needSpecies, connection: connection)
             )
         }
         var entries: [GroveEntry] = []
         entries.reserveCapacity(rows.count)
         for row in rows {
             let seedRecord = seedRecords[row.treeID]
-            guard let profileTree = seedRecord?.tree ?? community[row.treeID] else { continue }
+            guard let profileTree = seedRecord?.tree ?? community[row.treeID]?.tree else { continue }
+            // A withdrawn community tree leaves My Grove; the person's own rows on it stay saved
+            // (the owner's answer of 2026-11-16). `CommunityLayer.trees` does not filter it,
+            // because its other callers read a withdrawn row on purpose.
+            if seedRecord == nil, Self.isWithdrawnCommunityTree(profileTree) { continue }
             entries.append(
                 GroveEntry(
                     treeID: row.treeID,
                     displayName: activeNames[row.treeID]?.name
                         ?? seedRecord?.species?.commonName
+                        ?? speciesNames[row.treeID]
                         ?? "",
                     coordinate: profileTree.coordinate,
                     lastVisitedAt: row.lastVisitedAt,
@@ -2329,6 +3412,22 @@ public actor LocalAPI: CypressAPI {
         return (entries, rows)
     }
 
+    /// What the phone knows about this tree's photographs that the service's rows cannot say — the
+    /// phone's side of photo identity for `RoutedAPI.refreshedTreeProfile` (report F30).
+    ///
+    /// Not part of `CypressAPI`: it answers a question only the router's merge asks, about rows only
+    /// this phone has, and it is handed to the router as a closure by `DataLayer.boot` the way
+    /// `groveCityFileRows(for:)` is. Empty on a failed read, which folds only what an id or a key
+    /// proves and never guesses — see `PhotoIdentityEvidence`.
+    public func photoIdentityEvidence(treeID: UUID) async -> PhotoIdentityEvidence {
+        (try? await store.queue.read { connection in
+            PhotoIdentityEvidence(
+                sent: try contributions.sentPhotoIDs(treeID: treeID, connection: connection),
+                withdrawing: try OutboxStore().queuedPhotoWithdrawals(treeID: treeID, connection: connection)
+            )
+        }) ?? .none
+    }
+
     /// Names and positions for a set of trees, for a grove row the **service** named.
     ///
     /// `RoutedAPI.resolveGroveRows` is the only caller and `DataLayer.boot` is what connects them.
@@ -2337,44 +3436,55 @@ public actor LocalAPI: CypressAPI {
     /// that way ran the app's most expensive single-row query once per row, which is the N+1 `grove()`
     /// above had removed from itself (#250) and `speciesGuide` had removed from itself before that.
     ///
-    /// **The same three statements `grove()` runs, and the same rule for the name**: the tree's one
-    /// active nickname, else the *seed* species' common name (D15). That second fallback deliberately
-    /// does not consult the community row, for the reason `grove()` states — a self-asserted species
-    /// is not a name the app puts on a tree.
+    /// **The same statements `grove()` runs, and the same rule for the name**: the row name rule
+    /// (`displayNameIfPresent`), including its community arm (`communitySpeciesNames`), so a
+    /// community tree with a species and no nickname is named by the species its profile title
+    /// shows (the owner's answer of 2026-11-16, "Yes, use the species").
     ///
-    /// **It is `grove()`'s rule and it was NOT `entryFromCityFile`'s, which is a behavior change and
-    /// is meant to be one.** PR #144's review proved the divergence rather than reasoning about it: a
-    /// community record with a claimed species and no nickname was *named after the claim* by the
-    /// per-row loop this replaces, because `treeProfile` fills `species` for a community row out of
-    /// `tree.speciesCurrentID`. The owner's D15 rule is `grove()`'s, so that row has no name the app
-    /// will draw, and the loop has been corrected to agree (`RoutedAPI.resolvedCityFileRows`) rather
-    /// than this read being loosened to match it. In production the shape is close to unreachable —
-    /// a community tree this device added is already in `local.grove()` and never reaches this
-    /// resolver — but it is a shape a contributor can produce, and two arms answering it differently
-    /// is what the review found.
+    /// **The two arms must still agree.** PR #144's review found them disagreeing: the per-row loop
+    /// named a community tree after its species while this read did not. The fix then made the loop
+    /// refuse the species. Answer 11 changed the rule, so both now name it, and
+    /// `GroveCityFileBatchTests` still holds the two arms against each other row for row. In
+    /// production the shape is close to unreachable — a community tree this device added is already
+    /// in `local.grove()` and never reaches this resolver — but somebody else's cached tree can.
     ///
     /// ── Three outcomes, and the caller treats two of them differently ──────────────────────────
     ///
-    /// - **named** — a nickname or a seed species name;
-    /// - **unnamed** — the inventories hold the tree and D15 gives it no name. Dropped from the
-    ///   grove, and **not** a degraded read: nothing the service said was lost, a rule was applied;
+    /// - **named** — a nickname, a seed species name, or a community tree's species name; or, for a
+    ///   tree held with neither, an empty name, which the list draws as "Tree" (ROADMAP chip 206:
+    ///   this used to put such a tree in `unnamed`, so a tree reached only through the account's
+    ///   grove went missing on a second phone);
+    /// - **unnamed** — a community tree this phone withdrew. Dropped from the grove, and **not** a
+    ///   degraded read: nothing the service said was lost, a rule was applied;
     /// - **in neither** — the inventories do not carry the tree at all. Under D16 an ordinary case
     ///   (the other device may have been in a city this installation has not installed), and the one
     ///   that marks the read degraded.
     ///
-    /// The first cut of this method collapsed the last two into one absence, so a D15 refusal
-    /// reported as `.fellBackToLocal`. `RoutedAPI.CityFileRows` is where that is separated.
+    /// The first cut of this method collapsed the last two into one absence, so a tree the rule
+    /// gave no name reported as `.fellBackToLocal`. `RoutedAPI.CityFileRows` is where that is separated.
+    /// Whether a tree read through `CommunityLayer.trees` is a community tree this phone withdrew.
+    /// The layer returns this phone's own row withdrawn or not (its header says why).
+    static func isWithdrawnCommunityTree(_ tree: Tree) -> Bool {
+        tree.source == .community && tree.deletedAt != nil
+    }
+
     public func groveCityFileRows(for treeIDs: [UUID]) async -> RoutedAPI.CityFileRows {
         let nothing = RoutedAPI.CityFileRows(named: [:], unnamed: [])
         guard !treeIDs.isEmpty else { return nothing }
         let resolved = try? await store.queue.read { connection in
-            (
-                try treeQueries?.trees(ids: treeIDs, connection: connection) ?? [:],
-                try communityTrees.trees(ids: treeIDs, connection: connection),
-                try contributions.activeNames(treeIDs: treeIDs, connection: connection)
+            let seedRecords = try treeQueries?.trees(ids: treeIDs, connection: connection) ?? [:]
+            let community = try layer.rows(ids: treeIDs, connection: connection)
+            let activeNames = try contributions.activeNames(treeIDs: treeIDs, connection: connection)
+            let needSpecies = community.filter { id, row in
+                activeNames[id] == nil && seedRecords[id] == nil
+                    && !Self.isWithdrawnCommunityTree(row.tree)
+            }
+            return (
+                seedRecords, community, activeNames,
+                try communitySpeciesNames(rows: needSpecies, connection: connection)
             )
         }
-        guard let (seedRecords, community, activeNames) = resolved else { return nothing }
+        guard let (seedRecords, community, activeNames, speciesNames) = resolved else { return nothing }
 
         var named: [UUID: RoutedAPI.CityFileRow] = [:]
         var unnamed: Set<UUID> = []
@@ -2383,15 +3493,23 @@ public actor LocalAPI: CypressAPI {
             let seedRecord = seedRecords[treeID]
             // Absent from **both** answers: the installed inventories do not carry this tree. Left
             // out of both sets, which is what tells the caller the service's answer lost a row.
-            guard let tree = seedRecord?.tree ?? community[treeID] else { continue }
-            guard let name = activeNames[treeID]?.name ?? seedRecord?.species?.commonName,
-                  !name.isEmpty
-            else {
-                // Held, and D15 gives it no name — the caller drops the row without calling the
-                // read degraded. See `RoutedAPI.CityFileRows`.
+            guard let tree = seedRecord?.tree ?? community[treeID]?.tree else { continue }
+            // A tree this phone withdrew. The service's grove still lists it (it reads the
+            // person's contributions, which stay), and the owner's answer of 2026-11-16 takes it
+            // off My Grove. A rule applied, not a row lost, so it joins the unnamed set.
+            if seedRecord == nil, Self.isWithdrawnCommunityTree(tree) {
                 unnamed.insert(treeID)
                 continue
             }
+            // Held, and named by the row name rule — or, with no given name and no species, named
+            // with an empty title, which My Grove draws as `TreeProfilePresentation.fallbackTitle`
+            // ("Tree"), as `grove()` does for the same tree (the owner's answer of 2026-11-16, "An
+            // added tree with no name and no species still reads "Tree""). `grove()`'s own
+            // expression, so the local paint and the routed paint give one title.
+            let name = activeNames[treeID]?.name
+                ?? seedRecord?.species?.commonName
+                ?? speciesNames[treeID]
+                ?? ""
             named[treeID] = RoutedAPI.CityFileRow(displayName: name, coordinate: tree.coordinate)
         }
         return RoutedAPI.CityFileRows(named: named, unnamed: unnamed)
@@ -2430,17 +3548,59 @@ public actor LocalAPI: CypressAPI {
     ///
     /// A device with no seed attached has no city inventory to compare against and no tree to
     /// resolve a species from, so it has an empty grove rather than a wrong one.
-    public func groveSpecies() async throws -> GroveSpecies {
+    public func groveSpecies(near coordinate: Coordinate?) async throws -> GroveSpecies {
         guard let groveQueries else { return .empty }
         let userID = userID
         let deviceID = deviceID
+        let speciesQueries = speciesQueries
+        let almanacQueries = almanacQueries
         return try await store.queue.read { connection -> GroveSpecies in
             let known = try groveQueries.knownSpecies(
                 userID: userID,
                 deviceID: deviceID,
                 connection: connection
             )
-            // --- Which area the ring is about (RULINGS R29, the same order `almanac` resolves in).
+            // --- Which area the ring is about (F38: the ring follows the reader's location, owner
+            // decisions of 2026-11-12 and 2026-11-13; RULINGS R29 for the shapes).
+            //
+            // **With a usable fix, the ring is about where the reader is**, resolved exactly as
+            // `almanac` resolves `.here`: the polygon at the fix first, then R29's stated radius
+            // around the reader if that circle holds any record. Before F38 this read never looked
+            // at location, so a reader in Washington, D.C. was told "in the Castro/Upper Market",
+            // their most-visited area, as if that were where they stood.
+            //
+            // Two cases fall through to the most-visited ring below, by the owner's ruling of
+            // 2026-11-13, and its caption says "most-visited", so neither is presented as the
+            // reader's location:
+            // (a) no inventory on this phone covers the reader, so there is no area here at all;
+            // (b) the area holds a record, but the reader has met none of its species, so the ring
+            //     would read zero. The test is against this phone's species; the account's half
+            //     arrives later through `RoutedAPI.refreshedGroveSpecies(near:)`, which keeps the
+            //     area this read chose.
+            if let coordinate, let speciesQueries, let almanacQueries {
+                var located: AlmanacScope?
+                if let polygon = try speciesQueries.resolveNeighborhood(near: coordinate, connection: connection) {
+                    located = .neighborhood(id: polygon.id, name: polygon.name)
+                } else {
+                    let around = AlmanacScope.radius(center: coordinate, meters: AlmanacLimits.fallbackRadiusM)
+                    if try almanacQueries.holdsAnyRecord(scope: around, connection: connection) {
+                        located = around
+                    }
+                }
+                if let located {
+                    let species = try groveQueries.speciesIDs(scope: located, connection: connection)
+                    let growsHere = Set(species.items)
+                    if known.items.contains(where: { growsHere.contains($0.speciesID) }) {
+                        return GroveSpecies(
+                            neighborhood: GroveNeighborhood(area: located.area, species: species, basis: .whereYouAre),
+                            known: known
+                        )
+                    }
+                }
+            }
+
+            // --- No usable fix, or (a) or (b) above: A4's inference, in R29's order, labeled as
+            // most-visited.
             //
             // A4's inference reads the same contributions, so a contributor with none has no
             // area at all and the ring has nothing to be a fraction of. The polygon first — the
@@ -2468,7 +3628,7 @@ public actor LocalAPI: CypressAPI {
             }
             let species = try groveQueries.speciesIDs(scope: scope, connection: connection)
             return GroveSpecies(
-                neighborhood: GroveNeighborhood(area: scope.area, species: species),
+                neighborhood: GroveNeighborhood(area: scope.area, species: species, basis: .mostVisited),
                 known: known
             )
         }
@@ -2505,11 +3665,12 @@ public actor LocalAPI: CypressAPI {
     /// anyway. `readConsistently` would close the window at the price of a transaction per page;
     /// `grove()` made that trade and this follows it deliberately, not by inheritance.
     ///
-    /// The four statements inside the second read are:
+    /// The four statements inside the second read, on a page of city trees, are:
     ///
     /// - `TreeQueries.trees(ids:)` and `ContributionStore.activeNames(treeIDs:)`, through
-    ///   `Self.displayNames(for:treeQueries:contributions:connection:)`, which is the one
-    ///   implementation of the name rule and is what `displayNames(for:)` now calls too;
+    ///   `resolvedDisplayNames(for:connection:)`, which is the one implementation of the name rule
+    ///   and is what `displayNames(for:)` now calls too. A page that holds a community tree with no
+    ///   given name runs that method's three community statements as well (see it);
     /// - `ContributionStore.heroPhotoIDs(treeIDs:attribution:)` rather than the unscoped
     ///   `heroPhotoIDs()` (ERRATA E204), so the thumbnails for a page of at most
     ///   `Page.maximumLimit` trees are answered by two narrowed statements instead of
@@ -2524,6 +3685,16 @@ public actor LocalAPI: CypressAPI {
     /// belonging to somebody else that a sync brought down, and there the scoped form withholds an
     /// unapproved one — which is E215, not a regression. `JournalBatchReadTests` holds both halves.
     public func journal(cursor: String?, limit: Int) async throws -> Page<JournalEntry> {
+        try await journalPage(cursor: cursor, limit: limit, includingWithdrawn: false)
+    }
+
+    /// `journal(cursor:limit:)`'s body. `includingWithdrawn` is true for the export only (see
+    /// `ContributionStore.exportJournalSQL`).
+    private func journalPage(
+        cursor: String?,
+        limit: Int,
+        includingWithdrawn: Bool
+    ) async throws -> Page<JournalEntry> {
         let position = cursor.flatMap(ContributionStore.JournalCursor.init(string:))
         // `grovePage`'s clamp, for its reason and on the same day: a negative `LIMIT` is no limit
         // in SQLite, so `journal(cursor: nil, limit: -1)` returned the whole journal through the
@@ -2536,6 +3707,7 @@ public actor LocalAPI: CypressAPI {
                 deviceID: deviceID,
                 before: position,
                 limit: capped,
+                includingWithdrawn: includingWithdrawn,
                 connection: connection
             )
         }
@@ -2547,12 +3719,7 @@ public actor LocalAPI: CypressAPI {
         let attribution = attribution
         let (names, heroPhotoIDs) = try await store.queue.read { connection in
             (
-                try Self.displayNames(
-                    for: Array(treeIDs),
-                    treeQueries: treeQueries,
-                    contributions: contributions,
-                    connection: connection
-                ),
+                try resolvedDisplayNames(for: Array(treeIDs), connection: connection),
                 try contributions.heroPhotoIDs(
                     treeIDs: treeIDs,
                     attribution: attribution,
@@ -2605,14 +3772,44 @@ public actor LocalAPI: CypressAPI {
 
     public func claimDevice(deviceUUID: UUID, userID: UUID) async throws {
         let moment = now()
+        // A claim that was not screen 15's leaves no consent record, and must not leave a stale one
+        // either (ROADMAP chip 155): a sign-out keeps the provider and the answer, so a bare claim
+        // after it would otherwise read the old account's answer as this one's. `linkAccount` and
+        // `restoreAccount` write their own answer after this returns.
+        //
+        // **One transaction for the sweep, the account and the three clears.** As separate writes, a
+        // kill after `current_user_id` and before the clears left the new account signed in with the
+        // previous account's provider and answer, which is the stale read this closes. Now they land
+        // together or not at all.
         try await store.queue.write { connection in
             try contributions.claimDevice(deviceUUID: deviceUUID, userID: userID, at: moment, connection: connection)
+            try CypressStore.setAppState(.currentUserID, to: userID.uuidString, connection: connection)
+            try CypressStore.clearAppState(.signedOutUserID, connection: connection)
+            try CypressStore.clearAppState(.accountProvider, connection: connection)
+            try CypressStore.clearAppState(.accountLicenseVersion, connection: connection)
         }
         self.userID = userID
-        try await store.setAppState(.currentUserID, to: userID.uuidString)
-        // A claim that was not screen 15's — the DEBUG deep links, a future server exchange — leaves
-        // no consent record, and must not leave a stale one either. See `linkAccount`.
-        try await store.clearAppState(.signedOutUserID)
+        // The old community trees of this account that waited while it was signed out
+        // (`CommunityTreeBackfill`), now that it is the one signed in.
+        await afterClaim?(userID)
+    }
+
+    /// Called at the end of every claim with the account now signed in. `DataLayer.boot` points it
+    /// at `CommunityTreeBackfill` when the send sink is wired; nil otherwise.
+    private var afterClaim: (@Sendable (UUID) async -> Void)?
+
+    /// See `afterClaim`. One handler, replaced rather than accumulated.
+    public func onClaimed(_ handler: (@Sendable (UUID) async -> Void)?) {
+        afterClaim = handler
+    }
+
+    /// The one-time send of this phone's community trees, over this actor's own photo directory.
+    public nonisolated func communityTreeBackfill() -> CommunityTreeBackfill {
+        CommunityTreeBackfill(
+            photoDirectory: photoDirectory,
+            applicationSupport: applicationSupportDirectory,
+            now: now
+        )
     }
 
     // MARK: - The account (local, ERRATA E131)
@@ -2654,8 +3851,10 @@ public actor LocalAPI: CypressAPI {
     /// The local half of a sign-in that already happened, for a session that outlived the database.
     ///
     /// `DataLayer.boot`'s restore arm; `SessionRestore` holds the ruling and the reasoning. It is
-    /// `claimDevice` plus the **erasure** of the three facts a restore cannot know, and that erasure
-    /// is the whole reason this is its own verb rather than a bare `claimDevice` call.
+    /// `claimDevice` plus the **erasure** of the three facts the phone cannot know after a restore,
+    /// and that erasure is the whole reason this is its own verb rather than a bare `claimDevice`
+    /// call. The license answer is then written back from the service's record; see the end of this
+    /// comment.
     ///
     /// ── Why the clear is unconditional (review of this PR, F3) ─────────────────────────────────
     ///
@@ -2677,12 +3876,75 @@ public actor LocalAPI: CypressAPI {
     ///
     /// The role is written as `.member` rather than cleared, which is `signOut()`'s spelling of the
     /// same fact and reads back identically ("absent means member").
-    public func restoreAccount(deviceUUID: UUID, userID account: UUID) async throws {
+    ///
+    /// ── The license answer is the one exception, and it comes from the service ───────────────
+    ///
+    /// The provider and the consent are cleared, then written back from `licenseAnswer`: the answer
+    /// the service sent with the stored session (`SessionCredentials.licenseVersion`), through
+    /// `adoptLicenseAnswer`. That is not the phone claiming an answer on the strength of a
+    /// reinstall; it is the service's own record, which the session carried here. A session stored
+    /// by an older build carries `.unstated`, and then nothing is written and the phone reads
+    /// `.unknown` until the first refresh (ROADMAP chip 148).
+    public func restoreAccount(
+        deviceUUID: UUID,
+        userID account: UUID,
+        licenseAnswer: AuthClient.LicenseAnswer
+    ) async throws {
         self.userRole = .member
         try await store.setAppState(.currentUserRole, to: UserRole.member.rawValue)
         try await store.clearAppState(.accountProvider)
         try await store.clearAppState(.accountLicenseVersion)
         try await claimDevice(deviceUUID: deviceUUID, userID: account)
+        try await adoptLicenseAnswer(licenseAnswer, for: account)
+    }
+
+    /// The provider written when the phone adopts the service's answer and holds none. The service
+    /// mints sessions only through Sign in with Apple (`POST /auth/oidc`), so an account it answers
+    /// for was linked through Apple. `AccountAskProvider.apple.rawValue`; `Data` cannot import the
+    /// enum (ARCHITECTURE §2), and `LicenseReadbackTests` pins the two equal.
+    static let serviceSessionProvider = "apple"
+
+    /// **The orchestrator's choice, to be confirmed by the owner (2026-11-16):** when the service's
+    /// answer differs from the answer this phone stores, the phone takes the service's. False would
+    /// make the service's answer fill only a phone that holds none (`account_provider` missing).
+    static let serviceLicenseAnswerWins = true
+
+    /// **The orchestrator's choice, to be confirmed by the owner (2026-11-16):** the service's `null`
+    /// (no known acceptance) reads on the phone as "did not agree", which draws the "did not agree"
+    /// line and the "Share my tree records" row. The service cannot tell "declined" from "never
+    /// asked"; every in-app sign-in since 2026-08-14 sent an answer. False would ignore a `null`, so
+    /// the phone keeps whatever it holds (after a reinstall, nothing: `.unknown`, no line, no row).
+    static let serviceNoAcceptanceReadsAsDeclined = true
+
+    /// Adopt the service's answer to the license question for the signed-in account (ROADMAP chip
+    /// 148). Called by `restoreAccount`, by `DataLayer.boot` with the answer stored in the Keychain,
+    /// and after each refresh through `AppSession.onLicenseAnswer`.
+    ///
+    /// Writes nothing unless `account` is the account signed in on this phone and the answer is
+    /// stated. Writes `account_provider` only when it is missing, and sets or clears
+    /// `account_license_version`. The two choices above are the only policy here.
+    public func adoptLicenseAnswer(_ answer: AuthClient.LicenseAnswer, for account: UUID) async throws {
+        guard userID == account else { return }
+        let version: String?
+        switch answer {
+        case .unstated:
+            return
+        case .declined:
+            guard Self.serviceNoAcceptanceReadsAsDeclined else { return }
+            version = nil
+        case let .accepted(accepted):
+            version = accepted
+        }
+        let provider = try await store.appState(.accountProvider)
+        if provider != nil, !Self.serviceLicenseAnswerWins { return }
+        if provider == nil {
+            try await store.setAppState(.accountProvider, to: Self.serviceSessionProvider)
+        }
+        if let version {
+            try await store.setAppState(.accountLicenseVersion, to: version)
+        } else {
+            try await store.clearAppState(.accountLicenseVersion)
+        }
     }
 
     /// What the signed-in account agreed to, read back from `app_state`.
@@ -2733,9 +3995,9 @@ public actor LocalAPI: CypressAPI {
     /// unlabeled deletion either way.
     ///
     /// The role goes with it for `deleteAccount`'s reason: a lead's authority is the account's, and
-    /// a device with nobody signed in is not a lead. The consent record stays put — it is the
-    /// account's, it is resumed with the account, and a re-link overwrites it with whatever the
-    /// person agrees to that time.
+    /// a device with nobody signed in is not a lead. The consent record stays on disk, but nothing
+    /// reads it while nobody is signed in (`accountLink()`), and the next claim clears it before any
+    /// sign-in writes its own answer (`claimDevice`, ROADMAP chip 155).
     public func signOut() async throws {
         guard let account = userID else { return }
         try await store.setAppState(.signedOutUserID, to: account.uuidString)
@@ -2780,8 +4042,11 @@ public actor LocalAPI: CypressAPI {
             return try flags.compactMap { flag -> ReviewQueueItem? in
                 // The tree may be a seed row or a community add; resolve through the same two-step the
                 // profile uses. A flag whose tree cannot be found is skipped rather than shown nameless.
+                // So is a flag on a community tree this phone withdrew: the layer returns that row,
+                // but the row opens the tree's profile, and a withdrawn tree has none.
                 let record = try treeQueries?.tree(id: flag.treeID, connection: connection)
-                guard let tree = try record?.tree ?? communityTrees.tree(id: flag.treeID, connection: connection)
+                guard let tree = try record?.tree ?? layer.tree(id: flag.treeID, connection: connection),
+                      !Self.isWithdrawnCommunityTree(tree)
                 else { return nil }
                 let name = try contributions.activeName(treeID: flag.treeID, connection: connection)?.name
                     ?? Self.resolveSpecies(
@@ -2885,6 +4150,12 @@ public actor LocalAPI: CypressAPI {
     }
 
     #if DEBUG
+    /// Test seam: the bytes of the photograph `debugAddCommunityTree` stages, for a harness that
+    /// hands the Add this tree screen a photograph the way its library button would. A simulator
+    /// has no camera, and the system photo picker is another process a UI test cannot drive
+    /// reliably.
+    public static var debugTreePhoto: Data { debugJPEG(hue: 0.3) }
+
     /// Test seam (ERRATA E141): a community tree with a contributor's species on it, so the deep-link
     /// harness can put the claim in front of a screenshot.
     ///
@@ -2915,6 +4186,78 @@ public actor LocalAPI: CypressAPI {
             )
         )
         return tree.id
+    }
+
+    /// Test seam (round C3): a community tree **somebody else added**, in the community cache, so
+    /// the deep-link harness can open the profile and the map of one. The UI suite runs with the
+    /// remote gate shut, so no tile is ever downloaded and the cache is otherwise always empty.
+    ///
+    /// **It goes through the cache's one writer**, `CommunityTreeCacheStore.apply`, as one page of
+    /// the tile that holds the tree, the way `CommunityTileRefresher` writes a page. The tile keeps
+    /// the cursor it already has, so a later real refresh is not handed a made-up cursor; a tile
+    /// with none gets a marker the service refuses, which drops the tile and asks for a snapshot.
+    /// It writes no complete mark (`CommunityTreeCacheStore.markComplete`): one seeded tree is not a
+    /// tile fetched to its last page, so the tile does not count as asked.
+    ///
+    /// The cache holds no history (only the service has it), so a seeded tree's profile shows the
+    /// "Added" row from what the phone knows, and nothing more. Seeding the same id again replaces
+    /// the row, so a re-run is idempotent.
+    public func debugSeedCommunityCache(_ tree: Tree) async throws {
+        let moment = now()
+        let tile = CommunityTile(containing: tree.coordinate).path
+        let cache = CommunityTreeCacheStore()
+        try await store.queue.write { connection in
+            let cursor = try cache.cursor(tile: tile, connection: connection) ?? "debug-seed"
+            try cache.apply(
+                tile: tile, trees: [tree], withdrawnTreeIDs: [], nextCursor: cursor,
+                at: moment, connection: connection
+            )
+        }
+    }
+
+    /// Test seam (the withdrawal round): a visit on `treeID` by **another account**, written as a
+    /// row that has already reached the service (it has no queue row), so the profile draws the
+    /// reason line in place of the withdraw control (`CommunityTreeStore.othersHaveAddedTo`). The UI
+    /// suite runs with the remote gate shut, so no other account's row can arrive any other way.
+    public func debugRecordOthersVisit(treeID: UUID, accountID: UUID) async throws {
+        let visit = Visit(
+            treeID: treeID,
+            attribution: Attribution(userID: accountID, deviceID: deviceID),
+            capturedAt: now()
+        )
+        try await store.queue.write { try contributions.insert(visit, connection: $0) }
+    }
+
+    /// Test seam (the withdrawal round): the service's `conflict` answer to this tree's queued
+    /// withdrawal, so the Outbox row and the restored tree can be looked at. The UI suite runs with
+    /// no send sink, so no refusal can arrive. Writes the two things `OutboxQueue.settle` writes for
+    /// that answer, in one write: the failed row with the owner's sentence, and the tree put back.
+    public func debugRefuseTreeWithdrawal(treeID: UUID) async throws {
+        let moment = now()
+        let outbox = OutboxStore()
+        try await store.queue.write { connection in
+            let rows = try outbox.allItems(connection: connection).filter { record in
+                guard record.item.kind == .treeWithdrawal,
+                      case let .treeWithdrawal(withdrawal)? =
+                        try? OutboxPayload.decode(kind: record.item.kind, from: record.item.payload)
+                else { return false }
+                return withdrawal.treeID == treeID
+            }
+            guard let row = rows.last else { throw APIError.notFound }
+            try outbox.recordFailure(
+                row.id,
+                state: .failed,
+                failCount: row.item.failCount + 1,
+                reason: OutboxFailureReason.treeStaysOnTheMap,
+                code: .conflict,
+                nextAttemptAt: nil,
+                at: moment,
+                connection: connection
+            )
+            _ = try communityTrees.restoreAfterRefusedWithdrawal(
+                treeID: treeID, outboxID: row.id, at: moment, connection: connection
+            )
+        }
     }
 
     /// Test seam (ERRATA E170): read one flag back, including a resolved one.
@@ -3050,9 +4393,17 @@ public actor LocalAPI: CypressAPI {
             case .duplicate:
                 // A previous run wrote it. Read back the row this `client_uuid` names and return
                 // *its* id — the one a caller could actually look up.
-                let existing = try contributions
-                    .measurements(treeID: treeID, connection: connection)
-                    .first { $0.clientUUID == clientUUID }
+                //
+                // **Through `restoreSeededMeasurement`, which sees a withdrawn row and un-withdraws
+                // it.** `measurements(treeID:)` — what this read was — filters `deleted_at IS NULL`,
+                // so from v21 onwards a seeded reading somebody had taken back on that device gave
+                // `duplicate` from the insert and nothing from the read-back: this seam threw
+                // `notFound` on every later launch, permanently, until the app was uninstalled. That
+                // is what the withdrawal control armed here, and see that method for why the fix
+                // clears the tombstone rather than only ignoring it.
+                let existing = try contributions.restoreSeededMeasurement(
+                    clientUUID: clientUUID, treeID: treeID, at: moment, connection: connection
+                )
                 guard let existing else {
                     // **`duplicate` alone does not mean this tree already has the reading.** The
                     // conflict clause keys on `client_uuid`, which is `UNIQUE` across the whole
@@ -3063,14 +4414,16 @@ public actor LocalAPI: CypressAPI {
                     // false invariant turned a caller's key collision into a thrown deep link
                     // (PR #139 delta review).
                     //
-                    // It is reachable only by a caller that reuses one `clientUUID` across trees.
-                    // The one caller derives its keys per tree (`DebugDeepLink.seededClientUUID`)
+                    // What reaches this line is a caller reusing one `clientUUID` across trees. The
+                    // one caller derives its keys per tree (`DebugDeepLink.seededClientUUID`)
                     // precisely so it cannot, which is what makes throwing the right answer *now*:
                     // it names a key collision the caller has to fix, rather than silently
-                    // returning an id for a row on some other tree.
+                    // returning an id for a row on some other tree. **A withdrawn reading used to
+                    // reach here too** — that was a second, unintended way in, and it is the read
+                    // above rather than this branch that no longer admits it.
                     throw APIError.notFound
                 }
-                return existing.id
+                return existing
             }
         }
     }
@@ -3126,6 +4479,33 @@ public actor LocalAPI: CypressAPI {
             try contributions.clearStatusOverrides(connection: connection)
         }
         overrideCache = nil
+    }
+
+    /// Test seam (ROADMAP chip 142): withdraw every community tree this phone holds, the way
+    /// `CommunityTreeStore.withdraw` withdraws one (a soft delete: `deleted_at` and `updated_at`).
+    ///
+    /// **Why it has to exist.** Every deep-link case that adds a community tree adds a new one on
+    /// each run, and a community tree counts as the reader's own. On a simulator that is reused,
+    /// those trees pile up in the ocean off Ocean Beach, and `Yours` then aims its camera at them.
+    /// A test that needs a reader with no community trees calls this at its own launch. Nothing in
+    /// the shipping app calls it, and it does not change what a real reader's `Yours` camera does.
+    ///
+    /// - Returns: how many rows it withdrew.
+    @discardableResult
+    public func debugWithdrawAllCommunityTrees() async throws -> Int {
+        let moment = now()
+        return try await store.queue.write { connection in
+            let statement = try connection.cachedStatement("""
+                UPDATE community_trees
+                   SET deleted_at = :now, updated_at = :now
+                 WHERE deleted_at IS NULL
+                """)
+            _ = try statement.bind([":now": moment])
+            try statement.run()
+            let changed = Int(connection.changes)
+            _ = try statement.reset()
+            return changed
+        }
     }
 
     /// Test seam (ERRATA E125): give a real seed tree some photographs, so the deep-link harness can
@@ -3426,6 +4806,18 @@ public actor LocalAPI: CypressAPI {
     public func deleteAccount(
         _ choice: AccountDeletionChoice = .default
     ) async throws -> AccountDeletion.Outcome {
+        try await finishAccountDeletion(choice, actingOn: nil)
+    }
+
+    /// The local half of `DELETE /me`, acting on the service's answer about the community trees the
+    /// account added (`ROADMAP` 104 and 105). `RoutedAPI.deleteAccount` passes the answer after the
+    /// service accepted the deletion; nil keeps the phone's own rule. See
+    /// `AccountDeletion.forgetCommunityTrees`.
+    @discardableResult
+    public func finishAccountDeletion(
+        _ choice: AccountDeletionChoice,
+        actingOn serviceTrees: AccountDeletion.ServiceTreeVerdicts?
+    ) async throws -> AccountDeletion.Outcome {
         guard let account = userID else { throw APIError.unauthorized }
         let moment = now()
 
@@ -3443,13 +4835,16 @@ public actor LocalAPI: CypressAPI {
                 )
             }
             for path in bytes.absolutePaths {
-                try? manager.removeItem(at: URL(fileURLWithPath: path))
+                try? manager.removeItem(
+                    at: StoredPhotoPath.resolve(path, applicationSupport: applicationSupportDirectory)
+                )
             }
         }
 
         let outcome = try await store.queue.write { connection in
             try AccountDeletion().delete(
-                userID: account, choice: choice, at: moment, connection: connection
+                userID: account, choice: choice, at: moment, serviceTrees: serviceTrees,
+                connection: connection
             )
         }
         userID = nil
@@ -3549,7 +4944,7 @@ public actor LocalAPI: CypressAPI {
             let placed = Set(inventory.map(\.treeID))
             let unplaced = ids.subtracting(placed)
             guard !unplaced.isEmpty else { return places }
-            for tree in try communityTrees.trees(
+            for tree in try layer.trees(
                 ids: Array(unplaced), connection: connection
             ).values {
                 places.append(
@@ -3697,7 +5092,11 @@ public actor LocalAPI: CypressAPI {
         var entries: [JournalEntry] = []
         var cursor: String?
         repeat {
-            let page = try await journal(cursor: cursor, limit: Page<JournalEntry>.maximumLimit)
+            // Rows on a tree this phone withdrew are included: they stay saved, and the export
+            // promises everything this person recorded here (`ContributionStore.exportJournalSQL`).
+            let page = try await journalPage(
+                cursor: cursor, limit: Page<JournalEntry>.maximumLimit, includingWithdrawn: true
+            )
             entries.append(contentsOf: page.items)
             cursor = page.nextCursor
         } while cursor != nil
@@ -3714,30 +5113,65 @@ public actor LocalAPI: CypressAPI {
     private func treeIfPresent(_ id: UUID) async throws -> Tree? {
         try await store.queue.read { connection -> Tree? in
             if let record = try treeQueries?.tree(id: id, connection: connection) { return record.tree }
-            return try communityTrees.tree(id: id, connection: connection)
+            return try layer.tree(id: id, connection: connection)
         }
     }
 
-    /// The name a tree shows: its one active nickname, else the species common name (D15). Never a
-    /// fabricated label.
+    /// The name a tree shows in a row: its one active given name; else, for a tree in the city
+    /// inventory, its species' common name; else, for a community tree, the common name of the
+    /// species its profile shows. Never a fabricated label.
+    ///
+    /// **The community arm is the owner's answer of 2026-11-16** ("Use the species"): rows name a
+    /// tree as its profile does, so an added tree with a species reads `Pin moved · Sycamore,
+    /// London Plane` rather than `Pin moved`. It replaces the older rule that an added tree's
+    /// species was never used as its name in a row. The species is the one `treeProfile(id:)`
+    /// resolves: the row's `species_current`, with the reader's own naming or correction laid over
+    /// a cached tree while it is in force (`localSpeciesAnswers`, ROADMAP 144). A withdrawn tree
+    /// this phone still holds keeps its name, so its Outbox rows still name it.
     public func displayNameIfPresent(for id: UUID) async throws -> String? {
         try await store.queue.read { connection -> String? in
             if let name = try contributions.activeName(treeID: id, connection: connection) {
                 return name.name
             }
-            guard let record = try treeQueries?.tree(id: id, connection: connection) else { return nil }
-            return record.species?.commonName
+            if let record = try treeQueries?.tree(id: id, connection: connection) {
+                return record.species?.commonName
+            }
+            guard let row = try layer.row(id: id, connection: connection) else { return nil }
+            let shown = row.isAddedHere
+                ? row.tree.speciesCurrentID
+                : try localSpeciesAnswers(
+                    tree: row.tree, addedHere: false, isAdder: false, connection: connection
+                ).shownSpeciesID
+            guard let shown, let speciesQueries else { return nil }
+            return try speciesQueries.species(id: shown, connection: connection)?.commonName
         }
     }
 
-    /// **The name rule for a whole set, in two statements against one open connection.**
+    /// **The name rule for a whole set, against one open connection.**
     ///
-    /// This is `displayNameIfPresent`'s rule — the tree's one active nickname, else the **seed**
-    /// species' common name, else nothing — asked of every id at once. The species fallback is
-    /// `TreeQueries`-only here exactly as it is there: a community tree with no nickname answers
-    /// nothing even when its row carries a self-asserted species, because a self-assertion is not a
-    /// name the app puts on a tree (D15). An id with no name is absent from the result, which is
-    /// how the caller spells `nil`.
+    /// This is `displayNameIfPresent`'s rule asked of every id at once. An id with no name is
+    /// absent from the result, which is how the caller spells `nil`.
+    ///
+    /// **Statements.** Two always: `TreeQueries.trees(ids:)` and `activeNames`. Up to three more,
+    /// once per call, only when some id is neither named nor in the inventory (a community tree):
+    /// `CommunityLayer.rows(ids:)`; `SpeciesAssertionStore.treesWithAClaim(among:)`, when one of
+    /// those is somebody else's cached tree; and `SpeciesQueries.commonNames(ids:)`, when one has a
+    /// species. One more step runs **per tree**, and only for a cached tree that has a claim in
+    /// force on this phone: `localSpeciesAnswers`, the profile's own overlay, so a row and the
+    /// profile cannot disagree about the reader's own naming. That set is the cached trees the
+    /// reader named or corrected, not the page.
+    ///
+    /// **The per-tree step is a choice, made with these numbers** (one call, one queue read each,
+    /// measured by the review of 2026-11-16): 8 city trees, 2 statements; the same and 1 added
+    /// tree, 4; 50 added trees, 4; 50 cached trees each with a claim this phone queued, 155, which
+    /// is 2 + 3 + 3 per claimed tree. The step reuses `localSpeciesAnswers` rather than a batched
+    /// copy of its chain logic, because a second copy of that logic is how a row and the profile
+    /// would come to disagree. The count grows only with the trees one reader has named or
+    /// corrected on somebody else's record, which is small. `JournalStatementCensusTests` and
+    /// `GroveStatementCensusTests` pin the per-page counts.
+    ///
+    /// **Why an added tree's species counts:** the owner's answer of 2026-11-16, "Use the species"
+    /// (see `displayNameIfPresent`).
     ///
     /// Two folds differ from the per-tree form and neither is reachable. `activeNames` keeps the
     /// last row per tree where `activeName`'s `LIMIT 1` keeps the first, and `idx_tree_names_one_active`
@@ -3748,10 +5182,8 @@ public actor LocalAPI: CypressAPI {
     ///
     /// `JournalBatchReadTests` checks every answer against `displayNameIfPresent` itself rather
     /// than restating this paragraph as assertions.
-    private static func displayNames(
+    private func resolvedDisplayNames(
         for ids: [UUID],
-        treeQueries: TreeQueries?,
-        contributions: ContributionStore,
         connection: SQLiteConnection
     ) throws -> [UUID: String] {
         guard !ids.isEmpty else { return [:] }
@@ -3759,19 +5191,83 @@ public actor LocalAPI: CypressAPI {
         let active = try contributions.activeNames(treeIDs: ids, connection: connection)
         var names: [UUID: String] = [:]
         names.reserveCapacity(ids.count)
+        var unresolved: [UUID] = []
         for id in ids {
-            guard let name = active[id]?.name ?? records[id]?.species?.commonName,
-                  !name.isEmpty else { continue }
+            if let name = active[id]?.name {
+                if !name.isEmpty { names[id] = name }
+            } else if let record = records[id] {
+                if let common = record.species?.commonName, !common.isEmpty { names[id] = common }
+            } else {
+                unresolved.append(id)
+            }
+        }
+        guard !unresolved.isEmpty, speciesQueries != nil else { return names }
+
+        let rows = try layer.rows(ids: unresolved, connection: connection)
+        for (id, name) in try communitySpeciesNames(rows: rows, connection: connection) {
             names[id] = name
         }
         return names
     }
 
+    /// **The community arm of the row name rule, for rows a caller has already read**: the common
+    /// name of the species each tree's profile title shows. It is `resolvedDisplayNames`' last step,
+    /// and `grove()` and `groveCityFileRows(for:)` call it too, over the `CommunityLayer.rows(ids:)`
+    /// answer they read anyway, so My Grove, the Journal, the Outbox and the profile title name a
+    /// tree the same way (the owner's answers of 2026-11-16, "Use the species" and "Yes, use the
+    /// species").
+    ///
+    /// The species is the row's `species_current`; on a cached tree with a claim in force on this
+    /// phone, `localSpeciesAnswers`' overlay, as `treeProfile` lays it. At most two statements:
+    /// `SpeciesAssertionStore.treesWithAClaim(among:)` when a row is cached, and
+    /// `SpeciesQueries.commonNames(ids:)` when a row has a species. `localSpeciesAnswers` runs only
+    /// for a cached tree the reader named or corrected. A tree with no species is absent.
+    private func communitySpeciesNames(
+        rows: [UUID: CommunityLayer.Row],
+        connection: SQLiteConnection
+    ) throws -> [UUID: String] {
+        guard !rows.isEmpty, let speciesQueries else { return [:] }
+        let shown = try communityShownSpecies(rows: rows, connection: connection)
+        let common = try speciesQueries.commonNames(ids: Array(Set(shown.values)), connection: connection)
+        var names: [UUID: String] = [:]
+        for (id, species) in shown {
+            if let name = common[species], !name.isEmpty { names[id] = name }
+        }
+        return names
+    }
+
+    /// **The species each community tree's profile title shows**, by id: the row's
+    /// `species_current`, and on a cached tree with a claim in force on this phone,
+    /// `localSpeciesAnswers`' overlay, as `treeProfile` lays it. A tree with no species is absent.
+    ///
+    /// The one overlay both `communitySpeciesNames` (the row names) and `treesNear` (the nearby
+    /// lists) read, so a list, a row and the profile cannot disagree about the reader's own naming.
+    /// One statement, `SpeciesAssertionStore.treesWithAClaim(among:)`, only when a row is cached;
+    /// then `localSpeciesAnswers` per cached tree the reader named or corrected.
+    private func communityShownSpecies(
+        rows: [UUID: CommunityLayer.Row],
+        connection: SQLiteConnection
+    ) throws -> [UUID: UUID] {
+        var shown: [UUID: UUID] = [:]
+        for (id, row) in rows {
+            if let species = row.tree.speciesCurrentID { shown[id] = species }
+        }
+        let cached = rows.filter { !$0.value.isAddedHere }
+        guard !cached.isEmpty else { return shown }
+        for id in try assertions.treesWithAClaim(among: Array(cached.keys), connection: connection) {
+            guard let row = cached[id] else { continue }
+            shown[id] = try localSpeciesAnswers(
+                tree: row.tree, addedHere: false, isAdder: false, connection: connection
+            ).shownSpeciesID
+        }
+        return shown
+    }
+
     /// Resolves several tree names in one pass, for `OutboxViewState` and for `journal`.
     ///
-    /// **One round-trip and two statements**, where this was a serial loop of one `queue.read` hop
-    /// per id, each running `TreeQueries.tree(id:)` on the nickname miss. See the static above for
-    /// the rule and for the two folds that differ from the per-tree form.
+    /// **One round-trip**, where this was a serial loop of one `queue.read` hop per id, each running
+    /// `TreeQueries.tree(id:)` on the nickname miss. See `resolvedDisplayNames` above for the rule,
+    /// its statements, and the two folds that differ from the per-tree form.
     ///
     /// **What the batch changes about failure, stated because it is a real difference.** The loop
     /// wrapped each id in `try?`, so one unreadable row cost that id its name and no other; one
@@ -3783,12 +5279,7 @@ public actor LocalAPI: CypressAPI {
     public func displayNames(for ids: [UUID]) async -> [UUID: String] {
         guard !ids.isEmpty else { return [:] }
         return (try? await store.queue.read { connection in
-            try Self.displayNames(
-                for: ids,
-                treeQueries: treeQueries,
-                contributions: contributions,
-                connection: connection
-            )
+            try resolvedDisplayNames(for: ids, connection: connection)
         }) ?? [:]
     }
 }

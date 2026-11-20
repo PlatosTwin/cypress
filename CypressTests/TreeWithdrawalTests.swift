@@ -1,0 +1,801 @@
+import Foundation
+import Testing
+@testable import Cypress
+
+/// The adder withdraws a community tree for everyone (the owner's decision 8, and the owner's
+/// answers of 2026-11-16).
+///
+/// The sentences the change has to make true, one group of tests each:
+///
+/// 1. **The adder withdraws**: the tree's `deleted_at` is set and one `tree_withdrawal` is queued,
+///    in one write, at one instant.
+/// 2. **Every other caller is refused, and queues nothing**, with the answer the service would give.
+/// 3. **The reads**: the tree leaves the map, the shortlist, the profile, the Journal, My Grove and
+///    the Yours map; the adder's own rows stay saved; a tile page cannot bring it back.
+/// 4. **The service's answer settles it**: a `conflict` brings the tree back and the Outbox row says
+///    why; a retry the service accepts takes it off again.
+/// 5. **The offer**: the control is drawn only for the adder's live tree, and the reason line only
+///    on a fact the phone holds.
+@Suite("Community trees · withdrawing a tree you added")
+struct TreeWithdrawalTests {
+
+    private typealias Fixture = LocationCorrectionTests
+
+    static let otherUserID = UUID(uuidString: "0E000000-0000-4000-8000-0000000C1099")!
+
+    /// A clock the test moves.
+    final class Clock: @unchecked Sendable {
+        private let lock = NSLock()
+        private var value = Date(timeIntervalSince1970: 1_797_000_000)
+        var now: Date { lock.withLock { value } }
+        func advance(by seconds: TimeInterval) { lock.withLock { value.addTimeInterval(seconds) } }
+    }
+
+    /// The service: answers each `tree_withdrawal` with the next scripted answer (and `applied`
+    /// once the script is spent), and every other kind with `applied`.
+    actor Service: OutboxSendSink {
+        private var withdrawalAnswers: [APIError?]
+        private(set) var offered: [OutboxItem.Kind] = []
+
+        init(withdrawalAnswers: [APIError?]) { self.withdrawalAnswers = withdrawalAnswers }
+
+        func sync(_ items: [OutboxItem]) async throws -> [SyncResult] {
+            offered.append(contentsOf: items.map(\.kind))
+            return items.map { item in
+                guard item.kind == .treeWithdrawal, !withdrawalAnswers.isEmpty,
+                      let refusal = withdrawalAnswers.removeFirst()
+                else { return SyncResult(clientUUID: item.clientUUID, status: .applied) }
+                return SyncResult(clientUUID: item.clientUUID, status: .failed, error: refusal)
+            }
+        }
+
+        func uploadPhoto(_ photo: OutboxStore.PhotoRow, for item: OutboxItem) async throws {}
+    }
+
+    static func withdrawals(_ store: CypressStore) async throws -> [OutboxStore.Record] {
+        try await store.queue.read { try OutboxStore().allItems(connection: $0) }
+            .filter { $0.item.kind == .treeWithdrawal }
+    }
+
+    /// `community_trees.deleted_at`, read straight from SQL: the question is whether it was written.
+    static func deletedAt(_ store: CypressStore, _ id: UUID) async throws -> String? {
+        try await store.queue.read { connection -> String? in
+            let statement = try connection.prepare(
+                "SELECT deleted_at FROM community_trees WHERE id = :id COLLATE NOCASE"
+            )
+            defer { statement.finalize() }
+            _ = try statement.bind(id.uuidString, forName: ":id")
+            return try statement.fetchOne { try $0.stringIfPresent("deleted_at") } ?? nil
+        }
+    }
+
+    static func visit(
+        _ store: CypressStore,
+        on treeID: UUID,
+        by attribution: Attribution,
+        at moment: Date = Date(timeIntervalSince1970: 1_796_000_000)
+    ) async throws -> Visit {
+        let visit = Visit(treeID: treeID, attribution: attribution, capturedAt: moment)
+        try await store.queue.write { try ContributionStore().insert(visit, connection: $0) }
+        return visit
+    }
+
+    static func box(around coordinate: Coordinate) -> MapViewport {
+        MapViewport(bounds: BoundingBox(around: coordinate, radiusM: 100), zoom: 18)
+    }
+
+    static func journal(_ api: LocalAPI) async throws -> [JournalEntry] {
+        try await api.journal(cursor: nil, limit: 100).items
+    }
+
+    // MARK: - 1. The adder withdraws
+
+    /// Red-proof: remove `queueAppliedMutation` from `LocalAPI.withdrawTree` — red on "queued 0
+    /// withdrawals".
+    @Test("the adder withdraws: the tree is tombstoned and one withdrawal is queued, at one instant")
+    func theAdderWithdraws() async throws {
+        let store = try await CypressStore.inMemory()
+        let api = LocalAPI(store: store, deviceID: Fixture.deviceID, userID: Fixture.userID)
+        let tree = try await Fixture.add(api)
+
+        try await api.withdrawTree(treeID: tree.id)
+
+        let tombstone = try await Self.deletedAt(store, tree.id)
+        #expect(tombstone != nil, "the tree was not tombstoned")
+        let queued = try await Self.withdrawals(store)
+        #expect(queued.count == 1, "queued \(queued.count) withdrawals")
+        let record = try #require(queued.first)
+        #expect(record.locallyApplied, "the withdrawal was queued unapplied; a drain would apply it")
+        guard case let .treeWithdrawal(withdrawal) = try OutboxPayload.decode(
+            kind: record.item.kind, from: record.item.payload
+        ) else {
+            Issue.record("the queued row did not decode as a tree withdrawal")
+            return
+        }
+        #expect(withdrawal.treeID == tree.id)
+        #expect(withdrawal.clientUUID == record.item.clientUUID, "the payload's key is not the row's")
+        #expect(withdrawal.attribution.userID == Fixture.userID)
+        #expect(withdrawal.attribution.deviceID == Fixture.deviceID)
+        // The tombstone and the row's `created_at` are one instant: the refusal path relies on it.
+        #expect(
+            tombstone == SQLiteTimestamp.string(from: record.item.createdAt),
+            "the tombstone \(tombstone ?? "nil") is not the queue row's instant"
+        )
+        await #expect(throws: APIError.notFound, "the profile still opens a withdrawn tree") {
+            _ = try await api.treeProfile(id: tree.id)
+        }
+    }
+
+    // MARK: - 2. Refusals
+
+    /// Each case must queue nothing. Red-proofs: drop the `isOwned(by:)` guard — red on the
+    /// stranger, the signed-out phone and nobody's tree; drop the `deletedAt` guard — red on the
+    /// second withdrawal ("an already withdrawn tree was withdrawn again", with a second row).
+    @Test("everyone but the adder is refused, an already withdrawn or unknown tree is not found, and nothing is queued")
+    func theRefusals() async throws {
+        let store = try await CypressStore.inMemory()
+        let adder = LocalAPI(store: store, deviceID: Fixture.deviceID)
+
+        // Somebody else on this phone's store: another installation.
+        let mine = try await Fixture.add(adder)
+        let stranger = LocalAPI(store: store, deviceID: Fixture.otherDeviceID)
+        await #expect(throws: APIError.forbidden, "a stranger withdrew the tree") {
+            try await stranger.withdrawTree(treeID: mine.id)
+        }
+
+        // A tree whose adder is nobody (an anonymized tree).
+        let nobodys = Tree(source: .community, coordinate: ProximityDedupeTests.diagonal(from: Fixture.offshore, meters: 300))
+        try await store.queue.write { connection in
+            try CommunityTreeStore().insert(nobodys, clientUUID: UUID(), connection: connection)
+        }
+        await #expect(throws: APIError.forbidden, "a tree nobody added was withdrawn") {
+            try await adder.withdrawTree(treeID: nobodys.id)
+        }
+
+        // Somebody else's published tree, from the cache.
+        let cached = Tree(source: .community, coordinate: ProximityDedupeTests.diagonal(from: Fixture.offshore, meters: 600))
+        _ = try await store.queue.write { connection in
+            try CommunityTreeCacheStore().apply(
+                tile: "t", trees: [cached], withdrawnTreeIDs: [], nextCursor: "c",
+                at: Date(), connection: connection
+            )
+        }
+        await #expect(throws: APIError.forbidden, "somebody else's cached tree was withdrawn") {
+            try await adder.withdrawTree(treeID: cached.id)
+        }
+
+        // An unknown id.
+        await #expect(throws: APIError.notFound) { try await adder.withdrawTree(treeID: UUID()) }
+
+        #expect(try await Self.withdrawals(store).isEmpty, "a refusal queued a withdrawal")
+
+        // Already withdrawn: the first one is the adder's, the second is refused.
+        try await adder.withdrawTree(treeID: mine.id)
+        await #expect(throws: APIError.notFound, "an already withdrawn tree was withdrawn again") {
+            try await adder.withdrawTree(treeID: mine.id)
+        }
+        #expect(try await Self.withdrawals(store).count == 1, "a second withdrawal was queued")
+    }
+
+    /// The S1 rule (`TreeWithdrawal.swift`): after a claim the account owns the tree, and the
+    /// service treats the signed-out phone as a stranger to it.
+    @Test("a signed-out phone cannot withdraw a tree its account added, and sees no control for it")
+    func aSignedOutPhoneCannotWithdrawItsAccountsTree() async throws {
+        let store = try await CypressStore.inMemory()
+        let signedOut = LocalAPI(store: store, deviceID: Fixture.deviceID)
+        let tree = try await Fixture.add(signedOut)
+        let account = LocalAPI(store: store, deviceID: Fixture.deviceID)
+        try await account.claimDevice(deviceUUID: Fixture.deviceID, userID: Fixture.userID)
+
+        let afterwards = LocalAPI(store: store, deviceID: Fixture.deviceID)
+        #expect(try await afterwards.treeProfile(id: tree.id).treeWithdrawal == .unavailable,
+                "the signed-out phone is offered a withdrawal the service would refuse")
+        await #expect(throws: APIError.forbidden, "the signed-out phone withdrew its account's tree") {
+            try await afterwards.withdrawTree(treeID: tree.id)
+        }
+        #expect(try await Self.withdrawals(store).isEmpty)
+
+        // And the account can.
+        #expect(try await account.treeProfile(id: tree.id).treeWithdrawal == .available)
+        try await account.withdrawTree(treeID: tree.id)
+        #expect(try await Self.withdrawals(store).count == 1)
+    }
+
+    /// A city tree is real and not this person's to withdraw.
+    @Test("a city tree is forbidden, and queues nothing")
+    func aCityTreeIsForbidden() async throws {
+        let seedURL = try #require(SeedContractTests.seedURL, "no seed database; set CYPRESS_SEED_PATH")
+        let store = try await CypressStore.inMemory(seedURL: seedURL)
+        let api = LocalAPI(store: store, deviceID: Fixture.deviceID)
+        let cityTreeID = try await store.queue.read { connection -> UUID? in
+            let statement = try connection.prepare(
+                "SELECT uuid FROM \(SeedDatabase.schemaName).trees WHERE deleted_at IS NULL LIMIT 1"
+            )
+            defer { statement.finalize() }
+            return try statement.fetchOne { try $0.uuidIfPresent("uuid") } ?? nil
+        }
+        let target = try #require(cityTreeID, "the seed has no trees")
+        await #expect(throws: APIError.forbidden, "a city tree was withdrawn") {
+            try await api.withdrawTree(treeID: target)
+        }
+        #expect(try await Self.withdrawals(store).isEmpty)
+        #expect(try await api.treeProfile(id: target).treeWithdrawal == .unavailable)
+    }
+
+    // MARK: - 3. The reads
+
+    /// Red-proofs, each read by its message:
+    /// - drop `notOnAWithdrawnTree` from the Journal's four arms — red on "the Journal still lists";
+    /// - drop the `isWithdrawnCommunityTree` skip in `groveEntries` — red on "My Grove still lists";
+    /// - drop it from `contributedRowsSQL` — red on "the Yours map still holds".
+    @Test("a withdrawn tree leaves the map, the shortlist, the Journal, My Grove and Yours, and the adder's rows stay")
+    func theReadsDropAWithdrawnTree() async throws {
+        let store = try await CypressStore.inMemory()
+        let api = LocalAPI(store: store, deviceID: Fixture.deviceID)
+        let tree = try await Fixture.add(api)
+        let kept = try await Fixture.add(api, at: ProximityDedupeTests.diagonal(from: Fixture.offshore, meters: 400))
+        let own = try await Self.visit(store, on: tree.id, by: .anonymous(deviceID: Fixture.deviceID))
+        _ = try await Self.visit(store, on: kept.id, by: .anonymous(deviceID: Fixture.deviceID))
+
+        // The fixture, before: every read lists both trees.
+        #expect(try await api.mapContent(in: Self.box(around: tree.coordinate)).markerCount == 1)
+        #expect(Set(try await Self.journal(api).map(\.treeID)) == [tree.id, kept.id], "fixture: the Journal")
+        #expect(Set(try await api.grove().map(\.treeID)) == [tree.id, kept.id], "fixture: My Grove")
+        #expect(try await api.mapMembership(.yours) == [tree.id, kept.id], "fixture: Yours")
+
+        try await api.withdrawTree(treeID: tree.id)
+
+        #expect(try await api.mapContent(in: Self.box(around: tree.coordinate)).markerCount == 0,
+                "the map still draws the withdrawn tree")
+        let near = try await api.treesNear(tree.coordinate, radiusM: 20, limit: 5)
+        #expect(!near.map(\.tree.id).contains(tree.id), "the shortlist still offers the withdrawn tree")
+        let journal = try await Self.journal(api).map(\.treeID)
+        #expect(!journal.contains(tree.id), "the Journal still lists the withdrawn tree: \(journal)")
+        #expect(journal.contains(kept.id), "the Journal lost the other tree")
+        let grove = try await api.grove().map(\.treeID)
+        #expect(!grove.contains(tree.id), "My Grove still lists the withdrawn tree")
+        #expect(grove.contains(kept.id), "My Grove lost the other tree")
+        let yours = try await api.mapMembership(.yours)
+        #expect(yours == [kept.id], "the Yours map still holds the withdrawn tree: \(yours)")
+
+        // The adder's own row stays saved.
+        let saved = try await store.queue.read { connection -> Int in
+            let statement = try connection.prepare(
+                "SELECT COUNT(*) AS n FROM visits WHERE id = :id AND deleted_at IS NULL"
+            )
+            defer { statement.finalize() }
+            _ = try statement.bind(own.id.uuidString, forName: ":id")
+            return try statement.fetchOne { try $0.int("n") } ?? 0
+        }
+        #expect(saved == 1, "the adder's own visit was not kept")
+    }
+
+    /// The service's grove still lists a tree the person contributed to after it is withdrawn, so
+    /// the router's read must drop it too. Red-proof: drop the skip in `groveCityFileRows` — red on
+    /// "the service's grove row came back named".
+    @Test("a withdrawn tree the service's grove still names is dropped as a rule, not as a lost row")
+    func theServicesGroveRowIsDropped() async throws {
+        let store = try await CypressStore.inMemory()
+        let api = LocalAPI(store: store, deviceID: Fixture.deviceID)
+        let tree = try await Fixture.add(api)
+        try await store.queue.write { connection in
+            try ContributionStore().insert(
+                TreeName(treeID: tree.id, name: "Grandmother Cypress", givenBy: nil), connection: connection
+            )
+        }
+        #expect(await api.groveCityFileRows(for: [tree.id]).named[tree.id] != nil, "fixture: the row is not named")
+
+        try await api.withdrawTree(treeID: tree.id)
+
+        let rows = await api.groveCityFileRows(for: [tree.id])
+        #expect(rows.named[tree.id] == nil, "the service's grove row came back named")
+        #expect(rows.unnamed.contains(tree.id), "the row was dropped as lost, which marks the read degraded")
+    }
+
+    /// The erasing door discards a queued withdrawal. When the service keeps the tree (another
+    /// identity built on it, so the answer lists it as anonymized), the phone keeps it too, and the
+    /// discarded withdrawal must not leave it hidden here. A withdrawal the service already accepted
+    /// took the tree off the service, so its tree stays withdrawn.
+    ///
+    /// Red-proof: drop the restore loop in `OutboxStore.forgetAccount`'s erasing branch — red on
+    /// "the erasing door left the kept tree hidden".
+    @Test("the erasing door puts back a tree whose withdrawal it discards, and only an unsent one")
+    func theErasingDoorPutsBackAnUnsentWithdrawal() async throws {
+        let store = try await CypressStore.inMemory()
+        let api = LocalAPI(store: store, deviceID: Fixture.deviceID, userID: Fixture.userID)
+        let unsent = try await Fixture.add(api)
+        let accepted = try await Fixture.add(api, at: ProximityDedupeTests.diagonal(from: Fixture.offshore, meters: 400))
+        try await api.withdrawTree(treeID: unsent.id)
+        try await api.withdrawTree(treeID: accepted.id)
+        // The service accepted the second withdrawal: the row is sent and done.
+        try await store.queue.write { connection in
+            let statement = try connection.prepare("""
+                UPDATE outbox SET local_applied = 1, remote_sent = 1, state = 'done'
+                 WHERE kind = 'tree_withdrawal'
+                   AND upper(json_extract(payload, '$.treeID')) = upper(:tree)
+                """)
+            defer { statement.finalize() }
+            _ = try statement.bind(accepted.id.uuidString, forName: ":tree")
+            try statement.run()
+        }
+        #expect(try await Self.deletedAt(store, unsent.id) != nil, "fixture: the unsent tree is not withdrawn")
+        #expect(try await Self.deletedAt(store, accepted.id) != nil, "fixture: the accepted tree is not withdrawn")
+
+        _ = try await api.finishAccountDeletion(
+            .eraseEverything,
+            actingOn: AccountDeletion.ServiceTreeVerdicts(anonymized: [unsent.id, accepted.id])
+        )
+
+        #expect(try await Self.withdrawals(store).isEmpty, "the erasing door kept a queued withdrawal")
+        #expect(try await Self.deletedAt(store, unsent.id) == nil, "the erasing door left the kept tree hidden")
+        #expect(try await api.mapContent(in: Self.box(around: unsent.coordinate)).markerCount == 1,
+                "the kept tree is not on the map")
+        #expect(try await Self.deletedAt(store, accepted.id) != nil,
+                "the erasing door brought back a tree whose withdrawal the service had accepted")
+    }
+
+    /// The export keeps a withdrawn tree's rows (the orchestrator's choice of 2026-11-16, not the
+    /// owner's): the rows stay saved, and the export promises everything recorded on this phone. Red-proof: point `exportLatest` back at the
+    /// Journal's own read — red on "the CSV lost the visit on the withdrawn tree".
+    @Test("the export keeps a visit on a withdrawn tree, with its position, while the Journal drops it")
+    func theExportKeepsAWithdrawnTreesRows() async throws {
+        let store = try await CypressStore.inMemory()
+        let api = LocalAPI(store: store, deviceID: Fixture.deviceID)
+        let tree = try await Fixture.add(api)
+        let visit = try await Self.visit(store, on: tree.id, by: .anonymous(deviceID: Fixture.deviceID))
+        #expect(try await Self.journal(api).map(\.id).contains(visit.id), "fixture: the Journal lists the visit")
+        let before = try await Self.exported(api, tree.id)
+        #expect(before.csvLines >= 1 && before.features.count == before.csvLines, "fixture: the export holds the tree")
+
+        try await api.withdrawTree(treeID: tree.id)
+
+        #expect(!(try await Self.journal(api).map(\.id)).contains(visit.id), "the Journal still lists the visit")
+        let after = try await Self.exported(api, tree.id)
+        #expect(after.csvLines == before.csvLines,
+                "the CSV lost the visit on the withdrawn tree: \(after.csvLines) of \(before.csvLines) rows")
+        #expect(after.features.count == before.features.count,
+                "the GeoJSON lost the visit on the withdrawn tree: \(after.features.count) of \(before.features.count)")
+        for feature in after.features {
+            let point = (feature["geometry"] as? [String: Any])?["coordinates"] as? [Double]
+            #expect(
+                point == [tree.coordinate.longitude, tree.coordinate.latitude],
+                "a withdrawn tree's feature has no position, or the wrong one: \(String(describing: point))"
+            )
+        }
+    }
+
+    /// The export's rows about one tree: the CSV's line count and the GeoJSON's features.
+    static func exported(_ api: LocalAPI, _ treeID: UUID) async throws -> (csvLines: Int, features: [[String: Any]]) {
+        let csv = String(decoding: try await api.exportLatest(.csv), as: UTF8.self)
+        let lines = csv.split(separator: "\n").filter { $0.contains(",\(treeID.uuidString),") }.count
+        let geojson = try await api.exportLatest(.geojson)
+        let root = try #require(try JSONSerialization.jsonObject(with: geojson) as? [String: Any])
+        let features = try #require(root["features"] as? [[String: Any]]).filter {
+            ($0["properties"] as? [String: Any])?["tree_id"] as? String == treeID.uuidString
+        }
+        return (lines, features)
+    }
+
+    /// The You tab's two lists open a tree's profile, and a withdrawn tree has none. Red-proofs:
+    /// - drop `notOnAWithdrawnTree` from `privateReminders` — red on "the You tab still lists a
+    ///   reminder";
+    /// - drop the `isWithdrawnCommunityTree` guard in `openReviews` — red on "the review queue still
+    ///   lists".
+    @Test("a reminder and a review flag on a withdrawn tree leave the You tab, and the reminder stays saved")
+    func theYouTabListsDropAWithdrawnTree() async throws {
+        let store = try await CypressStore.inMemory()
+        let api = LocalAPI(store: store, deviceID: Fixture.deviceID)
+        let tree = try await Fixture.add(api)
+        let kept = try await Fixture.add(api, at: ProximityDedupeTests.diagonal(from: Fixture.offshore, meters: 400))
+        for target in [tree.id, kept.id] {
+            _ = try await api.savePrivateReminder(
+                PrivateReminder(owner: .device(Fixture.deviceID), treeID: target, category: .uprooted)
+            )
+            try await store.queue.write { connection in
+                _ = try ContributionStore().insert(
+                    ReviewFlag(treeID: target, kind: .appearsRemoved, raisedBy: nil), connection: connection
+                )
+            }
+        }
+        #expect(Set(try await api.privateReminders().map(\.treeID)) == [tree.id, kept.id], "fixture: reminders")
+        #expect(Set(try await api.openReviews().map(\.treeID)) == [tree.id, kept.id], "fixture: reviews")
+
+        try await api.withdrawTree(treeID: tree.id)
+
+        let reminders = try await api.privateReminders().map(\.treeID)
+        #expect(reminders == [kept.id], "the You tab still lists a reminder on the withdrawn tree: \(reminders)")
+        let reviews = try await api.openReviews().map(\.treeID)
+        #expect(reviews == [kept.id], "the review queue still lists the withdrawn tree: \(reviews)")
+
+        // The reminder row itself stays saved (the owner's answer of 2026-11-16).
+        let saved = try await store.queue.read { connection -> Int in
+            let statement = try connection.prepare(
+                "SELECT COUNT(*) AS n FROM private_reminders WHERE tree_uuid = :id COLLATE NOCASE AND deleted_at IS NULL"
+            )
+            defer { statement.finalize() }
+            _ = try statement.bind(tree.id.uuidString, forName: ":id")
+            return try statement.fetchOne { try $0.int("n") } ?? 0
+        }
+        #expect(saved == 1, "the reminder on the withdrawn tree was deleted, not hidden")
+    }
+
+    /// The phone's own row wins over the cache, withdrawn or not (`CommunityLayer`), so a tile that
+    /// still carries the tree cannot bring it back. Red-proof: make `CommunityLayer` prefer the
+    /// cache row — red on "a tile page brought the withdrawn tree back".
+    @Test("a tile page that still carries the tree does not bring it back")
+    func aTilePageDoesNotBringItBack() async throws {
+        let store = try await CypressStore.inMemory()
+        let api = LocalAPI(store: store, deviceID: Fixture.deviceID)
+        let tree = try await Fixture.add(api)
+        try await api.withdrawTree(treeID: tree.id)
+
+        let copy = Tree(id: tree.id, source: .community, coordinate: tree.coordinate)
+        _ = try await store.queue.write { connection in
+            try CommunityTreeCacheStore().apply(
+                tile: "t", trees: [copy], withdrawnTreeIDs: [], nextCursor: "c",
+                at: Date(), connection: connection
+            )
+        }
+        #expect(try await api.mapContent(in: Self.box(around: tree.coordinate)).markerCount == 0,
+                "a tile page brought the withdrawn tree back")
+        await #expect(throws: APIError.notFound) { _ = try await api.treeProfile(id: tree.id) }
+    }
+
+    // MARK: - 4. The service's answer
+
+    /// **The refusal path.** The service refuses with `conflict`; the tree comes back on this
+    /// phone, the row is `failed` with the owner's sentence and no Retry, and the profile now draws
+    /// the reason line. A retry from any caller leaves the row as it is, so the line stays (the
+    /// owner's answers of 2026-11-16, "Remove Retry there" and "Row stays, reason only").
+    ///
+    /// Red-proofs, each read by its message:
+    /// - remove the restore from `OutboxQueue.settle` — red on "the tree stays hidden after the
+    ///   service refused";
+    /// - remove the `treeStaysOnTheMap` branch in `recordFailure` — red on the row's reason, which
+    ///   reads "This couldn't be sent.";
+    /// - make the refused-withdrawal clause of `CommunityTreeStore.othersHaveAddedTo` match nothing —
+    ///   red on the profile's `treeWithdrawal == .othersHaveAddedToIt`. The phone holds no row by
+    ///   anybody else here, so the refusal alone draws the reason line (the owner's answer 7);
+    /// - drop `AND \(Self.retryable)` from both store retries — red on "a retry moved the refused
+    ///   withdrawal" and on the profile's offer after "Retry all".
+    @Test("a refused withdrawal brings the tree back with the owner's reason and no Retry, and a retry leaves it as it is")
+    func aRefusalBringsTheTreeBack() async throws {
+        let store = try await CypressStore.inMemory()
+        let clock = Clock()
+        let api = LocalAPI(store: store, deviceID: Fixture.deviceID, now: { clock.now })
+        let service = Service(withdrawalAnswers: [.conflict])
+        let queue = OutboxQueue(
+            queue: store.queue, apply: APIOutboxTransport(api: api), send: service, now: { clock.now }
+        )
+        let tree = try await Fixture.add(api)
+        _ = try await queue.drain() // the add reaches the service
+        clock.advance(by: 60)
+
+        try await api.withdrawTree(treeID: tree.id)
+        #expect(try await api.mapContent(in: Self.box(around: tree.coordinate)).markerCount == 0,
+                "fixture: the tree did not leave the map")
+
+        clock.advance(by: 60)
+        _ = try await queue.drain()
+        #expect(await service.offered.contains(.treeWithdrawal), "fixture: the withdrawal was never sent")
+
+        #expect(try await Self.deletedAt(store, tree.id) == nil, "the tree stays hidden after the service refused")
+        #expect(try await api.mapContent(in: Self.box(around: tree.coordinate)).markerCount == 1,
+                "the refused tree is not back on the map")
+        let row = try #require(try await Self.withdrawals(store).first)
+        #expect(row.item.state == .failed)
+        #expect(row.item.lastError == "Other people have added to this tree, so it stays on the map.",
+                "the row reads \(row.item.lastError ?? "nothing")")
+
+        // Screen 17 draws the sentence.
+        let snapshot = try await queue.snapshot(treeNames: [tree.id: "Grandmother Cypress"], syncPhotosOnWifiOnly: true)
+        let drawn = try #require(OutboxPresentation(snapshot: snapshot, now: clock.now).queue.first {
+            $0.id == row.item.id
+        })
+        #expect(drawn.title == "Tree withdrawn · Grandmother Cypress")
+        #expect(drawn.detail == nil)
+        #expect(drawn.reason == "Other people have added to this tree, so it stays on the map.")
+        #expect(drawn.isTerminal)
+        #expect(!drawn.showsRetryButton, "the refused withdrawal draws Retry")
+
+        // The phone now knows: the profile draws the reason line, not the control.
+        #expect(try await api.treeProfile(id: tree.id).treeWithdrawal == .othersHaveAddedToIt)
+
+        // A retry, one row or all of them, leaves the row as it is, and the line with it.
+        #expect(try await queue.retry(id: row.item.id) == false, "a retry moved the refused withdrawal")
+        #expect(try await queue.retryAllFailed() == 0, "Retry all moved the refused withdrawal")
+        clock.advance(by: 60)
+        _ = try await queue.drain()
+        let kept = try #require(try await Self.withdrawals(store).first)
+        #expect(kept.item.state == .failed, "the refused withdrawal is \(kept.item.state) after a retry")
+        #expect(kept.item.lastErrorCode == .conflict, "the refused withdrawal lost its code after a retry")
+        #expect(kept.item.lastError == "Other people have added to this tree, so it stays on the map.")
+        #expect(try await api.treeProfile(id: tree.id).treeWithdrawal == .othersHaveAddedToIt,
+                "the profile lost the reason line after a retry")
+        #expect(try await Self.deletedAt(store, tree.id) == nil, "a retry took the tree off the map")
+    }
+
+    /// Every terminal failure leaves the tree on the service, so every one brings it back, and only
+    /// `conflict` reads the owner's sentence. A retryable failure brings nothing back. A row refused
+    /// for another reason keeps Retry, and a retry the service accepts takes the tree off again.
+    ///
+    /// Red-proof: remove `withdrawAgain` from the send settlement — red on "the accepted retry left
+    /// the tree on the map".
+    @Test("a forbidden withdrawal also brings the tree back, with the shared sentence and Retry; a retryable one does not")
+    func otherAnswers() async throws {
+        let store = try await CypressStore.inMemory()
+        let clock = Clock()
+        let api = LocalAPI(store: store, deviceID: Fixture.deviceID, now: { clock.now })
+        let service = Service(withdrawalAnswers: [.serverError, .forbidden])
+        let queue = OutboxQueue(
+            queue: store.queue, apply: APIOutboxTransport(api: api), send: service, now: { clock.now }
+        )
+        let tree = try await Fixture.add(api)
+        _ = try await queue.drain()
+        try await api.withdrawTree(treeID: tree.id)
+
+        clock.advance(by: 60)
+        _ = try await queue.drain()
+        #expect(try await Self.deletedAt(store, tree.id) != nil, "a retryable failure brought the tree back")
+        #expect(try #require(try await Self.withdrawals(store).first).item.state == .pending)
+
+        clock.advance(by: 6 * 60 * 60)
+        _ = try await queue.drain()
+        let row = try #require(try await Self.withdrawals(store).first)
+        #expect(row.item.state == .failed, "fixture: the forbidden answer did not fail the row: \(row.item.state)")
+        #expect(try await Self.deletedAt(store, tree.id) == nil, "a forbidden withdrawal left the tree hidden")
+        #expect(row.item.lastError == "This couldn't be sent.")
+        // A refusal for another reason says nothing about other people's work.
+        #expect(try await api.treeProfile(id: tree.id).treeWithdrawal == .available)
+
+        // It keeps Retry, and this time the service takes it (the script is spent).
+        let snapshot = try await queue.snapshot(treeNames: [:], syncPhotosOnWifiOnly: true)
+        let drawn = try #require(OutboxPresentation(snapshot: snapshot, now: clock.now).queue.first {
+            $0.id == row.item.id
+        })
+        #expect(drawn.showsRetryButton, "a withdrawal refused as forbidden lost Retry")
+        #expect(try await queue.retry(id: row.item.id), "the store refused to retry a forbidden withdrawal")
+        clock.advance(by: 60)
+        _ = try await queue.drain()
+        let settled = try #require(try await Self.withdrawals(store).first)
+        #expect(settled.item.state == .done, "the retried withdrawal is \(settled.item.state)")
+        #expect(try await Self.deletedAt(store, tree.id) != nil, "the accepted retry left the tree on the map")
+        await #expect(throws: APIError.notFound) { _ = try await api.treeProfile(id: tree.id) }
+    }
+
+    // MARK: - 5. The offer
+
+    @Test("the control is offered on the adder's live tree only")
+    func theControlIsOfferedToTheAdderOnly() async throws {
+        let store = try await CypressStore.inMemory()
+        let adder = LocalAPI(store: store, deviceID: Fixture.deviceID)
+        let stranger = LocalAPI(store: store, deviceID: Fixture.otherDeviceID)
+        let tree = try await Fixture.add(adder)
+
+        #expect(try await adder.treeProfile(id: tree.id).treeWithdrawal == .available)
+        #expect(try await stranger.treeProfile(id: tree.id).treeWithdrawal == .unavailable,
+                "somebody who did not add the tree is offered its withdrawal")
+    }
+
+    /// **Q8 from the phone's own tables.** Only a row by another account that has left the phone
+    /// counts. Red-proofs: drop `met.user_id IS NOT NULL` — red on "this device's own signed-out
+    /// visit"; drop the `owed` clause — red on "a visit still in the queue".
+    @Test("the reason line is drawn for another account's sent visit, and never on a guess")
+    func theReasonLineNeedsAFact() async throws {
+        let store = try await CypressStore.inMemory()
+        let api = LocalAPI(store: store, deviceID: Fixture.deviceID, userID: Fixture.userID)
+        let tree = try await Fixture.add(api)
+
+        // This device's own visit, signed out: a sign-in claims those, so it is not somebody else's.
+        _ = try await Self.visit(store, on: tree.id, by: .anonymous(deviceID: Fixture.deviceID))
+        #expect(try await api.treeProfile(id: tree.id).treeWithdrawal == .available,
+                "this device's own signed-out visit drew the reason line")
+
+        // Another account's visit, still in the queue: the service has not seen it yet.
+        let queued = try await Self.visit(
+            store, on: tree.id, by: Attribution(userID: Self.otherUserID, deviceID: Fixture.deviceID)
+        )
+        let item = try OutboxPayload.visit(queued).makeItem()
+        _ = try await store.queue.write { try OutboxStore().enqueue(item, connection: $0) }
+        #expect(try await api.treeProfile(id: tree.id).treeWithdrawal == .available,
+                "a visit still in the queue drew the reason line")
+
+        // The same visit once it has reached the service.
+        try await store.queue.write { connection in
+            try connection.execute(
+                "UPDATE outbox SET local_applied = 1, remote_sent = 1, state = 'done'"
+            )
+        }
+        #expect(try await api.treeProfile(id: tree.id).treeWithdrawal == .othersHaveAddedToIt,
+                "another account's sent visit did not draw the reason line")
+    }
+
+    /// A visit by an account this phone made itself in builds 6 to 33 never reached the service
+    /// (`CommunityTreeBackfill.phoneMadeAccounts`), so it is no fact about what the service holds.
+    /// The same visit written again after the service's sign-in existed belongs to a real account,
+    /// and counts. Red-proof: drop the `phoneMade` clause from `othersHaveAddedTo` — red on "a
+    /// phone-made account's visit drew the reason line".
+    @Test("a phone-made account's visit does not draw the reason line, and a real account's does")
+    func aPhoneMadeAccountsVisitIsNotAFact() async throws {
+        let store = try await CypressStore.inMemory()
+        let api = LocalAPI(store: store, deviceID: Fixture.deviceID, userID: Fixture.userID)
+        let tree = try await Fixture.add(api)
+        let old = CommunityTreeBackfill.serviceSignInExisted.addingTimeInterval(-86_400)
+        let visit = try await Self.visit(
+            store, on: tree.id, by: Attribution(userID: Self.otherUserID, deviceID: Fixture.deviceID), at: old
+        )
+        func stamp(_ moment: Date) async throws {
+            try await store.queue.write { connection in
+                let statement = try connection.prepare(
+                    "UPDATE visits SET created_at = :old, updated_at = :at WHERE id = :id"
+                )
+                defer { statement.finalize() }
+                _ = try statement.bind([":old": old, ":at": moment, ":id": visit.id.uuidString])
+                try statement.run()
+            }
+        }
+
+        // Made and last written before any build could sign in for real: a phone-made account.
+        try await stamp(old)
+        #expect(
+            try await store.queue.read {
+                try CommunityTreeBackfill.phoneMadeAccounts(
+                    device: Fixture.deviceID, excluding: Fixture.userID, connection: $0
+                )
+            } == [Self.otherUserID],
+            "fixture: the visit's account is not phone-made"
+        )
+        #expect(try await api.treeProfile(id: tree.id).treeWithdrawal == .available,
+                "a phone-made account's visit drew the reason line")
+
+        // Written after the cutoff: a real account's id, so the visit reached the service.
+        try await stamp(CommunityTreeBackfill.serviceSignInExisted.addingTimeInterval(86_400))
+        #expect(try await api.treeProfile(id: tree.id).treeWithdrawal == .othersHaveAddedToIt,
+                "a real account's sent visit did not draw the reason line")
+    }
+
+    /// **Q8 from the service's read.** Red-proof: return `local` from `RoutedAPI.withdrawalOffer`
+    /// unchanged — red on "a stranger's photograph did not draw the reason line".
+    @Test("a photograph the service served as somebody else's draws the reason line, and the reader's own does not")
+    func theServicesPhotographNarrowsTheOffer() {
+        let tree = UUID()
+        let at = Date(timeIntervalSince1970: 1_790_000_000)
+        let own = Photo(treeID: tree, shotType: .fullTree, moderationState: .approved, capturedAt: at)
+        let theirs = Photo(treeID: tree, shotType: .leaf, moderationState: .approved, capturedAt: at)
+
+        func delta(_ photos: [Photo]) -> RemoteAPI.TreeCommunityDelta {
+            RemoteAPI.TreeCommunityDelta(
+                treeID: tree, photos: photos, ownPhotoIDs: [own.id], deletablePhotoIDs: [own.id],
+                clientUUIDs: [own.id: UUID()]
+            )
+        }
+
+        #expect(RoutedAPI.withdrawalOffer(.available, community: delta([own])) == .available,
+                "the reader's own photograph drew the reason line")
+        #expect(RoutedAPI.withdrawalOffer(.available, community: delta([own, theirs])) == .othersHaveAddedToIt,
+                "a stranger's photograph did not draw the reason line")
+        #expect(RoutedAPI.withdrawalOffer(.unavailable, community: delta([own, theirs])) == .unavailable,
+                "a reader who did not add the tree was given the reason line")
+    }
+
+    /// The alert's two messages follow the profile's own "only you can see" rule.
+    @Test("the alert says 'only you' exactly when the profile says only the reader can see the tree")
+    func theAlertMessageFollowsTheOnlyYouRule() async throws {
+        let store = try await CypressStore.inMemory()
+        let api = LocalAPI(store: store, deviceID: Fixture.deviceID)
+        let tree = try await Fixture.add(api)
+        let profile = try await api.treeProfile(id: tree.id)
+
+        let signedOut = TreeProfilePresentation(profile: profile)
+        #expect(signedOut.onlyYouCanSeeNote != nil, "fixture: a signed-out adder is not told only they can see it")
+        #expect(signedOut.withdrawTreeMessage
+                == "Only you can see this tree. It comes off the map. This cannot be undone.")
+
+        let shared = TreeProfile(
+            tree: profile.tree, treeWithdrawal: .available, addedByYou: true,
+            readerSharing: .sharing, isPublished: true
+        )
+        #expect(TreeProfilePresentation(profile: shared).withdrawTreeMessage
+                == "Everyone using Cypress stops seeing this tree once this is sent. If someone else has visited or photographed it, it stays. This cannot be undone.")
+        #expect(TreeProfilePresentation(profile: shared).treeWithdrawal == .available)
+    }
+
+    // MARK: - 6. The report link beside the withdraw link (ROADMAP 172)
+
+    /// The owner's answer of 2026-11-16, "Hide it while withdraw shows": the adder who is offered
+    /// `Withdraw this tree` is not offered `Report that there is no tree here`; the reason line
+    /// brings the report back. The rule is the presentation's (`TreeProfilePresentation
+    /// .recordDefect`), so the API's own offer is unchanged.
+    ///
+    /// Red-proof: in the presentation, hide `.reportable` on `.othersHaveAddedToIt` instead of on
+    /// `.available` — red on `drawn.recordDefect == .unavailable` ("the adder who can withdraw is
+    /// still offered the report").
+    @Test("the adder who can withdraw is not offered the report, and the API's own offer is unchanged")
+    func theAdderWhoCanWithdrawIsNotOfferedTheReport() async throws {
+        let store = try await CypressStore.inMemory()
+        let api = LocalAPI(store: store, deviceID: Fixture.deviceID, userID: Fixture.userID)
+        let tree = try await Fixture.add(api)
+
+        let profile = try await api.treeProfile(id: tree.id)
+        #expect(profile.treeWithdrawal == .available, "fixture: the adder is not offered the withdrawal")
+        #expect(profile.recordDefect == .reportable, "the API's own offer changed: \(profile.recordDefect)")
+        let drawn = TreeProfilePresentation(profile: profile)
+        #expect(drawn.treeWithdrawal == .available)
+        #expect(drawn.recordDefect == .unavailable,
+                "the adder who can withdraw is still offered the report: \(drawn.recordDefect)")
+    }
+
+    /// Red-proof: the same swapped condition — red on `local.recordDefect == .reportable` and on the
+    /// routed profile's `.reportable` ("the reason line did not bring the report back").
+    @Test("the reason line brings the report back, from the phone's own facts and from the service's")
+    func theReasonLineBringsTheReportBack() async throws {
+        let store = try await CypressStore.inMemory()
+        let api = LocalAPI(store: store, deviceID: Fixture.deviceID, userID: Fixture.userID)
+        let tree = try await Fixture.add(api)
+
+        // Another account's visit that has reached the service: the phone's own fact.
+        let visit = try await Self.visit(
+            store, on: tree.id, by: Attribution(userID: Self.otherUserID, deviceID: Fixture.deviceID)
+        )
+        let item = try OutboxPayload.visit(visit).makeItem()
+        _ = try await store.queue.write { try OutboxStore().enqueue(item, connection: $0) }
+        try await store.queue.write { connection in
+            try connection.execute(
+                "UPDATE outbox SET local_applied = 1, remote_sent = 1, state = 'done' WHERE kind = 'visit'"
+            )
+        }
+        let local = TreeProfilePresentation(profile: try await api.treeProfile(id: tree.id))
+        #expect(local.treeWithdrawal == .othersHaveAddedToIt, "fixture: the reason line is not drawn")
+        #expect(local.recordDefect == .reportable,
+                "the reason line did not bring the report back: \(local.recordDefect)")
+
+        // The service's fact: `RoutedAPI.withdrawalOffer` turned `.available` into the reason line
+        // after `LocalAPI` answered `.reportable`.
+        let routed = TreeProfile(
+            tree: tree, recordDefect: .reportable, treeWithdrawal: .othersHaveAddedToIt,
+            addedByYou: true, isAddedHere: true
+        )
+        #expect(TreeProfilePresentation(profile: routed).recordDefect == .reportable,
+                "the service's reason line did not bring the report back")
+    }
+
+    /// A report the adder already raised keeps its line; a reader who did not add the tree, and a
+    /// city tree, see what they saw before. Red-proof: make the presentation return `.unavailable`
+    /// for every arm while withdrawal is `.available` — red on "the adder's own report lost its line:
+    /// .unavailable".
+    @Test("a report already raised keeps its line, and a stranger and a city tree are unaffected")
+    func everyOtherOfferPassesThrough() async throws {
+        let store = try await CypressStore.inMemory()
+        let adder = LocalAPI(store: store, deviceID: Fixture.deviceID)
+        let stranger = LocalAPI(store: store, deviceID: Fixture.otherDeviceID)
+        let tree = try await Fixture.add(adder)
+
+        // Somebody who did not add the tree: no withdrawal, so the report is drawn as before.
+        let strangers = TreeProfilePresentation(profile: try await stranger.treeProfile(id: tree.id))
+        #expect(strangers.treeWithdrawal == .unavailable, "fixture: a stranger is offered the withdrawal")
+        #expect(strangers.recordDefect == .reportable,
+                "a reader who did not add the tree lost the report: \(strangers.recordDefect)")
+
+        // The adder's own report, queued before this change shipped: still on record, still drawn.
+        try await adder.flagNeverExisted(treeID: tree.id)
+        let reported = TreeProfilePresentation(profile: try await adder.treeProfile(id: tree.id))
+        #expect(reported.treeWithdrawal == .available, "fixture: the report took the withdrawal away")
+        guard case .underReview = reported.recordDefect else {
+            Issue.record("the adder's own report lost its line: \(reported.recordDefect)")
+            return
+        }
+
+        // A city tree: its data-dispute arm, whatever a stray withdrawal value says.
+        let city = Tree(
+            id: UUID(), externalRef: "13284", source: .cityImport,
+            coordinate: Coordinate(latitude: 37.799, longitude: -122.443),
+            address: "2576 Lombard St", status: .alive, plantedYear: 1993,
+            verificationState: .cityRecord
+        )
+        let cityProfile = TreeProfile(
+            tree: city, recordDefect: .dataDispute(.raisable), treeWithdrawal: .available
+        )
+        #expect(TreeProfilePresentation(profile: cityProfile).recordDefect == .dataDispute(.raisable),
+                "a city tree's record controls changed")
+    }
+}

@@ -4,9 +4,6 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"io"
-	"log/slog"
-	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -14,7 +11,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/PlatosTwin/cypress/server/internal/apierr"
 	"github.com/PlatosTwin/cypress/server/internal/store"
 	"github.com/PlatosTwin/cypress/server/internal/uuid"
 )
@@ -60,14 +56,14 @@ func compareGolden(t *testing.T, name string, actual []byte) {
 	}
 }
 
-// fixedCandidate is a proximity candidate with every value pinned, so the fixture is stable.
-func fixedCandidate() wireNearbyTree {
-	// Deliberately carries fractional seconds, so the fixture proves they are dropped.
+// fixedCommunityTree is a community `Tree` with every value pinned, built by the same mapping the
+// tile and the profile serve (`communityWireTree`).
+func fixedCommunityTree() wireTree {
 	created := time.Date(2026, 8, 9, 18, 41, 46, 832442000, time.UTC)
 	address := "1 Main St"
 	species := uuid.MustParse("7f3c1d22-5e6a-4b90-8c11-2d3e4f5a6b7c")
 	land := "street"
-	return candidateFrom(store.NearbyTree{
+	return communityWireTree(store.CommunityTreeRecord{
 		ID:          uuid.MustParse("29323be5-1a2b-4c3d-8e4f-5a6b7c8d9e0f"),
 		Lat:         37.7601,
 		Lon:         -122.505,
@@ -77,17 +73,7 @@ func fixedCandidate() wireNearbyTree {
 		LandContext: &land,
 		CreatedAt:   created,
 		UpdatedAt:   created,
-		DistanceM:   4.994382259970141,
-	})
-}
-
-func TestProximityConflictGolden(t *testing.T) {
-	conflict := apierr.New(apierr.Conflict, "There is already a tree recorded here.")
-	conflict.Detail = map[string]any{"candidates": []wireNearbyTree{fixedCandidate()}}
-
-	recorder := httptest.NewRecorder()
-	apierr.Write(recorder, slog.New(slog.NewTextHandler(io.Discard, nil)), conflict)
-	compareGolden(t, "proximity_conflict.json", recorder.Body.Bytes())
+	}, true)
 }
 
 func TestGroveGolden(t *testing.T) {
@@ -136,8 +122,8 @@ func TestTimestampsCarryNoFractionalSeconds(t *testing.T) {
 //
 // The guard it replaces checked `Placement == ""`, which is one way a decoder throws. The way that
 // was actually happening is the other one — a value **outside** the vocabulary — and it was
-// happening on every candidate, always. `Tree.placement` is non-optional, so `"unknown"` throws the
-// whole `Tree`, the whole `[NearbyTree]`, and the whole `ProximityConflict`.
+// happening on every community tree, always. `Tree.placement` is non-optional, so `"unknown"`
+// throws the whole `Tree` and every response that carries it.
 //
 // The vocabulary is therefore read off `Tree.swift` rather than restated here, the way
 // `internal/apierr` reads `APIError.swift`. A test that declares the answer it checks proves the
@@ -164,12 +150,12 @@ func TestTreePlacementMatchesTheSwiftVocabulary(t *testing.T) {
 		t.Errorf("the default placement %q is not a TreePlacement raw value", defaultTreePlacement)
 	}
 
-	// And what a candidate actually carries is one of them — the assertion the old guard could not
-	// make, because it only asked whether the string was empty.
-	candidate := fixedCandidate()
-	if !slices.Contains(declared, candidate.Tree.Placement) {
-		t.Fatalf("a candidate carries placement %q, which is not one of %v — every candidate would "+
-			"fail to decode", candidate.Tree.Placement, declared)
+	// And what a served community tree actually carries is one of them — the assertion the old
+	// guard could not make, because it only asked whether the string was empty.
+	tree := fixedCommunityTree()
+	if !slices.Contains(declared, tree.Placement) {
+		t.Fatalf("a community tree carries placement %q, which is not one of %v — every one would "+
+			"fail to decode", tree.Placement, declared)
 	}
 }
 
@@ -256,7 +242,7 @@ func TestWireTreeCoversEveryTreePropertyAndSpellsThemAsSwiftDoes(t *testing.T) {
 		t.Fatalf("read %d stored properties from Tree, which is fewer than it has: %v", len(declared), declared)
 	}
 
-	encoded, err := json.Marshal(fixedCandidate().Tree)
+	encoded, err := json.Marshal(fixedCommunityTree())
 	if err != nil {
 		t.Fatal(err)
 	}

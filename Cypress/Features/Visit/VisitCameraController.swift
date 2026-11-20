@@ -140,26 +140,26 @@ final class VisitCameraController {
         session.commitConfiguration()
         self.session = session
         self.device = device
-        // `zoomFactor` is what the pinch multiplies, so it starts at wherever the lens actually is:
-        // read, never assumed, because starting it anywhere else would make the first pinch jump.
+        // **Every camera opens at 1×** (owner ruling, 2026-09-29: "Always start at 1×"). Three screens
+        // run this controller (04, add-a-tree, and 05/09's camera), and `videoZoomFactor` belongs to
+        // the process-wide `AVCaptureDevice`, not to this session. `stop()` does not write it back,
+        // so without this line a 6× close-up of bark on a care log could reopen screen 04 at 6×
+        // against last month's ghost (PR #200 review, finding 3; never observed, because no phone
+        // run has checked it). Before the ruling this comment called that carry-over "decided by
+        // accident".
         //
-        // **What that read returns is not known, and this comment used to claim it was 1** (PR #102
-        // review). `AVCaptureDevice` instances are process-wide and `videoZoomFactor` is a property
-        // of the *device*, not of this session — and `stop()` clears `self.device` and sets
-        // `zoomFactor = 1` without ever writing `device.videoZoomFactor` back. So the likely
-        // behaviour on the phone is that the viewfinder reopens at whatever zoom the previous visit
-        // left the lens at, which this line would then faithfully report. What this line guarantees
-        // is that the app's number matches the lens's; it guarantees nothing about what that number
-        // is.
+        // **Here, on start, and not in `stop()`.** Every screen starts a session to show a viewfinder,
+        // and this is the one path that reaches a device. A reset in `stop()` would hold only for a
+        // camera that was stopped, which is every screen's `onDisappear` today and not a guarantee.
         //
-        // Unanswerable here — `AVCaptureDevice.default(...)` is nil on every simulator, so this
-        // whole path returns before reaching this line. It joins the zoom block's list of what
-        // needs the physical phone, along with the product question nobody has decided: whether
-        // carrying the zoom across trees is right (a volunteer working one street wants the same
-        // framing) or whether screen 04 should reset it (its budget is ten seconds, and a
-        // mystery-zoomed viewfinder costs some of them). One line either way, currently decided by
-        // accident.
-        zoomFactor = device.videoZoomFactor
+        // `zoomFactor` is what the pinch multiplies, so it takes what the lens reads after the reset
+        // rather than an assumed 1: if the lens refused the lock, the app's number still matches the
+        // lens's and the first pinch does not jump. `openAtOneX` says what it sets and why.
+        //
+        // No simulator reaches this line: `AVCaptureDevice.default(...)` is nil there, so this path
+        // returns above. `ZoomTests` covers `openAtOneX` against a stand-in lens; that it runs on a
+        // real device, and that the lens then reads 1×, only the physical phone can show.
+        zoomFactor = VisitCameraZoom.openAtOneX(device, in: zoomRange)
         availability = .running
 
         // `startRunning` blocks; keeping it off the main actor is what stops the tray from
@@ -273,8 +273,9 @@ final class VisitCameraController {
 /// implied by what has no test (PR #102 review):
 /// 1. the clamp's effect on the actual lens — `setZoom` returns early here, so nothing has watched
 ///    `videoZoomFactor` move;
-/// 2. **what a reopened session's `videoZoomFactor` reads**, which decides whether the zoom carries
-///    across trees. See `start()`, where the old comment asserted an answer nobody had checked.
+/// 2. **that a reopened session reads 1×.** The owner ruled on 2026-09-29 that every camera opens
+///    at 1×, and `openAtOneX` is what enforces it. It is tested here against a stand-in lens; that
+///    `configureAndRun` calls it on a real device only the phone can show.
 enum VisitCameraZoom {
 
     /// `proposed`, held inside `range`.
@@ -297,7 +298,37 @@ enum VisitCameraZoom {
     static func factor(base: CGFloat, magnification: CGFloat, in range: ClosedRange<CGFloat>) -> CGFloat {
         clamp(base * magnification, to: range)
     }
+
+    /// Puts `lens` at 1× for a newly opened camera and returns what the lens then reads. The owner
+    /// ruled on 2026-09-29 that every camera starts at 1×, whatever zoom the last one closed at.
+    ///
+    /// 1× means 1 held inside `range`, so a device whose current floor is above 1 opens at its
+    /// floor. `range` is the controller's `zoomRange`, what the device currently allows, and the
+    /// target is held inside it for the same reason `setZoom` holds a pinch inside it.
+    ///
+    /// The return value is the lens's own reading, not the target. If `lockForConfiguration` throws
+    /// (another client holds the device), nothing is written and the caller gets the zoom the lens
+    /// is really at. The caller's number then matches the lens, which is what keeps the first pinch
+    /// from jumping.
+    static func openAtOneX(_ lens: some VisitCameraLens, in range: ClosedRange<CGFloat>) -> CGFloat {
+        let target = clamp(1, to: range)
+        if (try? lens.lockForConfiguration()) != nil {
+            lens.videoZoomFactor = target
+            lens.unlockForConfiguration()
+        }
+        return lens.videoZoomFactor
+    }
 }
+
+/// The part of `AVCaptureDevice` that `VisitCameraZoom.openAtOneX` touches. It is a protocol so the
+/// 1× opening can be tested on a simulator, where there is no `AVCaptureDevice` to hand it.
+protocol VisitCameraLens: AnyObject {
+    var videoZoomFactor: CGFloat { get set }
+    func lockForConfiguration() throws
+    func unlockForConfiguration()
+}
+
+extension AVCaptureDevice: VisitCameraLens {}
 
 // MARK: - Delegate shim
 

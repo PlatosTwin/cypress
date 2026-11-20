@@ -94,12 +94,17 @@ func (s *Store) RevokeDeviceTokens(ctx context.Context, deviceID uuid.UUID) erro
 // ── Sessions ───────────────────────────────────────────────────────────────────────────────────
 
 // CreateSession stores a refresh token hash and returns the session id.
-func (s *Store) CreateSession(ctx context.Context, userID uuid.UUID, hash []byte, expiresAt time.Time) (uuid.UUID, error) {
+//
+// `deviceID` is `devices.id` of the installation this sign-in registered and claimed, or nil when
+// the sign-in named none. It is bound to the session and carried through every rotation (the
+// orchestrator's ruling of 2026-09-28), so an act performed under this session is recorded against
+// the device that proved itself at sign-in rather than the device an item claims to come from.
+func (s *Store) CreateSession(ctx context.Context, userID uuid.UUID, deviceID *uuid.UUID, hash []byte, expiresAt time.Time) (uuid.UUID, error) {
 	id := uuid.New()
 	_, err := s.pool.Exec(ctx, `
-		INSERT INTO sessions (id, user_id, refresh_token_hash, issued_at, expires_at)
-		VALUES ($1, $2, $3, $4, $5)
-	`, id, userID, hash, s.now(), expiresAt)
+		INSERT INTO sessions (id, user_id, device_id, refresh_token_hash, issued_at, expires_at)
+		VALUES ($1, $2, $3, $4, $5, $6)
+	`, id, userID, deviceID, hash, s.now(), expiresAt)
 	return id, err
 }
 
@@ -107,6 +112,7 @@ func (s *Store) CreateSession(ctx context.Context, userID uuid.UUID, hash []byte
 type Session struct {
 	ID        uuid.UUID
 	UserID    uuid.UUID
+	DeviceID  *uuid.UUID
 	ExpiresAt time.Time
 	RotatedAt *time.Time
 	RevokedAt *time.Time
@@ -126,9 +132,10 @@ func (s *Store) RotateSession(ctx context.Context, presentedHash, nextHash []byt
 		// token and both mint a successor — and the loser's successor would be a live session
 		// nobody holds.
 		err := tx.QueryRow(ctx, `
-			SELECT id, user_id, expires_at, rotated_at, revoked_at
+			SELECT id, user_id, device_id, expires_at, rotated_at, revoked_at
 			  FROM sessions WHERE refresh_token_hash = $1 FOR UPDATE
-		`, presentedHash).Scan(&session.ID, &session.UserID, &session.ExpiresAt, &session.RotatedAt, &session.RevokedAt)
+		`, presentedHash).Scan(&session.ID, &session.UserID, &session.DeviceID, &session.ExpiresAt,
+			&session.RotatedAt, &session.RevokedAt)
 		if errors.Is(err, pgx.ErrNoRows) {
 			return ErrNotFound
 		}
@@ -161,10 +168,11 @@ func (s *Store) RotateSession(ctx context.Context, presentedHash, nextHash []byt
 			return err
 		}
 		nextID = uuid.New()
+		// The successor inherits the bound device: a rotation is the same sign-in continuing.
 		_, err = tx.Exec(ctx, `
-			INSERT INTO sessions (id, user_id, refresh_token_hash, issued_at, expires_at)
-			VALUES ($1, $2, $3, $4, $5)
-		`, nextID, session.UserID, nextHash, now, expiresAt)
+			INSERT INTO sessions (id, user_id, device_id, refresh_token_hash, issued_at, expires_at)
+			VALUES ($1, $2, $3, $4, $5, $6)
+		`, nextID, session.UserID, session.DeviceID, nextHash, now, expiresAt)
 		return err
 	})
 	if err == nil && reused {
@@ -193,12 +201,21 @@ var ErrSessionReused = errors.New("session reused after rotation")
 //
 // One indexed lookup on a primary key, on authenticated requests only. That is the price of the
 // access token not being a fifteen-minute lie about whether an account exists.
-func (s *Store) SessionIsLive(ctx context.Context, sessionID uuid.UUID) (bool, error) {
-	var live bool
+//
+// It also returns the session's bound device (`sessions.device_id`), nil when the sign-in named
+// none — the same indexed row, so the audit log's device costs no second lookup.
+func (s *Store) SessionIsLive(ctx context.Context, sessionID uuid.UUID) (bool, *uuid.UUID, error) {
+	var deviceID *uuid.UUID
 	err := s.pool.QueryRow(ctx, `
-		SELECT EXISTS (SELECT 1 FROM sessions WHERE id = $1 AND revoked_at IS NULL AND expires_at > $2)
-	`, sessionID, s.now()).Scan(&live)
-	return live, err
+		SELECT device_id FROM sessions WHERE id = $1 AND revoked_at IS NULL AND expires_at > $2
+	`, sessionID, s.now()).Scan(&deviceID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return false, nil, nil
+	}
+	if err != nil {
+		return false, nil, err
+	}
+	return true, deviceID, nil
 }
 
 // DeviceTokenOwner resolves a presented device token hash to its device.
@@ -235,13 +252,21 @@ func (s *Store) CreateDeviceToken(ctx context.Context, deviceID uuid.UUID, hash 
 
 // ── The claim ──────────────────────────────────────────────────────────────────────────────────
 
-// ClaimDevice re-homes a device's unattributed rows onto an account.
+// ClaimDevice re-homes a device's unattributed rows onto an account, and approves the pending
+// photographs among them.
 //
-// This is `POST /devices/claim`, and it mirrors `ContributionStore.claimDevice` deliberately: a
-// sweep keyed on device id whose WHERE clauses stop matching once they have run. Nothing inserts,
-// nothing deletes, and rows belonging to a different account are not touched — which is what makes
-// the client safe to re-invoke it after every batch that applied anything (spec §6.2), and what
-// makes running it twice cost one indexed scan and no writes.
+// This is `POST /devices/claim`, and also the claim `POST /auth/oidc` runs when it is sent a
+// `device_uuid`. It mirrors `ContributionStore.claimDevice` deliberately: a sweep keyed on device id
+// whose WHERE clauses stop matching once they have run. Nothing inserts, the one DELETE removes only
+// a device favorite the account already holds a row for (`claimFavorites`), and rows belonging to a
+// different account are not touched — which is what makes the client safe to re-invoke it after
+// every batch that applied anything (spec §6.2). Running it twice adopts nothing the first run did
+// not, but it is not free of writes: the closing `UPDATE devices` has no guard, so every call
+// rewrites the device row's `updated_at` (and its `user_id`, to the value it already holds).
+//
+// The photograph approval is the one thing here the client's `claimDevice` does not mirror, because
+// the client has no moderation state to move: it learns "public" only from `GET /trees/{id}`'s
+// `is_publicly_visible`. See the statement itself for which rows it approves and which it refuses to.
 //
 // ── The #174 guard ─────────────────────────────────────────────────────────────────────────────
 //
@@ -294,19 +319,55 @@ func (s *Store) ClaimDevice(ctx context.Context, deviceUUID uuid.UUID, caller uu
 		// The photograph, adopted on the reminder's terms rather than the visit's (`AppSchema` v12,
 		// ERRATA E136): the account gains the row and the device link is dropped in the same
 		// statement, so a photograph never says both whose account it is and which phone took it.
+		//
+		// ── And it is approved in that same statement, because adoption is the sign-in ──────────
+		//
+		// `BeginPhoto` approves at upload only for a signed-in account (R72 ruling 5), so a
+		// photograph this device began anonymously arrives here `pending`. Before the owner's
+		// 2026-09-28 ruling this statement moved it onto the account and left it `pending`, and the
+		// only other statement that wrote `moderation_state` after the begin was the operator's
+		// `RejectPhoto`, which never approves — so a photograph taken signed out stayed private for
+		// good, while screen 15 promised an account "lets them join each tree's public timeline".
+		// Now it is what it would have been had the account begun it:
+		// `approved`, for the same reason and under the same name, `auto_approved_launch` — a
+		// first-party photograph, published unscreened and unblurred, from a signed-in account.
+		//
+		// Only a **live pending** row moves, which the two `CASE` arms state together:
+		//
+		//   - `rejected` stays `rejected`. An operator's takedown is not undone by its contributor
+		//     signing in, and its approval reason stays NULL as `RejectPhoto` left it.
+		//   - a withdrawn row (`deleted_at` set) is adopted and stays `pending`. It is not served to
+		//     anybody either way; approving it would record an approval of something its contributor
+		//     took back.
+		//   - an anonymized row is never adopted: the WHERE excludes it. Through the code no
+		//     anonymized photograph carries a `device_id` anyway, but not because anonymization
+		//     clears it — the two anonymization statements in `sync.go` set `user_id = NULL` and do
+		//     not touch `device_id`. They only ever match account-owned rows, and `photos_owner`
+		//     forbids an account-owned row from also naming a device, so there was none to clear.
+		//
+		// `SET` expressions read the row as it was before this statement, so both arms test the
+		// original state, and the approval lands in the same statement as the adoption — which
+		// `photos_owned_live_photograph_is_not_pending` (migration 006) requires: an account's live
+		// photograph is never `pending`, so an adoption that forgot to approve is refused by the
+		// database rather than stored.
 		if _, err := tx.Exec(ctx, `
 			UPDATE photos
-			   SET user_id = $1, device_id = NULL, updated_at = $2
+			   SET user_id = $1, device_id = NULL, updated_at = $2,
+			       moderation_state = CASE
+			           WHEN moderation_state = 'pending' AND deleted_at IS NULL THEN 'approved'
+			           ELSE moderation_state END,
+			       approval_reason = CASE
+			           WHEN moderation_state = 'pending' AND deleted_at IS NULL THEN $4::text
+			           ELSE approval_reason END
 			 WHERE device_id = $3 AND user_id IS NULL AND anonymized_at IS NULL
-		`, caller, now, deviceID); err != nil {
+		`, caller, now, deviceID, string(AutoApprovedLaunch)); err != nil {
 			return err
 		}
 
-		if _, err := tx.Exec(ctx, `
-			UPDATE community_trees
-			   SET user_id = $1, device_id = NULL, updated_at = $2
-			 WHERE device_id = $3 AND user_id IS NULL
-		`, caller, now, deviceID); err != nil {
+		// The device's trees, adopted and — if this account accepted the license — published in
+		// the same statement, with a `published` event each (decision 1: a tree added signed out
+		// "goes live for everyone at once" at sign-in; decision 7: not for an account that declined).
+		if err := claimCommunityTrees(ctx, tx, deviceID, caller, now); err != nil {
 			return err
 		}
 
@@ -376,14 +437,36 @@ func claimFavorites(ctx context.Context, tx pgx.Tx, deviceID, userID uuid.UUID, 
 // `version == nil` is a *declined* consent and is stored as one. It arrives as an explicit null on
 // the wire rather than an omitted field, because `acceptsLicense` is derived from nil precisely so
 // a Bool and a version string cannot disagree, and that property has to survive the wire (§5.6).
-func (s *Store) RecordLicenseConsent(ctx context.Context, userID uuid.UUID, version *string) error {
-	now := s.now()
-	var acceptedAt *time.Time
-	if version != nil {
-		acceptedAt = &now
+//
+// ── And an acceptance publishes the account's trees (decisions 7 and 10) ───────────────────────
+//
+// An accepted license publishes every live tree the account owns that is not yet published — "they
+// go live if/when the account later accepts the license" — in the transaction that records the
+// answer, with the version accepted written on each `published` event. **A decline changes no
+// tree.** Decision 10: the license is one-way; a tree published while the account had accepted stays
+// published, and a decline keeps private only the trees added after it (`publicationStamp` reads
+// the answer at each insert). `actorDevice` is who is recorded as having done it, beside the account.
+func (s *Store) RecordLicenseConsent(ctx context.Context, userID uuid.UUID, version *string, actorDevice *uuid.UUID) error {
+	if version != nil && !IsKnownLicenseVersion(*version) {
+		// Not an acceptance (the #187 verification's L2, `knownLicenseVersions`). Recorded as a
+		// decline, which fails closed: the account's trees stay private until it accepts a version
+		// this service knows. A decline publishes nothing and unpublishes nothing (decision 10).
+		version = nil
 	}
-	_, err := s.pool.Exec(ctx, `
-		UPDATE users SET license_version = $2, license_accepted_at = $3, updated_at = $4 WHERE id = $1
-	`, userID, version, acceptedAt, now)
-	return err
+	return s.Tx(ctx, func(tx pgx.Tx) error {
+		now := s.now()
+		var acceptedAt *time.Time
+		if version != nil {
+			acceptedAt = &now
+		}
+		if _, err := tx.Exec(ctx, `
+			UPDATE users SET license_version = $2, license_accepted_at = $3, updated_at = $4 WHERE id = $1
+		`, userID, version, acceptedAt, now); err != nil {
+			return err
+		}
+		if version == nil {
+			return nil
+		}
+		return publishAccountTrees(ctx, tx, userID, *version, Actor{UserID: &userID, DeviceID: actorDevice}, now)
+	})
 }

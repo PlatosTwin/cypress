@@ -1,0 +1,10 @@
+# The Dockerfile copies an explicit list, so this is the second lock rather than the first:
+# it keeps anything that slipped into the working tree out of the build context, and it keeps
+# the context small enough that a build does not ship 300 MB of node_modules to the daemon.
+node_modules
+dist
+.astro
+*.log
+.env
+.env.*
+.DS_Store
